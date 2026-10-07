@@ -1,0 +1,9 @@
+.tools/
+target/
+**/target/
+build/
+**/build/
+.bsp/
+.metals/
+__pycache__/
+*.pyc

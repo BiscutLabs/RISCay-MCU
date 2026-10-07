@@ -1,0 +1,32 @@
+# RISCay-MCU contributor instructions
+
+- Implement the MCU here; chisel-async and Chiselator remain separate projects.
+- Deliver a reusable SoC with on-chip boot ROM, executable RAM and working RAM.
+  Keep common CPU/host services independent of board names, pins and policy.
+  Board/application bindings belong in `profiles/`; follow `docs/reusable-interface.md`.
+  Groundlark's permanent bootstrap must qualify power and start its Pi without
+  an application image. Other profiles must define their own boot dependency.
+- Maintain both `designs/four-phase-bd/` and `designs/two-phase-click/` as active
+  targets. Keep ISA, firmware, memory/MMIO, board I/O and functional tests equal.
+- Native Click core routing must not silently use four-phase wrappers. Identify
+  every external boundary conversion and include it in comparison costs.
+- Optional features are on hold. Follow `docs/features-and-ip.md` and
+  `docs/groundlark-io.md`; do not add heartbeat, RTC wake or diagnostics. Pi-assisted
+  firmware reload after power loss is now in scope; persistent field updates are not.
+- Loader status, validated-image reporting and a hardware programming lock are
+  required in both variants. Follow `docs/loader-status-and-lock.md`; only full
+  MCU reset or MCU power loss clears the lock. Pi resets and bus resets do not.
+- Generic measurement channels and an application register area are required.
+  Groundlark binds these to battery/supervisor telemetry. Include validity,
+  freshness and calibration status; lock must not block reads or sample updates.
+- Use explicit reset and async contracts. A digital delay model is not a mapped
+  delay cell, and passing simulation is not physical timing or power evidence.
+- Run the relevant ScalaTest/Icarus suites after changes. For architectural or
+  interface changes, run both core variants against independent references.
+  Missing tools, no activity, skipped tests and failed controls are not passes.
+- Keep shared production logic separate from independently written test oracles.
+  Test reset, stalls and exactly-once effects, not only instruction arithmetic.
+- Keep generated RTL, tools, simulator logs and test evidence under ignored
+  `.tools/`, `build/` or `target/` directories. Pin dependencies and record limits.
+- Update README and affected contracts when behavior or implementation status
+  changes. Communicate succinctly and distinguish implemented IP from planned IP.
