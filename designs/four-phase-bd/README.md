@@ -1,8 +1,10 @@
 # Four-phase bundled-data MCU
 
 Required RISCay-MCU implementation using Chisel and chisel-async four-phase
-bundled-data components. Status: initial RV32E core RTL and tests implemented.
-The complete supervisor MCU still needs memory/peripheral and firmware integration.
+bundled-data components. The core and complete digital SoC are implemented.
+[FourPhaseSoc.scala](src/main/scala/riscay/bd/FourPhaseSoc.scala) connects the core
+through explicit four-phase/clocked bridges to the common service island.
+See the [SoC contract](../../docs/soc-contract.md) for behavior and qualification limits.
 
 The core is [FourPhaseCore.scala](src/main/scala/riscay/bd/FourPhaseCore.scala).
 Build instructions are in [build and test](../../docs/build-and-test.md).

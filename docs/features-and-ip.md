@@ -2,9 +2,10 @@
 
 Draft, 2026-10-07. RISC-V is required. Build in Chisel and chisel-async, verify
 first on an existing event simulator, then use the same application to qualify
-Chiselator. The first RV32E core RTL and tests now exist in both design folders;
-the remaining MCU features below are still planned. See the
-[execution contract](execution-contract.md) for implemented behavior.
+Chiselator. Both complete baseline RV32E SoCs are implemented. See the
+[SoC contract](soc-contract.md) for the concrete digital behavior and the
+[execution contract](execution-contract.md) for core semantics. Compressed
+instructions are deferred alongside the other optional features.
 
 Scope decision: implement both four-phase bundled data and native two-phase
 Click in separate design folders, with the same essential MCU features and
@@ -54,22 +55,22 @@ every analog or timing function to be integrated on the MCU die.
 
 | Priority | Feature / IP block | Proposed minimum and purpose |
 | --- | --- | --- |
-| Required | RISC-V instruction engine | RV32E bring-up, RV32EC target; sequential execution with one instruction in flight. Sixteen 32-bit architectural registers, including constant x0. No cache or speculative execution. |
+| Required | RISC-V instruction engine | RV32E baseline; sequential execution with one instruction in flight. Sixteen 32-bit architectural registers, including constant x0. No cache or speculative execution. |
 | Required | Datapath and register storage | Register file, PC, decoder/immediates, ALU, shifts/comparisons, branch/jump logic and load/store unit. Use the same simple 32-bit datapath in both initial implementations; datapath-width experiments are on hold. |
-| Proposed target | Compressed instruction decoder | C extension and mixed 16/32-bit fetch to reduce firmware storage; measure total decoder-plus-ROM cost before freezing the choice. |
-| Required | Program storage and boot | Permanent on-chip boot ROM with profile-specific startup and common image loading; size after linking. Configurable on-chip executable RAM, provisionally 2 KiB for Groundlark. A host supplies the image after power loss. No external memory chip; fixed ROM itself is not reprogrammable. |
+| Deferred | Compressed instruction decoder | C extension and mixed 16/32-bit fetch; outside the current baseline. |
+| Required | Program storage and boot | 12-byte permanent on-chip boot ROM, fixed loader and permanent profile controller. Configurable on-chip executable RAM, initially 2 KiB for Groundlark. A host supplies the image after power loss. No external memory chip; fixed ROM is not reprogrammable. |
 | Required | Host firmware loader | I2C target initially; common device/loader ABI, explicit image/application compatibility, transfer bounds and validation. Groundlark shares its Pi's existing bus; other hosts use the same protocol. Profile bootstrap keeps required control functions active while loading. |
 | Required | Loader status and programming lock | Readable mode, validated-image flag, running state, programming availability, lock and last error on the same host interface. Hardware lock blocks image/metadata modification until full MCU reset or MCU power loss; Pi reboot and I2C reset do not clear it. See the [loader contract](loader-status-and-lock.md). |
 | Required | Data RAM | On-chip, provisional 256 bytes for application state and stack, separately from program RAM and architectural registers. Portable flip-flop implementation initially; evaluate SRAM for the combined writable-memory capacity. Explicit initialization, byte writes, alignment and access-error behavior. Size from measured stack/state use. |
 | Required | Memory/MMIO fabric | Small address decoder and request/response interfaces with one outstanding transaction; defined ordering, byte enables, errors and commit points. Avoid a full bus fabric unless an actual peripheral requires it. |
 | Required | Generic GPIO | Input, output and output-enable vectors with profile-defined roles, qualification and safe reset values. Groundlark binds three GPIOs to power enable, shutdown request and ACK_N; both protocols use identical bindings. |
-| Groundlark required | Battery measurement frontend | One low-rate ADC channel with reference, settling, calibration and sample validity; provisionally 12-bit conversion. Publish through generic measurement channel 0. External ADC interface selection remains open; a different profile may have zero analog channels. |
+| Groundlark required | Battery measurement frontend | 12-bit receive-only SPI ADC controller and generic measurement channel 0. Default conversion is nominal/uncalibrated. Analog frontend qualification remains; another profile may have zero analog channels. |
 | Required | Independent timebase and deadlines | Low-frequency tick input or oscillator/RTC subsystem, monotonic counter and next-deadline compare. Supports sampling, voltage confirmation, shutdown timeout and minimum off interval while the CPU is inactive. |
 | Required | Event capture and wait | Pending event bits, atomic acknowledge and a blocking MMIO wait candidate; no lost wakeup when event, clear and sleep coincide. Defined pulse-width or held-level contracts at every input. |
 | Required | Independent watchdog | Detect stalled CPU/firmware and recover while the core is quiescent or a transaction is stuck. To cover loss of the primary timebase, it needs a separate reference or an external watchdog. |
 | Required | Reset and output policy | Power-on/brownout input, reset distribution and handshake initialization. Reset forces RUN off in the Groundlark compatibility profile; retained RUN is on hold. |
 | Required | Validated configuration | Voltage thresholds, hysteresis, confirmation times, timeout and minimum off time. Bootstrap must contain sufficient qualified policy to start and supervise the Pi before upload; invalid/disabled policy cannot start it. Separate configuration updates remain on hold. |
-| Required | Supervisor firmware | Battery recovery/start, run, shutdown request, acknowledgement, timeout, discharge/off wait and latched fault. Distinguish acknowledged shutdown from forced removal. |
+| Required | Permanent supervisor policy | Fixed hardware implements battery recovery/start, run, shutdown request, acknowledgement, timeout, minimum-off wait and latched fault. No application is needed to power its programming host. Distinguish acknowledged shutdown from forced removal. |
 | Required | Status and fault registers | Current mode, measurement validity, timeout count and reset/fault reason. Define which fields survive CPU reset; persistence across complete power loss is optional. |
 | Required | Host-readable telemetry | Generic channels expose value, unit/scale, validity, age/sequence and calibration flags. Versioned application registers expose profile-specific state. Groundlark maps these to battery/supervisor data. Coherent read-only snapshots remain accessible while locked. |
 | Required for development | Observation and test interfaces | Instruction retirement and committed MMIO trace, channel monitors, memory preload/readback and deterministic fault injection. Simulation visibility is not a promise of a hardware debug port. |
@@ -155,7 +156,9 @@ protocol-specific implementations separate:
 
 Both core RTL implementations exist. The shared datapath has no protocol state;
 four-phase uses long-hold composition and Click uses native storage and native
-fork/join routing. Memory/peripheral integration and supervisor firmware remain.
+fork/join routing. Both SoCs integrate the same memories/peripherals and permanent
+supervisor policy through explicit clocked boundaries. Count that common clocked
+island and each protocol's bridges in area/energy comparisons.
 
 | Candidate | Why it belongs in the comparison | Cost or obligation |
 | --- | --- | --- |
@@ -202,9 +205,9 @@ they are not supplied merely by generating RTL.
 
 1. Freeze the Groundlark signal/policy profile and MCU execution environment.
    Use identical fail-off reset and bounded shutdown-timeout behavior in both designs.
-2. Compile the actual supervisor policy for RV32E/RV32EC. Retain ELF, image, map,
-   disassembly, helper routines and stack measurements; adjust provisional memory
-   budgets to fit complete tested firmware.
+2. Build a compiler-generated RV32E application corpus. Retain ELF, image, map,
+   disassembly, helper routines and stack measurements; adjust memory budgets.
+   Baseline supervisor policy already runs in fixed logic.
 3. Implement CPU and peripheral contracts with independent instruction and
    supervisor-policy references. Reused production C tests establish porting
    consistency, not an independent oracle by themselves.
@@ -221,9 +224,10 @@ they are not supplied merely by generating RTL.
    Real Pi behavior, analog accuracy, physical timing and power remain later
    board/silicon qualification gates.
 
-The initial core and native-routing suites are implemented; see
-[build and test](build-and-test.md). Full ISA qualification, the supervisor policy
-and MCU peripheral suites remain. Do not treat core tests as whole-chip acceptance.
+Core, native-routing, host/schema, shared fabric and complete generic/Groundlark
+SoC suites are implemented; see [build and test](build-and-test.md). Full ISA,
+exhaustive reset/timing, compiler-workload and board qualification remain. Core
+tests alone are not whole-chip acceptance.
 
 ## Source snapshot
 

@@ -3,7 +3,7 @@ package riscay.bd
 
 import chisel3._
 import chiselasync.bundled._
-import chiselasync.core.AsyncModule
+import chiselasync.core.{AsyncModule, ResetDomain}
 import chiselasync.metadata.{BundledTiming, ExportDesign, ModelTime}
 import chiselasync.protocol.FourPhase
 import java.nio.file.Paths
@@ -12,7 +12,7 @@ import riscay._
 /** Sequential RV32E core. No periodic clock; memory owns each request's latency.
   * The state branch waits for the matching response before executing a microstep.
   */
-class FourPhaseCore extends AsyncModule {
+class FourPhaseCore(domain: ResetDomain = new ResetDomain("root")) extends AsyncModule(domain) {
   val request = fourPhaseOutput("request", new MemoryRequest)
   val response = fourPhaseInput("response", new MemoryResponse)
   val trace = IO(Output(new Retirement))

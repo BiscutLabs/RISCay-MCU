@@ -3,8 +3,8 @@ package riscay.profiles
 
 import riscay._
 
-/** Groundlark binding only. ADC bus/pads, boot ROM and numeric battery policy
-  * are not selected or implemented by these interface descriptions.
+/** Groundlark descriptors. GroundlarkSupervisor supplies permanent control;
+  * physical pads and qualified battery policy are separate board decisions.
   */
 object Groundlark {
   val application = ApplicationProfile(

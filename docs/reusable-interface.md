@@ -3,7 +3,8 @@
 The RV32E CPU RTL is already application-independent. Groundlark is the first
 board/application profile, not the definition of the MCU. The logical host schema
 and profile validation now exist in [HostSchema.scala](../shared/src/main/scala/riscay/HostSchema.scala);
-I2C, GPIO, measurement capture, loader and whole-SoC integration remain planned.
+I2C, GPIO, measurement capture, loader and both complete SoCs are implemented.
+The [SoC contract](soc-contract.md) specifies their wire/MMIO behavior.
 
 ## Separation of responsibilities
 
@@ -22,14 +23,14 @@ or a general-purpose interconnect. Existing optional features remain on hold.
 ## Logical host ABI v1
 
 An address is `(space, instance, word)`, each an unsigned byte. Word selects a
-32-bit register, not a byte of CPU memory. I2C byte framing, endianness, command
-opcodes and individual status bit layouts remain to be fixed during integration.
-The schema is a design contract, not a presently accessible hardware interface.
+32-bit register, not a byte of CPU memory. Wire framing uses explicit commands,
+little-endian words and coherent snapshots with supported-word bits; see the
+[implemented protocol](soc-contract.md#host-wire-protocol-v1).
 
 | Space | Service | Addressing |
 | --- | --- | --- |
 | 0x00 | Device identity/build information | Instance 0; ABI version, application ID/version, program/working-RAM capacities, GPIO/channel counts and reset reason |
-| 0x01 | Loader status | Instance 0; MODE, PROGRAMMED, PROGRAM_LOCKED, CAN_PROGRAM, BUSY, LAST_ERROR |
+| 0x01 | Loader status | Instance 0; MODE, PROGRAMMED, PROGRAM_LOCKED, CAN_PROGRAM, BUSY, LAST_ERROR, IMAGE_ID, RECEIVED_BYTES |
 | 0x02 | Measurements | Instance is channel; VALUE, FLAGS, AGE_MS, SEQUENCE, UNIT, SCALE10 |
 | 0x80 | Application data | Instance 0; up to 64 profile-defined read-only registers |
 
@@ -47,7 +48,7 @@ it must not become a hardwired Groundlark-only whitelist. Image headers must
 declare the ABI, application/schema identity and required hardware resources.
 The loader rejects unsupported ABI/resource requirements or inconsistent image
 metadata before execution; the host checks that it selected the intended board
-application. Image-header validation remains to be implemented.
+application. The hardware loader enforces these bounds before execution.
 
 ## Generic measurements and GPIO
 
@@ -81,9 +82,8 @@ telemetry must not become a way to override the Groundlark supervisor.
 `McuConfiguration` describes aligned program/working-RAM sizes, 0..32 logical
 GPIOs, 0..16 measurement channels and an application profile. Constructors reject
 duplicate/absent bindings and ambiguous registers. The Groundlark instance lives
-in [profiles/](../profiles/README.md). These parameters describe intended future
-SoC generation; they do not yet resize or instantiate memory/peripherals around
-the existing cores. Counts must eventually be reported from actual built blocks.
+in [profiles/](../profiles/README.md). These parameters size the actual generated
+memory/peripheral blocks and their host-reported capacities.
 
 Memory/GPIO/channel capacities are hardware parameters: changing them creates a
 hardware variant. Another application can reuse an existing chip within those
@@ -106,7 +106,7 @@ the build's board profile. Host-only and bus resets do not clear the lock.
 
 `HostSchemaSpec` exercises a Groundlark profile and an unrelated counter fixture,
 checks unknown-address rejection and channel bounds, and rejects contradictory
-configurations. Both CPU protocol suites remain required. These tests validate
-schema/configuration and existing CPUs; they do not establish a working host bus,
-loader, GPIO or telemetry circuit. SoC tests must eventually run both profiles on
-both protocols, including reset, lock, coherent sampling and incompatible images.
+configurations. Both CPU protocol suites remain required. SocSpec additionally
+runs generic and Groundlark configurations through each complete SoC's I2C pins.
+FabricSpec covers service-bus behavior, sample failures/staleness and zero-channel
+builds. These complement the independent ISA/routing and later physical qualification.

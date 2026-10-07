@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 package riscay
 
-/** Logical host ABI. These descriptions do not instantiate an I2C target or SoC.
-  * A wire frame will carry (space, instance, word); these are not CPU addresses.
+/** Host ABI descriptors shared by hardware configuration and SDK/test discovery.
+  * A wire frame carries (space, instance, word); these are not CPU addresses.
   */
 object HostSpace {
   val Device = 0
@@ -57,7 +57,7 @@ final case class ApplicationProfile(id: Long, version: Int, name: String,
   require(pins.map(_.name).distinct.size == pins.size, "duplicate GPIO role")
 }
 
-/** Elaboration-time design intent, not a report of currently implemented hardware. */
+/** Elaboration-time capacities, also reported by the hardware device service. */
 final case class McuConfiguration(programBytes: Int, workingRamBytes: Int, gpioCount: Int,
     measurements: Vector[MeasurementChannel], application: ApplicationProfile) {
   require(programBytes > 0 && programBytes % 4 == 0, "program RAM must contain aligned words")
@@ -78,7 +78,7 @@ object HostSchema {
   val device: Vector[HostRegister] = words("ABI_VERSION", "APPLICATION_ID", "APPLICATION_VERSION",
     "PROGRAM_BYTES", "WORKING_RAM_BYTES", "GPIO_COUNT", "MEASUREMENT_COUNT", "RESET_REASON")
   val loader: Vector[HostRegister] = words("MODE", "PROGRAMMED", "PROGRAM_LOCKED", "CAN_PROGRAM",
-    "BUSY", "LAST_ERROR")
+    "BUSY", "LAST_ERROR", "IMAGE_ID", "RECEIVED_BYTES")
   val measurement: Vector[HostRegister] = words("VALUE", "FLAGS", "AGE_MS", "SEQUENCE", "UNIT", "SCALE10")
 
   /** Unknown/absent resources resolve to None, never alias another service or RAM. */

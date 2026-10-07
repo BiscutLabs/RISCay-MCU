@@ -4,9 +4,9 @@ Application ID `0x474c524b` (GLRK), profile version 1. This is a project-assigne
 identifier, not a standards allocation. Definitions live in
 [Groundlark.scala](../src/main/scala/riscay/profiles/Groundlark.scala).
 
-The profile plans 2 KiB executable RAM, 256 bytes working RAM, three application
-control GPIOs and one measurement channel. Host I2C, the still-undecided ADC
-interface, reset, timing and test pads are additional to that GPIO count.
+The profile builds 2 KiB executable RAM, 256 bytes working RAM, three application
+control GPIOs and one measurement channel. Host I2C, the reference three-signal
+SPI ADC interface, reset, timing and test pads are additional to that GPIO count.
 
 | Generic resource | Groundlark meaning |
 | --- | --- |
@@ -33,7 +33,7 @@ The SDK may name measurement 0's value `BATTERY_MV`; that is a profile alias,
 not a battery-specific register in the generic MCU service. Sample validity,
 calibration, age and sequence use the common measurement contract. Reset reason
 comes from the common device service, and loader errors remain separate from
-supervisor faults. Enum/flag bit layouts remain to be fixed with implementation.
+supervisor faults. Enums/flags are specified in the [SoC contract](../../docs/soc-contract.md).
 
 Battery voltage must refer to the battery input after correcting for the divider
 and reference. A nominal conversion is not calibrated. Failed/stale conversions
@@ -45,10 +45,11 @@ The permanent bootstrap must measure voltage, apply a qualified minimum startup
 policy, power the Pi without a programmed application and continue supervision
 during upload. MCU reset disables Pi power; Pi-only reset preserves MCU image
 and lock. The programming lock never disables telemetry reads or acquisition.
-Uploaded firmware may implement the fuller supervisor policy, but cannot supply
-the only code capable of starting its own programming host.
+Fixed hardware implements the complete baseline power policy and owns these
+three GPIOs; uploaded firmware cannot override it. The default emitted policy
+is disabled until battery/board settings are qualified and enabled at build time.
 
 The current TI firmware uses battery readings internally and has no Pi-readable
-telemetry transport. The RISCay loader, telemetry and board integration described
-here are still planned. This profile does not assign ADC pads or invent qualified
+telemetry transport. RISCay implements digital loader, telemetry and permanent
+supervision. This profile does not assign physical ADC pads or establish qualified
 battery thresholds.

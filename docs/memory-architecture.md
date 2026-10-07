@@ -4,19 +4,20 @@ Updated scope, 2026-10-07: both RISCay variants use only on-chip execution and
 working memory. A host may reload application firmware after total power loss;
 no external memory chip is required. Boot behavior and capacities belong to an
 [application profile](reusable-interface.md). Groundlark's permanent bootstrap
-must start its Pi without depending on that application. Current RTL consists of cores with
-testbench memory; the SoC memory and loader described here are planned.
+must start its Pi without depending on that application. Both SoCs now contain
+the memories and loader; see the [implemented SoC contract](soc-contract.md).
 
 ## Initial Groundlark configuration
 
 | Storage | Provisional capacity | Implementation |
 | --- | --- | --- |
-| Bootstrap, loader and minimum power policy | To be measured separately | Fixed on-chip ROM, initially synthesized constant logic; survives total power loss |
+| Bootstrap, loader and minimum power policy | 12-byte boot ROM plus fixed logic | ROM waits for the image; permanent loader and board controller operate independently of application code |
 | Application firmware, constants and startup image | 2 KiB | On-chip executable RAM loaded by the Pi; lost after total power loss |
 | Application data and stack | 256 bytes | On-chip flip-flop bank behind a replaceable memory interface |
 | Architectural registers and control | x1-x15 contain 480 bits; additional PC/control and pipeline storage | Protocol-appropriate standard-cell storage; x0 is constant |
 
-Compile and measure both bootstrap and application before freezing capacities.
+Measure compiler-built applications before freezing RAM capacities. The minimal
+ROM is three RV32E instructions; power policy is fixed logic in this baseline.
 SRAM and flip-flops are volatile; fixed ROM survives power loss and cannot be
 rewritten by the Pi. A RAM image loaded only by a simulator is not a hardware
 loader. Pi transfer into executable RAM is now required; persistent updates and
@@ -51,17 +52,18 @@ count their wrappers in the results.
    Bootstrap transfers control without resetting the SoC or dropping Pi power.
    Normal application execution uses only local memory; status remains readable.
 
-Define bounded behavior for a missing image, failed Pi boot, low battery and a
-stalled upload before implementing this sequence. Remain in bootstrap supervision
-on rejected images; apply the defined shutdown/retry policy on deadline expiry.
-Numeric thresholds, upload deadline and retry limits are not frozen here.
-Loader activity must not suspend critical power supervision. Loading is allowed
+The baseline remains in permanent supervision with a missing, rejected or stalled
+upload. It has no host-readiness detector or upload deadline; battery/shutdown
+policy continues independently. Policy is validated at build time, and the third
+unacknowledged shutdown timeout latches power off. Loading is allowed
 only while the application is not executing; live patching is outside scope.
 
 Pi power cycling alone does not erase MCU RAM because the supervisor remains
 on its always-on supply. Complete supervisor supply loss requires a new upload.
 Full reset remains fail-off; upload handoff is a control transfer, not warm-reset
-retention. No board or loader RTL change is implied by this planning document.
+retention. Numeric policy is a build parameter, disabled by default pending board
+qualification. The implemented loader permits an upload to remain incomplete
+while permanent supervision continues; it never executes incomplete code.
 
 Status and the programming lock do not themselves solve cold-start dependency:
 an unpowered Pi cannot read status or load code. The permanent bootstrap must

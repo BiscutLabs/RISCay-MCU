@@ -3,7 +3,7 @@ package riscay.click
 
 import chisel3._
 import chiselasync.bundled._
-import chiselasync.core.AsyncModule
+import chiselasync.core.{AsyncModule, ResetDomain}
 import chiselasync.metadata.{ClickTiming, ExportDesign}
 import chiselasync.protocol.TwoPhase
 import java.nio.file.Paths
@@ -12,7 +12,7 @@ import riscay._
 /** Sequential RV32E core with native Click storage and phase routing throughout.
   * start rises once after coordinated reset settles, and stays high until reset.
   */
-class ClickCore extends AsyncModule {
+class ClickCore(domain: ResetDomain = new ResetDomain("root")) extends AsyncModule(domain) {
   val start = IO(Input(Bool()))
   val request = twoPhaseOutput("request", new MemoryRequest)
   val response = twoPhaseInput("response", new MemoryResponse)

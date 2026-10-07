@@ -5,9 +5,9 @@ sequential RV32E execution engine. They are CPU cores with memory service ports;
 these ports are intended for internal SoC connections. The completed SoC must
 boot from permanent on-chip ROM and execute a host-loaded application from on-chip
 RAM, with no external memory chip. A board profile supplies bootstrap behavior;
-Groundlark must power its Pi independently of the application. Memory and loader
-integration are not implemented yet; see
-the [memory architecture](memory-architecture.md).
+Groundlark powers its Pi independently of the application when a qualified policy
+is enabled. Both complete SoC wrappers now implement memory and loader integration;
+see the [SoC contract](soc-contract.md).
 
 ## ISA and state
 
@@ -73,10 +73,10 @@ The tests compare these records and every committed bus transaction with an
 independent software interpreter. They do not compare internal cycles or assert
 a throughput advantage from the library's simulation delay presets.
 
-## Next integration work
+## SoC integration
 
-The cores currently connect to testbench memory models. On-chip ROM/RAM wrappers,
-MMIO, ADC interface, event wait, timers, watchdog, reset/output control and the
-actual supervisor firmware remain to be implemented and verified on both variants.
-The ROM/RAM capacity budgets in the feature plan are not allocated inside these
-cores. Physical cells, pads and timing remain a later stage.
+Standalone core tests use independent memory models. Both SoC wrappers connect
+the cores to real on-chip ROM/RAM, MMIO, ADC, events/timers, watchdog and output
+control. Permanent Groundlark supervision is fixed hardware, independent of the
+uploaded application. Memory is outside the circulating CPU token. Physical
+cells, pads, analog integration and timing remain a later stage.

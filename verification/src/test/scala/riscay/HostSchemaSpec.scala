@@ -2,9 +2,17 @@
 package riscay
 
 import org.scalatest.funsuite.AnyFunSuite
-import riscay.profiles.Groundlark
+import riscay.profiles.{Groundlark, PowerPolicy}
 
 class HostSchemaSpec extends AnyFunSuite {
+  test("Groundlark policy requires valid bounds and hysteresis before enabling") {
+    assert(!PowerPolicy().enabled)
+    assert(PowerPolicy(enabled=true).enabled)
+    intercept[IllegalArgumentException](PowerPolicy(enabled=true, restartMv=10100))
+    intercept[IllegalArgumentException](PowerPolicy(enabled=true, shutdownMv=8000))
+    intercept[IllegalArgumentException](PowerPolicy(enabled=true, shutdownTimeoutMs=9999))
+    intercept[IllegalArgumentException](PowerPolicy(enabled=true, minimumOffMs=29999))
+  }
   // Deliberately unrelated fixture: no Pi, battery, ADC or switched-host dependency.
   private val counter = McuConfiguration(1024, 128, 1,
     Vector(MeasurementChannel(0, "event_count", MeasurementUnit.Count, 0)),
@@ -32,7 +40,7 @@ class HostSchemaSpec extends AnyFunSuite {
     for(c <- Seq(counter, Groundlark.configuration)) {
       for(space <- 0 to 255; instance <- 0 to 2; word <- Seq(0, 5, 63, 255)) {
         val known = (space == 0 && instance == 0 && word < 8) ||
-          (space == 1 && instance == 0 && word < 6) ||
+          (space == 1 && instance == 0 && word < 8) ||
           (space == 2 && instance == 0 && word < 6) ||
           (space == 128 && instance == 0 && word < (if(c == counter) 1 else 6))
         assert(HostSchema.resolve(c, HostAddress(space, instance, word)).isDefined == known,

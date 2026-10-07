@@ -105,8 +105,10 @@ are outside the present scope.
 
 The current TI firmware uses battery measurements internally but provides no
 Pi-readable telemetry transport; its Pi connections are the shutdown/halt GPIOs.
-RISCay's proposed I2C connection adds that transport. Telemetry and host RTL are
-still unimplemented. Report the power-enable command as a commanded state, not
+RISCay's I2C RTL adds that transport. The reference SoC emitter selects the
+three-signal SPI ADC interface, for eight application signals total before
+reset, clocks, supplies and physical test pads. See the [SoC contract](soc-contract.md).
+Report the power-enable command as a commanded state, not
 as proof that the Pi rail has reached voltage.
 
 [circuit]: https://github.com/naturalhazardscience/groundlark/blob/3f92e1b4b9a7f5af35dec87e5f9ff2f32aac84f3/hw/groundlark-fpga-hat/elec/hat_trenz.ato

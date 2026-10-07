@@ -1,11 +1,10 @@
 # Host status, telemetry and programming lock
 
 Required design contract, 2026-10-07. Applies identically to four-phase bundled
-data and native two-phase Click. This describes planned SoC behavior; the I2C
-endpoint, storage protection, boot ROM and SoC integration are not implemented.
+data and native two-phase Click. Both SoCs implement this baseline behavior.
+The [SoC contract](soc-contract.md) defines the concrete protocol and limitations.
 The [reusable interface](reusable-interface.md) assigns logical service/word
-addresses. Wire framing, command encodings and flag bit layouts remain to be
-assigned. Common services have no Groundlark dependencies.
+addresses. Common services have no Groundlark dependencies.
 
 ## Status interface
 
@@ -34,13 +33,13 @@ Heartbeat and a serial diagnostic console remain outside scope.
 Use the same I2C target for read-only measurements; no additional data pins or
 separate serial console are required. Measurement channels carry neutral values,
 units and freshness metadata. Profile-specific meanings and application registers
-live in [profiles/](../profiles/README.md). This host RTL is not yet implemented.
+live in [profiles/](../profiles/README.md).
 
 | Field/group | Meaning |
 | --- | --- |
 | `VALUE` | Signed 32-bit value with physical interpretation given by UNIT and SCALE10 |
 | `FLAGS` | Sample valid, stale, never sampled, source fault and calibration applied; nominal conversion must not be reported as calibrated |
-| `AGE_MS` | Age of the last successful sample at snapshot time; saturates rather than wrapping to appear fresh; no-sample/timebase-fault flags make age unusable |
+| `AGE_MS` | Age of the last successful sample at snapshot time; saturates rather than wrapping; no-sample flag makes age unusable, and reset reason identifies lost continuity |
 | `SEQUENCE` | Counter incremented on each published acquisition result, including failures; host reads do not advance it; wrap/reset are not evidence of freshness |
 | `UNIT`, `SCALE10` | Fixed descriptors for each channel; physical value = VALUE * 10^SCALE10 in UNIT |
 | Application data | Profile-specific read-only words, versioned separately from common loader/device services |
@@ -59,12 +58,14 @@ until its producer is active; Groundlark requires permanent sensing/bootstrap
 measurements before the application starts. Endpoint availability alone does not
 guarantee fresh measurements: report stale/invalid data if acquisition or its
 producer stalls. Freshness must not depend on the application claiming it is
-healthy; report independent timebase failure explicitly. Uploads and host reads
-must not suspend required board safety functions.
+healthy. Loss of the service clock causes an independent watchdog reset; after
+clock recovery, reset reason plus invalid/never-sampled state reports the loss of
+continuity. The host endpoint needs the service clock to respond. Uploads and
+host reads must not suspend required board safety functions.
 
 The programming lock protects application code and metadata, not telemetry
-updates. Normal sampling continues while locked. Freeze age limits, calibration
-representation and wire/register encoding during source/host integration. When
+updates. Normal sampling continues while locked. Age limits are build parameters;
+calibration flags and wire encoding are defined in the SoC contract. When
 measurements drive control decisions, telemetry must describe the same data.
 
 Groundlark maps measurement 0 to battery millivolts and its application area to
@@ -164,5 +165,6 @@ and power-specific scenarios:
   verify reads do not clear faults, change policy or interrupt supervision, and
   that the lock does not prevent new ADC results from being published.
 
-The existing core suites do not establish these properties until this controller
-and its memory/host paths are integrated.
+Core suites cover the ISA/protocol in isolation. SocSpec and FabricSpec exercise
+the implemented host, loader, memory, reset, telemetry and board paths; these
+directed suites are not exhaustive reset/timing or physical qualification.

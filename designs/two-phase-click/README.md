@@ -1,8 +1,10 @@
 # Native two-phase Click MCU
 
 Required RISCay-MCU implementation using Chisel and chisel-async native Click
-components. Status: initial RV32E core RTL and tests implemented.
-The complete supervisor MCU still needs memory/peripheral and firmware integration.
+components. The core and complete digital SoC are implemented.
+[ClickSoc.scala](src/main/scala/riscay/click/ClickSoc.scala) uses
+[native toggle/clocked bridges](src/main/scala/riscay/click/ClockBridges.scala),
+with no four-phase adapters. See the [SoC contract](../../docs/soc-contract.md).
 
 The core is [ClickCore.scala](src/main/scala/riscay/click/ClickCore.scala), with
 [native fork/join routing](src/main/scala/riscay/click/NativeRouting.scala).

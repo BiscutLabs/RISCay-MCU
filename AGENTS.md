@@ -10,6 +10,11 @@
   targets. Keep ISA, firmware, memory/MMIO, board I/O and functional tests equal.
 - Native Click core routing must not silently use four-phase wrappers. Identify
   every external boundary conversion and include it in comparison costs.
+- `soc/` owns the common clocked service island; keep both native CPU bridges
+  explicit. Follow `docs/soc-contract.md` for wire commands, MMIO and reset scope.
+  Run SocSpec/FabricSpec after changes there and keep strict SoC exports valid.
+- Groundlark's permanent controller owns its power GPIOs. Keep its default policy
+  disabled until qualified board/battery values are deliberately supplied.
 - Optional features are on hold. Follow `docs/features-and-ip.md` and
   `docs/groundlark-io.md`; do not add heartbeat, RTC wake or diagnostics. Pi-assisted
   firmware reload after power loss is now in scope; persistent field updates are not.
