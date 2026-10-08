@@ -16,7 +16,7 @@ object ClockedSimulation {
       referenceHalfPeriodNs: Int = 163, onChipOscillator: Boolean = false,
       chipParameters: riscay.soc.LowPowerParameters = riscay.soc.LowPowerParameters(),
       serviceStartupNs: Int = 500, deadlineNs: Long = 100000000L,
-      serviceModelHz: Double = 10000000): Path = {
+      serviceModelHz: Double = 10000000, processTimeoutSeconds: Int = 90): Path = {
     val root = Paths.get("build/soc-tests").toAbsolutePath; Files.createDirectories(root)
     val base = Files.createTempDirectory(root, name)
     Simulator().check(base.resolve("simulator"))
@@ -34,7 +34,9 @@ object ClockedSimulation {
     val chipSources = if(onChipOscillator) {
       Seq(riscay.soc.ChipWrapper.write(base,chipParameters).toString,
         base.resolve("chip/riscay_lf_osc_model.sv").toString,
-        base.resolve("chip/riscay_service_osc_model.sv").toString)
+        base.resolve("chip/riscay_service_osc_model.sv").toString,
+        base.resolve("chip/riscay_supply_monitor_model.sv").toString,
+        base.resolve("chip/riscay_reset_hold.sv").toString)
     } else Seq.empty
     def flat(p: ujson.Value) = p("source").str.split('>').last.replace('.', '_').replace('[', '_').replace("]", "")
     val internal = Set("serviceClock", "watchdogClock", "serviceClockEnable")
@@ -46,7 +48,7 @@ reg hostLow=0;
 wire busSda = !(hostLow || sdaLow);
 always @* sda=busSda;
 ${manifest("top").str}${if(onChipOscillator) "Chip" else ""} dut (${ports.filter(p => !onChipOscillator || !internal(flat(p))).map(p => s".${flat(p)}(${flat(p)})").mkString(",")});
-${if(onChipOscillator) s"defparam dut.oscillator.NOMINAL_HZ = ${1.0e9/(2.0*referenceHalfPeriodNs)};\ndefparam dut.oscillator.STARTUP_NS = 500;\ndefparam dut.serviceOscillator.STARTUP_NS = $serviceStartupNs;\ndefparam dut.serviceOscillator.NOMINAL_HZ = $serviceModelHz;\nassign serviceClock=dut.serviceClock;\nassign watchdogClock=dut.lfClock;\nassign serviceClockEnable=dut.serviceClockEnable;" else ""}
+${if(onChipOscillator) s"defparam dut.RESET_HOLD_CYCLES = 2;\ndefparam dut.supplyMonitor.SETTLE_NS = 0;\ndefparam dut.oscillator.NOMINAL_HZ = ${1.0e9/(2.0*referenceHalfPeriodNs)};\ndefparam dut.oscillator.STARTUP_NS = 500;\ndefparam dut.serviceOscillator.STARTUP_NS = $serviceStartupNs;\ndefparam dut.serviceOscillator.NOMINAL_HZ = $serviceModelHz;\nassign serviceClock=dut.serviceClock;\nassign watchdogClock=dut.lfClock;\nassign serviceClockEnable=dut.serviceClockEnable;" else ""}
 reg clockEnabled=1;
 reg referenceEnabled=1;
 ${if(onChipOscillator) "" else s"initial begin serviceClock=0; forever begin #50; if(clockEnabled) serviceClock=~serviceClock; end end\ninitial begin watchdogClock=0; forever begin #$referenceHalfPeriodNs; if(referenceEnabled) watchdogClock=~watchdogClock; end end"}
@@ -66,7 +68,7 @@ endmodule
     def command(args: Seq[String], log: String): Unit = {
       val file = base.resolve(log).toFile
       val process = new ProcessBuilder(args: _*).directory(base.toFile).redirectErrorStream(true).redirectOutput(file).start()
-      if(!process.waitFor(90, TimeUnit.SECONDS)) { process.destroyForcibly(); sys.error(s"Timeout: $base/$log") }
+      if(!process.waitFor(processTimeoutSeconds, TimeUnit.SECONDS)) { process.destroyForcibly(); sys.error(s"Timeout: $base/$log") }
       require(process.exitValue() == 0, s"Simulation failure: $base/$log\n${Files.readString(file.toPath).takeRight(5000)}")
     }
     val sources = Files.readAllLines(base.resolve("filelist.f")).asScala.filter(_.trim.nonEmpty).map(s => base.resolve(s.trim).normalize().toString)

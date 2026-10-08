@@ -11,6 +11,7 @@ import re
 import shutil
 import subprocess
 import sys
+import tempfile
 import urllib.request
 
 from design import Design, netlist
@@ -46,7 +47,14 @@ def models(fetch):
     source = paths["sm141064.ngspice"].read_text()
     prepared = ROOT/".tools/gf180-models-prepared"
     prepared.mkdir(parents=True, exist_ok=True)
-    (prepared/"sm141064.ngspice").write_text(prepare_resistor_model(source))
+    content = prepare_resistor_model(source)
+    target = prepared/"sm141064.ngspice"
+    # Concurrent campaigns must never read a partially rewritten model library.
+    if not target.exists() or target.read_text() != content:
+        with tempfile.NamedTemporaryFile(mode="w", dir=prepared, delete=False) as file:
+            file.write(content)
+            temporary = Path(file.name)
+        temporary.replace(target)
     paths["sm141064.ngspice"] = prepared/"sm141064.ngspice"
     return paths
 

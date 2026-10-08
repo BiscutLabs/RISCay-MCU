@@ -68,17 +68,18 @@ transaction holds the work gate open through STOP/repeated START and its drain
 interval. No CPU wake occurs merely because the host reads status or telemetry;
 WAKE remains explicit.
 
-The required fast oscillator contract is 10 MHz nominal, 8..20 MHz,
+The required fast oscillator contract is about 12 MHz nominal, 8..20 MHz,
 startup no longer than 100 us, and full high pulses when
 stopping, followed by a low output and no edges. I2C is limited to 400 kHz in this
 integration contract; the lower frequency bound accommodates at least four
 service cycles in each fast-mode SCL high/low phase. The upper frequency bound makes the 4096-cycle host window
-at least 204.8 us. These are requirements for the future physical macro, not
-measured GF180 fast-oscillator capabilities. ADC SCLK limits must also be checked
+at least 204.8 us. The [GF180 schematic candidate](../analog/gf180-clock-reset/README.md)
+measures 8.62..17.05 MHz across its corner campaign; the wider envelope remains
+an engineering contract, not silicon qualification. ADC SCLK limits must also be checked
 against its actual frequency range. `riscay_service_osc.v` is a synthesis black
 box; its separately selected `_model.sv` supplies executable timing behavior.
-A transistor-level fast oscillator, layout and characterized views remain physical
-IP work.
+A transistor-level fast oscillator and supply monitor now exist. Their layout,
+extracted views and statistical/physical qualification remain work.
 
 ## Host wake protocol: no additional pin
 
@@ -113,12 +114,21 @@ another independent reference or external supervisor; that is not claimed here.
 Watchdog reset asserts all transaction resets and requests fast-source restart,
 but **does not reset the LF oscillator**. Only POR/brownout reset drives its
 `rst_n`. The analog candidate requires reset low during the supply ramp and at
-least 5 ms after valid supply. The wrapper does not implement that POR generator.
+least 5 ms after valid supply. The wrapper now connects the supply-monitor macro
+to an asynchronous-assert reset sequencer. It synchronizes qualification and
+counts 100,000 consecutive fast cycles before releasing LF and SoC reset.
+This is at least 5 ms at the maximum 20 MHz; any fault clears the count.
+Raw comparator startup chatter is contained by this hold. The fast source is
+forced on during qualification, independent of the held LF/SoC reset, avoiding
+a circular startup dependency. The existing `reset` input remains a manual
+override; no extra supply-good pin is introduced. A watchdog reset does not
+retrigger this POR sequence.
 
 ## Physical and verification boundaries
 
-Compile the emitted filelist, chip wrapper, and exactly one view of EACH
-oscillator. The LF digital interface now matches the untrimmed analog
+Compile the emitted filelist, chip wrapper, `riscay_reset_hold.sv`, and exactly
+one view of EACH analog macro (LF, fast oscillator and supply monitor).
+The LF digital interface now matches the untrimmed analog
 `vdd/vss/rst_n/clk` candidate, with supplies implicit in its digital view.
 There is no imaginary enable/trim DAC. Models exercise the integration; they do
 not establish chip power, PVT yield, metastability or a physical netlist binding.
@@ -137,3 +147,11 @@ Oscillator-model tests check cancellation/restart and complete final pulses.
 Some SoC reference clocks are accelerated; those tests establish behavior, not
 real-time or energy measurements. All comparisons of the two architectures must
 include identical memory, clocks, sensing and host traffic.
+
+Full-SoC regression fixtures also override the POR hold to two fast cycles and
+monitor startup to zero. `tools/test_reset_circuit.py` separately tests the real
+100,000-cycle hold at both frequency limits, interrupted qualification, failed
+clock, manual reset, asleep brownout and total power loss. `DeepSleepSpec` tests
+supply faults during sleep, partial upload and locked execution on both cores.
+The analog monitor's approximately 2.22 uA nominal always-on current and measured
+39.84..62.02 us dip response must be included in physical power/rail analysis.

@@ -1,0 +1,16 @@
+{
+  "host": "Ubuntu 24.04 amd64 (native or WSL)",
+  "gcc_version": "13.2.0",
+  "packages": [
+    {
+      "file": "gcc-riscv64-unknown-elf_13.2.0-11ubuntu1+12_amd64.deb",
+      "url": "https://archive.ubuntu.com/ubuntu/pool/universe/g/gcc-riscv64-unknown-elf/gcc-riscv64-unknown-elf_13.2.0-11ubuntu1+12_amd64.deb",
+      "sha256": "47d4670801c391c65513e2002a19280c6bbdba158f5a467ac5100bff813de0e3"
+    },
+    {
+      "file": "binutils-riscv64-unknown-elf_2.42-1ubuntu1+6_amd64.deb",
+      "url": "https://archive.ubuntu.com/ubuntu/pool/universe/b/binutils-riscv64-unknown-elf/binutils-riscv64-unknown-elf_2.42-1ubuntu1+6_amd64.deb",
+      "sha256": "d42d42efdaa0563155d0e1263675852255b20864cc525db9265247a5dec2ce30"
+    }
+  ]
+}

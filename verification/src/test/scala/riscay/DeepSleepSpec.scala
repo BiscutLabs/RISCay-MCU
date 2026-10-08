@@ -51,6 +51,29 @@ end endtask
 """
   for(click <- Seq(false,true)) {
     val name = if(click) "click" else "four-phase"
+    test(s"$name on-die brownout resets sleeping, partial-upload and locked states") {
+      val params=p.copy(config=config.copy(programBytes=32,workingRamBytes=32),adc=None)
+      ClockedSimulation.run(top(click,params),name+"-supply-reset",s"""
+        #3000000; wait(!serviceClockEnable);
+        dut.supplyMonitor.supply_voltage=2.8; #1;
+        if(!systemReset || dut.porReleased || programmed || locked) $$fatal(1,"SLEEP_BROWNOUT");
+        #100000; dut.supplyMonitor.supply_voltage=3.15; #100000;
+        if(!systemReset || dut.powerGood) $$fatal(1,"BROWNOUT_HYSTERESIS");
+        dut.supplyMonitor.supply_voltage=3.3; #3000000;
+        read_words(1,0,0); if(programmed || locked) $$fatal(1,"UNPROGRAMMED_RECOVERY");
+        begin_image(8,0,0,32'h00010000); put_word(0,32'h00100073);
+        dut.supplyMonitor.supply_voltage=0; #10000;
+        if(!systemReset) $$fatal(1,"UPLOAD_POWER_LOSS");
+        dut.supplyMonitor.supply_voltage=3.3; #3000000;
+        read_words(1,0,0); if(snapshot[0+:32] !== 0 || programmed || locked) $$fatal(1,"PARTIAL_IMAGE_SURVIVED");
+        ${upload(Seq(breakpoint))}
+        if(!programmed || !locked) $$fatal(1,"LOCK_SETUP");
+        dut.supplyMonitor.supply_voltage=2.8; #1;
+        if(!systemReset || programmed || locked) $$fatal(1,"LOCK_SURVIVED_BROWNOUT");
+        dut.supplyMonitor.supply_voltage=3.3; #3000000;
+        read_words(1,0,0); if(programmed || locked || systemReset) $$fatal(1,"LOCKED_RECOVERY");
+      """,referenceHalfPeriodNs=1000000,onChipOscillator=true,chipParameters=lp)
+    }
     test(s"$name I2C probe tolerates immediate and mid-probe startup at service frequency bounds") {
       val params=p.copy(config=config.copy(programBytes=16,workingRamBytes=16),adc=None)
       for((hz,startup) <- Seq((20000000.0,0),(8000000.0,15000))) {

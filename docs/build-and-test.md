@@ -14,6 +14,7 @@ on PATH. There is no required sibling-checkout path in this build.
 From the repository root:
 
 ```text
+python tools/build_firmware.py --bootstrap
 python tools/sbt.py --bootstrap test
 python tools/sbt.py "fourPhaseBd/runMain riscay.bd.EmitFourPhase build/four-phase-bd"
 python tools/sbt.py "twoPhaseClick/runMain riscay.click.EmitClick build/two-phase-click"
@@ -22,13 +23,20 @@ python tools/sbt.py "twoPhaseClick/runMain riscay.click.EmitClickSoc build/click
 python -m unittest discover -s tools -p "test_*.py" -v
 ```
 
-The bootstrap fetches and checksum-verifies only the pinned sbt launcher. It does
+The sbt bootstrap fetches and checksum-verifies only the pinned sbt launcher. It does
 not install Java, the compiler, the library or a simulator. With sbt already
 installed, the same task strings work directly with `sbt`.
 
+The separate firmware bootstrap extracts pinned RV32E-capable GCC 13.2.0 and
+binutils 2.42 packages under `.tools/`; on Windows it uses Ubuntu WSL. See the
+[firmware guide](../firmware/README.md) for platform prerequisites and budgets.
+FirmwareSpec and the Python linker controls require that compiler; missing tools
+are failures. Subsequent firmware builds do not need `--bootstrap`.
+
 Generated RTL/manifests and simulation evidence remain in ignored `build/`.
-Each SoC emitter also produces `chip/` with internal LF and stoppable fast-source
-boundaries, synthesis black boxes and separately selected simulation models. See
+Each SoC emitter also produces `chip/` with internal LF, stoppable fast-source
+and supply-monitor boundaries, a synthesizable reset sequencer, synthesis black
+boxes and separately selected simulation models. See
 [sleep and clocks](sleep-and-clock.md). The parent export's strict contract
 checks cover the digital SoC; they do not validate the analog black box.
 `CoreSpec` covers arithmetic, signedness, x0, memory widths/lanes, branches/jumps,
@@ -48,6 +56,16 @@ independent watchdog recovery (including a stopped service clock), unprogrammed
 Groundlark boot, protected control outputs, shutdown acknowledgement, minimum-off
 timing and the three-timeout latch. CRC expectations come from Java's CRC32;
 firmware is hand-encoded using test-only assembly helpers.
+
+`FirmwareSpec` adds real compiler-built C images at the full 2 KiB/256-byte
+capacities. Both native SoCs receive each binary through the I2C loader and
+CRC/START_AND_LOCK flow, then execute startup/data/BSS initialization, arithmetic,
+stack frames and retained sleep. Retirement SP writes, a RAM watermark and a
+guard check independently corroborate GCC's stack bounds. These finite generic
+fixtures are not deployment firmware. `test_firmware.py` checks rejection of
+unknown/dynamic/recursive stacks, unsupported ISA and real undersized links.
+Full-capacity compiled-image simulations have a bounded 300-second process
+allowance; other clocked harness tests retain their 90-second default.
 
 `FabricSpec` drives the shared service bus independently of the CPU to check
 response stability under backpressure, exactly-once acceptance, ROM/unmapped
@@ -89,8 +107,8 @@ completion/assertion checks. No skipped/missing simulator is treated as success.
 
 These are initial directed/generated tests, not complete RISC-V architectural
 qualification, complete reset-phase coverage, real Pi validation or silicon
-timing/metastability qualification. A compiler-generated application workload and
-real Pi/analog validation remain subsequent qualification work.
+timing/metastability qualification. Deployment firmware and real Pi/analog
+validation remain subsequent qualification work.
 
 For strict export validation, use the matching chisel-async checkout's tooling
 through the MCU timeout adapter:
@@ -313,3 +331,105 @@ No analog circuit or pinned transistor model changed in this integration, so the
 prior LF SPICE campaign is unchanged rather than reported as rerun. A physical
 fast oscillator, qualified POR/brownout source, LF layout/receiver validation,
 actual Pi-adapter compatibility and whole-chip power measurements remain open.
+
+## Compiled-firmware memory sizing record
+
+On 2026-10-07, all four FirmwareSpec tests passed: two compiler-built RV32E C
+fixtures on each native core, with full 2048-byte program and 256-byte working
+RAM. No test was skipped, canceled or pending. All 18 Python tools tests passed,
+including the four new firmware audit/linker controls. Production RTL did not
+change in this sizing work; the prior digital export results remain applicable
+and are not reported as rerun.
+
+| Fixture | Loaded image | Static RAM | GCC stack bound | Four-phase SP / watermark | Click SP / watermark |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Event loop | 704 B | 16 B | 16 B | 16 / 16 B | 16 / 16 B |
+| Runtime stress | 1204 B | 48 B | 88 B | 88 / 88 B | 88 / 88 B |
+
+Each image includes startup, constants and initialized-data load copies. Both
+SoCs loaded through I2C and checked CRC/start/lock, data/BSS initialization,
+independent arithmetic expectations, a 16-byte guard and state across leased
+WAIT. The terminal EBREAK is intentional for these finite fixtures. No simulator
+preload or substituted handwritten image was used.
+
+The chip models use a 10 MHz service source with the maximum 100 us startup and
+an accelerated 500 Hz LF input to the slow-reference configuration. Nominal LF
+frequency is covered by the separate oscillator-model checks; this campaign
+does not measure analog timing or energy.
+
+The original full-capacity run exceeded the harness's 90-second process limit;
+it is not a pass. The final campaign uses supported repeated STARTs between
+upload frames and a 300-second allowance per compiler/simulator process. It
+preserves full capacity, wire transfers, watchdog behavior and all assertions.
+The four-test suite completed in 12 minutes 49 seconds. Firmware compilation has
+its separate 120-second limit; other clocked tests keep the 90-second default.
+
+The build uses pinned GCC 13.2.0 and binutils 2.42, with `rv32e/ilp32e`, `-Os`,
+no relaxation, M, C, libc or heap. ELF headers report ELF32 little-endian RISC-V,
+RVE and soft-float ABI; disassembly is audited for the implemented instruction
+set and x0-x15. The stack analysis rejects unknown/dynamic frames and recursion.
+Actual links with 1 KiB program storage or 128-byte working RAM are rejected.
+
+Binary SHA-256 values:
+
+- Event loop: `eaad3454c08739d2c4ddb2929e3774b3beabf6bad1df59a79e88401ea73a95f6`.
+- Runtime stress: `21bfa509b6d98eda799bd10ccc2cd6e3f05d76f7cc099d348357043b05cc33d1`.
+
+Maps, ELF/binary/disassembly, source/compiler hashes and reports are under
+`build/firmware/<application>/`; per-variant simulation summaries are alongside
+them and full testbench evidence is under `build/soc-tests/`. These measurements
+support the [memory budget](memory-architecture.md), not arbitrary future
+firmware, physical SRAM integration or power/area claims. Remeasure when the
+application, runtime, flags or compiler changes.
+
+## Clock/reset schematic and integration record
+
+On 2026-10-07, the new [clock/reset circuits](../analog/gf180-clock-reset/README.md)
+passed 157 fast-source SPICE cases, 137 supply-monitor corner/ramp cases, 52
+supply-event cases, and two deliberately broken-circuit controls rejected for
+the expected measurement reasons. Each campaign independently checked nine PDK
+resistor DC points. Netlist/model/report hashes and compact measurement ranges
+are in [measurement-summary.json](../analog/gf180-clock-reset/measurement-summary.json).
+These are schematic experiments, not extracted or statistical qualification.
+
+Targeted digital runs passed 26 Scala tests: eight SleepSpec, seven SocSpec,
+two FabricSpec and nine DeepSleepSpec cases. The latter includes new brownout
+tests during sleep, partial upload and locked execution on both native cores.
+All 28 Python tool tests pass, including production-length reset qualification
+at 8 and 20 MHz and independent negative measurement controls. No skipped test,
+timeout or simulator error is counted as success.
+
+The first wrapper run exposed unknown reset state at simulation startup; the
+supply model now emits an observable startup assertion and manual reset explicitly
+forces the service clock on. Both reset-only and full-chip tests verify recovery.
+The initial brownout fixture also advertised a 32-byte stack while allocating
+16 bytes of RAM; the loader correctly rejected it. That fixture now allocates
+32 bytes and both complete brownout scenarios pass. Other previously passing
+cases were retained. Firmware capacities, instruction RTL and memory banks did
+not change; the compiled FirmwareSpec corpus was not rerun in this clock/reset
+turn. Its earlier results remain recorded above.
+
+Both production-capacity exports were regenerated and passed
+`--soc --vector-coverage --sleep-clock`: four-phase has 152 endpoints and
+25,247,808 mapping checks; Click has 126 endpoints and 20,377,980 checks.
+Their semantic hashes remain `780d2d89b133315f5e1c617d635fbdc6046dec34ac9ff1f699e9765059721604`
+and `5ab5492d57e657e079ccbfc24aa629affdd870f8f0bb95b1b5af9dfcda24c96e`.
+Evidence is under `build/four-phase-reset-soc` and `build/click-reset-soc`.
+The new wrapper/reset logic is tested separately; the strict inner-SoC contract
+does not characterize analog IP.
+
+```text
+python tools/sbt.py "verification/testOnly riscay.SleepSpec riscay.DeepSleepSpec riscay.SocSpec riscay.FabricSpec"
+python -m unittest discover -s tools -p "test_*.py"
+python3 analog/gf180-clock-reset/characterize.py --suite clock --output build/clock-check
+python3 analog/gf180-clock-reset/characterize.py --suite monitor --output build/monitor-check
+python3 analog/gf180-clock-reset/characterize.py --suite supply-events --output build/supply-check
+python3 analog/gf180-clock-reset/characterize.py --suite controls --output build/clock-reset-controls
+```
+
+The LF schematic and its transistor models remain unchanged. The common model
+preparation helper now uses atomic writes to prevent concurrent readers seeing
+a truncated library; the transformation and prepared-model hash are unchanged.
+Physical estimates are the next proposed stage and should use the selected
+flip-flop memories. No synthesis area, whole-chip power or layout estimate is
+claimed by this clock/reset work.

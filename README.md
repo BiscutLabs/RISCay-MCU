@@ -22,9 +22,11 @@ Groundlark controller is a separate profile.
 Both variants use **on-chip boot ROM, executable RAM and working RAM**. No external
 memory chip is required. A host may reload firmware after complete power loss.
 Groundlark's bootstrap must first qualify supply and power its Pi; other profiles
-define their own startup behavior. Groundlark provisionally uses 2 KiB application
-RAM plus 256 bytes working RAM and a 12-byte boot ROM. Capacities are build
-parameters; SRAM mapping and compiled application sizing are later work. See the
+define their own startup behavior. Groundlark uses a baseline of 2 KiB application
+RAM plus 256 bytes working RAM and a 12-byte boot ROM. Compiler-built RV32E
+[sizing fixtures](firmware/README.md) support that budget, with a 128-byte stack
+reserve and 16-byte guard inside working RAM. Capacities remain build parameters;
+both writable banks use flip-flop storage. See the
 [memory architecture](docs/memory-architecture.md).
 
 The common host interface reports device/loader state, generic measurements and
@@ -47,9 +49,11 @@ single ticks; conversion to nominal milliseconds happens after synchronization.
 Programmable sensing, bounded sleep leases, status and programming lock survive
 sleep. Generated chip wrappers contain both oscillator boundaries and need no
 external clock pins. An address-only I2C wake probe and 100 us wait restart the
-fast source without another pin. The fast oscillator is an executable timing
-contract and synthesis black box; its physical implementation, qualified POR,
-LF layout and whole-chip power measurements remain outstanding. See
+fast source without another pin. The [clock/reset circuits](analog/gf180-clock-reset/README.md)
+include a transistor-level fast oscillator and supply monitor, plus a synthesizable
+5 ms minimum reset hold. Both wrappers connect these internally. Schematic SPICE
+and digital integration tests are separate from layout, extracted qualification
+and whole-chip power measurements, which remain outstanding. See
 [sleep and clocks](docs/sleep-and-clock.md) for timing bounds and host requirements.
 
 See the [implemented SoC contract](docs/soc-contract.md) for the wire protocol,
@@ -82,8 +86,8 @@ additional architecture variants are on hold.
 The [Groundlark I/O contract](docs/groundlark-io.md) maps battery sensing, shutdown,
 halt acknowledgement, and power-on control. The reference digital build uses a
 separate three-signal SPI ADC; physical pads and analog integration remain open.
-Compiled memory budgets and power/area benefits are not
-yet measured.
+Compiled memory budgets are recorded in the [memory architecture](docs/memory-architecture.md).
+Physical power/area benefits are not yet measured.
 
 Project licensing is recorded in [LICENSE](LICENSE). Reused third-party material
 retains its own license and attribution.

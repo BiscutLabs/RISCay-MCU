@@ -1,0 +1,126 @@
+{
+  "scope": "SCHEMATIC_ONLY_NOT_PHYSICAL_SIGNOFF",
+  "date": "2026-10-07",
+  "campaigns": [
+    {
+      "suite": "clock",
+      "cases": 157,
+      "passed": true,
+      "report_path": "build/clock-reset-clock-01/report.json",
+      "report_sha256": "139ece1dcc56526a5493f25d87e94f1d4a25b96a3a30dc7e0edb5f60a76ebde7",
+      "generator_sha256": "20595de80816ac5eb010c7808866079f310302304355101455ba81ce73c2537d",
+      "checker_sha256": "3b98d9878aacc3644854afb2acbecdbb63ec99e55997f3d5dfbb2dfa6ce37ea9",
+      "prepared_model_sha256": "93e54011b0d1f75c19fbb80a3f91b6d60a5f43cc1a2cfbee5cb7b5108b1fe6fd",
+      "netlist_sha256": [
+        "bedf56c25db1040d69abec0a0d37bc4b5653bffe647c6334dc3353cb22aacf17"
+      ],
+      "metrics": {
+        "hz": {
+          "minimum": 8624639.095348515,
+          "maximum": 17047798.06112953
+        },
+        "startup_ns": {
+          "minimum": 31.31186290610509,
+          "maximum": 63.99938534072528
+        },
+        "minimum_high_ns": {
+          "minimum": 29.366258460255136,
+          "maximum": 56.64687809302584
+        },
+        "minimum_low_ns": {
+          "minimum": 29.246851299366313,
+          "maximum": 60.35885448558145
+        },
+        "active_current_a": {
+          "minimum": 2.787388431974684e-05,
+          "maximum": 0.00010759863997063277
+        },
+        "stopped_current_a": {
+          "minimum": 1.904732827824867e-11,
+          "maximum": 2.087469050558023e-08
+        }
+      }
+    },
+    {
+      "suite": "monitor",
+      "cases": 137,
+      "passed": true,
+      "report_path": "build/clock-reset-monitor-05/report.json",
+      "report_sha256": "d36f28446395afec85296d25bfcca03ff442526d2fa85573b42098fcfbe7d6bb",
+      "generator_sha256": "20595de80816ac5eb010c7808866079f310302304355101455ba81ce73c2537d",
+      "checker_sha256": "13014d15649906221d5df92266162f8e404251287669687b9bd498b74a29b6f6",
+      "prepared_model_sha256": "93e54011b0d1f75c19fbb80a3f91b6d60a5f43cc1a2cfbee5cb7b5108b1fe6fd",
+      "netlist_sha256": [
+        "7b832d49f9efba121b3ec6da6a50db78dc4112f2c260db85f0ac7b389e271860"
+      ],
+      "metrics": {
+        "release_v": {
+          "minimum": 3.1178778547059793,
+          "maximum": 3.2390576032088214
+        },
+        "brownout_v": {
+          "minimum": 3.020178024410879,
+          "maximum": 3.138243345735155
+        },
+        "hysteresis_v": {
+          "minimum": 0.0657555784925532,
+          "maximum": 0.1339950344305616
+        },
+        "supply_current_a": {
+          "minimum": 1.53496444921978e-06,
+          "maximum": 4.125270314064705e-06
+        },
+        "unsafe_startup_high_us": {
+          "minimum": 0.0,
+          "maximum": 630.2239871100006
+        }
+      }
+    },
+    {
+      "suite": "supply-events",
+      "cases": 52,
+      "passed": true,
+      "report_path": "build/clock-reset-events-03/report.json",
+      "report_sha256": "99ed4df2d51685b25f75f8a266a981072b60af539b9b2e089eb6400aaf89f9f2",
+      "generator_sha256": "20595de80816ac5eb010c7808866079f310302304355101455ba81ce73c2537d",
+      "checker_sha256": "13014d15649906221d5df92266162f8e404251287669687b9bd498b74a29b6f6",
+      "prepared_model_sha256": "93e54011b0d1f75c19fbb80a3f91b6d60a5f43cc1a2cfbee5cb7b5108b1fe6fd",
+      "netlist_sha256": [
+        "7b832d49f9efba121b3ec6da6a50db78dc4112f2c260db85f0ac7b389e271860"
+      ],
+      "metrics": {
+        "supply_current_a": {
+          "minimum": 1.5882022566293076e-06,
+          "maximum": 2.4040586344289566e-06
+        },
+        "unsafe_startup_high_us": {
+          "minimum": 0.0,
+          "maximum": 1030.0000000000014
+        },
+        "response_us": {
+          "minimum": 39.844590483032945,
+          "maximum": 62.01430199073103
+        }
+      }
+    },
+    {
+      "suite": "controls",
+      "cases": 2,
+      "passed": true,
+      "report_path": "build/clock-reset-controls-final/report.json",
+      "report_sha256": "a4e38862b7ef08bc2ef6309eeb95ac79be228c48e86f41b0bea001b0c48d6fe2",
+      "generator_sha256": "20595de80816ac5eb010c7808866079f310302304355101455ba81ce73c2537d",
+      "checker_sha256": "e9e7d380ddc218b4ad72b1f7116f322e4f545e1b6c2efd3df0762b066ec5665e",
+      "prepared_model_sha256": "93e54011b0d1f75c19fbb80a3f91b6d60a5f43cc1a2cfbee5cb7b5108b1fe6fd",
+      "netlist_sha256": [
+        "a6c2baddc5f4024be513191ecd1385379d6d5e54206fdeb26f4e9112041eddfa",
+        "bedf56c25db1040d69abec0a0d37bc4b5653bffe647c6334dc3353cb22aacf17"
+      ],
+      "metrics": {}
+    }
+  ],
+  "canonical_netlists": {
+    "riscay_service_osc_gf180.spice": "bedf56c25db1040d69abec0a0d37bc4b5653bffe647c6334dc3353cb22aacf17",
+    "riscay_supply_monitor_gf180.spice": "7b832d49f9efba121b3ec6da6a50db78dc4112f2c260db85f0ac7b389e271860"
+  }
+}

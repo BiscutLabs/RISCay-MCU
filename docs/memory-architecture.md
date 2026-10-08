@@ -7,29 +7,64 @@ no external memory chip is required. Boot behavior and capacities belong to an
 must start its Pi without depending on that application. Both SoCs now contain
 the memories and loader; see the [implemented SoC contract](soc-contract.md).
 
-## Initial Groundlark configuration
+## Groundlark sizing budget
 
-| Storage | Provisional capacity | Implementation |
+| Storage | Selected baseline capacity | Implementation |
 | --- | --- | --- |
 | Bootstrap, loader and minimum power policy | 12-byte boot ROM plus fixed logic | ROM waits for the image; permanent loader and board controller operate independently of application code |
-| Application firmware, constants and startup image | 2 KiB | On-chip executable RAM loaded by the Pi; lost after total power loss |
+| Application firmware, constants and startup image | 2 KiB | On-chip flip-flop RAM loaded by the Pi; lost after total power loss |
 | Application data and stack | 256 bytes | On-chip flip-flop bank behind a replaceable memory interface |
 | Architectural registers and control | x1-x15 contain 480 bits; additional PC/control and pipeline storage | Protocol-appropriate standard-cell storage; x0 is constant |
 
-Measure compiler-built applications before freezing RAM capacities. The minimal
-ROM is three RV32E instructions; power policy is fixed logic in this baseline.
+Keep **2 KiB program RAM and 256 bytes working RAM** as the baseline. The
+[compiled sizing fixtures](../firmware/README.md) provide repeatable code/data/stack
+measurements; actual future application changes must pass these budget checks.
+The minimal ROM is three RV32E instructions; power policy is fixed logic in this baseline.
 SRAM and flip-flops are volatile; fixed ROM survives power loss and cannot be
 rewritten by the Pi. A RAM image loaded only by a simulator is not a hardware
 loader. Pi transfer into executable RAM is now required; persistent updates and
 embedded flash remain on hold.
 
-The earlier flip-flop recommendation covered only 256 bytes of working RAM. With
-2 KiB of writable program storage, total provisional RAM is now 2.25 KiB (18,432
-bits), making SRAM a stronger physical candidate. Use portable storage for RTL
-bring-up, then compare available macros against complete standard-cell banks.
+The selected implementation uses **flip-flops for both writable banks**, totaling
+2.25 KiB (18,432 data bits). Memory sizing did not authorize an SRAM substitution.
+Physical estimates should map the complete flip-flop banks, including their
+read muxes, write decoding and clocks.
 Keep memory separate from the CPU's circulating state token. Both protocol
 variants must use the same backend, capacity and firmware for each comparison;
 count their wrappers in the results.
+
+The 256-byte working RAM budget includes static application data, a 16-byte guard,
+and a 128-byte reserved downward-growing stack. It has no heap or interrupt stack.
+CPU architectural/handshake state, loader state, measurement registers and the
+existing 64-word MMIO application bank are separate hardware storage; these
+program/data capacities are not a count of every flip-flop in the MCU.
+
+Compiler sizing with pinned GCC 13.2.0, `rv32e/ilp32e`, `-Os`:
+
+| Workload | Loaded program image | Static working RAM | Static maximum stack | Guard | RAM including measured bound |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Finite event loop | 704 B | 16 B | 16 B | 16 B | 48 B |
+| Runtime stress fixture | 1204 B | 48 B | 88 B | 16 B | 152 B |
+
+The larger image leaves **844 bytes (41.2%)** of program headroom. Reserving 128
+stack bytes, rather than just its 88-byte bound, uses 192 RAM bytes including
+static data and guard, leaving **64 bytes** uncommitted. A 1 KiB program budget
+cannot hold that workload; 128 bytes of working RAM cannot hold its static data,
+stack bound and guard. The linker negative controls deliberately reject both.
+There is no measured reason to increase either baseline capacity. These finite
+fixtures exercise useful runtime paths but are not the final Groundlark application.
+
+The measured stress call chain uses `main` (12), `batch` (32), `transform` (44)
+and `divide` (0), totaling 88 stack bytes. Startup uses no stack. The report includes load
+copies of `.data` in program size and both `.data` and `.bss` in static RAM size;
+it does not confuse ELF file size or debug metadata with on-chip storage.
+
+On 2026-10-07, both binaries passed real I2C upload and execution on both native
+SoCs at these full capacities. The independent retirement-SP monitor and RAM
+watermark both measured 16 bytes for the event loop and 88 bytes for the stress
+fixture, matching the compiler bounds. Initialization, arithmetic, guard,
+sleep-retained state and programming lock checks passed. See the
+[verification record](build-and-test.md#compiled-firmware-memory-sizing-record).
 
 ## Groundlark cold-start and loading sequence
 
@@ -37,10 +72,10 @@ count their wrappers in the results.
    The MCU enters permanent boot ROM without a dedicated boot-mode pin.
 2. Bootstrap checks supply and battery validity, confirmation and restart timing
    using an ADC/timebase available with the Pi off. It needs qualified minimum
-   policy in ROM; the Pi cannot supply those initial startup decisions.
+   policy in fixed hardware; the Pi cannot supply those initial startup decisions.
 3. When permitted, bootstrap enables Pi power and continues essential battery,
    timeout and watchdog supervision. A blank application must not prevent this.
-4. The Pi boots from its own storage and sends the application through the proposed
+4. The Pi boots from its own storage and sends the application through the implemented
    two-wire I2C target interface, after reading status. If a validated application
    survived a Pi-only restart, the host does not overwrite it. See the
    [pin budget](groundlark-io.md) and [loader contract](loader-status-and-lock.md).
@@ -71,7 +106,7 @@ decide whether Pi power is allowed without requiring a valid application or an
 upload. A full MCU reset clears the lock and image-valid flag even if RAM bits
 physically remain. A Pi-only reset/power cycle clears neither.
 
-## SRAM versus flip-flops
+## Earlier SRAM comparison (not the selected implementation)
 
 SRAM is a strong candidate when storage grows, but its peripheral circuitry can
 be significant for a tiny array. As an illustrative GF180 comparison, its
@@ -87,6 +122,20 @@ or select a winner, and do not freeze GF180 as the process. Compare
 complete mapped implementations, including controllers, timing closure and
 standby leakage at the intended voltage and temperature. For this supervisor,
 energy per wake and standby consumption matter more than peak bandwidth.
+
+For the selected capacity, four 512-by-8 macros could form a 512-by-32 program
+bank (2 KiB). Their combined published area is approximately **0.8376 mm2**.
+Adding one 256-by-8 data macro gives approximately **0.9848 mm2** of macro area,
+before interfaces, power routing and placement margins. The data macro would
+need byte sequencing for 32-bit accesses. These are calculated candidates,
+not a mapped implementation or a power result.
+[512-by-8 datasheet](https://gf180mcu-pdk.readthedocs.io/en/latest/IPs/SRAM/gf180mcu_fd_ip_sram/cells/gf180mcu_fd_ip_sram__sram512x8m8wm1/gf180mcu_fd_ip_sram__sram512x8m8wm1.html),
+[256-by-8 datasheet][sram].
+
+At the cited DFF cell area, the same 18,432 data bits alone occupy about
+**1.1734 mm2**, before the standard-cell RAM's muxes, decoding and clocks.
+These earlier comparisons do not change the flip-flop decision. No SRAM macro
+has been instantiated; an SRAM experiment would require a separate scope change.
 
 ## Async integration and initialization
 

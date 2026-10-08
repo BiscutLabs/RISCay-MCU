@@ -61,12 +61,12 @@ every analog or timing function to be integrated on the MCU die.
 | Required | Program storage and boot | 12-byte permanent on-chip boot ROM, fixed loader and permanent profile controller. Configurable on-chip executable RAM, initially 2 KiB for Groundlark. A host supplies the image after power loss. No external memory chip; fixed ROM is not reprogrammable. |
 | Required | Host firmware loader | I2C target initially; common device/loader ABI, explicit image/application compatibility, transfer bounds and validation. Groundlark shares its Pi's existing bus; other hosts use the same protocol. Profile bootstrap keeps required control functions active while loading. |
 | Required | Loader status and programming lock | Readable mode, validated-image flag, running state, programming availability, lock and last error on the same host interface. Hardware lock blocks image/metadata modification until full MCU reset or MCU power loss; Pi reboot and I2C reset do not clear it. See the [loader contract](loader-status-and-lock.md). |
-| Required | Data RAM | On-chip, provisional 256 bytes for application state and stack, separately from program RAM and architectural registers. Portable flip-flop implementation initially; evaluate SRAM for the combined writable-memory capacity. Explicit initialization, byte writes, alignment and access-error behavior. Size from measured stack/state use. |
+| Required | Data RAM | On-chip, 256-byte Groundlark baseline for application state and stack, separately from program RAM and architectural registers. Compiled sizing fixtures support a 128-byte stack reserve plus 16-byte guard within that budget. Both writable banks use flip-flops. Explicit initialization, byte writes, alignment and access-error behavior. Recheck budgets when firmware changes. |
 | Required | Memory/MMIO fabric | Small address decoder and request/response interfaces with one outstanding transaction; defined ordering, byte enables, errors and commit points. Avoid a full bus fabric unless an actual peripheral requires it. |
 | Required | Generic GPIO | Input, output and output-enable vectors with profile-defined roles, qualification and safe reset values. Groundlark binds three GPIOs to power enable, shutdown request and ACK_N; both protocols use identical bindings. |
 | Groundlark required | Battery measurement frontend | 12-bit receive-only SPI ADC controller and generic measurement channel 0. Default conversion is nominal/uncalibrated. Analog frontend qualification remains; another profile may have zero analog channels. |
 | Required | Independent timebase and deadlines | Low-frequency tick input or oscillator/RTC subsystem, monotonic counter and next-deadline compare. Supports sampling, voltage confirmation, shutdown timeout and minimum off interval while the CPU is inactive. |
-| Required | Retained sleep | Implemented slow-tick timebase, stopped service-source control, I2C wake probe, wake masks, finite watchdog-serviced sleeps and programmable sampling. See [sleep and clocks](sleep-and-clock.md). The [GF180 LF candidate](../analog/gf180-lf-osc/README.md) supplies nominal timing; physical qualification, POR and a fast oscillator macro remain. |
+| Required | Retained sleep | Implemented slow-tick timebase, stopped service-source control, I2C wake probe, wake masks, finite watchdog-serviced sleeps and programmable sampling. See [sleep and clocks](sleep-and-clock.md). LF, fast oscillator and supply-monitor schematic candidates exist; chip wrappers implement reset qualification. Layout and physical qualification remain. |
 | Required | Event capture and wait | Pending event bits, atomic acknowledge and a blocking MMIO wait candidate; no lost wakeup when event, clear and sleep coincide. Defined pulse-width or held-level contracts at every input. |
 | Required | Independent watchdog | Detect stalled CPU/firmware and recover while the core is quiescent or a transaction is stuck. To cover loss of the primary timebase, it needs a separate reference or an external watchdog. |
 | Required | Reset and output policy | Power-on/brownout input, reset distribution and handshake initialization. Reset forces RUN off in the Groundlark compatibility profile; retained RUN is on hold. |
@@ -206,8 +206,9 @@ they are not supplied merely by generating RTL.
 
 1. Freeze the Groundlark signal/policy profile and MCU execution environment.
    Use identical fail-off reset and bounded shutdown-timeout behavior in both designs.
-2. Build a compiler-generated RV32E application corpus. Retain ELF, image, map,
-   disassembly, helper routines and stack measurements; adjust memory budgets.
+2. Extend the [compiler-built RV32E sizing corpus](../firmware/README.md) as actual
+   application requirements grow. Retain ELF, image, map, disassembly, helper
+   routines and stack measurements; enforce or revise memory budgets.
    Baseline supervisor policy already runs in fixed logic.
 3. Implement CPU and peripheral contracts with independent instruction and
    supervisor-policy references. Reused production C tests establish porting
@@ -227,7 +228,7 @@ they are not supplied merely by generating RTL.
 
 Core, native-routing, host/schema, shared fabric and complete generic/Groundlark
 SoC suites are implemented; see [build and test](build-and-test.md). Full ISA,
-exhaustive reset/timing, compiler-workload and board qualification remain. Core
+exhaustive reset/timing, deployment-firmware and board qualification remain. Core
 tests alone are not whole-chip acceptance.
 
 ## Source snapshot

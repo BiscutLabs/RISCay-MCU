@@ -17,7 +17,8 @@
   `docs/sleep-and-clock.md`; run SleepSpec, DeepSleepSpec and oscillator-model tests as well.
   Preserve the cold-boot policy, programming lock and watchdog fault coverage.
   An oscillator model or synthesis black box is not implemented analog IP.
-- Analog oscillator work lives in `analog/gf180-lf-osc/`. Preserve upstream
+- LF analog work lives in `analog/gf180-lf-osc/`; fast clock and supply reset in
+  `analog/gf180-clock-reset/`. Preserve upstream
   attribution and pinned model hashes. Run its independent measurement controls
   and SPICE campaigns after circuit changes; document any model transformation.
   Never bind a slower analog candidate to the 4 kHz timer without updating its
@@ -25,6 +26,11 @@
   Source-stopping builds require the documented address-only I2C wake probe;
   preserve its startup/hold bounds and do not claim the fast-source model is
   implemented analog IP. LF reset is POR-only, never watchdog-generated reset.
+  The fast source must run during reset qualification, independently of the
+  held SoC/LF reset. Keep the >=5 ms continuous-good hold and asynchronous assertion.
+  Test real hold counts separately from accelerated full-SoC regressions.
+- Both writable memories use flip-flop banks. Preserve the selected 2 KiB program
+  and 256-byte working RAM baseline; SRAM substitution is outside current scope.
 - Groundlark's permanent controller owns its power GPIOs. Keep its default policy
   disabled until qualified board/battery values are deliberately supplied.
 - Optional features are on hold. Follow `docs/features-and-ip.md` and
@@ -45,5 +51,8 @@
   Test reset, stalls and exactly-once effects, not only instruction arithmetic.
 - Keep generated RTL, tools, simulator logs and test evidence under ignored
   `.tools/`, `build/` or `target/` directories. Pin dependencies and record limits.
+- Firmware and memory budgets live in `firmware/`; run FirmwareSpec and the
+  firmware Python controls after changing its runtime, workloads or capacities.
+  Preserve real I2C uploads, both native variants and independent stack evidence.
 - Update README and affected contracts when behavior or implementation status
   changes. Communicate succinctly and distinguish implemented IP from planned IP.

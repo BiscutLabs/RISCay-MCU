@@ -1,0 +1,47 @@
+* SPDX-License-Identifier: Apache-2.0
+* GF180 bandgap-referenced supply monitor; schematic candidate.
+* All timing/storage caps are MOS devices. No ideal sources inside macro.
+.subckt riscay_supply_monitor_gf180 vdd vss good
+Xq1 vss vss e1 vpnp_0p42x5
+Xq2_0 vss vss e2 vpnp_0p42x5
+Xq2_1 vss vss e2 vpnp_0p42x5
+Xq2_2 vss vss e2 vpnp_0p42x5
+Xq2_3 vss vss e2 vpnp_0p42x5
+Xq2_4 vss vss e2 vpnp_0p42x5
+Xq2_5 vss vss e2 vpnp_0p42x5
+Xq2_6 vss vss e2 vpnp_0p42x5
+Xq2_7 vss vss e2 vpnp_0p42x5
+Xq3 vss vss e3 vpnp_0p42x5
+Xptat sense2 e2 vss ppolyf_u_3k r_width=1u r_length=158.98u
+Xgain vref e3 vss ppolyf_u_3k r_width=1u r_length=1511.9u
+Xb1 e1 pbias vdd vdd pmos_3p3 w=2u l=4u ad=1p as=1p pd=5u ps=5u
+Xb2 sense2 pbias vdd vdd pmos_3p3 w=2u l=4u ad=1p as=1p pd=5u ps=5u
+Xb3 vref pbias vdd vdd pmos_3p3 w=2u l=4u ad=1p as=1p pd=5u ps=5u
+Xtail tail pbias vdd vdd pmos_3p3 w=4u l=4u ad=2p as=2p pd=9u ps=9u
+Xip mirror e1 tail vdd pmos_3p3 w=8u l=2u ad=4p as=4p pd=17u ps=17u
+Xin ampout sense2 tail vdd pmos_3p3 w=8u l=2u ad=4p as=4p pd=17u ps=17u
+Xmp mirror mirror vss vss nmos_3p3 w=2u l=4u ad=1p as=1p pd=5u ps=5u
+Xmn ampout mirror vss vss nmos_3p3 w=2u l=4u ad=1p as=1p pd=5u ps=5u
+Xgainstage pbias ampout vss vss nmos_3p3 w=2u l=4u ad=1p as=1p pd=5u ps=5u
+Xgainload pbias pbias vdd vdd pmos_3p3 w=2u l=4u ad=1p as=1p pd=5u ps=5u
+Xstartup pbias vss vss ppolyf_u_3k r_width=1u r_length=9549.81u
+Xcomp vss pbias vss vss nmos_3p3 w=20u l=10u ad=10p as=10p pd=41u ps=41u
+Xmiller ampout pbias ampout vss nmos_3p3 w=40u l=10u ad=20p as=20p pd=81u ps=81u
+Xampcomp vss ampout vss vss nmos_3p3 w=40u l=10u ad=20p as=20p pd=81u ps=81u
+Xtop vdd sense vss ppolyf_u_3k r_width=1u r_length=534.614u
+Xbottom sense vss vss ppolyf_u_3k r_width=1u r_length=318.147u
+Xhysteresis good sense vss ppolyf_u_3k r_width=1u r_length=25466.5u
+Xcbiasp cbias pbias vdd vdd pmos_3p3 w=2u l=4u ad=1p as=1p pd=5u ps=5u
+Xcbiasn cbias cbias vss vss nmos_3p3 w=2u l=4u ad=1p as=1p pd=5u ps=5u
+Xctail ctail cbias vss vss nmos_3p3 w=4u l=4u ad=2p as=2p pd=9u ps=9u
+Xcp cmirror vref ctail vss nmos_3p3 w=8u l=2u ad=4p as=4p pd=17u ps=17u
+Xcn cresult sense ctail vss nmos_3p3 w=8u l=2u ad=4p as=4p pd=17u ps=17u
+Xclp cmirror cmirror vdd vdd pmos_3p3 w=4u l=4u ad=2p as=2p pd=9u ps=9u
+Xcln cresult cmirror vdd vdd pmos_3p3 w=4u l=4u ad=2p as=2p pd=9u ps=9u
+Xdecisionp decision cresult vdd vdd pmos_3p3 w=0.44u l=10u ad=0.22p as=0.22p pd=1.88u ps=1.88u
+Xdecisionn decision cresult vss vss nmos_3p3 w=0.22u l=10u ad=0.11p as=0.11p pd=1.44u ps=1.44u
+Xgood0p decision_b decision vdd vdd pmos_3p3 w=0.5u l=0.28u ad=0.25p as=0.25p pd=2u ps=2u
+Xgood0n decision_b decision vss vss nmos_3p3 w=0.25u l=0.28u ad=0.125p as=0.125p pd=1.5u ps=1.5u
+Xgood1p good decision_b vdd vdd pmos_3p3 w=2u l=0.28u ad=1p as=1p pd=5u ps=5u
+Xgood1n good decision_b vss vss nmos_3p3 w=1u l=0.28u ad=0.5p as=0.5p pd=3u ps=3u
+.ends riscay_supply_monitor_gf180

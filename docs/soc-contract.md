@@ -210,6 +210,14 @@ safe and holds the system reset until it resumes. I2C needs that clock to respon
 after recovery the reset reason and invalid/never-sampled state expose the loss
 of continuity. Stopping both clocks is outside this digital watchdog's coverage.
 
+The emitted chip wrapper adds an on-die supply monitor and qualified POR around
+these portable inner-SoC reset ports. Brownout or the manual reset input asserts
+reset without either clock; release requires 100,000 consecutive fast cycles
+after qualification (at least 5 ms). Fast-clock enable is forced during that
+hold, while LF reset remains asserted. Watchdog resets do not reset the LF
+oscillator or this POR counter. See [clock/reset circuits](../analog/gf180-clock-reset/README.md)
+for supply thresholds, detection latency and physical limitations.
+
 ## Groundlark permanent policy
 
 [GroundlarkSupervisor](../profiles/src/main/scala/riscay/profiles/GroundlarkSupervisor.scala)

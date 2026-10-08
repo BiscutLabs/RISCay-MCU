@@ -10,15 +10,15 @@ MODEL = ROOT / "soc/src/main/resources/riscay/riscay_service_osc_model.sv"
 
 
 class ServiceOscillatorTest(unittest.TestCase):
-    def simulate(self, body, parameters="", rejected=False):
+    def simulate(self, body, parameters=".NOMINAL_HZ(10000000)", rejected=False):
         output = ROOT / "build/oscillator-tests"
         output.mkdir(parents=True, exist_ok=True)
         with tempfile.TemporaryDirectory(dir=output) as tmp:
             base = Path(tmp)
             (base / "test.sv").write_text("""module Testbench;
 timeunit 1ns; timeprecision 1ps;
-reg enable=0; wire clk; integer edges=0, saved; real lastRise=0, startTime;
-riscay_service_osc #(%s) dut(enable,clk);
+reg rst_n=1; reg enable=0; wire clk; integer edges=0, saved; real lastRise=0, startTime;
+riscay_service_osc #(%s) dut(rst_n,enable,clk);
 always @(posedge clk) begin edges=edges+1; lastRise=$realtime; end
 always @(negedge clk) if(lastRise > 0 && $realtime-lastRise < 49.999) $fatal(1,"RUNT_HIGH_PULSE");
 initial begin #2000000; $fatal(1,"TIMEOUT"); end
