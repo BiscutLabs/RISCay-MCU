@@ -39,12 +39,12 @@ copy. `.bss`, stack and guard occupy working RAM, not the uploaded image.
 ## Runtime and budgets
 
 [memory.json](memory.json) records the Groundlark sizing budget: 2048 program
-bytes, 256 working-RAM bytes, a 128-byte stack reserve and a 16-byte guard.
+bytes, 1024 working-RAM bytes, a 128-byte stack reserve and a 16-byte guard.
 `FirmwareSpec` checks these against the actual SoC configuration. The linker
 rejects images or static data/guard/stack reservations that do not fit. The build
 also rejects unsupported instruction encodings/registers, unresolved or dynamic
 stack frames, recursive call graphs and a static bound above the reserved stack.
-The reserve is headroom, not another allocation beyond the 256-byte RAM.
+The reserve is headroom, not another allocation beyond the 1 KiB RAM.
 
 `startup.S` runs from validated program RAM, sets SP, copies `.data` from its
 program-RAM load address, clears `.bss`, initializes the guard and fills remaining

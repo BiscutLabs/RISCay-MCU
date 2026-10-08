@@ -22,7 +22,7 @@ object Groundlark {
       PinRole(2, "pi_halted_n", output = false, activeLow = true)))
 
   val configuration = McuConfiguration(
-    programBytes = 2048, workingRamBytes = 256, gpioCount = 3,
+    programBytes = 2048, workingRamBytes = 1024, gpioCount = 3,
     measurements = Vector(MeasurementChannel(0, "battery_voltage", MeasurementUnit.Volt, -3)),
     application = application)
 }

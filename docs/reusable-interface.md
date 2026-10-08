@@ -29,7 +29,7 @@ little-endian words and coherent snapshots with supported-word bits; see the
 
 | Space | Service | Addressing |
 | --- | --- | --- |
-| 0x00 | Device identity/build information | Instance 0; ABI version, application ID/version, program/working-RAM capacities, GPIO/channel counts and reset reason |
+| 0x00 | Device identity/build information | Instance 0; ABI version, application ID/version, program/working-RAM capacities, GPIO/channel counts, reset reason and retained crash count |
 | 0x01 | Loader status | Instance 0; MODE, PROGRAMMED, PROGRAM_LOCKED, CAN_PROGRAM, BUSY, LAST_ERROR, IMAGE_ID, RECEIVED_BYTES |
 | 0x02 | Measurements | Instance is channel; VALUE, FLAGS, AGE_MS, SEQUENCE, UNIT, SCALE10 |
 | 0x03 | Timing and sleep | Instance 0; FEATURES, NOW_MS, SAMPLE_PERIOD_MS, WAKE_MASK, SLEEP_REMAINING_MS, PENDING, SLEEP_ENTRIES, TIMING_STATUS |

@@ -11,6 +11,7 @@ import riscay.soc._
 class FabricFixture(p: SocParameters) extends SocTop(p, x => new GenericBoard(x)) {
   val request = IO(Flipped(Decoupled(new MemoryRequest)))
   val response = IO(Decoupled(new MemoryResponse))
+  val timeNow = IO(Output(UInt(32.W))); timeNow := fabric.io.now
   fabric.io.request <> request; response <> fabric.io.response
   trace := 0.U.asTypeOf(new Retirement); traceEvent := false.B
   contract.clockedChannel("request", request, serviceClock, new Channel(new MemoryRequest, resetDomain), "input")
@@ -20,6 +21,17 @@ class FabricFixture(p: SocParameters) extends SocTop(p, x => new GenericBoard(x)
 class KickFixture(p: SocParameters) extends FabricFixture(p) {
   val ack = IO(Input(Bool())); val heartbeat = IO(Output(Bool()))
   fabric.io.watchdogAck := ack; heartbeat := fabric.io.heartbeat
+}
+
+class WaitValidationFixture(p: SocParameters) extends FabricFixture(p) {
+  val sleepEligible = IO(Output(Bool())); sleepEligible := fabric.io.canSleep
+}
+
+class ResetCrossingFixture(p: SocParameters) extends FabricFixture(p) {
+  val heartbeatEnabled = IO(Input(Bool()))
+  val resetObserved = IO(Output(Bool())); resetObserved := cpuResetActive
+  val gatedClock = IO(Output(Clock())); gatedClock := workClock
+  watchdog.io.heartbeat := Mux(heartbeatEnabled, fabric.io.heartbeat, false.B)
 }
 
 class FabricSpec extends AnyFunSuite {
@@ -53,6 +65,135 @@ task write_bus(input [31:0] address, input [31:0] value);
 begin issue(2,address,value,15); answer(0,0,3); end endtask
 reg [31:0] timeValue;
 """
+  test("invalid boot/WAIT read masks fault promptly without parking or consuming events and leases") {
+    val params = SocParameters(config, watchdogCycles=1000000, lowPower=Some(LowPowerParameters()))
+    ClockedSimulation.run(new WaitValidationFixture(params), "wait-validation", """
+      // Freeze the timebase before its first edge so a lease cannot age and
+      // no periodic event can accidentally release a malformed WAIT.
+      referenceEnabled=0;
+      write_bus(32'h30000038,4);
+      for(eventCase=0;eventCase<2;eventCase=eventCase+1) begin
+        write_bus(32'h3000000c,32'hffffffff);
+        if(eventCase==1) begin gpioIn=1; #1000; end
+        write_bus(32'h3000003c,30000);
+        for(badMask=0;badMask<15;badMask=badMask+1) begin
+          reject_read(32'h30000000,badMask);
+          reject_read(32'h30000010,badMask);
+          issue(1,32'h3000003c,0,15); answer(30000,0,2);
+          issue(1,32'h3000000c,0,15); answer(eventCase==0 ? 0 : 4,0,2);
+        end
+      end
+      // A valid WAIT must still consume the lease and return the GPIO event.
+      issue(1,32'h30000010,0,15); answer(4,0,2);
+      issue(1,32'h3000003c,0,15); answer(0,0,2);
+    """, tasks+"""
+integer eventCase,badMask;
+task reject_read(input [31:0] address, input [3:0] mask);
+integer cycles; reg accepted; begin
+  @(negedge serviceClock);
+  request_valid=1; request_bits_operation=1; request_bits_address=address;
+  request_bits_data=0; request_bits_mask=mask; accepted=0;
+  for(cycles=0;cycles<30 && !accepted;cycles=cycles+1) begin
+    @(posedge serviceClock);
+    if(sleepEligible) $fatal(1,"MALFORMED_READ_PARKED");
+    if(request_ready) begin accepted=1; #1; request_valid=0; end
+  end
+  if(!accepted) $fatal(1,"MALFORMED_READ_BLOCKED address=%h mask=%h",address,mask);
+  answer(0,1,2);
+end endtask
+""", referenceHalfPeriodNs=10000000)
+  }
+
+  test("deadline replacement consumes stale or coincident expiry, preserves GPIO, and arms the next wait") {
+    ClockedSimulation.run(new FabricFixture(SocParameters(config,serviceHz=100000,watchdogCycles=1000000)),
+      "deadline-replacement","""
+      gpioIn=1; #1000;
+      write_bus(32'h30000038,2); // Only deadline wakes the blocking read.
+      write_bus(32'h30000008,0); // Expire while handling the previous GPIO wake.
+      issue(1,32'h3000000c,0,15); wait(response_valid);
+      if(!response_bits_data[1] || !response_bits_data[2]) $fatal(1,"OLD_EVENTS_MISSING");
+      timeValue=response_bits_data; answer(timeValue,0,1);
+      // A rejected byte write must not consume the old deadline event.
+      issue(2,32'h30000008,timeNow+10,1); answer(0,1,1);
+      issue(1,32'h3000000c,0,15); wait(response_valid);
+      if(!response_bits_data[1]) $fatal(1,"REJECTED_REPLACEMENT_CLEARED_EVENT");
+      timeValue=response_bits_data; answer(timeValue,0,1);
+      targetTime=timeNow+10;
+      write_bus(32'h30000008,targetTime);
+      issue(1,32'h3000000c,0,15); wait(response_valid);
+      if(response_bits_data[1] || !response_bits_data[2]) $fatal(1,"REPLACEMENT_LOST_WRONG_EVENTS");
+      timeValue=response_bits_data; answer(timeValue,0,1);
+      @(negedge serviceClock);
+      request_bits_operation=1; request_bits_address=32'h30000010;
+      request_bits_data=0; request_bits_mask=15; request_valid=1;
+      repeat(200) begin @(posedge serviceClock); if(request_ready || response_valid) $fatal(1,"NEXT_WAIT_ENDED_EARLY"); end
+      @(posedge serviceClock); while(!request_ready) @(posedge serviceClock);
+      #1; request_valid=0; wait(response_valid);
+      if(timeNow < targetTime || !response_bits_data[1]) $fatal(1,"NEW_DEADLINE_NOT_ARMED");
+      timeValue=response_bits_data; answer(timeValue,0,1);
+      write_bus(32'h3000000c,32'hffffffff);
+      targetTime=timeNow+4; write_bus(32'h30000008,targetTime);
+      // 100 clocks/ms: GPIO's second synchronizer changes with NOW, so both
+      // its pending bit and the old deadline become due on the replacement edge.
+      wait(timeNow == targetTime-1);
+      repeat(98) @(posedge serviceClock);
+      @(negedge serviceClock); gpioIn=0;
+      wait(timeNow == targetTime);
+      write_bus(32'h30000008,targetTime+4);
+      issue(1,32'h3000000c,0,15); wait(response_valid);
+      if(response_bits_data[1] || !response_bits_data[2]) $fatal(1,"COINCIDENT_REPLACEMENT_PRIORITY");
+      timeValue=response_bits_data; answer(timeValue,0,1);
+      // A newly programmed already-due deadline fires on the following edge.
+      write_bus(32'h30000008,timeNow);
+      issue(1,32'h3000000c,0,15); wait(response_valid);
+      if(!response_bits_data[1]) $fatal(1,"PAST_REPLACEMENT_NEVER_FIRED");
+      timeValue=response_bits_data; answer(timeValue,0,1);
+    """,tasks+"reg [31:0] targetTime;\n")
+  }
+  test("watchdog reset data uses two service edges and the retained clock has complete pulses") {
+    val params=SocParameters(config,watchdogCycles=32,watchdogHoldCycles=2,
+      lowPower=Some(LowPowerParameters.gf180Slow.copy(stopServiceClock=false)))
+    ClockedSimulation.run(new ResetCrossingFixture(params),"reset-crossing","""
+      heartbeatEnabled=1; #100000;
+      read_words(0,0,8); if(supported !== 1 || snapshot[0+:32] !== 0) $fatal(1,"POR_COUNTED_AS_CRASH");
+      for(crashes=1;crashes<=3;crashes=crashes+1) begin
+        write_bus(32'h30000018,1);
+        // Park at the boot wait so the retained gate closes between LF ticks.
+        @(negedge serviceClock); request_valid=1; request_bits_operation=1;
+        request_bits_address=32'h30000000; request_bits_mask=15;
+        wait(sleeping); heartbeatEnabled=0;
+        @(posedge systemReset);
+        if(resetObserved) $fatal(1,"RESET_DATA_ASSERTED_ASYNCHRONOUSLY");
+        #0.001; if(gpioOut[0]) $fatal(1,"RESET_PINS_WAITED_FOR_SYNCHRONIZER");
+        heartbeatEnabled=1;
+        wait(resetObserved); wait(!systemReset); wait(!resetObserved);
+        @(negedge serviceClock); request_valid=0;
+        read_words(0,0,8);
+        if(supported !== 1 || snapshot[0+:32] !== crashes) $fatal(1,"REPEAT_CRASH_COUNT");
+      end
+      if(assertions != 3 || pulseChecks < 20 || sleepEntries == 0) $fatal(1,"RESET_CROSSING_NO_COVERAGE");
+      reset=1; #2000; reset=0; #3000;
+      read_words(0,0,8); if(snapshot[0+:32] !== 0) $fatal(1,"CRASH_COUNT_NOT_POR_CLEARED");
+    """,tasks+"""
+integer crashes,assertions=0,pulseChecks=0;
+reg expectedFirst=1,expectedSecond=1;
+real gateRise=0, gateFall=0;
+always @(posedge serviceClock or posedge reset) begin
+  if(reset) begin expectedFirst=1; expectedSecond=1; end
+  else begin expectedSecond=expectedFirst; expectedFirst=systemReset; end
+  #0.001; if(resetObserved !== expectedSecond) $fatal(1,"RESET_TWO_FLOP_LATENCY");
+end
+always @(posedge systemReset) if(!reset) assertions=assertions+1;
+always @(posedge gatedClock) begin
+  if(!reset && gateFall>0 && $realtime-gateFall<49.999) $fatal(1,"RUNT_GATED_LOW");
+  gateRise=$realtime;
+end
+always @(negedge gatedClock) begin
+  if(!reset && gateRise>0 && $realtime-gateRise<49.999) $fatal(1,"RUNT_GATED_HIGH");
+  gateFall=$realtime; pulseChecks=pulseChecks+1;
+end
+""",referenceHalfPeriodNs=17003)
+  }
   test("shared fabric: access errors, byte lanes, backpressure, events, failed/stale samples and interrupted reset") {
     ClockedSimulation.run(new FabricFixture(SocParameters(config, staleMs=2)), "fabric", """
       issue(0,0,0,15); answer(32'h300000b7,0,7);

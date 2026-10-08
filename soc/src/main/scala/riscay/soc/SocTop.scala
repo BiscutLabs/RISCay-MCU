@@ -28,9 +28,27 @@ abstract class SocTop(val p: SocParameters, board: SocParameters => BoardControl
   }
   systemReset := assertion || release.orR
   resetReason := watchdog.io.reason
+  // Reset pins assert immediately. POR-only logic consumes a conventional
+  // two-flop copy instead; both assertion and release cross before use as data.
+  val cpuResetActive = withClockAndReset(serviceClock, reset) {
+    val first = RegNext(systemReset, true.B)
+    RegNext(first, true.B)
+  }
+  val watchdogReasonActive = withClockAndReset(serviceClock, reset) {
+    val first = RegNext(watchdog.io.reason, false.B)
+    RegNext(first, false.B)
+  }
+  val crashCount = withClockAndReset(serviceClock, reset) {
+    val previous = RegNext(cpuResetActive, true.B)
+    val count = RegInit(0.U(32.W))
+    when(cpuResetActive && !previous && !count.andR) { count := count + 1.U }
+    count
+  }
   protected val workClock = Wire(Clock())
   protected val fabric = withClockAndReset(workClock, reset) { Module(new SocFabric(p, board)) }
   fabric.io.cpuReset := systemReset
+  fabric.io.cpuResetActive := cpuResetActive
+  fabric.io.crashCount := crashCount
   fabric.io.frontClock := serviceClock
   p.lowPower match {
     case Some(lp) =>
@@ -38,7 +56,7 @@ abstract class SocTop(val p: SocParameters, board: SocParameters => BoardControl
       val gate = withClockAndReset(serviceClock, reset) { Module(new RetainedClock) }
       gate.io.gray := timebase.io.gray; gate.io.consumedGray := fabric.io.consumedGray
       gate.io.canSleep := fabric.io.canSleep; gate.io.activity := fabric.io.activity
-      gate.io.forceRun := systemReset
+      gate.io.forceRun := cpuResetActive
       workClock := gate.io.clockOut; fabric.io.clockRunning := gate.io.running
       fabric.io.timeGray := gate.io.synchronizedGray
       sleepEntries := gate.io.entries; sleeping := !gate.io.running
@@ -60,7 +78,7 @@ abstract class SocTop(val p: SocParameters, board: SocParameters => BoardControl
   fabric.io.scl := scl; fabric.io.sda := sda; sdaLow := fabric.io.sdaLow
   fabric.io.gpioIn := gpioIn; gpioOut := fabric.io.gpioOut; gpioOe := fabric.io.gpioOe
   fabric.io.adcMiso := adcMiso; adcCsN := fabric.io.adcCsN; adcSclk := fabric.io.adcSclk
-  fabric.io.watchdogReason := watchdog.io.reason; watchdog.io.heartbeat := fabric.io.heartbeat
+  fabric.io.watchdogReason := watchdogReasonActive; watchdog.io.heartbeat := fabric.io.heartbeat
   fabric.io.watchdogAck := watchdog.io.acknowledge
   mode := fabric.io.mode; programmed := fabric.io.programmed; locked := fabric.io.locked
   commit := fabric.io.commit

@@ -76,7 +76,12 @@ class RetainedClock extends Module with InlineInstance {
   })
   val first = RegNext(io.gray, 0.U); val second = RegNext(first, 0.U)
   io.synchronizedGray := second
-  val needClock = io.forceRun || !io.canSleep || io.activity || second =/= io.consumedGray
+  // Application reset can also change canSleep/activity through resettable
+  // registers. Synchronize the complete demand before the falling-edge gate
+  // FF; its input then has a normal half-cycle timing path.
+  val demand = io.forceRun || !io.canSleep || io.activity || second =/= io.consumedGray
+  val demandFirst = RegNext(demand, true.B)
+  val needClock = RegNext(demandFirst, true.B)
   // Drain bridge/reset and host STOP pipelines before closing the clock gate.
   val grace = RegInit(7.U(3.W))
   when(needClock) { grace := 7.U }.elsewhen(grace =/= 0.U) { grace := grace - 1.U }

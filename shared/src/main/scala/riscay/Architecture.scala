@@ -52,8 +52,9 @@ class CoreState extends Bundle {
   val address = UInt(32.W)
   val storeData = UInt(32.W)
   val mask = UInt(4.W)
-  val loadKind = UInt(3.W)
-  val destination = UInt(4.W)
+  // A pending memory operation already retains its complete instruction.
+  def loadKind: UInt = instruction(14, 12)
+  def destination: UInt = instruction(10, 7)
   val writeback = new RegisterWrite
 }
 object CoreState {
@@ -61,14 +62,19 @@ object CoreState {
     _.pc -> 0.U(32.W), _.operation -> Operation.Fetch.U(2.W),
     _.instruction -> 0.U(32.W), _.address -> 0.U(32.W),
     _.storeData -> 0.U(32.W), _.mask -> 0.U(4.W),
-    _.loadKind -> 0.U(3.W), _.destination -> 0.U(4.W),
     _.writeback -> (new RegisterWrite).Lit(
       _.enable -> false.B, _.rd -> 0.U(4.W), _.data -> 0.U(32.W)))
 }
 
 class ExecutionInput extends Bundle {
   val state = new CoreState; val response = new MemoryResponse
-  val a = UInt(32.W); val b = UInt(32.W)
+  // Wires from the single RF, never stored in the state/join token. Selection
+  // here places read mux delay inside the execute transform timing budget.
+  val registers = Vec(15, UInt(32.W))
+  private def read(index: UInt): UInt = MuxLookup(index, 0.U(32.W))(
+    (1 to 15).map(i => i.U -> registers(i-1)))
+  def a: UInt = read(response.data(19,15))
+  def b: UInt = read(response.data(24,20))
 }
 class ExecutionResult extends Bundle {
   val state = new CoreState; val trace = new Retirement
@@ -208,8 +214,6 @@ object Execute {
           n.address := address
           n.storeData := b << Cat(address(1, 0), 0.U(3.W))
           n.mask := Mux(f3(1, 0) === 0.U, 1.U(4.W), Mux(f3(1, 0) === 1.U, 3.U(4.W), 15.U(4.W))) << address(1, 0)
-          n.loadKind := f3
-          n.destination := rd(3, 0)
         }.otherwise {
           retire(insn)
           n.pc := target

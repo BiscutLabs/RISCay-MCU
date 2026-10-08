@@ -26,6 +26,7 @@ class HostSchemaSpec extends AnyFunSuite {
     for(c <- Seq(counter, Groundlark.configuration)) {
       assert(read(c, 0, 0, 0).contains("ABI_VERSION"))
       assert(read(c, 0, 0, 1).contains("APPLICATION_ID"))
+      assert(read(c, 0, 0, 8).contains("CRASH_COUNT"))
       assert(read(c, 1, 0, 1).contains("PROGRAMMED"))
       assert(read(c, 1, 0, 2).contains("PROGRAM_LOCKED"))
       assert(read(c, 2, 0, 0).contains("VALUE"))
@@ -42,8 +43,8 @@ class HostSchemaSpec extends AnyFunSuite {
 
   test("unknown spaces, instances and words do not alias another resource") {
     for(c <- Seq(counter, Groundlark.configuration)) {
-      for(space <- 0 to 255; instance <- 0 to 2; word <- Seq(0, 5, 63, 255)) {
-        val known = (space == 0 && instance == 0 && word < 8) ||
+      for(space <- 0 to 255; instance <- 0 to 2; word <- Seq(0, 5, 8, 9, 63, 255)) {
+        val known = (space == 0 && instance == 0 && word < 9) ||
           (space == 1 && instance == 0 && word < 8) ||
           (space == 2 && instance == 0 && word < 6) ||
           (space == 3 && instance <= 1 && word < 8) ||
@@ -58,7 +59,7 @@ class HostSchemaSpec extends AnyFunSuite {
     val board = Groundlark.configuration
     val reused = board.copy(application = counter.application, measurements = counter.measurements)
     assert((reused.programBytes, reused.workingRamBytes, reused.gpioCount, reused.measurements.size) ==
-      (2048, 256, 3, 1))
+      (2048, 1024, 3, 1))
     assert(read(reused, 128, 0, 0).contains("COUNTER_MODE"))
     assert(read(reused, 128, 0, 1).isEmpty)
     assert(reused.application.id != board.application.id)

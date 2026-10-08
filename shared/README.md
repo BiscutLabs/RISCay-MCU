@@ -18,7 +18,10 @@ Shared combinational RV32E logic is implemented in
 are in `verification/`; the interpreter does not call production datapath code.
 [ArchitecturalRegisters.scala](src/main/scala/riscay/ArchitecturalRegisters.scala)
 holds one event-written register bank; each design supplies its own native
-arrival pulse. The control token no longer copies the register file or trace.
+arrival pulse and a matched request guard that completes writeback before token
+forwarding. Public asymmetric C-elements select each register; read muxes are
+inside the execute transform budget. The control token no longer copies the
+register file or trace. See the [execution timing contract](../docs/execution-contract.md).
 
 [HostSchema.scala](src/main/scala/riscay/HostSchema.scala) defines and validates
 the generic logical host catalog, measurement descriptors and build parameters.

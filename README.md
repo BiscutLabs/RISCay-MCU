@@ -23,11 +23,15 @@ Both variants use **on-chip boot ROM, executable RAM and working RAM**. No exter
 memory chip is required. A host may reload firmware after complete power loss.
 Groundlark's bootstrap must first qualify supply and power its Pi; other profiles
 define their own startup behavior. Groundlark uses a baseline of 2 KiB application
-RAM plus 256 bytes working RAM and a 12-byte boot ROM. Compiler-built RV32E
+RAM plus 1 KiB working RAM and a 12-byte boot ROM. Compiler-built RV32E
 [sizing fixtures](firmware/README.md) support that budget, with a 128-byte stack
 reserve and 16-byte guard inside working RAM. Capacities remain build parameters;
-both writable banks use flip-flop storage. See the
+both writable banks use three pinned GF180 1 KiB SRAM macros, with a shared
+byte-sequencing controller implementation. See the [SRAM integration](docs/sram-integration.md) and
 [memory architecture](docs/memory-architecture.md).
+Internal SRAM indices and loader counts are sized from these capacities. Both
+cores use a 171-bit control token and derive pending load fields from the saved
+instruction, avoiding duplicate storage.
 
 The common host interface reports device/loader state, generic measurements and
 application registers. Groundlark binds these to battery voltage and supervisor
@@ -42,11 +46,21 @@ Groundlark controller supervises power before upload and during application
 stalls. Its default policy is disabled until qualified battery settings are
 provided. Watchdog recovery resets the application and its CPU bridges while
 preserving the power supervisor, sensing, timebase, validated image and programming
-lock. The host can explicitly restart that image. Only manual/POR/brownout reset
+lock. The host can explicitly restart that image and distinguish successive
+recoveries through the retained `CRASH_COUNT` status word. Reset pins assert
+immediately; ordinary service logic and clock-gate demand are synchronized.
+Only manual/POR/brownout reset
 or MCU power loss clears the lock and returns Groundlark to its off state.
 **Tapeout must deliberately supply and qualify an enabled board policy**; the
 reference emitters' disabled `PowerPolicy()` never enables Pi power.
 Physical/analog, pin/package, board and Chiselator qualification remain.
+
+Both variants have [experimental GF180 implementation inputs](docs/gf180-implementation.md):
+preserved async bindings, native matched-delay cells, compact digital tops, SRAM
+power bindings, and separate clocked/async checks. Five-corner cell and
+whole-transform characterization informs the physical timing budgets. These
+support a first floorplan/P&R experiment; extracted timing, analog layouts and
+padframe qualification remain outstanding.
 
 Both reference emitters include **retained sleep with fast-clock shutdown** and a
 nominal **7.7307 Hz** timebase matched to the
@@ -96,7 +110,13 @@ The [Groundlark I/O contract](docs/groundlark-io.md) maps battery sensing, shutd
 halt acknowledgement, and power-on control. The reference digital build uses a
 separate three-signal SPI ADC; physical pads and analog integration remain open.
 Compiled memory budgets are recorded in the [memory architecture](docs/memory-architecture.md).
-Physical power/area benefits are not yet measured.
+[GF180 planning estimates](docs/gf180-estimates.md) cover the `4b5d105` full-capacity
+baseline: approximately 2.6 mm² of digital cells and 14–19 µW nominal retained
+standby including the shared analog circuits, before pad/external-device power.
+The subsequent reset/writeback review fixes require fresh mapping and wake
+measurements before applying those numbers to current RTL. The baseline protocol
+difference is smaller than the estimation uncertainty. Placement,
+async-cell characterization and extracted timing/power remain outstanding.
 
 Project licensing is recorded in [LICENSE](LICENSE). Reused third-party material
 retains its own license and attribution.

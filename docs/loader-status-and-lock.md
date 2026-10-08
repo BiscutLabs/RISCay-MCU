@@ -22,11 +22,18 @@ and out of reset. Hold a coherent snapshot for each status read transaction.
 | `CAN_PROGRAM` | Loader is unlocked, application is not executing, and controller can accept a new upload; validity alone does not imply writability |
 | `BUSY` | An accepted loader operation has not completed |
 | `LAST_ERROR` | Most recent loader rejection/failure, including locked, busy, range, incomplete-image or integrity error; reads have no clearing side effects |
+| `CRASH_COUNT` | Device service word 8; saturating count of service-observed watchdog reset episodes since full reset, preserved across application restart and reads |
 
 `PROGRAMMED` and `RUNNING` are distinct: a verified image may be waiting to start
 or may have faulted. Neither field proves host readiness or application health.
 Read-only measurement channels and profile application data are required below.
 Heartbeat and a serial diagnostic console remain outside scope.
+
+With the SRAM backend, WRITE holds BUSY until all four bytes finish;
+RECEIVED_BYTES and CRC advance at completion. Mutating commands cannot overtake
+that write; a busy rejection has no queued side effect. Application watchdog
+reset allows an accepted loader write to finish. Full MCU reset aborts it and
+invalidates the image. See [SRAM integration](sram-integration.md).
 
 ## Generic measurements and application telemetry
 

@@ -1,5 +1,171 @@
 # Build and test
 
+## WAIT validation and bounded storage
+
+The 2026-10-08 review fixes validate full-word MMIO accesses before applying
+boot/WAIT blocking, parking or lease consumption. The directed fabric case
+tests all 15 unsupported masks at both blocking registers, with empty and
+GPIO-pending event sets, and checks prompt errors, no sleep eligibility and
+unchanged events/leases. A valid WAIT still consumes its lease.
+
+SRAM tests cover full-capacity loader counts, the highest legal entry point,
+oversized/misaligned host fields, rejected writes beyond capacity, and one-word
+and non-power-of-two memory configurations. These checks prevent narrowing from
+turning rejected addresses or metadata into valid aliases. The loader reset
+probe now observes the internal word counter; host checks remain byte-based.
+
+All **68 distinct Scala/Icarus tests across ten suites** have passing final
+results, with no skipped or canceled cases; all **44 Python controls** also
+pass. CoreSpec ran in `build/review3-focused.log`, and the other nine suites in
+`build/review3-regression.log`. That broad run initially hit one compile failure
+because the reset test referenced the removed byte-counter signal. After fixing
+the test probe, its focused rerun passed in `build/review3-loader-reset.log`.
+`build/review3-test-reports/verification.json` records the final result for each
+test and preserves both the original reports and corrected rerun. Python
+evidence is `build/review3-python.log`; all 11 pinned SRAM assets verify unchanged.
+
+Both regenerated production exports pass strict `--soc --vector-coverage
+--sleep-clock` validation:
+
+| Variant | Endpoints | Mapping checks | Semantic SHA-256 |
+| --- | ---: | ---: | --- |
+| Four-phase BD | 158 | 5,691,792 | `786e52b469df90eaecff3ae0420c1856249c0f1e62c8a7b3ba9162c1714108f5` |
+| Native Click | 132 | 4,573,536 | `dd50c92214a28160a55fc384aa68d3132b5a5a3882fdb273d988799a19ba4571` |
+
+The GF180 remappings under `build/review3-mapping/` retain three physical SRAM
+instances and no inferred arrays. Compared with `build/sram-mapping/`, unique
+flip-flop drivers for the two saved SRAM indices plus image length, entry and
+received metadata shrink from 155 to 46 per design. Total mapped standard-cell
+flip-flops decrease from 2,233 to 2,105 for BD and 2,235 to 2,107 for Click.
+Separately, async state/join/execute payload widths shrink from 178/178/285 to
+171/171/278: 21 logical storage bits removed per core. The receipt is
+`build/review3-mapping/storage-verification.json`. These netlist counts are not
+new whole-chip area, leakage, energy or physical timing estimates.
+
+Export evidence is in `build/review3-{four-phase,click}-soc/` and
+`build/review3-{bd,click}-check.log`. Analog circuits and pinned SRAM assets are
+unchanged; transistor-level SPICE was not rerun for these digital changes.
+
+## SRAM migration verification
+
+The current Groundlark baseline is 2 KiB program SRAM and 1 KiB working SRAM,
+using three pinned GF180 macros in both native variants. Earlier records below
+that cite 256-byte working RAM or flip-flop arrays are historical.
+[SRAM integration](sram-integration.md) describes the physical views and limits.
+
+```text
+python tools/sram_assets.py
+python tools/sbt.py "verification/testOnly riscay.SramSpec riscay.FirmwareSpec riscay.SleepSpec riscay.DeepSleepSpec riscay.FabricSpec riscay.SocSpec riscay.HostSchemaSpec riscay.ScalingSpec"
+python tools/sbt.py "verification/testOnly riscay.CoreSpec riscay.NativeRoutingSpec"
+python -m unittest discover -s tools -p "test_*.py"
+```
+
+The migration passed **66 distinct Scala/Icarus tests** across ten suites,
+including three SRAM tests, plus **44 Python controls**. The full-capacity sweep checks every program/data
+word and all 16 byte masks, with independent macro write counts and stable
+backpressured replies. SRAM input launch checks run at 20 MHz. Watchdog and POR
+are injected at each word-transfer phase, including loader writes; completion
+accounting, retained stores and discarded CPU replies are checked separately.
+The original core corner/fastest-memory tests and deliberate checker-failure
+controls remain passing. Both compiled C images run on both native SoCs with
+unknown initial SRAM, real I2C uploads, sleep retention and programming lock.
+
+Program sizes and stack bounds remain 728/20 bytes for `event_loop` and 1212/88
+for `runtime_stress`. Moving the stack top to `0x20000400` changes binary hashes:
+`4e397b4f7af198df7479f8ff3f4c3941b735a086ca6a0e438764976c951ae301` and
+`19c8c548606dcd88f099ef0822c690f3928d8cdf026ca7c0ef47ed58b878f6e3` respectively.
+
+Strict exports use the unchanged chisel-async contract plus a `sram.json`
+technology inventory. The MCU adapter checks exact pinned model content, macro
+instance paths/counts, pin widths and the elaborated 1024-by-8 array before
+admitting those scopes. Missing/extra/wrong-sized/modified macros are rejected;
+all existing reset, endpoint and mapping probes remain active.
+
+Recorded full-capacity exports under `build/sram-{four-phase,click}-soc` pass:
+
+| Variant | Endpoints | Mapping checks | Semantic SHA-256 |
+| --- | ---: | ---: | --- |
+| Four-phase BD | 158 | 5,897,824 | `4144eaaf28f680458f6af912e4cdd86691dc902821e934884bd4b1bf376f7e5a` |
+| Native Click | 132 | 4,738,272 | `73fc23934576ffd909f2d9b8e60e970c5a7774eb311d47c8c8fec6ccab8bdffa` |
+
+Logs are `build/sram-regression.log`, `build/sram-export-core.log`,
+`build/sram-final-interface.log`, `build/sram-python-controls.log` and
+`build/sram-{bd,click}-check.log`. The final interface run also verifies a host
+WAKE accepted during an in-flight instruction fetch. Both synthesis mappings under
+`build/sram-mapping/` retain exactly three physical SRAM black boxes and
+no inferred memory arrays; `build/sram-mapping/verification.json` records the
+instance and contract checks. Suite XML records are saved in
+`build/sram-test-reports/`. This is a technology-binding check, not macro timing
+signoff, placement or a new whole-chip area/power estimate. Icarus's unsupported
+upstream vector `specify` paths are documented in the SRAM integration notes.
+
+
+## GF180 estimation
+
+The current SRAM revision requires a new macro-aware area/power report. The flow
+and results in this section describe the historical flip-flop baseline; its
+reporter intentionally rejects SRAM cells it cannot account for. Mapping can
+still verify that the three physical instances survive synthesis. Do not quote
+the old area/leakage/wake estimates as results for the SRAM design.
+
+The [physical estimate](gf180-estimates.md) has a separate reproducible cost flow;
+it does not turn simulation primitives into qualified hardware. That estimation
+run used RTL baseline `4b5d105` and changed neither production RTL nor analog
+netlists. Later review fixes have changed RTL; the recorded figures need
+regeneration before use for current designs. `PhysicalEstimateSpec` uses full memories and
+an enabled **estimate fixture** policy, while reference emitters keep their safe
+disabled defaults. Its clock/ADC/firmware observations are not physical timing.
+
+```text
+python tools/sbt.py "verification/testOnly riscay.PhysicalEstimateSpec"
+python -m unittest tools.test_gf180_estimate -v
+```
+
+The simulation writes `build/gf180-estimate/{four-phase,click}-export.txt`, each
+containing the newly generated export path. For each path, run:
+
+```text
+python tools/gf180_estimate.py --export <four-phase-export-path> --output build/gf180-estimate/four-phase
+python tools/gf180_estimate.py --export <click-export-path> --output build/gf180-estimate/click
+python tools/gf180_estimate.py --export <four-phase-export-path> --output build/gf180-estimate/four-phase-activity --activity
+python tools/gf180_estimate.py --export <click-export-path> --output build/gf180-estimate/click-activity --activity
+python tools/gf180_estimate.py --report --output build/gf180-estimate
+```
+
+Mapping requires sv2v 0.0.13 at `.tools/physical/sv2v`, Yosys/ABC 0.33 binaries
+under `.tools/physical/root/usr/bin/`, and Yosys share files at the corresponding
+`usr/share/yosys/`. On the recorded Windows workstation, mapping runs through
+Ubuntu WSL; Icarus runs natively. Ubuntu Noble packages `yosys` and `yosys-abc`
+version `0.33-5build2` can be downloaded with `apt download` and locally extracted
+with `dpkg-deb -x`; no system installation is required. The sv2v binary was copied
+from the workstation's existing 0.0.13 installation. Exact binary hashes are in
+[the input manifest](../tools/gf180-estimate-inputs.json).
+
+Provide complete installed GF180 `mcu7t5v0` Liberty files under
+`.tools/physical/liberty/` named `tt_025C_3v30.lib`, `ss_n40C_3v00.lib` and
+`ff_125C_3v60.lib`. The recorded files come from the existing `gf180mcuD` PDK built
+by open_pdks `40cee970d8a9b7eaea35a34fe7d6068f05721f0a`. Its cell data are Apache-2.0.
+The upstream repository's top-level Liberty files alone are templates without
+cell bodies, and are rejected. Complete-library hashes are in the input manifest.
+The estimator rejects changed tool/library hashes. Intentionally changing them
+requires updating the manifest, regenerating and reviewing the estimates.
+
+Reporting also consumes the previously passed analog reports
+`build/clock-reset-clock-01/report.json`, `build/clock-reset-monitor-05/report.json`,
+`build/clock-reset-events-03/report.json`, and `build/lf-osc-final-pvt/report.json`.
+If those ignored artifacts are absent, reproduce their documented campaigns
+below into those directories. Failed or missing evidence is an error. The report
+records its script, library, netlist, contract, waveform-observer log and analog
+report hashes. All generated RTL/netlists/logs remain under ignored `build/`.
+
+The 2026-10-07 run passed both activity simulations and all ten estimator tests.
+Both mappings completed with only the explicitly budgeted async black boxes;
+all 18,432 writable-memory bits survived as flip-flops. No placement/CTS/DRC/LVS
+or extracted power check was run. Source behavior was unchanged, so the existing
+functional/strict-export record below was not rerun for the estimation scripts.
+
+## Digital build
+
 The build consumes the chisel-async RC1 JAR; it does not compile a second copy of
 the library in this repository. Required versions are Scala 2.13.18, Chisel/plugin
 7.16.0, firtool 1.160.0, sbt 1.12.4, JDK 21 and Icarus Verilog 13.
@@ -44,6 +210,10 @@ faults, reset during an outstanding fetch and a deliberately wrong expectation
 that must fail its retirement checker. Both designs consume the same independent
 reference traces. `NativeRoutingSpec` tests native phase fork/join under skewed
 arrival, stalls, repeated values and reset with one unmatched operand.
+The core suite also uses minimum-visible 2 fs memory responses concurrent with
+request acknowledgement/return. At cell corners and varied delays, it checks
+writeback completion before forwarding; a bypassed guard is a required failing
+control. Register read muxes are included in the execute transform's budget.
 
 `HostSchemaSpec` verifies the logical host catalog with Groundlark and an unrelated
 counter fixture, including absent/unknown resource rejection and invalid profile
@@ -57,7 +227,7 @@ Groundlark boot, protected control outputs, shutdown acknowledgement, minimum-of
 timing and the three-timeout latch. CRC expectations come from Java's CRC32;
 firmware is hand-encoded using test-only assembly helpers.
 
-`FirmwareSpec` adds real compiler-built C images at the full 2 KiB/256-byte
+`FirmwareSpec` adds real compiler-built C images at the full 2 KiB/1 KiB
 capacities. Both native SoCs receive each binary through the I2C loader and
 CRC/START_AND_LOCK flow, then execute startup/data/BSS initialization, arithmetic,
 stack frames and retained sleep. Retirement SP writes, a RAM watermark and a
@@ -78,6 +248,12 @@ accelerate the millisecond divider and ADC cadence together; their enabled
 fixture is not a deployment policy. Test watchdog clocks are accelerated too.
 Additional fabric cases cover queued watchdog kicks, lease writes with no kick,
 sparse application-register holes and reads spanning concurrent word updates.
+Deadline cases cover stale pending expiry, replacement coincident with expiry
+and GPIO, rejected writes, a blocked next WAIT and an already-due replacement.
+Reset cases verify two-flop assertion/release latency against the raw reset,
+immediate application reset, complete gated clock pulses and POR-only crash
+counting. Production-ratio Groundlark cases read counts 1 and 2 after separate
+crashes while checking that power, lock and supervisor state remain retained.
 `ScalingSpec` exhaustively checks all 4096 ADC codes against independent integer
 division, plus fractional tick accumulation, large missed-tick deltas, counter
 wrap, updates during catch-up and reset during serial calculation.
@@ -502,3 +678,79 @@ to occur together. It forces no derived endpoint and retains every original
 comparison, activity assertion and fallback. An independent negative control
 proves that this extra stimulus activates the mux and still rejects incorrect
 wiring. This changes mapping-test stimulus, not functional RTL or the library.
+
+## Second review: reset crossings, writeback and deadline replacement
+
+On 2026-10-07, **58 distinct Scala/Icarus tests across seven relevant suites**
+passed: CoreSpec (17), NativeRoutingSpec (3), HostSchemaSpec (6), SocSpec (7),
+FabricSpec (6), SleepSpec (8) and DeepSleepSpec (11). The two production-ratio
+Groundlark deep-sleep cases then passed again with stronger checks that MODE
+remains FAULT for the two synchronization edges before returning to READY.
+The Python suite passed **40 tests**, including oscillator/reset models and the
+existing estimator controls. No test in these runs failed, skipped or canceled.
+
+New evidence includes minimum-visible memory response latency, register Q valid
+before forwarding, required rejection of a bypassed writeback guard, deadline
+replacement coincident with GPIO/expiry, rejected deadline writes, full gated
+pulses, exact two-flop reset latency and successive host-visible crash counts.
+The library's existing firtool annotation warnings remain. These digital checks
+do not simulate metastability or establish physical timing closure.
+
+Both regenerated production-capacity SoCs passed strict validation with
+`--soc --vector-coverage --sleep-clock`:
+
+| Export | Resolved endpoints | Mapping checks | Result |
+| --- | ---: | ---: | --- |
+| Four-phase SoC | 158 | 28,835,632 | PASS |
+| Native Click SoC | 132 | 23,901,504 | PASS |
+
+Semantic hashes are
+`c9c049bec577857854c94d32619772f4168fe2b0f8c670b42fbb00858efbb768`
+and `b4ef47a697d30b48d5b30548aef204ec3af79df9cf1c831e9d6ba277951a4c09`.
+The four removed RF read endpoints are now part of the execute input/transform;
+the single 480-bit register bank and 178-bit control token remain. Click retains
+native phase routing throughout.
+
+Evidence is in `build/review2-test-reports/`,
+`build/review2-mode-regression.log`, `build/review2-{bd,click}-export.log`,
+`build/review2-four-phase-soc/` and `build/review2-click-soc/`. Earlier full-firmware
+and scaling results above were not rerun for this change. Analog circuits are
+unchanged, so SPICE was not rerun. The `4b5d105` area/leakage/wake estimates are
+historical baseline results; mapping and activity must be regenerated before
+using them to compare the revised RTL.
+
+## GF180 implementation preparation
+
+On 2026-10-08, the relevant digital regression passed **54 Scala/Icarus tests**
+across CoreSpec, SocSpec, FabricSpec, SramSpec, SleepSpec and DeepSleepSpec. Two
+additional PhysicalTimingSpec tests passed dependent arithmetic with the fastest
+memory response using the final 20/180 ns physical data budgets. The Python suite
+passed **53 tests**, including mapping safety, deliberate event-monitor
+violations, relative-margin rejection and stale-evidence rejection.
+
+The final physical exports passed strict `--soc --vector-coverage --sleep-clock`
+validation: BD has 158 endpoints and 6,050,768 mapping checks; Click has 132 and
+4,873,440. Each contains exactly three SRAM instances. Enabled evaluation-only
+Groundlark policy retains the complete supervisor in both implementation tops.
+
+Both GF180 mappings passed exact protected-cell/connectivity audits, 23 adapter
+specializations per variant and **5,810 independent functional vectors** in total.
+All five pinned Liberty corners passed standalone cell/distribution bounds and
+whole-transform 20/180 ns budgets. Conservative relative-envelope checks passed
+11 BD and 31 Click inequalities. The seven C-element circuits passed **140
+transistor-level PVT cases**, including retention and reset; their observed delay
+range was 1.065–5.570 ns. Generated event monitors also compiled against both
+final mapped hierarchies. Compilation checks binding, not event coverage.
+
+Evidence is in `build/physical-final-regression.log` and
+`build/physical-qualified-inputs/`: `policy-tests-rerun.log`, `python-tests.log`,
+the strict export logs, `bd-dly/`, `click-dly/`, their `-pvt`, `-stages` and `-sta`
+directories, the envelope receipts and `keeper-pvt/`. Earlier failed timing
+iterations remain available; they are not the final results.
+
+**This is prelayout preparation, not physical closure.** Five-corner full-chip
+STA completed and resolved the constraints but still reports reset/recovery,
+electrical and conservative async-path violations. No extracted SDF campaign,
+padframe, analog layout or P&R was performed. Follow
+[GF180 implementation preparation](gf180-implementation.md) for reproduction,
+limitations and the remaining routed checks.

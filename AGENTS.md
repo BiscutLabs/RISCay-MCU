@@ -29,8 +29,14 @@
   The fast source must run during reset qualification, independently of the
   held SoC/LF reset. Keep the >=5 ms continuous-good hold and asynchronous assertion.
   Test real hold counts separately from accelerated full-SoC regressions.
-- Both writable memories use flip-flop banks. Preserve the selected 2 KiB program
-  and 256-byte working RAM baseline; SRAM substitution is outside current scope.
+- Both writable memories use pinned GF180 1 KiB SRAM macros: two for the 2 KiB
+  program bank, one for 1 KiB working RAM. Preserve the shared backend across
+  both variants. Follow `docs/sram-integration.md`; run SramSpec, FirmwareSpec,
+  SocSpec/FabricSpec and sleep regressions after memory/controller changes.
+  Keep macro contents uninitialized in simulation; SYNTHESIS must retain physical
+  macro instances. Verify upstream asset hashes with tools/sram_assets.py.
+  Validate full-width addresses and loader fields before narrowing to internal
+  word indices/counts. Include full-capacity counts and small/non-power-of-two banks.
 - Groundlark's permanent controller owns its power GPIOs. Keep its default policy
   disabled until qualified board/battery values are deliberately supplied.
 - Optional features are on hold. Follow `docs/features-and-ip.md` and
@@ -49,11 +55,25 @@
   freshness and calibration status; lock must not block reads or sample updates.
 - Use explicit reset and async contracts. A digital delay model is not a mapped
   delay cell, and passing simulation is not physical timing or power evidence.
+  Keep raw watchdog reset on reset pins/source wake only; persistent service
+  logic uses its two-flop synchronized copy, and gate demand is synchronized.
+  Preserve the writeback-before-forwarding guard and include register-read muxes
+  in the execute timing budget; run the fastest-memory and guard-bypass controls.
+  Deadline replacement consumes only the old deadline event, including a
+  coincident expiry, while preserving other events and arming the new deadline.
+  Validate MMIO width before blocking or consuming a WAIT; rejected reads must
+  neither authorize sleep nor cancel a lease.
 - Run the relevant ScalaTest/Icarus suites after changes. For architectural or
   interface changes, run both core variants against independent references.
   Missing tools, no activity, skipped tests and failed controls are not passes.
 - Keep shared production logic separate from independently written test oracles.
   Test reset, stalls and exactly-once effects, not only instruction arithmetic.
+- Physical integration lives in `physical/`; follow `docs/gf180-implementation.md`.
+  Preserve exact async cells and connections, native delay chains and three SRAMs.
+  Keep clocked STA separate from internal async path measurements. Recharacterize
+  changed cells/whole transforms across all five pinned corners, and rerun
+  `physical/test` plus mapping/monitor controls after changing physical budgets.
+  No standalone-cell, stage or constraint-binding pass implies routed closure.
 - Keep generated RTL, tools, simulator logs and test evidence under ignored
   `.tools/`, `build/` or `target/` directories. Pin dependencies and record limits.
 - Firmware and memory budgets live in `firmware/`; run FirmwareSpec and the

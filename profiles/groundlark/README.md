@@ -4,7 +4,7 @@ Application ID `0x474c524b` (GLRK), profile version 1. This is a project-assigne
 identifier, not a standards allocation. Definitions live in
 [Groundlark.scala](../src/main/scala/riscay/profiles/Groundlark.scala).
 
-The profile builds 2 KiB executable RAM, 256 bytes working RAM, three application
+The profile builds 2 KiB executable SRAM, 1 KiB working SRAM, three application
 control GPIOs and one measurement channel. Host I2C, the reference three-signal
 SPI ADC interface, reset, timing and test pads are additional to that GPIO count.
 

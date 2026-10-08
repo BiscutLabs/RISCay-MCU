@@ -197,10 +197,19 @@ end endtask
         // halts the uploaded application and deliberately stops its heartbeat.
         ${upload(Seq(breakpoint))}
         guardPower=1;
-        wait(systemReset); #1;
+        wait(systemReset); #0.001;
         if(!gpioOut[0] || gpioOut[1] || !locked || !programmed) $$fatal(1,"WATCHDOG_CUT_PI_OR_UNLOCKED");
+        // Persistent MODE must consume the synchronized reset, not raw expiry.
+        repeat(2) begin
+          @(posedge serviceClock); #0.001;
+          if(mode !== 4) $$fatal(1,"MODE_USED_RAW_WATCHDOG_RESET");
+        end
+        @(posedge serviceClock); #0.001;
+        if(mode !== 2) $$fatal(1,"MODE_MISSED_SYNCHRONIZED_RESET");
         wait(!systemReset); #5000;
         if(mode !== 2) $$fatal(1,"CRASH_NOT_READY_FOR_RESTART");
+        read_words(0,0,8);
+        if(supported !== 1 || snapshot[0+:32] !== 1) $$fatal(1,"FIRST_CRASH_COUNT");
         read_words(2,0,0);
         if(!snapshot[32]) $$fatal(1,"CRASH_STOPPED_SENSING");
         begin_image(4,0,0,32'h00010000); expect_error(2);
@@ -209,6 +218,8 @@ end endtask
         if(!gpioOut[0]) $$fatal(1,"DEEP_EARLY_CUT");
         wait(systemReset); #1;
         if(!gpioOut[0] || !gpioOut[1] || !locked || !programmed) $$fatal(1,"CRASH_LOST_SHUTDOWN");
+        wait(!systemReset); read_words(0,0,8);
+        if(supported !== 1 || snapshot[0+:32] !== 2) $$fatal(1,"SECOND_CRASH_COUNT");
         gpioIn=0; #1000;
         if(!gpioOut[0]) $$fatal(1,"ACK_NOT_CONFIRMED");
         guardPower=0;

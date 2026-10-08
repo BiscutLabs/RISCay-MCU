@@ -4,7 +4,7 @@ package riscay
 import chisel3._
 import chiselasync.core.AsyncModule
 import chiselasync.testing.AsyncTest
-import java.nio.file.{Files, Paths}
+import java.nio.file.{Files, Path, Paths}
 import org.scalatest.funsuite.AnyFunSuite
 import riscay.bd.FourPhaseCore
 import riscay.click.ClickCore
@@ -18,27 +18,27 @@ class CoreSpec extends AnyFunSuite {
   private def hex(x: Long) = "32'h" + java.lang.Long.toHexString(x & 0xffffffffL)
   private def core(click: Boolean): AsyncModule = if(click) new ClickCore else new FourPhaseCore
 
-  private def bus(a: Reference.Access, click: Boolean, number: Int): String = {
+  private def bus(a: Reference.Access, click: Boolean, number: Int, fastest: Boolean): String = {
     val arrival = if(click) "wait(request_req != request_ack);" else "wait(request_req);"
-    val release = if(click) "request_ack=request_req;" else "request_ack=1; wait(!request_req); #100000000; request_ack=0;"
+    val pause = if(fastest) 2L else 100000000L
+    val release = if(click) "request_ack=request_req; #2;" else s"request_ack=1; wait(!request_req); #$pause; request_ack=0; #2;"
     val reply = if(a.op == 3) "" else s"""
       response_bits_data=${hex(a.response)}; response_bits_error=${if(a.error) 1 else 0};
-      #${100000000L + (number % 5)*19000000L};
-      ${if(click) "response_req=~response_req; wait(response_ack == response_req);" else "response_req=1; wait(response_ack); #100000000; response_req=0; wait(!response_ack);"}
+      #${if(fastest) 2L else 100000000L + (number % 5)*19000000L};
+      ${if(click) "response_req=~response_req; wait(response_ack == response_req); #2;" else s"response_req=1; wait(response_ack); #$pause; response_req=0; wait(!response_ack); #2;"}
     """
     s"""
       $arrival
-      #${70000000L + (number % 7)*13000000L};
+      #${if(fastest) 2L else 70000000L + (number % 7)*13000000L};
       if(request_bits_operation !== 2'd${a.op} || request_bits_address !== ${hex(a.address)} ||
          request_bits_data !== ${hex(a.data)} || request_bits_mask !== 4'd${a.mask})
         $$fatal(1,"BUS_MISMATCH_${number} op=%d address=%h data=%h mask=%h",request_bits_operation,request_bits_address,request_bits_data,request_bits_mask);
-      $release
-      $reply
+      ${if(fastest && a.op != 3) s"fork begin $release end begin $reply end join" else s"$release\n$reply"}
     """
   }
 
   private def stimulus(result: Reference.Result, click: Boolean, resetPending: Boolean = false,
-      corruptExpectation: Boolean = false): String = {
+      corruptExpectation: Boolean = false, fastest: Boolean = false, guardMonitor: String = ""): String = {
     val checks = result.traces.zipWithIndex.map { case (original, index) =>
       val t = if(corruptExpectation && index == 0) original.copy(data=original.data ^ 1) else original
       s"""$index: begin
@@ -61,11 +61,12 @@ class CoreSpec extends AnyFunSuite {
       reg seen;
       reg bus_done;
       retired=0; seen=0; bus_done=0;
+      $guardMonitor
       $pending
       ${if(click) "start=1;" else ""}
       fork
         begin
-          ${result.accesses.zipWithIndex.map { case(a,i) => bus(a,click,i) }.mkString("\n")}
+          ${result.accesses.zipWithIndex.map { case(a,i) => bus(a,click,i,fastest) }.mkString("\n")}
           bus_done=1;
         end
         begin
@@ -129,8 +130,44 @@ class CoreSpec extends AnyFunSuite {
         branch(1,1,8,f),i(0x13,3,0,3,4))
     } ++ Seq(jal(0,8),i(0x13,3,0,3,100),i(0x13,4,0,0,7),breakpoint)
 
+  private def writebackMonitor(directory: Path, click: Boolean, bypass: Boolean = false): String = {
+    val design = ujson.read(Files.readString(directory.resolve("export/contract.json")))("manifest")("design")
+    def path(value: ujson.Value) = "dut." + value("rtl_path").str.split('.').drop(1).mkString(".")
+    val guard = path(design("primitives").arr.find(_("id").str == "request_guard").get)
+    val rf = design("children").arr.find(_("id").str == "register_file").get("contract")
+    val checks = (1 to 15).map { i =>
+      val bank = path(rf("primitives").arr.find(_("id").str == s"x$i").get)
+      val select = path(rf("primitives").arr.find(_("id").str == s"select$i").get)
+      s"if($select.rising && $bank.q !== $bank.d) $$fatal(1,\"WRITEBACK_FORWARDED_EARLY_$i\");"
+    }.mkString("\n")
+    s"""fork begin
+      forever begin
+        @(${if(click) "" else "posedge "}$guard.q); #2;
+        if(!reset) begin $checks end
+      end
+    end join_none
+    ${if(bypass) s"force $guard.q = $guard.a;" else ""}"""
+  }
+
   for(click <- Seq(false,true)) {
     val name = if(click) "click" else "four-phase"
+    test(s"$name minimum-latency memory and writeback-before-forwarding hold across cell corners") {
+      val directory = fresh(name+"-fast-memory")
+      val expected = Reference.run(arithmetic.dropRight(1) ++ memoryAndControl)
+      AsyncTest.run(core(click),Seq(1,2,19,81),directory) { _ =>
+        stimulus(expected,click,fastest=true,guardMonitor=writebackMonitor(directory,click))
+      }
+    }
+    test(s"$name writeback timing checker rejects a bypassed request guard") {
+      val directory = fresh(name+"-writeback-negative")
+      val error = intercept[IllegalArgumentException] {
+        AsyncTest.run(core(click),Seq(1),directory) { _ =>
+          stimulus(Reference.run(known),click,fastest=true,
+            guardMonitor=writebackMonitor(directory,click,bypass=true))
+        }
+      }
+      assert(error.getMessage.contains("WRITEBACK_FORWARDED_EARLY"),error.getMessage)
+    }
     test(s"$name RV32E arithmetic matches independent retirement and memory traces under varied delays") {
       val expected = Reference.run(arithmetic)
       AsyncTest.run(core(click),Seq(1,2,19,81),fresh(name+"-arithmetic"))(_ => stimulus(expected,click))

@@ -12,11 +12,11 @@ the memories and loader; see the [implemented SoC contract](soc-contract.md).
 | Storage | Selected baseline capacity | Implementation |
 | --- | --- | --- |
 | Bootstrap, loader and minimum power policy | 12-byte boot ROM plus fixed logic | ROM waits for the image; permanent loader and board controller operate independently of application code |
-| Application firmware, constants and startup image | 2 KiB | On-chip flip-flop RAM loaded by the Pi; lost after total power loss |
-| Application data and stack | 256 bytes | On-chip flip-flop bank behind a replaceable memory interface |
+| Application firmware, constants and startup image | 2 KiB | Two on-chip 1 KiB SRAM macros loaded by the Pi; lost after total power loss |
+| Application data and stack | 1 KiB | One on-chip 1 KiB SRAM macro |
 | Architectural registers and control | x1-x15 contain 480 bits; additional PC/control and pipeline storage | Protocol-appropriate standard-cell storage; x0 is constant |
 
-Keep **2 KiB program RAM and 256 bytes working RAM** as the baseline. The
+Use **2 KiB program SRAM and 1 KiB working SRAM** as the baseline. The
 [compiled sizing fixtures](../firmware/README.md) provide repeatable code/data/stack
 measurements; actual future application changes must pass these budget checks.
 The minimal ROM is three RV32E instructions; power policy is fixed logic in this baseline.
@@ -25,15 +25,17 @@ rewritten by the Pi. A RAM image loaded only by a simulator is not a hardware
 loader. Pi transfer into executable RAM is now required; persistent updates and
 embedded flash remain on hold.
 
-The selected implementation uses **flip-flops for both writable banks**, totaling
-2.25 KiB (18,432 data bits). Memory sizing did not authorize an SRAM substitution.
-Physical estimates should map the complete flip-flop banks, including their
-read muxes, write decoding and clocks.
+The selected implementation uses **three 1024-by-8 GF180 SRAM macros**, totaling
+3 KiB (24,576 data bits), following the explicit SRAM scope change. Their combined
+LEF footprint is **0.46624 mm2**, before controllers, routing and placement margins.
+The CPU architectural register file, loader metadata and peripheral registers
+remain standard-cell storage. [SRAM integration](sram-integration.md) specifies
+pinned views, serialization, reset behavior and physical qualification limits.
 Keep memory separate from the CPU's circulating state token. Both protocol
 variants must use the same backend, capacity and firmware for each comparison;
 count their wrappers in the results.
 
-The 256-byte working RAM budget includes static application data, a 16-byte guard,
+The 1 KiB working RAM budget includes static application data, a 16-byte guard,
 and a 128-byte reserved downward-growing stack. It has no heap or interrupt stack.
 CPU architectural/handshake state, loader state, measurement registers and
 profile-declared software-owned MMIO application words are separate storage.
@@ -49,11 +51,11 @@ Compiler sizing with pinned GCC 13.2.0, `rv32e/ilp32e`, `-Os`:
 
 The larger image leaves **836 bytes (40.8%)** of program headroom. Reserving 128
 stack bytes, rather than just its 88-byte bound, uses 192 RAM bytes including
-static data and guard, leaving **64 bytes** uncommitted. A 1 KiB program budget
+static data and guard, leaving **832 bytes** uncommitted. A 1 KiB program budget
 cannot hold that workload; 128 bytes of working RAM cannot hold its static data,
 stack bound and guard. The linker negative controls deliberately reject both.
-There is no measured reason to increase either baseline capacity. These finite
-fixtures exercise useful runtime paths but are not the final Groundlark application.
+The 1 KiB data capacity follows the selected fixed macro size; it is not a new
+firmware requirement. These finite fixtures exercise useful runtime paths but are not the final Groundlark application.
 
 The measured stress call chain uses `main` (12), `batch` (32), `transform` (44)
 and `divide` (0), totaling 88 stack bytes. Startup uses no stack. The report includes load
@@ -111,42 +113,19 @@ Application watchdog recovery also preserves both, plus permanent power control
 and sensing. It resets the CPU transaction frontier and waits for an explicit
 START of the retained image; it does not grant permission to rewrite a locked image.
 
-## Earlier SRAM comparison (not the selected implementation)
+## Previous flip-flop baseline
 
-SRAM is a strong candidate when storage grows, but its peripheral circuitry can
-be significant for a tiny array. As an illustrative GF180 comparison, its
-256-by-8 SRAM occupies 0.1472 mm2. [SRAM datasheet][sram]
-
-The GF180 7-track DFFQ1 cell occupies 63.6608 um2. Multiplying by 2,048 bits gives
-0.1304 mm2 for bare flip-flops, before read muxes, write decoding/enables, local
-clock distribution, placement and routing. This is a lower bound, not a complete
-RAM estimate. [Standard-cell datasheet][dff]
-
-These 256-byte figures do not characterize the larger program-plus-data memory
-or select a winner, and do not freeze GF180 as the process. Compare
-complete mapped implementations, including controllers, timing closure and
-standby leakage at the intended voltage and temperature. For this supervisor,
-energy per wake and standby consumption matter more than peak bandwidth.
-
-For the selected capacity, four 512-by-8 macros could form a 512-by-32 program
-bank (2 KiB). Their combined published area is approximately **0.8376 mm2**.
-Adding one 256-by-8 data macro gives approximately **0.9848 mm2** of macro area,
-before interfaces, power routing and placement margins. The data macro would
-need byte sequencing for 32-bit accesses. These are calculated candidates,
-not a mapped implementation or a power result.
-[512-by-8 datasheet](https://gf180mcu-pdk.readthedocs.io/en/latest/IPs/SRAM/gf180mcu_fd_ip_sram/cells/gf180mcu_fd_ip_sram__sram512x8m8wm1/gf180mcu_fd_ip_sram__sram512x8m8wm1.html),
-[256-by-8 datasheet][sram].
-
-At the cited DFF cell area, the same 18,432 data bits alone occupy about
-**1.1734 mm2**, before the standard-cell RAM's muxes, decoding and clocks.
-These earlier comparisons do not change the flip-flop decision. No SRAM macro
-has been instantiated; an SRAM experiment would require a separate scope change.
+The earlier 2 KiB program plus 256-byte working flip-flop implementation is
+retained only as historical evidence in [GF180 estimates](gf180-estimates.md).
+Those whole-chip area, leakage and energy numbers do not describe this SRAM
+revision. New estimates must include all three physical macros, controller
+logic, their clock loads and memory-access activity.
 
 ## Async integration and initialization
 
-The example SRAM has a synchronous single-port interface. Its 8-bit width also
-requires sequencing to serve the core's 32-bit read response. A local controller
-can bridge either async protocol, but must satisfy macro pulse-width, setup/hold
+The selected SRAM has a synchronous single-port interface. Its 8-bit width also
+requires sequencing to serve the core's 32-bit read response. The common service controller
+serves either async protocol, but must satisfy macro pulse-width, setup/hold
 and access timing, then retain the response until consumed. [SRAM datasheet][sram]
 
 Do not wire an arbitrary request signal directly to a macro clock. Qualified

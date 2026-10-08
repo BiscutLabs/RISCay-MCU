@@ -23,15 +23,21 @@ See [sleep and clock integration](sleep-and-clock.md) for the exact gating scope
 | `0x20000000` + configured capacity | Working RAM | CPU data reads and byte-masked writes; no instruction fetch |
 | `0x30000000..0x3000004b` | MMIO | Aligned 32-bit data accesses only |
 
-All storage is on chip. Both writable banks use flip-flops; SRAM substitution is
-outside the current scope. RAM is not reset-cleared. POR/manual/brownout reset
+All storage is on chip. Groundlark uses two 1 KiB GF180 SRAM macros for program
+storage and one for its 1 KiB working RAM. A shared controller sequences four
+byte operations per word; macro inputs launch on falling service-clock edges.
+See [SRAM integration](sram-integration.md). RAM is not reset-cleared. POR/manual/brownout reset
 clears image validity; watchdog recovery preserves it. Application startup must initialize
 its data, BSS and stack before use. No simulator preload is necessary or used by
 the serial upload tests. A successful store returns data zero; read responses are
 aligned little-endian words. Unmapped/protected accesses return an access error.
-One accepted CPU transaction commits once; its response remains stable under
-backpressure. A coordinated reset cancels pending transactions and replies, but
-does not undo already committed writes.
+One accepted CPU transaction produces one response, held stable under backpressure.
+The `commit` observation pulse denotes request acceptance; SRAM writes finish
+later, before successful completion. Watchdog reset discards CPU replies but
+allows accepted stores to finish. Full POR/manual/brownout reset aborts remaining
+bytes and may leave a partial word; it does not undo committed bytes. SRAM
+controllers and loader accounting survive application reset. Sleep is inhibited
+until all accepted memory operations finish.
 
 The ROM executes `lui x1,0x30000; lw x2,0(x1); jalr x0,x2,0`. The load blocks
 until START, then returns the validated absolute entry address. Control transfer
@@ -43,7 +49,7 @@ supervision, including when no application exists. The loader is fixed hardware.
 | ---: | --- | --- |
 | 0 | Wait for START; return entry address | Error |
 | 4 | Milliseconds, wrapping unsigned 32-bit | Error |
-| 8 | Deadline | Set absolute deadline and arm one-shot event; use a future interval less than 2^31 ms |
+| 8 | Deadline | Replace deadline, consume its previous pending event, and arm one-shot; use a future interval less than 2^31 ms |
 | 12 | Pending events | Write-one acknowledge |
 | 16 | Wait for an enabled pending event, without clearing; lease expiry and host wake always qualify | Error |
 | 20 | Synchronized GPIO inputs | Error |
@@ -61,6 +67,11 @@ supervision, including when no application exists. The loader is fixed hardware.
 | 68 | Timing status | Error |
 | 72 | Service clock sleep-entry count | Error |
 
+Blocking reads at offsets 0 and 16 apply only to valid aligned full-word accesses.
+Unsupported byte/halfword reads return an access error immediately when the
+fabric can accept a transaction; they do not park the CPU, authorize sleep,
+consume pending events or cancel its sleep lease.
+
 Events are bit 0 time-maintenance tick, bit 1 deadline, bit 2 any configured GPIO
 change, bit 3 acquisition result, bit 4 sleep lease expired, bit 5 host wake.
 Bits 4/5 bypass the wake mask. Events coalesce. Set wins a simultaneous
@@ -71,6 +82,10 @@ Firmware acknowledges only consumed bits before processing the wake. The
 `wait_events()` helper never clears pending bits; `acknowledge_events(bits)` is
 explicit. Edges arriving during processing remain pending for the next wait.
 Repeated edges on one already-pending bit still coalesce by design.
+An accepted deadline write also suppresses the old deadline if it becomes due
+on that same edge. Other pending/new events survive. A newly written deadline
+that is already due can fire starting on the following edge; malformed or
+rejected writes do not clear anything.
 
 ## Host wire protocol v1
 
@@ -95,7 +110,8 @@ STOP, final read NACK and foreign-address rejection release transaction activity
 
 A write transaction begins with an opcode, followed by the exact payload below.
 All multi-byte numbers are unsigned little-endian words unless described
-otherwise. STOP or repeated START commits the completed frame atomically.
+otherwise. STOP or repeated START accepts a completed frame. An accepted WRITE then
+commits its four SRAM bytes before advancing RECEIVED_BYTES and CRC.
 Incomplete/oversize/unknown commands cause no image mutation. ACK means the byte
 was received; read LAST_ERROR to determine command acceptance. There is no queue
 of pending writes and no deferred memory write after a command completes.
@@ -141,10 +157,16 @@ six hardware-owned words allocate no duplicate software register bank.
 Service/word order comes from [HostSchema](../shared/src/main/scala/riscay/HostSchema.scala):
 
 - Device 0, instance 0: ABI, build profile ID/version, actual memory/GPIO/channel
-  capacities, reset reason (1 external reset/POR, 2 watchdog since external reset).
+  capacities, reset reason (1 external reset/POR, 2 watchdog since external reset),
+  then `CRASH_COUNT` at word 8. Read `(0,0,8)` to retrieve the new word with
+  supported bitmap bit 0 set. This is an additive supported-word extension;
+  existing v1.0 image compatibility and words 0..7 remain unchanged.
 - Loader 1, instance 0: MODE, PROGRAMMED, PROGRAM_LOCKED, CAN_PROGRAM, BUSY,
   LAST_ERROR, IMAGE_ID, RECEIVED_BYTES. MODE is BOOT=0, LOADING=1, READY=2,
-  RUNNING=3, FAULT=4. BUSY is zero: bounded commands commit in one service edge.
+  RUNNING=3, FAULT=4. BUSY is one during an accepted loader SRAM write.
+  RECEIVED_BYTES/CRC advance only at completion. Further mutating commands,
+  including VERIFY, LOCK and START, reject with busy error 3 while the program
+  memory is occupied; status reads, WAKE and SAMPLE_PERIOD remain available.
   LOADING describes an incomplete upload, not a queued operation.
 - Measurements 2, instance channel: VALUE, FLAGS, AGE_MS, SEQUENCE, UNIT, SCALE10.
 - Timing 3, instance 0: FEATURES, NOW_MS, SAMPLE_PERIOD_MS, WAKE_MASK,
@@ -226,13 +248,27 @@ reference emitter expires after 32 raw LF ticks (nominal 4.14 s, 2.67..6.4 s
 over the assumed 5..12 Hz envelope), plus kick-handshake timing effects.
 Expiry asynchronously resets the CPU, both CPU bridges, pending CPU responses,
 software GPIO/application words, event mask/pending/deadline and sleep lease.
-Release is synchronized to the service clock. The permanent board controller
+Release is synchronized to the service clock. Raw `systemReset` drives reset
+pins and the asynchronous fast-source wake request. Ordinary service logic uses
+a separate POR-reset two-flop copy on both assertion and release, including mode
+recovery, request admission and loader mutation guards. The retained clock gate
+also synchronizes its complete demand before the falling-edge enable flip-flop,
+covering indirect changes from application-reset registers. These crossings need
+physical synchronizer placement and half-cycle gate-enable timing checks.
+The permanent board controller
 and its GPIO override, ADC, samples/ages, LF/elapsed timebase, I2C loader, image
 validity/metadata and programming lock are POR-only. The supervisor retains its
 RUN/SHUTDOWN state, deadlines and timeout count through application recovery.
 Host mutations are rejected during application reset; coherent reads remain
 available when the service clock runs. In-progress loader state is retained.
-Watchdog reason survives until external reset. A stopped service source requests
+Watchdog reason survives until external reset and is synchronized for host reads.
+`CRASH_COUNT` saturates at `0xffffffff` and counts rising watchdog-reset episodes
+observed by the service synchronizer. It survives host START, bus recovery and
+application reset; only full reset clears it. POR itself is not a crash. It is
+a recovery-episode counter, not an LF expiration counter: multiple expirations
+while the service clock is absent may coalesce or go unobserved. Normal repeated
+crash/restart cycles increment separately even though RESET_REASON remains 2.
+A stopped service source requests
 restart but the board cannot observe new inputs while that source remains failed;
 its outputs are retained, not asynchronously forced off by the watchdog. Elapsed
 time catches up after recovery and sample ages expose staleness. Stopping both

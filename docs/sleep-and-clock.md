@@ -51,6 +51,11 @@ battery policy.
 
 ## Fast-clock shutdown and wake
 
+An accepted program/working SRAM transaction keeps the service island awake
+until its byte sequence and completion finish. All three SRAM macros remain
+powered during retained sleep; CEN is inactive and their service clock stops.
+There is no refresh or memory power gating. See [SRAM integration](sram-integration.md).
+
 `chip/*SocChip.sv` instantiates both oscillator boundaries internally; neither
 clock requires a package input. The portable inner SoC retains explicit clocks
 for testing and exports `serviceClockEnable`. With `stopServiceClock=true`, the
@@ -124,7 +129,17 @@ multiple busy requests into one pending kick).
 LF failure still stops both timer and watchdog. Detecting LF failure would require
 another independent reference or external supervisor; that is not claimed here.
 Watchdog reset asserts CPU/bridge resets and requests fast-source restart. The
-board controller and GPIO override, ADC/samples, elapsed-time accumulator,
+reset-pin path remains asynchronous. Mode/admission/loader logic and `forceRun`
+use a POR-only two-flop service-clock copy on assertion as well as release.
+The gate additionally synchronizes the full demand, including changes caused
+indirectly by application reset, before its falling-edge enable register.
+These extra service cycles fit within the existing wake hold and probe wait.
+The ungated oscillator wake still uses raw reset so a stopped source can start.
+Digital tests exercise watchdog edges between service edges and check complete
+gated pulses; analog metastability and physical gate timing still need closure.
+The device service's word 8 reports a saturating service-observed crash counter;
+it is POR-only and distinguishes successive application recoveries.
+The board controller and GPIO override, ADC/samples, elapsed-time accumulator,
 loader/image/lock and LF counter retain state. RUNNING/FAULT returns to READY;
 the host may explicitly restart the validated image without unlocking it.
 The supervisor still requests orderly shutdown on low battery during a crash.

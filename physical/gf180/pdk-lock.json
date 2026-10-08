@@ -1,0 +1,19 @@
+{
+  "source": "https://github.com/RTimothyEdwards/open_pdks",
+  "revision": "40cee970d8a9b7eaea35a34fe7d6068f05721f0a",
+  "license": "Apache-2.0",
+  "files": {
+    "gf180mcu_fd_sc_mcu7t5v0.gds": "3db5da226c0437918a54b1dc4d3098ad48f52904231d7ce3f576ff13c613912e",
+    "gf180mcu_fd_sc_mcu7t5v0.lef": "47dadf84c21b20f558d043c36271632f07b1c2c2a595b118e2e1050ebb74349b",
+    "gf180mcu_fd_sc_mcu7t5v0.spice": "97661211e03f73028277be1f436694b995167d658e35bdb307af5054623cf205",
+    "gf180mcu_fd_sc_mcu7t5v0.v": "9a21c5f98200acfe77d8ba52067164e0802284dc1c1e117f0e64fb6ac42eb64b",
+    "gf180mcu_fd_sc_mcu7t5v0__ff_125C_3v60.lib": "f7d93ac4452c3388e27e8f88149c4f6a4ed1aaed344e93cec095914d374ed945",
+    "gf180mcu_fd_sc_mcu7t5v0__ff_n40C_3v60.lib": "a222740b574d0699c8a416400bd9746ecb8556bc87a515ab7fb80f911e2cd74b",
+    "gf180mcu_fd_sc_mcu7t5v0__ss_125C_3v00.lib": "5d2f37ba6f43e33aeba26dc1da55c96394a862eeec4148043f1d48bdf65ccea6",
+    "gf180mcu_fd_sc_mcu7t5v0__ss_n40C_3v00.lib": "08847da4bb78d75ba004e79bb1540dd43fa8d4ed694b84ed5c182d0809520a93",
+    "gf180mcu_fd_sc_mcu7t5v0__tt_025C_3v30.lib": "f9dee07cf158324934b0c59144d970a2e8313f43533ede6283ec3c136f82fe53",
+    "primitives.v": "ccc0f447f71ce35c635e08d49eb0ed77aa2ec91cf31d8e3e45a246114d3cae92",
+    "design.ngspice": "091cb530bf85160a1f07878fb81f789ca367d018991c8ab41a584cd1a85c6692",
+    "sm141064.ngspice": "6edba54d23b38a2c60f8ffdbaa3eb75a7568c615e4820808969bd1121b77b1aa"
+  }
+}

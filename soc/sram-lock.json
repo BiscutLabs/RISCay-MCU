@@ -1,0 +1,64 @@
+{
+  "repository": "https://github.com/RTimothyEdwards/gf180mcu_ocd_ip_sram",
+  "revision": "efdbf734d806c2ac3b858d281a5b832625a8e928",
+  "macro": "gf180mcu_ocd_ip_sram__sram1024x8m8wm1",
+  "width_um": 301.3,
+  "height_um": 515.81,
+  "assets": {
+    "LICENSE": {
+      "path": "LICENSE",
+      "sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30",
+      "bytes": 11358
+    },
+    "gf180mcu_ocd_ip_sram__sram1024x8m8wm1.v": {
+      "path": "cells/gf180mcu_ocd_ip_sram__sram1024x8m8wm1/gf180mcu_ocd_ip_sram__sram1024x8m8wm1.v",
+      "sha256": "9b3f0403197df34186eddab06c0f887cbc83f8732a806fb5f0c4ac6403dab4cb",
+      "bytes": 20137
+    },
+    "gf180mcu_ocd_ip_sram__sram1024x8m8wm1.blackbox.v": {
+      "path": "cells/gf180mcu_ocd_ip_sram__sram1024x8m8wm1/gf180mcu_ocd_ip_sram__sram1024x8m8wm1.blackbox.v",
+      "sha256": "fe41b260702b05928f49c3b176911663566a726599665a56c8903b5344cbecd8",
+      "bytes": 1842
+    },
+    "gf180mcu_ocd_ip_sram__sram1024x8m8wm1.lef": {
+      "path": "cells/gf180mcu_ocd_ip_sram__sram1024x8m8wm1/gf180mcu_ocd_ip_sram__sram1024x8m8wm1.lef",
+      "sha256": "35bcf13111ab5029860ca7a2ef473fbf21b4938d6c6244b53b4480bd35f2776a",
+      "bytes": 35409
+    },
+    "gf180mcu_ocd_ip_sram__sram1024x8m8wm1.gds": {
+      "path": "cells/gf180mcu_ocd_ip_sram__sram1024x8m8wm1/gf180mcu_ocd_ip_sram__sram1024x8m8wm1.gds",
+      "sha256": "1a84f6324002e09774e56b787e854198b49bf96bfffd0932611d1df58f7f3f82",
+      "bytes": 2831634
+    },
+    "gf180mcu_ocd_ip_sram__sram1024x8m8wm1.spice": {
+      "path": "cells/gf180mcu_ocd_ip_sram__sram1024x8m8wm1/gf180mcu_ocd_ip_sram__sram1024x8m8wm1.spice",
+      "sha256": "e365e0d97353afbee669b542fe357f38ae81069f556a091f1bb8ad411b331095",
+      "bytes": 238605
+    },
+    "gf180mcu_ocd_ip_sram__sram1024x8m8wm1__tt_025C_3v30.lib": {
+      "path": "cells/gf180mcu_ocd_ip_sram__sram1024x8m8wm1/gf180mcu_ocd_ip_sram__sram1024x8m8wm1__tt_025C_3v30.lib",
+      "sha256": "c2f7e0957e3e7f08845df9b511aa2c64236f2d4b34cf763ef0be59618c047d2e",
+      "bytes": 35833
+    },
+    "gf180mcu_ocd_ip_sram__sram1024x8m8wm1__ss_125C_3v00.lib": {
+      "path": "cells/gf180mcu_ocd_ip_sram__sram1024x8m8wm1/gf180mcu_ocd_ip_sram__sram1024x8m8wm1__ss_125C_3v00.lib",
+      "sha256": "39f18bbc87f489d94d9a017bb00f643719a36f39a751bd6464985ce750a021cc",
+      "bytes": 35346
+    },
+    "gf180mcu_ocd_ip_sram__sram1024x8m8wm1__ff_n40C_3v60.lib": {
+      "path": "cells/gf180mcu_ocd_ip_sram__sram1024x8m8wm1/gf180mcu_ocd_ip_sram__sram1024x8m8wm1__ff_n40C_3v60.lib",
+      "sha256": "2420450035f4f7c8ca2cd6cc70e7aac8bd6334307f48beef86017d8507122d3f",
+      "bytes": 36258
+    },
+    "gf180mcu_ocd_ip_sram__sram1024x8m8wm1__ff_125C_3v60.lib": {
+      "path": "cells/gf180mcu_ocd_ip_sram__sram1024x8m8wm1/gf180mcu_ocd_ip_sram__sram1024x8m8wm1__ff_125C_3v60.lib",
+      "sha256": "af1f8a047df500a25064312e8305695afde5534f6a7a2c601d7f619b27845798",
+      "bytes": 35950
+    },
+    "gf180mcu_ocd_ip_sram__sram1024x8m8wm1__ss_n40C_3v00.lib": {
+      "path": "cells/gf180mcu_ocd_ip_sram__sram1024x8m8wm1/gf180mcu_ocd_ip_sram__sram1024x8m8wm1__ss_n40C_3v00.lib",
+      "sha256": "546e77237afe2084dd4af53805fc556ca8c69330f406e18c320e985866b91c4d",
+      "bytes": 35526
+    }
+  }
+}

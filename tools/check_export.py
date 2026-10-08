@@ -15,6 +15,79 @@ from pathlib import Path
 import subprocess
 import sys
 import re
+import json
+import hashlib
+
+
+def sram_array_shapes(contents, scopes):
+    """Icarus prints the upstream descending array as `0 1023`, whereas the
+    library's SyncReadMem parser handles `1023 0`. Admit that spelling only
+    inside this named technology macro; shape/view validation still follows.
+    """
+    model = "gf180mcu_ocd_ip_sram__sram1024x8m8wm1"
+    blocks = re.finditer(r'^S_\w+ \.scope module, "([^"]+)" "' + model +
+                         r'" [^\n]*;\n(.*?)(?=^S_\w+ \.scope |\Z)', contents, re.M | re.S)
+    for block in blocks:
+        paths = [path for path, scope in scopes.items()
+                 if scope["model"] == model and path.rsplit(".", 1)[-1] == block[1]]
+        if len(paths) != 1:
+            raise ValueError("AMBIGUOUS_SRAM_SCOPE")
+        arrays = re.findall(r'^v\w+ \.array "(\w+)", 0 (\d+), (\d+) 0;', block[2], re.M)
+        for name, high, bits in arrays:
+            scopes[paths[0]]["memories"][name] = (int(high) + 1, int(bits) + 1)
+    return scopes
+
+
+def sram_scopes(directory, node, scopes):
+    """Admit only pinned GF180 macros, with an explicit physical inventory.
+
+    Keep the library's closed module inventory and all async probes intact.
+    This validates macro identity/shape, not physical timing or memory behavior.
+    """
+    if "." in node["rtl_path"]:
+        return set()
+    root = Path(__file__).resolve().parents[1]
+    lock = json.loads((root / "soc/sram-lock.json").read_text())
+    model = lock["macro"]
+    present = {path for path, scope in scopes.items() if scope["model"] == model}
+    inventory = directory / "sram.json"
+    if not present and not inventory.exists():
+        return set()  # Standalone CPU exports have no SoC SRAM.
+    if not inventory.exists():
+        raise ValueError("MISSING_SRAM_INVENTORY")
+    data = json.loads(inventory.read_text())
+    if (set(data) != {"schema", "macro", "program_bytes", "working_ram_bytes", "instances"}
+            or data["schema"] != "riscay-gf180-sram-v1" or data["macro"] != model):
+        raise ValueError("INVALID_SRAM_INVENTORY")
+    expected = []
+    for bank, key in (("program", "program_bytes"), ("ram", "working_ram_bytes")):
+        size = data[key]
+        if type(size) is not int or size <= 0 or size % 4:
+            raise ValueError("INVALID_SRAM_CAPACITY")
+        expected += [dict(path=f'{node["rtl_path"]}.fabric_{bank}_macros_{i}', bank=bank, index=i)
+                     for i in range((size + 1023) // 1024)]
+    if data["instances"] != expected or present != {x["path"] for x in expected}:
+        raise ValueError("SRAM_INSTANCE_MISMATCH")
+    def view(suffix):
+        name = model + suffix
+        raw = (root / "soc/src/main/resources/riscay/sram" / name).read_bytes()
+        if hashlib.sha256(raw).hexdigest() != lock["assets"][name]["sha256"]:
+            raise ValueError("SRAM_UPSTREAM_HASH_MISMATCH")
+        return raw.decode().replace("\r\n", "\n")
+    behavior = view(".v")
+    if behavior.count("mem[i] = 8'd0;") != 1:
+        raise ValueError("SRAM_MODEL_INITIALIZER_CHANGED")
+    expected_source = ("`ifdef SYNTHESIS\n" + view(".blackbox.v") + "\n`else\n" +
+                       behavior.replace("mem[i] = 8'd0;", "mem[i] = 8'bx;") + "\n`endif\n")
+    actual = (directory / (model + ".sv")).read_text().split("\n", 1)[1]
+    if actual.strip() != expected_source.strip():
+        raise ValueError("SRAM_EMITTED_VIEW_MISMATCH")
+    pins = {name: dict(name=name, width=width, direction="output" if name == "Q" else "input")
+            for name, width in (("CLK",1), ("CEN",1), ("GWEN",1), ("WEN",8), ("A",10), ("D",8), ("Q",8))}
+    for path in present:
+        if scopes[path]["ports"] != pins or scopes[path]["memories"] != {"mem": (1024, 8)}:
+            raise ValueError("SRAM_ELABORATED_SHAPE_MISMATCH")
+    return present
 
 
 def probe_timeout(command, original, simulation, compilation):
@@ -202,6 +275,15 @@ def main() -> None:
     spec.loader.exec_module(module)
     original_run = subprocess.run
     original_probe = module.probe_source
+    original_memories = module.validate_memories
+    original_vvp = module.read_vvp
+    module.read_vvp = lambda contents: sram_array_shapes(contents, original_vvp(contents))
+    verified_sram = set()
+    def memories(directory, node, scopes):
+        macros = sram_scopes(directory, node, scopes)
+        verified_sram.update(macros)
+        return original_memories(directory, node, scopes) | macros
+    module.validate_memories = memories
 
     def probe(manifest, scopes, paired=False):
         source, count = original_probe(manifest, scopes, paired)
@@ -226,9 +308,11 @@ def main() -> None:
     finally:
         subprocess.run = original_run
         module.probe_source = original_probe
-    import json
+        module.validate_memories = original_memories
+        module.read_vvp = original_vvp
     print(json.dumps({"status": result["status"], "semantic_sha256": result["semantic_sha256"],
                       "endpoints": len(result["endpoints"]), "mapping_checks": result["mapping_checks"],
+                      "sram_instances": sorted(verified_sram),
                       "probe_timeout_seconds": args.probe_timeout,
                       "probe_compile_timeout_seconds": args.probe_compile_timeout,
                       "sleep_clock_background": args.sleep_clock,

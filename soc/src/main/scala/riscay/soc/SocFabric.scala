@@ -25,7 +25,8 @@ object ImageCrc {
 }
 
 /** Identical on-chip storage and peripherals for both asynchronous CPUs.
-  * Every side effect commits on one service-clock edge. RAM has no reset clear;
+  * MMIO commits on one edge; SRAM words complete after four byte operations.
+  * RAM has no reset clear;
   * image validity gates execution, and software initializes working RAM.
   */
 class SocFabric(p: SocParameters, boardFactory: SocParameters => BoardController) extends Module with InlineInstance {
@@ -41,6 +42,8 @@ class SocFabric(p: SocParameters, boardFactory: SocParameters => BoardController
     val now = Output(UInt(32.W))
     val frontClock = Input(Clock())
     val cpuReset = Input(Bool())
+    val cpuResetActive = Input(Bool())
+    val crashCount = Input(UInt(32.W))
     val hostSelected = Output(Bool()); val hostRejected = Output(Bool())
     val timeGray = Input(UInt(32.W)); val consumedGray = Output(UInt(32.W))
     val clockRunning = Input(Bool()); val sleepEntries = Input(UInt(32.W))
@@ -51,18 +54,36 @@ class SocFabric(p: SocParameters, boardFactory: SocParameters => BoardController
   val config = p.config
   val board = Module(boardFactory(p))
   require(board.ownedRegisters.subsetOf(config.application.registers.map(_.word).toSet))
-  val program = Reg(Vec(config.programBytes / 4, UInt(32.W)))
-  val ram = Reg(Vec(config.workingRamBytes / 4, Vec(4, UInt(8.W))))
+  val program = Module(new SramBank(config.programBytes))
+  val ram = Module(new SramBank(config.workingRamBytes))
+  Seq(program, ram).foreach { memory =>
+    memory.io.request.valid := false.B
+    memory.io.request.bits := 0.U.asTypeOf(new SramWordRequest)
+    memory.io.response.ready := true.B
+  }
+  val loaderPending = RegInit(false.B)
+  val loaderWord = Reg(UInt(32.W))
+  val loaderWrite = WireDefault(false.B)
+  val cpuMemoryPending = RegInit(false.B)
+  val memoryBusy = program.io.busy || ram.io.busy || loaderPending || cpuMemoryPending
   val rom = VecInit(MemoryMap.boot.map(_.U(32.W)))
   val mode = RegInit(0.U(3.W))
   def applicationReg[T <: Data](init: T): T = withReset(io.cpuReset.asAsyncReset) { RegInit(init) }
   val programmed = RegInit(false.B); val locked = RegInit(false.B); val started = applicationReg(false.B)
   val lastError = RegInit(0.U(8.W))
-  val imageLength = RegInit(0.U(32.W)); val entry = RegInit(0.U(32.W))
+  // Host fields stay byte-addressed and are validated at their full width.
+  // Internal aligned metadata counts words, including the full-capacity count.
+  val programWords = config.programBytes / 4
+  val imageWords = RegInit(0.U(log2Ceil(programWords + 1).W))
+  val entryWord = RegInit(0.U(log2Ceil(programWords).max(1).W))
+  val receivedWords = RegInit(0.U(log2Ceil(programWords + 1).W))
+  val imageLength = Cat(imageWords, 0.U(2.W)).pad(32)
+  val entry = Cat(entryWord, 0.U(2.W)).pad(32)
+  val received = Cat(receivedWords, 0.U(2.W)).pad(32)
   val imageId = RegInit(0.U(32.W)); val expectedCrc = RegInit(0.U(32.W))
-  val received = RegInit(0.U(32.W)); val crc = RegInit("hffffffff".U(32.W))
+  val crc = RegInit("hffffffff".U(32.W))
   io.mode := mode; io.programmed := programmed; io.locked := locked
-  val canProgram = !locked && !started && !io.cpuReset
+  val canProgram = !locked && !started && !io.cpuResetActive && !program.io.busy && !loaderPending
 
   val now = RegInit(0.U(32.W))
   val lowerElapsed = Wire(UInt(32.W)); val upperElapsed = Wire(UInt(32.W))
@@ -185,12 +206,15 @@ class SocFabric(p: SocParameters, boardFactory: SocParameters => BoardController
 
   val deadline = applicationReg(0.U(32.W)); val armed = applicationReg(false.B)
   val pending = applicationReg(0.U(32.W)); val clear = WireDefault(0.U(32.W))
+  val replaceDeadline = WireDefault(false.B)
   val hostWake = WireDefault(false.B)
-  val due = armed && (now - deadline).asSInt >= 0.S
+  val due = armed && !replaceDeadline && (now - deadline).asSInt >= 0.S
   val acquisition = if(config.measurements.isEmpty) false.B else publish.map(_.valid).reduce(_ || _)
   val gpioActivity = ((gpio ^ gpioPrevious) & gpioMask).orR
   val events = Cat(0.U(26.W), hostWake, leaseExpired, acquisition, gpioActivity, due, tick)
-  pending := (pending & ~clear) | events // New events win an acknowledge race.
+  // Replacement consumes only the old deadline, including an expiry on this
+  // edge. Other new events still win acknowledgement races.
+  pending := (pending & ~(clear | Mux(replaceDeadline, 2.U, 0.U))) | events
   when(due) { armed := false.B }
 
   val responseValid = applicationReg(false.B); val response = Reg(new MemoryResponse)
@@ -200,14 +224,29 @@ class SocFabric(p: SocParameters, boardFactory: SocParameters => BoardController
   val isRead = req.operation === Operation.Read.U
   val isWrite = req.operation === Operation.Write.U
   val isFetch = req.operation === Operation.Fetch.U
-  val bootWait = isRead && req.address === MemoryMap.mmio.U && !started
-  val waitingRead = isRead && req.address === (MemoryMap.mmio + 16).U
+  val fullWord = req.address(1,0) === 0.U && req.mask === 15.U
+  val bootWait = isRead && fullWord && req.address === MemoryMap.mmio.U && !started
+  val waitingRead = isRead && fullWord && req.address === (MemoryMap.mmio + 16).U
   val eventWait = waitingRead && (pending & (wakeMask | "h30".U)) === 0.U
   parked := io.request.valid && eventWait
   io.canSleep := p.lowPower.nonEmpty.B && io.request.valid &&
-    (bootWait || (eventWait && sleepRemaining =/= 0.U)) && !responseValid && !adcBusy && !tick
-  io.request.ready := !io.cpuReset && io.clockRunning && !responseValid && !bootWait && !eventWait
+    (bootWait || (eventWait && sleepRemaining =/= 0.U)) && !responseValid && !adcBusy && !tick && !memoryBusy
+  io.request.ready := !io.cpuResetActive && io.clockRunning && !responseValid && !bootWait && !eventWait &&
+    !memoryBusy && !loaderWrite
   io.commit.valid := io.request.fire; io.commit.bits := req
+  // Accepted stores finish through a watchdog reset, but their CPU completion
+  // is discarded. POR may abort a partial word; neither reset clears SRAM bits.
+  when(io.cpuResetActive) { cpuMemoryPending := false.B }
+  when(program.io.response.fire && loaderPending) {
+    receivedWords := receivedWords + 1.U; crc := ImageCrc.word(crc, loaderWord); loaderPending := false.B
+  }
+  when((program.io.response.fire && !loaderPending) || ram.io.response.fire) {
+    cpuMemoryPending := false.B
+    when(cpuMemoryPending && !io.cpuResetActive) {
+      responseValid := true.B; response.error := false.B
+      response.data := Mux(ram.io.response.valid, ram.io.response.bits, program.io.response.bits)
+    }
+  }
   when(io.request.fire) {
     when(waitingRead) { sleepRemaining := 0.U }
     responseValid := req.operation =/= Operation.Halt.U
@@ -217,13 +256,17 @@ class SocFabric(p: SocParameters, boardFactory: SocParameters => BoardController
         response.data := rom(req.address(3, 2)); response.error := false.B
       }.elsewhen(req.address >= MemoryMap.program.U && req.address < (MemoryMap.program + config.programBytes).U) {
         when(!isWrite && programmed && (req.address - MemoryMap.program.U) < imageLength) {
-          response.data := program((req.address - MemoryMap.program.U)(log2Ceil(config.programBytes).max(3)-1, 2)); response.error := false.B
+          program.io.request.valid := true.B
+          program.io.request.bits.address := req.address - MemoryMap.program.U
+          responseValid := false.B; cpuMemoryPending := true.B
         }
       }.elsewhen(req.address >= MemoryMap.ram.U && req.address < (MemoryMap.ram + config.workingRamBytes).U && !isFetch) {
-        val index = (req.address - MemoryMap.ram.U)(log2Ceil(config.workingRamBytes).max(3)-1, 2)
-        response.data := Mux(isWrite, 0.U, ram(index).asUInt); response.error := false.B
-        when(isWrite) { for(i <- 0 until 4) { when(req.mask(i)) { ram(index)(i) := req.data(8*i+7, 8*i) } } }
-      }.elsewhen(!isFetch && req.address >= MemoryMap.mmio.U && req.address < (MemoryMap.mmio + 76).U && req.address(1,0) === 0.U && req.mask === 15.U) {
+        ram.io.request.valid := true.B
+        ram.io.request.bits.address := req.address - MemoryMap.ram.U
+        ram.io.request.bits.write := isWrite
+        ram.io.request.bits.data := req.data; ram.io.request.bits.mask := req.mask
+        responseValid := false.B; cpuMemoryPending := true.B
+      }.elsewhen(!isFetch && req.address >= MemoryMap.mmio.U && req.address < (MemoryMap.mmio + 76).U && fullWord) {
         val offset = req.address(6, 0)
         when(isRead) {
           response.error := false.B
@@ -249,7 +292,7 @@ class SocFabric(p: SocParameters, boardFactory: SocParameters => BoardController
           }
         }.otherwise {
           switch(offset) {
-            is(8.U) { deadline := req.data; armed := true.B; response.error := false.B }
+            is(8.U) { deadline := req.data; armed := true.B; replaceDeadline := true.B; response.error := false.B }
             is(12.U) { clear := req.data; response.error := false.B }
             is(24.U) { output := req.data; response.error := false.B }
             is(28.U) { enable := req.data; response.error := false.B }
@@ -283,7 +326,7 @@ class SocFabric(p: SocParameters, boardFactory: SocParameters => BoardController
 
   val host = withClock(io.frontClock) { Module(new I2cTarget(p.i2cAddress, p.i2cIdleCycles)) }
   host.io.scl := io.scl; host.io.sda := io.sda; io.sdaLow := host.io.pullLow
-  io.activity := host.io.busy || gpioActivity
+  io.activity := host.io.busy || gpioActivity || memoryBusy
   io.hostSelected := host.io.selected; io.hostRejected := host.io.rejected
   val selector = RegInit(0.U(24.W))
   val frame = host.io.frame.bits
@@ -294,7 +337,9 @@ class SocFabric(p: SocParameters, boardFactory: SocParameters => BoardController
   when(host.io.frame.valid) {
     when(frame.overflow || desiredLength === 0.U || frame.length =/= desiredLength) { lastError := 1.U }
       .elsewhen(opcode === 0.U) { selector := Cat(frame.bytes(1), frame.bytes(2), frame.bytes(3)) }
-      .elsewhen(io.cpuReset) { lastError := 3.U }
+      .elsewhen(io.cpuResetActive || ((program.io.busy || loaderPending) && opcode >= 1.U && opcode <= 6.U)) {
+        lastError := 3.U
+      }
       .otherwise {
         lastError := 0.U
         switch(opcode) {
@@ -310,8 +355,9 @@ class SocFabric(p: SocParameters, boardFactory: SocParameters => BoardController
               .elsewhen(parameter(3) =/= "h00010000".U || parameter(4) > config.workingRamBytes.U ||
                 (parameter(5) & ~gpioMask).orR || parameter(6) > config.measurements.size.U) { lastError := 5.U }
               .otherwise {
-                mode := 1.U; programmed := false.B; received := 0.U; crc := "hffffffff".U
-                imageLength := parameter(0); entry := parameter(1); expectedCrc := parameter(2); imageId := parameter(7)
+                mode := 1.U; programmed := false.B; receivedWords := 0.U; crc := "hffffffff".U
+                imageWords := parameter(0) >> 2; entryWord := parameter(1) >> 2
+                expectedCrc := parameter(2); imageId := parameter(7)
               }
           }
           is(2.U) {
@@ -319,8 +365,12 @@ class SocFabric(p: SocParameters, boardFactory: SocParameters => BoardController
               .elsewhen(mode =/= 1.U) { lastError := 6.U }
               .elsewhen(parameter(0) =/= received || received >= imageLength) { lastError := 4.U }
               .otherwise {
-                program(received(log2Ceil(config.programBytes).max(3)-1, 2)) := parameter(1); received := received + 4.U
-                crc := ImageCrc.word(crc, parameter(1))
+                loaderWrite := true.B
+                program.io.request.valid := true.B
+                program.io.request.bits.address := received
+                program.io.request.bits.write := true.B
+                program.io.request.bits.data := parameter(1); program.io.request.bits.mask := 15.U
+                loaderWord := parameter(1); loaderPending := true.B
               }
           }
           is(3.U) {
@@ -342,12 +392,12 @@ class SocFabric(p: SocParameters, boardFactory: SocParameters => BoardController
 
   // Retain the validated image and lock across a watchdog reset. Software must
   // explicitly restart the image; the permanent supervisor continues meanwhile.
-  when(io.cpuReset && (mode === 3.U || mode === 4.U)) { mode := Mux(programmed, 2.U, 0.U) }
+  when(io.cpuResetActive && (mode === 3.U || mode === 4.U)) { mode := Mux(programmed, 2.U, 0.U) }
 
   // Snapshot the selected service bank once, then share one word mux across
   // byte boundaries. This retains coherent read transactions without eight
   // parallel copies of the entire host-address decoder.
-  val bankWords = ((0 until 8) ++ config.application.registers.map(_.word)).distinct.sorted
+  val bankWords = (HostSchema.device.map(_.word) ++ config.application.registers.map(_.word)).distinct.sorted
   val bankSize = bankWords.size
   val bank = Wire(Vec(bankSize, UInt(32.W)))
   bank.foreach(_ := "hffffffff".U)
@@ -355,11 +405,11 @@ class SocFabric(p: SocParameters, boardFactory: SocParameters => BoardController
     when(space === 0.U && instance === 0.U) {
       val fields = Seq("h00010000".U, config.application.id.U, config.application.version.U,
         config.programBytes.U, config.workingRamBytes.U, config.gpioCount.U,
-        config.measurements.size.U, Mux(io.watchdogReason, 2.U, 1.U))
+        config.measurements.size.U, Mux(io.watchdogReason, 2.U, 1.U), io.crashCount)
       fields.zipWithIndex.foreach { case (value, i) => bank(i) := value }
     }
     when(space === 1.U && instance === 0.U) {
-      val fields = Seq(mode, programmed.asUInt, locked.asUInt, canProgram.asUInt, 0.U, lastError,
+      val fields = Seq(mode, programmed.asUInt, locked.asUInt, canProgram.asUInt, loaderPending.asUInt, lastError,
         imageId, received)
       fields.zipWithIndex.foreach { case (value, i) => bank(i) := value }
     }
@@ -397,7 +447,8 @@ class SocFabric(p: SocParameters, boardFactory: SocParameters => BoardController
   val supported = (0 until 8).map { i =>
     val space = selector(23,16); val instance = selector(15,8); val word = selector(7,0) +& i.U
     val appWord = config.application.registers.map(r => word === r.word.U).foldLeft(false.B)(_ || _)
-    (instance === 0.U && (space === 0.U || space === 1.U) && word < 8.U) ||
+    (instance === 0.U && space === 0.U && word < HostSchema.device.size.U) ||
+      (instance === 0.U && space === 1.U && word < 8.U) ||
       (space === 3.U && instance <= 1.U && word < 8.U) ||
       (space === 2.U && instance < config.measurements.size.U && word < 6.U) ||
       (space === 128.U && instance === 0.U && appWord)

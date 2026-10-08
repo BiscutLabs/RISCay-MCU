@@ -22,22 +22,43 @@ see the [SoC contract](soc-contract.md).
 - Illegal instruction, instruction alignment/access, and load/store
   alignment/access errors produce a fault record and stop until reset.
 
-Each variant circulates one 178-bit control/writeback token. Fetch responses execute
+Each variant circulates one 171-bit control/writeback token. Fetch responses execute
 ordinary ALU/control-flow instructions. A load/store fetch instead creates a
 second memory transaction; its response completes that instruction. The shared
 datapath is combinational; each design owns its async storage and sequencing.
+Pending loads derive their type and destination from the retained instruction;
+these seven bits are not stored a second time in the token. The state, join-left
+and execute-result payloads are 171, 171 and 278 bits in either variant.
 The architectural register file is one bank of fifteen 32-bit event registers
 outside that token. Arrival of the state token writes only its selected nonzero
-destination before the next memory response can evaluate operands. Four-phase
+destination. A matched request guard holds forwarding until the write's declared
+worst-case propagation has completed, before fetching the next instruction. Four-phase
 uses request arrival; Click uses native request/acknowledge phase difference.
 The 107-bit retirement record stays at execute output and is not copied around
 the loop. The previous token carried 728 bits including register file and trace.
 These are structural storage reductions, not measured chip area or energy.
 
-Physical implementation must close write-data/decode setup and hold around each
-selected arrival pulse, minimum pulse width, and write-to-read settling through
-the next request/response and execute path. The published chisel-async atomic AND,
-event-register and phase primitives provide simulation models, not that proof.
+The digital writeback constraint is `guard_min = 31 ns > arrival_max (10 ns) +
+select_max (10 ns) + register_Q_max (10 ns)`. The exported core primitive
+`request_guard` delays both edges of the native request; Click retains two-phase
+signalling. A selected public `AsymmetricCElement` rises on arrival plus decode
+and falls when arrival ends. No private library module name/resource is embedded
+in MCU RTL. Decode and data must be stable before arrival and through token
+acknowledgement; arrival must return low long enough to reset the selection cell.
+
+Both register-read multiplexers are inside the execute transform, with its
+whole-path data budget increased to 20 ns for mux, decode and ALU together.
+The 480 register bits reach execute as wires; execute stores only its result,
+and the state/join tokens remain compact. Memory response latency supplies no
+writeback safety margin. Core tests reply after 2 fs (the minimum visible phase
+above the harness's 1 fs sampling), overlap replies with request return, vary
+cells across 1..10 ns, and check register Q before token forwarding. Bypassing
+the guard must fail that check in both designs.
+
+These are digital assumptions. Physical implementation must characterize and
+close the guard inequality, full read/execute path, write-data/decode setup and
+hold, pulse widths, fork/skew and reset recovery/removal. A delay primitive is
+not a qualified GF180 delay cell; passing these tests is not physical closure.
 
 Four-phase reset automatically reinstalls the initial token. Click additionally
 requires `start` to rise after coordinated reset settles, then remain high until

@@ -77,7 +77,7 @@ object HostSchema {
     names.zipWithIndex.map { case (name, index) => HostRegister(index, name) }.toVector
 
   val device: Vector[HostRegister] = words("ABI_VERSION", "APPLICATION_ID", "APPLICATION_VERSION",
-    "PROGRAM_BYTES", "WORKING_RAM_BYTES", "GPIO_COUNT", "MEASUREMENT_COUNT", "RESET_REASON")
+    "PROGRAM_BYTES", "WORKING_RAM_BYTES", "GPIO_COUNT", "MEASUREMENT_COUNT", "RESET_REASON", "CRASH_COUNT")
   val loader: Vector[HostRegister] = words("MODE", "PROGRAMMED", "PROGRAM_LOCKED", "CAN_PROGRAM",
     "BUSY", "LAST_ERROR", "IMAGE_ID", "RECEIVED_BYTES")
   val measurement: Vector[HostRegister] = words("VALUE", "FLAGS", "AGE_MS", "SEQUENCE", "UNIT", "SCALE10")

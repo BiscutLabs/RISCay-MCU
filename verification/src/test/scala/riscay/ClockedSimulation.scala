@@ -16,11 +16,18 @@ object ClockedSimulation {
       referenceHalfPeriodNs: Int = 163, onChipOscillator: Boolean = false,
       chipParameters: riscay.soc.LowPowerParameters = riscay.soc.LowPowerParameters(),
       serviceStartupNs: Int = 500, deadlineNs: Long = 100000000L,
-      serviceModelHz: Double = 10000000, processTimeoutSeconds: Int = 90): Path = {
+      serviceModelHz: Double = 10000000, processTimeoutSeconds: Int = 90,
+      serviceHalfPeriodNs: Int = 50): Path = {
+    require(serviceHalfPeriodNs > 0)
     val root = Paths.get("build/soc-tests").toAbsolutePath; Files.createDirectories(root)
     val base = Files.createTempDirectory(root, name)
     Simulator().check(base.resolve("simulator"))
-    ExportDesign.emit(gen, base)
+    var design: AsyncModule = null
+    ExportDesign.emit({ design=gen; design }, base)
+    design match {
+      case soc: riscay.soc.SocTop => riscay.soc.SramInventory.write(base, soc.p.config)
+      case _ =>
+    }
     val manifest = ujson.read(Files.readString(base.resolve("contract.json")))("manifest")
     def nodes(n: ujson.Value): Seq[ujson.Value] = Seq(n) ++ n("children").arr.flatMap(c => nodes(c("contract")))
     val resources = nodes(manifest("design")).flatMap(_("primitives").arr).map(_("resource").str).distinct
@@ -51,7 +58,7 @@ ${manifest("top").str}${if(onChipOscillator) "Chip" else ""} dut (${ports.filter
 ${if(onChipOscillator) s"defparam dut.RESET_HOLD_CYCLES = 2;\ndefparam dut.supplyMonitor.SETTLE_NS = 0;\ndefparam dut.oscillator.NOMINAL_HZ = ${1.0e9/(2.0*referenceHalfPeriodNs)};\ndefparam dut.oscillator.STARTUP_NS = 500;\ndefparam dut.serviceOscillator.STARTUP_NS = $serviceStartupNs;\ndefparam dut.serviceOscillator.NOMINAL_HZ = $serviceModelHz;\nassign serviceClock=dut.serviceClock;\nassign watchdogClock=dut.lfClock;\nassign serviceClockEnable=dut.serviceClockEnable;" else ""}
 reg clockEnabled=1;
 reg referenceEnabled=1;
-${if(onChipOscillator) "" else s"initial begin serviceClock=0; forever begin #50; if(clockEnabled) serviceClock=~serviceClock; end end\ninitial begin watchdogClock=0; forever begin #$referenceHalfPeriodNs; if(referenceEnabled) watchdogClock=~watchdogClock; end end"}
+${if(onChipOscillator) "" else s"initial begin serviceClock=0; forever begin #$serviceHalfPeriodNs; if(clockEnabled) serviceClock=~serviceClock; end end\ninitial begin watchdogClock=0; forever begin #$referenceHalfPeriodNs; if(referenceEnabled) watchdogClock=~watchdogClock; end end"}
 initial begin #$deadlineNs; $$fatal(1,"SOC_DEADLINE"); end
 $extra
 ${if(onChipOscillator && chipParameters.stopServiceClock) wakeProbe + hostTasks.replace("task start_bus; begin", "reg transactionActive=0;\ntask start_bus; begin\n  if(!transactionActive) wake_probe(); transactionActive=1;").replace("scl=0; hostLow=1; #1200; scl=1; #1200; hostLow=0; #1200;", "scl=0; hostLow=1; #1200; scl=1; #1200; hostLow=0; #1200; transactionActive=0;") else hostTasks}

@@ -1,6 +1,6 @@
 {
   "program_bytes": 2048,
-  "working_ram_bytes": 256,
+  "working_ram_bytes": 1024,
   "stack_reserve_bytes": 128,
   "guard_bytes": 16,
   "program_origin": 268435456,

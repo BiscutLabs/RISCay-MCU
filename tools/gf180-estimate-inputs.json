@@ -1,0 +1,25 @@
+{
+  "scope": "Pinned inputs for estimation only; not a tapeout PDK lock",
+  "open_pdks_revision": "40cee970d8a9b7eaea35a34fe7d6068f05721f0a",
+  "standard_cells": "gf180mcu_fd_sc_mcu7t5v0",
+  "library_license": "Apache-2.0",
+  "libraries": {
+    "ff_125C_3v60.lib": "f7d93ac4452c3388e27e8f88149c4f6a4ed1aaed344e93cec095914d374ed945",
+    "ss_n40C_3v00.lib": "08847da4bb78d75ba004e79bb1540dd43fa8d4ed694b84ed5c182d0809520a93",
+    "tt_025C_3v30.lib": "f9dee07cf158324934b0c59144d970a2e8313f43533ede6283ec3c136f82fe53"
+  },
+  "tools": {
+    "yosys": {
+      "version": "0.33 (git sha1 2584903a060), Ubuntu 0.33-5build2",
+      "sha256": "88c0a12bb814a1a8716b1ae10b482e35d3005ed558e1f5f626b3dc983ea3abd0"
+    },
+    "abc": {
+      "version": "Ubuntu yosys-abc 0.33-5build2",
+      "sha256": "001a99fb8648794076dd238e42f3bd8c5112a4b8bd89660883325a7e0d006043"
+    },
+    "sv2v": {
+      "version": "v0.0.13",
+      "sha256": "b80a8ac6212aa72a196d9d6129cda35f16dbfa799ec61848c46321f845b6b635"
+    }
+  }
+}

@@ -13,12 +13,15 @@ import riscay._
 /** Sequential RV32E core. No periodic clock; memory owns each request's latency.
   * The state branch waits for the matching response before executing a microstep.
   */
-class FourPhaseCore(domain: ResetDomain = new ResetDomain("root")) extends AsyncModule(domain) {
+class FourPhaseCore(domain: ResetDomain = new ResetDomain("root"),
+    registerCell: ModelTime = RegisterTiming.minimum,
+    timing: BundledTiming = BundledTiming.Simulation,
+    executeTiming: BundledTiming = BundledTiming.simulation(dataMax=RegisterTiming.executeData)) extends AsyncModule(domain) {
+  RegisterTiming.check(registerCell)
   val request = fourPhaseOutput("request", new MemoryRequest)
   val response = fourPhaseInput("response", new MemoryResponse)
   val trace = IO(Output(new Retirement))
   val traceEvent = IO(Output(Bool()))
-  private val timing = BundledTiming.Simulation
   private val cell = ModelTime.ps(1000)
   private val state = asyncChild("state")(d => new FourPhaseFifo(new CoreState, 1,
     timing, Seq(CoreState.initial), cell, d))
@@ -28,24 +31,29 @@ class FourPhaseCore(domain: ResetDomain = new ResetDomain("root")) extends Async
   private val join = asyncChild("join")(d => new FourPhaseJoin(new CoreState, new MemoryResponse, timing, cell, d))
   private val execute = asyncChild("execute")(d => new FourPhaseStage(
     new ExecutionInput, new ExecutionResult,
-    (p: ExecutionInput) => Execute.step(p.state, p.response, p.a, p.b), timing, d))
-  private val registers = asyncChild("register_file")(d => new ArchitecturalRegisters(d))
-  private val arrival = Module(new ControlGate(1,GateOperation.Buffer,cell))
+    (p: ExecutionInput) => Execute.step(p.state, p.response, p.a, p.b),
+    executeTiming, d))
+  private val registers = asyncChild("register_file")(d => new ArchitecturalRegisters(d,registerCell))
+  private val arrival = Module(new ControlGate(1,GateOperation.Buffer,registerCell))
   arrival.reset := reset; arrival.a := state.out.req.asUInt; arrival.b := 0.U
   contract.primitive("register_arrival",arrival,Map("WIDTH"->BigInt(1),"OP"->BigInt(0),
-    "DELAY_FS"->BigInt(cell.fs),"RESET_VALUE"->BigInt(0)),contract.endpoint("register_reset",reset),
+    "DELAY_FS"->BigInt(registerCell.fs),"RESET_VALUE"->BigInt(0)),contract.endpoint("register_reset",reset),
     "four-phase state request captures one writeback before following operand evaluation")
   registers.arrival := arrival.q.asBool
   registers.write := state.out.bits.writeback
-  registers.rs1 := join.out.bits.right.data(19,15); registers.rs2 := join.out.bits.right.data(24,20)
-  FourPhase.connect(fork.in, state.out)
+  private val writeback = Module(new ControlGate(1,GateOperation.Buffer,RegisterTiming.forward))
+  writeback.reset := reset; writeback.a := state.out.req.asUInt; writeback.b := 0.U
+  contract.primitive("request_guard",writeback,Map("WIDTH"->BigInt(1),"OP"->BigInt(0),
+    "DELAY_FS"->BigInt(RegisterTiming.forward.fs),"RESET_VALUE"->BigInt(0)),"register_reset",
+    "min 31 ns > arrival max 10 ns + selection max 10 ns + register Q max 10 ns; hold token until acknowledge")
+  fork.in.req := writeback.q.asBool; fork.in.bits := state.out.bits; state.out.ack := fork.in.ack
   FourPhase.connect(address.in, fork.out(0))
   FourPhase.connect(join.left, fork.out(1))
   FourPhase.connect(request, address.out)
   FourPhase.connect(join.right, response)
   execute.in.req := join.out.req; join.out.ack := execute.in.ack
   execute.in.bits.state := join.out.bits.left; execute.in.bits.response := join.out.bits.right
-  execute.in.bits.a := registers.a; execute.in.bits.b := registers.b
+  execute.in.bits.registers := registers.values
   state.in.req := execute.out.req; execute.out.ack := state.in.ack
   state.in.bits := execute.out.bits.state
   trace := execute.out.bits.trace

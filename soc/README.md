@@ -20,8 +20,14 @@ generator and qualified macro/layout bindings remain outstanding. See
 
 Clocked helper modules are inlined into the SoC root for export. All asynchronous
 cores/bridges retain registered contract hierarchy; no unregistered helper module
-is left outside the strict export inventory. Inlining changes hierarchy, not the
+is left outside the strict export inventory. Physical SRAM instances have their
+own pinned inventory and view checks in the MCU export adapter. Inlining changes hierarchy, not the
 clocks or protocol. Behavioral tests still exercise the complete emitted logic.
 Complete exports use the MCU checker's explicit generated-reset option; see
 [build and test](../docs/build-and-test.md). Constant GPIO outputs are described
 by the port ABI rather than artificial asynchronous timing endpoints.
+
+`Sram.scala` supplies the byte-sequenced GF180 SRAM banks, shared by both cores.
+Groundlark allocates two 1 KiB macros for program memory and one for working RAM.
+See [SRAM integration](../docs/sram-integration.md) for asset fetching, physical
+views, reset ordering and verification limits.
