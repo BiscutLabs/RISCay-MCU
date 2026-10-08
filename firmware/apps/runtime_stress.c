@@ -46,7 +46,7 @@ int main(void) {
     app_word(6, check_guard());
     app_word(7, stack_watermark());
     /* Sleep with initialized state retained, then verify it was not corrupted. */
-    wait_events(500u);
+    acknowledge_events(wait_events(500u));
     for (uint32_t i = 0; i < 4; ++i)
         if (scratch[i] != (uint8_t)results[i]) { app_word(0,0xbad00002u); return 1; }
     return 0;

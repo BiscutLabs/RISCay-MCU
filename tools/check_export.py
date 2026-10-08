@@ -67,6 +67,56 @@ def sleep_clock_background(source: str, manifest: dict, scopes: dict, checks: in
     return result.replace(completion, f"CONTRACT_PROBES_PASS:{count}"), count
 
 
+def register_file_background(source: str, manifest: dict, checks: int):
+    """Exercise operand muxes with a nonzero bank and a valid register index.
+
+    The library backgrounds zero wide data drivers, and its paired fallback
+    uses only 1/all-ones values. Neither selects a valid RV32E source field
+    while another wide driver holds register data. Add the original bit walk
+    with x1 prefilled. Force only a catalogued primitive output, never an
+    endpoint, operand mux or decoder. Keep all original checks and campaigns.
+    """
+    def nodes(node):
+        yield node
+        for child in node.get("children", []):
+            yield from nodes(child["contract"])
+    banks = []
+    for node in nodes(manifest["design"]):
+        if node.get("module") == "ArchitecturalRegisters":
+            bank = next((p for p in node["primitives"] if p["id"] == "x1"), None)
+            if bank is None or not any(p["name"] == "q" and p["direction"] == "output" and p["width"] == 32
+                                      for p in bank["ports"]):
+                raise ValueError("REGISTER_FILE_DRIVER_MISMATCH")
+            banks.append(bank["rtl_path"] + ".q")
+    if not banks:
+        return source, checks
+    anchor = f"initial begin\nforce {manifest['top']}.reset = 1'b1; #1;\n"
+    if source.count(anchor) != 1:
+        raise ValueError("REGISTER_FILE_PROBE_SHAPE_CHANGED")
+    start = source.index(anchor) + len(anchor)
+    header_end = source.index("\n#1;\n", start) + len("\n#1;\n")
+    header = source[start:header_end]
+    ones = re.sub(r"(force \S+ = 1'h)0;", r"\g<1>1;", header)
+    if ones == header or source.count(ones) != 1:
+        raise ValueError("REGISTER_FILE_PROBE_SHAPE_CHANGED")
+    campaign = source[start:source.index(ones)]
+    coverage = list(re.finditer(r"^if \(ones_\d+ !==.*INACTIVE_ENDPOINT:.*$", source, re.M))
+    steps = campaign.count("#1; check;")
+    completion = f"CONTRACT_PROBES_PASS:{checks}"
+    if not coverage or not steps or source.count(completion) != 1:
+        raise ValueError("REGISTER_FILE_PROBE_SHAPE_CHANGED")
+    extra = ""
+    for bank in banks:
+        driver = f"force {bank} = 32'h0;"
+        if driver not in header:
+            raise ValueError("REGISTER_FILE_DRIVER_MISSING")
+        extra += campaign.replace(driver, f"force {bank} = 32'hffffffff;")
+    count = checks + steps * len(coverage) * len(banks)
+    position = coverage[0].start()
+    result = source[:position] + extra + source[position:]
+    return result.replace(completion, f"CONTRACT_PROBES_PASS:{count}"), count
+
+
 def generated_reset_probe(source: str, manifest: dict) -> str:
     """Retarget only the library's flat-reset assumption; fail closed on API drift."""
     top = manifest["top"]
@@ -153,17 +203,17 @@ def main() -> None:
     original_run = subprocess.run
     original_probe = module.probe_source
 
-    if args.soc or args.vector_coverage or args.sleep_clock:
-        def probe(manifest, scopes, paired=False):
-            source, count = original_probe(manifest, scopes, paired)
-            if args.sleep_clock:
-                source, count = sleep_clock_background(source, manifest, scopes, count)
-            if args.soc:
-                source = generated_reset_probe(source, manifest)
-            if args.vector_coverage:
-                source = vector_coverage_probe(source, manifest)
-            return source, count
-        module.probe_source = probe
+    def probe(manifest, scopes, paired=False):
+        source, count = original_probe(manifest, scopes, paired)
+        source, count = register_file_background(source, manifest, count)
+        if args.sleep_clock:
+            source, count = sleep_clock_background(source, manifest, scopes, count)
+        if args.soc:
+            source = generated_reset_probe(source, manifest)
+        if args.vector_coverage:
+            source = vector_coverage_probe(source, manifest)
+        return source, count
+    module.probe_source = probe
 
     def run(command, *pargs, **kwargs):
         kwargs["timeout"] = probe_timeout(command, kwargs.get("timeout"),

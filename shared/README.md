@@ -16,6 +16,9 @@ must not come from the same shared datapath used to implement the CPU.
 Shared combinational RV32E logic is implemented in
 [Architecture.scala](src/main/scala/riscay/Architecture.scala). Independent tests
 are in `verification/`; the interpreter does not call production datapath code.
+[ArchitecturalRegisters.scala](src/main/scala/riscay/ArchitecturalRegisters.scala)
+holds one event-written register bank; each design supplies its own native
+arrival pulse. The control token no longer copies the register file or trace.
 
 [HostSchema.scala](src/main/scala/riscay/HostSchema.scala) defines and validates
 the generic logical host catalog, measurement descriptors and build parameters.
@@ -23,7 +26,7 @@ It supplies no I2C transport, peripheral RTL or physical memory. Board-specific
 registers and pin roles belong in [profiles/](../profiles/README.md), never in the
 shared CPU or common device/loader services.
 Common clocked peripheral RTL lives in [soc/](../soc/README.md), and SoC/board
-tests live in `verification/`. A compiler-built firmware corpus remains future
-qualification. Both designs must pass the same functional tests; each also
+tests live in `verification/`. Compiler-built firmware and memory budgets are in
+[firmware/](../firmware/README.md). Both designs must pass the same functional tests; each also
 needs its own protocol/timing negative controls. Compare committed instruction
 and I/O effects rather than internal cycles. Optional features are on hold.

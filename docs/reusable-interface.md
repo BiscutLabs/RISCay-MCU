@@ -110,6 +110,11 @@ Groundlark implements the latter policy; another project need not inherit it.
 The common protocol knows nothing about battery thresholds or Pi shutdown GPIOs.
 Full MCU reset clears programming lock/validity; output reset values come from
 the build's board profile. Host-only and bus resets do not clear the lock.
+Application watchdog recovery resets the CPU/bridges and software-owned state,
+preserving the permanent controller, image validity and lock. It returns a started
+image to READY and requires an explicit host START before execution resumes.
+Only profile-declared software-owned application words allocate storage; sparse
+word IDs are legal, holes reject, and hardware-owned words use controller outputs.
 
 ## Verification
 

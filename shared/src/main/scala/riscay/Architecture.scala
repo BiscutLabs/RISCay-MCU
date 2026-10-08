@@ -38,11 +38,14 @@ class Retirement extends Bundle {
   val cause = UInt(4.W)
 }
 
-/** Architectural state travels as one token; memory is external to the core.
-  * x0 is not stored. The other fifteen registers have full 32-bit semantics.
+class RegisterWrite extends Bundle {
+  val enable = Bool(); val rd = UInt(4.W); val data = UInt(32.W)
+}
+
+/** Control and one pending writeback travel with the token. The architectural
+  * register file and debug trace are not copied around the feedback loop.
   */
 class CoreState extends Bundle {
-  val registers = Vec(15, UInt(32.W))
   val pc = UInt(32.W)
   val operation = UInt(2.W)
   val instruction = UInt(32.W)
@@ -51,19 +54,24 @@ class CoreState extends Bundle {
   val mask = UInt(4.W)
   val loadKind = UInt(3.W)
   val destination = UInt(4.W)
-  val trace = new Retirement
+  val writeback = new RegisterWrite
 }
 object CoreState {
   def initial: CoreState = (new CoreState).Lit(
-    _.registers -> Vec.Lit(Seq.fill(15)(0.U(32.W)): _*),
     _.pc -> 0.U(32.W), _.operation -> Operation.Fetch.U(2.W),
     _.instruction -> 0.U(32.W), _.address -> 0.U(32.W),
     _.storeData -> 0.U(32.W), _.mask -> 0.U(4.W),
     _.loadKind -> 0.U(3.W), _.destination -> 0.U(4.W),
-    _.trace -> (new Retirement).Lit(
-      _.valid -> false.B, _.pc -> 0.U(32.W), _.instruction -> 0.U(32.W),
-      _.rd -> 0.U(4.W), _.data -> 0.U(32.W), _.writeRegister -> false.B,
-      _.trap -> false.B, _.cause -> 0.U(4.W)))
+    _.writeback -> (new RegisterWrite).Lit(
+      _.enable -> false.B, _.rd -> 0.U(4.W), _.data -> 0.U(32.W)))
+}
+
+class ExecutionInput extends Bundle {
+  val state = new CoreState; val response = new MemoryResponse
+  val a = UInt(32.W); val b = UInt(32.W)
+}
+class ExecutionResult extends Bundle {
+  val state = new CoreState; val trace = new Retirement
 }
 
 /** Shared combinational ISA semantics; the two designs own all protocol state.
@@ -79,10 +87,11 @@ object Execute {
     r
   }
 
-  def step(s: CoreState, response: MemoryResponse): CoreState = {
+  def step(s: CoreState, response: MemoryResponse, a: UInt, b: UInt): ExecutionResult = {
     val n = Wire(new CoreState)
     n := s
-    n.trace := 0.U.asTypeOf(new Retirement)
+    val trace = WireDefault(0.U.asTypeOf(new Retirement))
+    n.writeback := 0.U.asTypeOf(new RegisterWrite)
     val insn = response.data
     val opcode = insn(6, 0)
     val rd = insn(11, 7)
@@ -90,9 +99,6 @@ object Execute {
     val rs1 = insn(19, 15)
     val rs2 = insn(24, 20)
     val f7 = insn(31, 25)
-    def reg(index: UInt): UInt = Mux(index === 0.U, 0.U, s.registers((index - 1.U)(3, 0)))
-    val a = reg(rs1)
-    val b = reg(rs2)
     val immI = Cat(Fill(20, insn(31)), insn(31, 20))
     val immS = Cat(Fill(20, insn(31)), insn(31, 25), insn(11, 7))
     val immB = Cat(Fill(19, insn(31)), insn(31), insn(7), insn(30, 25), insn(11, 8), 0.U(1.W))
@@ -102,26 +108,26 @@ object Execute {
 
     def fault(cause: UInt, instruction: UInt): Unit = {
       n.operation := Operation.Halt.U
-      n.trace.valid := true.B
-      n.trace.pc := s.pc
-      n.trace.instruction := instruction
-      n.trace.trap := true.B
-      n.trace.cause := cause
-      n.trace.writeRegister := false.B
+      trace.valid := true.B
+      trace.pc := s.pc
+      trace.instruction := instruction
+      trace.trap := true.B
+      trace.cause := cause
+      trace.writeRegister := false.B
     }
     def retire(instruction: UInt): Unit = {
       n.pc := sequential
       n.operation := Operation.Fetch.U
-      n.trace.valid := true.B
-      n.trace.pc := s.pc
-      n.trace.instruction := instruction
+      trace.valid := true.B
+      trace.pc := s.pc
+      trace.instruction := instruction
     }
     def write(index: UInt, value: UInt): Unit = {
       when(index =/= 0.U) {
-        n.registers((index - 1.U)(3, 0)) := value
-        n.trace.writeRegister := true.B
-        n.trace.rd := index(3, 0)
-        n.trace.data := value
+        n.writeback.enable := true.B; n.writeback.rd := index(3,0); n.writeback.data := value
+        trace.writeRegister := true.B
+        trace.rd := index(3, 0)
+        trace.data := value
       }
     }
 
@@ -224,6 +230,7 @@ object Execute {
           }
         }
     }
-    n
+    val result = Wire(new ExecutionResult); result.state := n; result.trace := trace
+    result
   }
 }

@@ -15,6 +15,9 @@ more, a divider retains a nominal 1 ms source tick for legacy fixtures. Below
 decodes it, subtracts the previously consumed tick count modulo 2^32, and only
 then converts elapsed ticks to milliseconds. Sub-millisecond remainders carry
 between updates, so frequent wakes cannot round elapsed time away.
+The common case adds one constant and carries a fractional millisecond. Missed
+ticks use a bounded 32-cycle serial quotient/remainder calculation before one
+coalesced update; three parallel multiply/divide/modulo trees are not instantiated.
 
 The production nominal quantum is 129354 us. A single tick is bounded for this
 engineering configuration by 83333..200000 us. CPU deadlines, NOW_MS, leases and
@@ -59,13 +62,19 @@ power gating.
 
 Event-set wake storage responds while service clocks are absent. An unconsumed
 LF tick, a configured GPIO level differing from its last synchronized observation,
-I2C bus-low activity, POR or watchdog reset enables the fast source. GPIO must
+an I2C START edge, POR or watchdog reset enables the fast source. GPIO must
 remain stable through oscillator startup and synchronization for reliable event
 capture. The work gate opens only after its normal synchronization frontier runs.
 A short maintenance hold drains wake pipelines; I2C activity additionally holds
-the source for 4096 service cycles after the last low bus level. A recognized
-transaction holds the work gate open through STOP/repeated START and its drain
-interval. No CPU wake occurs merely because the host reads status or telemetry;
+the source for 4096 service cycles after a captured START or selected activity.
+A rejected address cancels that retry hold; a foreign transaction's data edges
+do not extend it. A selected transaction holds the work gate open through STOP,
+final read NACK or an inactivity timeout and its drain interval. The timeout is
+262144 service cycles without a synchronized line edge (13.1072..32.768 ms over
+20..8 MHz); it releases SDA and discards an incomplete command. Static low SCL
+or SDA cannot continually retrigger wake, including after host power disappears.
+Repeated real STARTs can still wake the MCU; this is not a bus-noise filter.
+No CPU wake occurs merely because the host reads status or telemetry;
 WAKE remains explicit.
 
 The required fast oscillator contract is about 12 MHz nominal, 8..20 MHz,
@@ -96,8 +105,8 @@ Its late or partial reception cannot commit a payload. Do not blindly retry a
 side-effecting loader command as a wake mechanism. No SCL stretching is used and
 no new wake pin is needed. A Linux client needs an adapter supporting address-only
 writes (for example SMBus Quick); qualify that capability on the actual Pi adapter.
-A bit-banged alternative is to hold SCL low for at least 100 us with SDA released,
-then produce a legal START while the source is awake. Ordinary existing host
+Holding SCL low alone is not a wake mechanism. Bit-banged clients use the same
+address-only probe and retry window. Ordinary existing host
 traffic remains valid in builds with source stopping disabled.
 
 ## Watchdog and reset
@@ -108,11 +117,18 @@ heartbeat-handshake latency apply to the time since software's last kick.
 A stalled service source cannot stop it. A halted/spinning application gets no
 automatic kicks; bounded leased WAIT and unprogrammed bootstrap retain their
 existing exemptions. Sleep lease expiry wakes the CPU and ends automatic service.
+Lease writes themselves do not kick; firmware writes the magic key explicitly.
+Busy kick requests are retained until the crossing is acknowledged (coalescing
+multiple busy requests into one pending kick).
 
 LF failure still stops both timer and watchdog. Detecting LF failure would require
 another independent reference or external supervisor; that is not claimed here.
-Watchdog reset asserts all transaction resets and requests fast-source restart,
-but **does not reset the LF oscillator**. Only POR/brownout reset drives its
+Watchdog reset asserts CPU/bridge resets and requests fast-source restart. The
+board controller and GPIO override, ADC/samples, elapsed-time accumulator,
+loader/image/lock and LF counter retain state. RUNNING/FAULT returns to READY;
+the host may explicitly restart the validated image without unlocking it.
+The supervisor still requests orderly shutdown on low battery during a crash.
+Watchdog reset **does not reset the LF oscillator**. Only POR/brownout reset drives its
 `rst_n`. The analog candidate requires reset low during the supply ramp and at
 least 5 ms after valid supply. The wrapper now connects the supply-monitor macro
 to an asynchronous-assert reset sequencer. It synchronizes qualification and
@@ -137,6 +153,8 @@ Physical work includes a Gray-bus skew/max-delay bound shorter than the minimum
 source-tick interval, synchronizer placement, event-set storage recovery/removal,
 clock gating and test enable, retained-state timing and both oscillator receivers.
 Event-set reset release is synchronized before wake hold counters decrement.
+The START-capture phase flop is clocked by falling SDA and samples SCL; constrain
+its SCL setup/hold, event clock routing and subsequent synchronizer explicitly.
 Pad noise filtering and actual startup bounds also need physical qualification.
 
 `SleepSpec` retains legacy timing/regression coverage. `DeepSleepSpec` exercises

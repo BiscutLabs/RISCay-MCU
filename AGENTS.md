@@ -39,6 +39,11 @@
 - Loader status, validated-image reporting and a hardware programming lock are
   required in both variants. Follow `docs/loader-status-and-lock.md`; only full
   MCU reset or MCU power loss clears the lock. Pi resets and bus resets do not.
+  Application watchdog reset must preserve permanent power supervision, GPIO
+  ownership, sensing/timekeeping, validated image and programming lock. Test
+  Groundlark with the production 32-edge watchdog ratio, including trapped firmware.
+  Stuck/abandoned I2C transactions must release the service source; held-low
+  lines and foreign-address payloads must not sustain an oscillator wake.
 - Generic measurement channels and an application register area are required.
   Groundlark binds these to battery/supervisor telemetry. Include validity,
   freshness and calibration status; lock must not block reads or sample updates.

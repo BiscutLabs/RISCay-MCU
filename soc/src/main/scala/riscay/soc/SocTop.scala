@@ -6,8 +6,8 @@ import chisel3.util._
 import chiselasync.core.AsyncModule
 import riscay._
 
-/** Async contract root with a shared generated reset for all transaction state.
-  * Only the watchdog lives in the outer, POR-only domain. Synchronous release
+/** Watchdog recovery resets the application CPU and its transaction frontier.
+  * Permanent power supervision, sensing and loader protection are POR-only. Release
   * into the service clock also delays Click startup; async assertion is immediate.
   */
 abstract class SocTop(val p: SocParameters, board: SocParameters => BoardController) extends AsyncModule {
@@ -29,23 +29,26 @@ abstract class SocTop(val p: SocParameters, board: SocParameters => BoardControl
   systemReset := assertion || release.orR
   resetReason := watchdog.io.reason
   protected val workClock = Wire(Clock())
-  protected val fabric = withClockAndReset(workClock, systemReset.asAsyncReset) { Module(new SocFabric(p, board)) }
+  protected val fabric = withClockAndReset(workClock, reset) { Module(new SocFabric(p, board)) }
+  fabric.io.cpuReset := systemReset
   fabric.io.frontClock := serviceClock
   p.lowPower match {
     case Some(lp) =>
-      val timebase = withClockAndReset(watchdogClock, assertion.asAsyncReset) { Module(new SleepTimebase(lp)) }
-      val gate = withClockAndReset(serviceClock, systemReset.asAsyncReset) { Module(new RetainedClock) }
+      val timebase = withClockAndReset(watchdogClock, reset) { Module(new SleepTimebase(lp)) }
+      val gate = withClockAndReset(serviceClock, reset) { Module(new RetainedClock) }
       gate.io.gray := timebase.io.gray; gate.io.consumedGray := fabric.io.consumedGray
       gate.io.canSleep := fabric.io.canSleep; gate.io.activity := fabric.io.activity
+      gate.io.forceRun := systemReset
       workClock := gate.io.clockOut; fabric.io.clockRunning := gate.io.running
       fabric.io.timeGray := gate.io.synchronizedGray
       sleepEntries := gate.io.entries; sleeping := !gate.io.running
       if(lp.stopServiceClock) {
-        val wake = withClockAndReset(serviceClock, systemReset.asAsyncReset) { Module(new ServiceClockWake) }
+        val wake = withClockAndReset(serviceClock, reset) { Module(new ServiceClockWake) }
         val mask = ((BigInt(1) << p.config.gpioCount) - 1).U(32.W)
         wake.io.event := timebase.io.gray =/= fabric.io.consumedGray || ((gpioIn ^ fabric.io.observedGpio) & mask).orR
-        wake.io.hostActive := !scl || !sda
-        wake.io.running := gate.io.running
+        wake.io.scl := scl; wake.io.sda := sda
+        wake.io.selected := fabric.io.hostSelected; wake.io.rejected := fabric.io.hostRejected
+        wake.io.running := gate.io.running || systemReset
         serviceClockEnable := wake.io.enable
       } else { serviceClockEnable := true.B }
     case None =>

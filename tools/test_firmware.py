@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
 """Independent negative controls for code, stack and linker budget checks."""
 from pathlib import Path
+import os
 import subprocess
 import sys
 import unittest
@@ -18,6 +19,44 @@ def edge(a, b):
 
 
 class FirmwareAuditTest(unittest.TestCase):
+    def test_real_wait_helper_preserves_events_arriving_during_processing(self):
+        # Execute the actual header against mapped MMIO storage. FabricSpec
+        # separately verifies W1C/set arbitration; here we inspect which bits
+        # software writes, including an event arriving before the next WAIT.
+        output = ROOT / "build/firmware-controls" / uuid.uuid4().hex
+        output.mkdir(parents=True)
+        source = output / "events.c"
+        source.write_text(r'''
+#define _GNU_SOURCE
+#include <assert.h>
+#include <sys/mman.h>
+#include "riscay.h"
+int main(void) {
+    void *base=mmap((void *)0x30000000u,4096,PROT_READ|PROT_WRITE,
+        MAP_PRIVATE|MAP_ANONYMOUS|MAP_FIXED_NOREPLACE,-1,0);
+    assert(base==(void *)0x30000000u);
+    MMIO(4)=123; MMIO(12)=0; MMIO(16)=2;
+    uint32_t events=wait_events(500);
+    assert(events==2 && MMIO(12)==0 && MMIO(8)==623);
+    assert(MMIO(60)==2000 && MMIO(32)==0x57444f47u);
+    acknowledge_events(events);
+    assert(MMIO(12)==2); /* only the consumed deadline was acknowledged */
+    MMIO(12)=0; /* record of later clear writes starts empty */
+    MMIO(16)=4; /* GPIO arrived while handling the previous deadline */
+    events=wait_events(500);
+    assert(events==4 && MMIO(12)==0); /* next wait did not discard it */
+    acknowledge_events(events); assert(MMIO(12)==4);
+    return munmap(base,4096);
+}
+''')
+        prefix = ["wsl", "-d", "Ubuntu", "--exec"] if os.name == "nt" else []
+        def path(value):
+            return subprocess.check_output([*prefix, "wslpath", "-u", str(value)], text=True).strip() if prefix else str(value)
+        binary = path(output / "events")
+        subprocess.run([*prefix, "gcc", "-std=c11", "-O2", "-Wall", "-Wextra", "-Werror",
+                        "-I", path(ROOT / "firmware/include"), path(source), "-o", binary], check=True, timeout=60)
+        subprocess.run([*prefix, binary], check=True, timeout=10)
+
     def test_call_chain_sums_frames_and_takes_largest_branch(self):
         graph = "\n".join([node("main", 12), node("batch", 32), node("transform", 44),
                            node("leaf", 0), node("other", 4), edge("main", "batch"),

@@ -40,7 +40,13 @@ same on-chip ROM/RAM and clocked peripheral island: I2C loader/status, GPIO,
 timer/events, measurements, SPI ADC and independent watchdog. A permanent
 Groundlark controller supervises power before upload and during application
 stalls. Its default policy is disabled until qualified battery settings are
-provided. Physical/analog, pin/package, board and Chiselator qualification remain.
+provided. Watchdog recovery resets the application and its CPU bridges while
+preserving the power supervisor, sensing, timebase, validated image and programming
+lock. The host can explicitly restart that image. Only manual/POR/brownout reset
+or MCU power loss clears the lock and returns Groundlark to its off state.
+**Tapeout must deliberately supply and qualify an enabled board policy**; the
+reference emitters' disabled `PowerPolicy()` never enables Pi power.
+Physical/analog, pin/package, board and Chiselator qualification remain.
 
 Both reference emitters include **retained sleep with fast-clock shutdown** and a
 nominal **7.7307 Hz** timebase matched to the
@@ -55,6 +61,9 @@ include a transistor-level fast oscillator and supply monitor, plus a synthesiza
 and digital integration tests are separate from layout, extracted qualification
 and whole-chip power measurements, which remain outstanding. See
 [sleep and clocks](docs/sleep-and-clock.md) for timing bounds and host requirements.
+Stuck or abandoned I2C transfers time out and release the fast source. A held-low
+bus cannot continuously wake it; traffic for another address releases the gate
+after address rejection.
 
 See the [implemented SoC contract](docs/soc-contract.md) for the wire protocol,
 memory map and reset behavior. The [feature and IP plan](docs/features-and-ip.md)

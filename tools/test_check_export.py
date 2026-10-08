@@ -7,10 +7,67 @@ from pathlib import Path
 import subprocess
 import tempfile
 import unittest
-from check_export import generated_reset_probe, vector_coverage_probe, probe_timeout, sleep_clock_background
+from check_export import generated_reset_probe, vector_coverage_probe, probe_timeout, sleep_clock_background, register_file_background
 
 
 class ResetProbeTest(unittest.TestCase):
+    def test_register_file_background_adds_activity_without_masking_bad_mapping(self):
+        manifest = {"top": "RfTop", "design": {"module": "ArchitecturalRegisters", "primitives": [
+            {"id": "x1", "rtl_path": "RfTop.data", "ports": [{"name": "q", "direction": "output", "width": 32}]}]}}
+        stimulus = "initial begin\nforce RfTop.reset = 1'b1; #1;\n"
+        checks = 0
+        for control in (0, 1):
+            for name, width in (("reset",1),("index",5),("data.q",32)):
+                stimulus += f"force RfTop.{name} = {width}'h{control if width==1 else 0:x};\n"
+            stimulus += "#1;\n"
+            for name, width in (("reset",1),("index",5),("data.q",32)):
+                for bit in range(width):
+                    for value in (1<<bit,((1<<width)-1)^(1<<bit)):
+                        stimulus += f"force RfTop.{name} = {width}'h{value:x};\n#1; check;\n"
+                        checks += 1
+                stimulus += f"force RfTop.{name} = {width}'h{control if width==1 else 0:x};\n#1;\n"
+        prelude = '''module ContractProbe; timeunit 1ns; timeprecision 1ps;
+reg [31:0] ones_0=0, zeros_0=0;
+task check; integer i; begin
+if(RfTop.observed !== RfTop.expected) $fatal(1,"BINDING_MISMATCH");
+for(i=0;i<32;i=i+1) begin
+if(RfTop.observed[i] === 1'b1) ones_0[i]=1;
+if(RfTop.observed[i] === 1'b0) zeros_0[i]=1;
+end
+end endtask
+'''
+        coverage = 'if (ones_0 !== 32\'hffffffff || zeros_0 !== 32\'hffffffff) $fatal(1,"INACTIVE_ENDPOINT:RfTop.observed");\n'
+        original = prelude + stimulus + coverage + f'$display("CONTRACT_PROBES_PASS:{checks}"); $finish; end endmodule'
+        augmented, count = register_file_background(original, manifest, checks)
+        self.assertEqual(count, checks*3//2)
+        self.assertTrue(augmented.startswith(prelude + stimulus))
+        self.assertIn(coverage, augmented)
+        self.assertEqual(register_file_background(original,{"design":{}},checks),(original,checks))
+        with self.assertRaisesRegex(ValueError,"PROBE_SHAPE_CHANGED"):
+            register_file_background("",manifest,checks)
+        bad = copy.deepcopy(manifest); bad["design"]["primitives"][0]["ports"][0]["width"]=31
+        with self.assertRaisesRegex(ValueError,"DRIVER_MISMATCH"):
+            register_file_background(original,bad,checks)
+        for source, broken, diagnostic in ((original,False,"INACTIVE_ENDPOINT"),
+                                           (augmented,False,f"CONTRACT_PROBES_PASS:{count}"),
+                                           (augmented,True,"BINDING_MISMATCH")):
+            with tempfile.TemporaryDirectory(prefix="riscay-register-probe-") as folder:
+                path=Path(folder)
+                rtl='''module Bank; reg [31:0] q=0; endmodule
+module RfTop;
+reg reset=0; reg [4:0] index=0; Bank data();
+wire [31:0] expected=index==1 ? data.q : 0;
+wire [31:0] observed=%s;
+endmodule
+''' % ("32'b0" if broken else "expected")
+                (path/"test.sv").write_text(rtl+source)
+                built=subprocess.run(["iverilog","-g2012","-s","RfTop","-s","ContractProbe","-o","sim.vvp","test.sv"],
+                                     cwd=path,capture_output=True,text=True,timeout=30)
+                self.assertEqual(built.returncode,0,built.stderr)
+                result=subprocess.run(["vvp","sim.vvp"],cwd=path,capture_output=True,text=True,timeout=30)
+                self.assertIn(diagnostic,result.stdout)
+                self.assertEqual(result.returncode==0,"CONTRACT_PROBES_PASS" in diagnostic)
+
     def test_sleep_background_adds_coverage_and_keeps_mapping_failures(self):
         manifest = {"top": "SleepTop"}
         scopes = {"SleepTop": {"registers": {"gate_enabled": 1}}}

@@ -64,6 +64,9 @@ stack frames and retained sleep. Retirement SP writes, a RAM watermark and a
 guard check independently corroborate GCC's stack bounds. These finite generic
 fixtures are not deployment firmware. `test_firmware.py` checks rejection of
 unknown/dynamic/recursive stacks, unsupported ISA and real undersized links.
+It also compiles the actual event helper against mapped MMIO storage on Linux
+(Ubuntu WSL on Windows), requiring native `gcc`, to verify that WAIT preserves
+events arriving during processing and acknowledges only consumed bits.
 Full-capacity compiled-image simulations have a bounded 300-second process
 allowance; other clocked harness tests retain their 90-second default.
 
@@ -73,6 +76,11 @@ errors, event/clear races, deadlines, failed/stale samples, interrupted upload,
 reset cancellation and zero-channel/zero-GPIO configurations. Groundlark tests
 accelerate the millisecond divider and ADC cadence together; their enabled
 fixture is not a deployment policy. Test watchdog clocks are accelerated too.
+Additional fabric cases cover queued watchdog kicks, lease writes with no kick,
+sparse application-register holes and reads spanning concurrent word updates.
+`ScalingSpec` exhaustively checks all 4096 ADC codes against independent integer
+division, plus fractional tick accumulation, large missed-tick deltas, counter
+wrap, updates during catch-up and reset during serial calculation.
 
 `SleepSpec` covers both CPUs parked through masked millisecond ticks, timed and
 host wake, finite watchdog-serviced leases, RAM/image-lock retention, runtime
@@ -92,6 +100,11 @@ stopped/restarted, the address-only I2C wake protocol, 0/15/100 us startup cases
 fraction carry, conservative sample aging, board minimum-off/ACK behavior,
 retained RAM/lock and watchdog recovery. LF clocks are accelerated in the SoC
 fixtures; the LF model's actual nominal period is checked separately.
+The Groundlark case retains the production 32-edge watchdog ratio and deliberately
+traps locked firmware in RUN and SHUTDOWN, checking uninterrupted Pi power,
+shutdown state, live sensing and lock preservation. Host timeout cases abandon
+write/read transactions, hold SDA low, continue foreign-address data clocks and
+then recover a normal read. None may keep the fast oscillator enabled indefinitely.
 
 `test_oscillator_model.py` runs Icarus checks of POR startup/restart, nominal slow
 frequency, error response, bounded period jitter and invalid-frequency
@@ -433,3 +446,59 @@ a truncated library; the transformation and prepared-model hash are unchanged.
 Physical estimates are the next proposed stage and should use the selected
 flip-flop memories. No synthesis area, whole-chip power or layout estimate is
 claimed by this clock/reset work.
+
+## Review fixes: recovery, host wake and storage
+
+On 2026-10-07 the complete nine-suite regression passed **57 Scala/Icarus tests**
+with zero failures, cancellations or skips. The Python controls passed **30 tests**.
+A subsequent four-test FabricSpec run also passed after strengthening the coherent
+snapshot test to modify a later word before the serializer reaches that boundary.
+Evidence is in `build/review-regression.log`, `build/review-emit.log`,
+`build/soc-tests/`, and the Scala XML reports.
+
+The new cases cover production-ratio watchdog crashes while Groundlark is RUNNING
+and SHUTDOWN, retained Pi power/lock/image and continued sensing, explicit locked
+image restart, abandoned I2C writes/reads, held-low SDA, foreign-address data
+traffic, queued kicks during CDC busy, lease writes without kicks, sparse register
+holes, and coherent read snapshots across concurrent software updates. Scaling
+checks exhaust all 4096 ADC codes and independently calculate elapsed fractions,
+large tick deltas, wrap and updates during serial catch-up. The actual C event
+helper is compiled and executed against mapped MMIO to detect blanket clears.
+
+Both complete SoCs passed real I2C upload and execution of the revised firmware:
+
+| Workload | Image | Static RAM | Compiler / observed SP / watermark stack |
+| --- | ---: | ---: | ---: |
+| Event loop | 728 B | 16 B | 20 / 20 / 20 B |
+| Runtime stress | 1212 B | 48 B | 88 / 88 / 88 B |
+
+Binary SHA-256 values are `8c3d0486f6a778a0c7f909c5782f1e24a72467cfdbd29de0bead147e8ec3b673`
+and `87d90f3712f1abc92f9b5a154a658536728d5d11b52fdf5a73b8dde8db017595`, respectively.
+Earlier firmware sizes above describe the preceding versions. The selected
+2 KiB/256-byte flip-flop memories, 128-byte stack reserve and 16-byte guard remain.
+
+The exported control token is 178 bits, down from 728; one 480-bit architectural
+register bank sits outside the loop, and the 107-bit trace stays at execute output.
+Groundlark allocates no software application-word bank. Elapsed time uses
+fractional accumulators and bounded serial catch-up, ADC scaling is serial, and
+the coherent host snapshot shares one word selector. These are structural RTL
+changes, not mapped area, energy or physical timing measurements. Analog circuits
+are unchanged, so their earlier SPICE campaigns were not rerun for these fixes.
+
+Both regenerated production-capacity exports passed
+`--soc --vector-coverage --sleep-clock`: four-phase has 162 endpoints and
+29,472,336 mapping checks; Click has 136 endpoints and 24,547,456 checks.
+Their semantic hashes are `63c4c88e171a14ff12bc0a3c389f6732126134b3d15d7fd9f08ba1c126cec91a`
+and `5d2173a1d2946c0fd068eb99529b933dae0fcd1cb0068442bc3215f96a6681f9`.
+Evidence is in `build/four-phase-review-soc`, `build/click-review-soc` and
+`build/review-*-export.log`.
+
+Initial export attempts exposed compiler-renamed diagnostic aliases and an
+inactive operand-read path under the library's default mapping stimulus.
+The register bank now uses its interface endpoints and registered primitive-port
+probes. The MCU checker adds a full original bit-walk campaign with the registered
+x1 storage output prefilled, allowing a valid source index and nonzero operand
+to occur together. It forces no derived endpoint and retains every original
+comparison, activity assertion and fallback. An independent negative control
+proves that this extra stimulus activates the mux and still rejects incorrect
+wiring. This changes mapping-test stimulus, not functional RTL or the library.

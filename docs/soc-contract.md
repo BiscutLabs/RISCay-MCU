@@ -23,9 +23,9 @@ See [sleep and clock integration](sleep-and-clock.md) for the exact gating scope
 | `0x20000000` + configured capacity | Working RAM | CPU data reads and byte-masked writes; no instruction fetch |
 | `0x30000000..0x3000004b` | MMIO | Aligned 32-bit data accesses only |
 
-All storage is on chip. Portable flip-flop banks implement RAM initially; SRAM
-macro selection and its wrapper remain physical implementation work. RAM is not
-reset-cleared. Image validity resets to false; application startup must initialize
+All storage is on chip. Both writable banks use flip-flops; SRAM substitution is
+outside the current scope. RAM is not reset-cleared. POR/manual/brownout reset
+clears image validity; watchdog recovery preserves it. Application startup must initialize
 its data, BSS and stack before use. No simulator preload is necessary or used by
 the serial upload tests. A successful store returns data zero; read responses are
 aligned little-endian words. Unmapped/protected accesses return an access error.
@@ -53,10 +53,10 @@ supervision, including when no application exists. The loader is fixed hardware.
 | 36 | Measurement producer index | Select an existing channel |
 | 40 | Producer value staging register | Stage signed 32-bit value |
 | 44 | Zero | Publish staged value: bit 0 valid, bit 1 calibrated; permanently acquired channels reject CPU publication |
-| 48 | Application word index | Select word 0..63 |
+| 48 | Application word index | Select a profile-declared word in 0..63; holes reject |
 | 52 | Selected application word | Update firmware-owned word; board-owned words reject writes |
 | 56 | Wake mask (reset `0x0f`) | Bits 0..5 only; tick can be masked independently of timekeeping |
-| 60 | Remaining sleep lease, ms | Arm/cancel finite lease and kick watchdog; requires low-power build; default maximum 60000 ms |
+| 60 | Remaining sleep lease, ms | Arm/cancel finite lease; does not kick watchdog; requires low-power build; default maximum 60000 ms |
 | 64 | Applied ADC sample period, ms | Request new period; requires low-power build and ADC; applied between conversions |
 | 68 | Timing status | Error |
 | 72 | Service clock sleep-entry count | Error |
@@ -67,6 +67,10 @@ Bits 4/5 bypass the wake mask. Events coalesce. Set wins a simultaneous
 acknowledge. GPIO uses two sampling stages; pulses must last at least three
 service cycles after oscillator startup and meet the eventual synchronizer implementation's constraints.
 Blocking the CPU never blocks host status or the permanent controller.
+Firmware acknowledges only consumed bits before processing the wake. The
+`wait_events()` helper never clears pending bits; `acknowledge_events(bits)` is
+explicit. Edges arriving during processing remain pending for the next wait.
+Repeated edges on one already-pending bit still coalesce by design.
 
 ## Host wire protocol v1
 
@@ -82,6 +86,12 @@ send an address-only write probe and STOP (ACK or NACK accepted), wait 100 us,
 then start the actual transaction within 50 us. The probe carries no opcode/data.
 Repeated STARTs inside an active transaction need no preamble. See
 [sleep and clocks](sleep-and-clock.md) for adapter requirements and source bounds.
+
+An inactivity timeout aborts an unfinished transaction after 262144 service
+cycles without a synchronized SCL/SDA edge (13.1072..32.768 ms at 20..8 MHz).
+It releases SDA and discards the buffered command without committing it.
+This SMBus-style recovery bound is not a claim of SMBus protocol compliance.
+STOP, final read NACK and foreign-address rejection release transaction activity.
 
 A write transaction begins with an opcode, followed by the exact payload below.
 All multi-byte numbers are unsigned little-endian words unless described
@@ -123,6 +133,10 @@ is accepted: eight consecutive 32-bit words, then a 32-bit supported-word bitmap
 they never wrap/alias into another resource. The master may read a shorter prefix
 and must NACK its last byte. SELECT followed by repeated START is supported.
 Do not use SMBus's one-byte command/block-length framing for this protocol.
+The selected bank is captured once; one shared word selector feeds a 32-bit
+serializer at word boundaries. Snapshot consistency spans the entire read.
+Application storage exists only for declared firmware-owned words; Groundlark's
+six hardware-owned words allocate no duplicate software register bank.
 
 Service/word order comes from [HostSchema](../shared/src/main/scala/riscay/HostSchema.scala):
 
@@ -147,12 +161,15 @@ Service/word order comes from [HostSchema](../shared/src/main/scala/riscay/HostS
   durations use the lower bound. Fractional milliseconds carry between updates.
 - Application 128, instance 0: profile-defined read-only words.
 
-Loader errors: 0 success, 1 malformed frame/opcode, 2 locked, 3 already started,
+Loader errors: 0 success, 1 malformed frame/opcode, 2 locked, 3 already started or application reset active,
 4 range/offset, 5 incompatible ABI/resources, 6 wrong state, 7 incomplete image,
 8 CRC mismatch. Rejected commands preserve protected memory/metadata. A rejected
 BEGIN preserves the previous image; an accepted BEGIN invalidates it immediately.
 Only LOADING can accept writes; READY requires a new BEGIN before replacement.
-After START, replacement/restart requires full MCU reset, including after a trap.
+After START, a trap halts execution until application watchdog recovery or full
+reset. Watchdog recovery returns RUNNING/FAULT to READY while preserving image
+validity, bytes, metadata and lock. START/START_AND_LOCK explicitly restarts that
+image; a locked image still rejects replacement. No automatic crash loop occurs.
 The host may LOCK a running valid image. A bus recovery, host reboot or Pi rail
 cycle never clears the lock. Full MCU reset clears both lock and image validity.
 Working RAM and permitted peripheral writes remain available when locked.
@@ -185,6 +202,8 @@ Legacy builds retain the elaboration-time idle delay between conversions.
 The nominal conversion is `raw * 25300 / 4095` mV, based on a 3.3 V
 ADC reference/supply and the existing 23/3 divider ratio. Build parameters permit
 gain/offset calibration; the default explicitly reports **uncalibrated**.
+Scaling uses an exact 12-cycle serial quotient/remainder calculation after SPI
+capture; the ADC remains busy until completion. There is no combinational divider.
 [ADC datasheet](https://www.ti.com/lit/ds/symlink/adc121s021.pdf)
 
 This is a digital reference interface, not a selected/qualified replacement for
@@ -195,6 +214,9 @@ disconnected/stuck ADC. Groundlark rejects out-of-range battery voltages for pow
 policy. Generic software producers can explicitly report acquisition failure.
 
 The watchdog owns a separate reference clock and a held-toggle kick handshake.
+An accepted key write while a heartbeat is crossing domains latches a pending
+kick, dispatched after acknowledgement. Multiple busy kicks coalesce into one
+pending kick. Lease-register writes, including zero, never count as kicks.
 Permanent bootstrap services it while the application has not started. Afterward
 firmware must write the key regularly; hardware services it during a blocked
 event WAIT only while a finite sleep lease remains. WAIT completion cancels the
@@ -202,13 +224,19 @@ remaining lease. Lease expiry always wakes WAIT and stops automatic servicing;
 an application that never resumes useful execution eventually resets. The
 reference emitter expires after 32 raw LF ticks (nominal 4.14 s, 2.67..6.4 s
 over the assumed 5..12 Hz envelope), plus kick-handshake timing effects.
-Expiry asserts full coordinated reset of CPU, bridges, memories' validity state,
-I2C, peripherals and board controller. Reset assertion is asynchronous; release
-is synchronized to the service clock. Watchdog reason survives that generated
-reset until external reset. Loss of the service clock therefore forces outputs
-safe and holds the system reset until it resumes. I2C needs that clock to respond;
-after recovery the reset reason and invalid/never-sampled state expose the loss
-of continuity. Stopping both clocks is outside this digital watchdog's coverage.
+Expiry asynchronously resets the CPU, both CPU bridges, pending CPU responses,
+software GPIO/application words, event mask/pending/deadline and sleep lease.
+Release is synchronized to the service clock. The permanent board controller
+and its GPIO override, ADC, samples/ages, LF/elapsed timebase, I2C loader, image
+validity/metadata and programming lock are POR-only. The supervisor retains its
+RUN/SHUTDOWN state, deadlines and timeout count through application recovery.
+Host mutations are rejected during application reset; coherent reads remain
+available when the service clock runs. In-progress loader state is retained.
+Watchdog reason survives until external reset. A stopped service source requests
+restart but the board cannot observe new inputs while that source remains failed;
+its outputs are retained, not asynchronously forced off by the watchdog. Elapsed
+time catches up after recovery and sample ages expose staleness. Stopping both
+clocks is outside this digital watchdog's coverage.
 
 The emitted chip wrapper adds an on-die supply monitor and qualified POR around
 these portable inner-SoC reset ports. Brownout or the manual reset input asserts
@@ -243,7 +271,8 @@ Fault codes: 0 none, 1 policy disabled, 2 confirmed low voltage, 3 invalid sensi
 4 forced timeout, 5 acknowledged halt. Timeout count is reset-scoped. Policy is
 validated at elaboration against Groundlark's numeric bounds. **Default emission
 uses a disabled policy and never powers the Pi.** Supply qualified values and
-enable the policy for a board build. Tests use explicit enabled fixtures, with
+enable the policy deliberately for any tapeout build; the reference emitters
+are not a deployment configuration. Tests use explicit enabled fixtures, with
 accelerated milliseconds; these values are not a battery recommendation.
 
 ## Remaining qualification

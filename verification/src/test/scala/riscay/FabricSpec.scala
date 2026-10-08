@@ -17,6 +17,11 @@ class FabricFixture(p: SocParameters) extends SocTop(p, x => new GenericBoard(x)
   contract.clockedChannel("response", response, serviceClock, new Channel(new MemoryResponse, resetDomain), "output")
 }
 
+class KickFixture(p: SocParameters) extends FabricFixture(p) {
+  val ack = IO(Input(Bool())); val heartbeat = IO(Output(Bool()))
+  fabric.io.watchdogAck := ack; heartbeat := fabric.io.heartbeat
+}
+
 class FabricSpec extends AnyFunSuite {
   private val config = McuConfiguration(16, 16, 1,
     Vector(MeasurementChannel(0,"first",2,0), MeasurementChannel(1,"second",1,-3)),
@@ -117,5 +122,59 @@ reg [31:0] timeValue;
       read_words(2,0,0); if(supported !== 0) $fatal(1,"ABSENT_MEASUREMENT");
       issue(2,32'h30000024,0,15); answer(0,1,1);
     """, tasks)
+  }
+  test("watchdog kicks queue behind CDC acknowledgement; lease writes cannot substitute for the magic word") {
+    val params=SocParameters(config,watchdogCycles=1000,lowPower=Some(LowPowerParameters.gf180Slow))
+    ClockedSimulation.run(new KickFixture(params),"kick-queue","""
+      // Stop reference before its first edge: no automatic bootstrap tick.
+      referenceEnabled=0;
+      write_bus(32'h3000003c,0);
+      write_bus(32'h3000003c,1000);
+      issue(2,32'h30000020,0,15); answer(0,1,1);
+      if(heartbeat) $fatal(1,"LEASE_OR_BAD_MAGIC_KICKED");
+      write_bus(32'h30000020,32'h57444f47);
+      if(!heartbeat) $fatal(1,"FIRST_KICK_LOST");
+      write_bus(32'h30000020,32'h57444f47);
+      #1000; if(!heartbeat) $fatal(1,"BUSY_KICK_OVERWROTE_PHASE");
+      ack=1; #1000;
+      if(heartbeat) $fatal(1,"QUEUED_KICK_LOST");
+      ack=0; #1000;
+      repeat(10) begin write_bus(32'h3000003c,0); write_bus(32'h3000003c,1000); end
+      if(heartbeat) $fatal(1,"LEASE_WRITE_KICKED");
+      reset=1; #1000;
+      if(heartbeat) $fatal(1,"KICK_POR");
+    """,tasks,referenceHalfPeriodNs=10000000)
+  }
+  test("sparse application words reject holes and share coherent snapshot data across byte boundaries") {
+    val sparse=config.copy(application=config.application.copy(registers=Vector(
+      HostRegister(0,"FIRST"),HostRegister(1,"NEXT"),HostRegister(17,"MIDDLE"),HostRegister(63,"LAST"))))
+    ClockedSimulation.run(new FabricFixture(SocParameters(sparse)),"sparse-application","""
+      write_bus(32'h30000034,32'h12345678);
+      write_bus(32'h30000030,1); write_bus(32'h30000034,32'h02468ace);
+      write_bus(32'h30000030,17); write_bus(32'h30000034,32'h89abcdef);
+      write_bus(32'h30000030,63); write_bus(32'h30000034,32'h76543210);
+      issue(2,32'h30000030,2,15); answer(0,1,1);
+      issue(1,32'h30000034,0,15); answer(32'h76543210,0,1);
+      read_words(128,0,16);
+      if(supported !== 2 || snapshot[0+:32] !== 32'hffffffff || snapshot[32+:32] !== 32'h89abcdef)
+        $fatal(1,"SPARSE_WORD_ALIASED");
+      read_words(128,0,63);
+      if(supported !== 1 || snapshot[0+:32] !== 32'h76543210 || snapshot[32+:32] !== 32'hffffffff)
+        $fatal(1,"SPARSE_END_WRAPPED");
+      // Keep the serial transaction open while software updates the bank.
+      start_bus(); write_byte(8'h6a); write_byte(0); write_byte(128); write_byte(0); write_byte(0);
+      start_bus(); write_byte(8'h6b);
+      read_byte(firstByte,0);
+      write_bus(32'h30000030,0); write_bus(32'h30000034,32'hffffffff);
+      write_bus(32'h30000030,1); write_bus(32'h30000034,32'hffffffff);
+      read_byte(secondByte,0); read_byte(thirdByte,0); read_byte(fourthByte,0);
+      for(byteNo=0;byteNo<4;byteNo=byteNo+1) begin
+        read_byte(laterByte,byteNo==3); laterWord[byteNo*8+:8]=laterByte;
+      end
+      stop_bus();
+      if({fourthByte,thirdByte,secondByte,firstByte} !== 32'h12345678) $fatal(1,"TORN_SNAPSHOT");
+      if(laterWord !== 32'h02468ace) $fatal(1,"TORN_LATER_WORD");
+      read_words(128,0,0); if(snapshot[0+:32] !== 32'hffffffff) $fatal(1,"SNAPSHOT_NOT_REFRESHED");
+    """,tasks+"reg [7:0] firstByte,secondByte,thirdByte,fourthByte,laterByte; reg [31:0] laterWord; integer byteNo;\n")
   }
 }

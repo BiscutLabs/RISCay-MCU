@@ -11,7 +11,9 @@ int main(void) {
     uint32_t initialized = period_ms == 500u && completed == 0 && observed_events == 0 && last_gpio == 0;
     app_word(0, initialized ? 0x43525431u : 0xbad00001u);
     for (uint32_t i = 0; i < 4u; ++i) {
-        observed_events |= wait_events(period_ms);
+        uint32_t events = wait_events(period_ms);
+        acknowledge_events(events);
+        observed_events |= events;
         last_gpio = MMIO(20);
         ++completed;
     }

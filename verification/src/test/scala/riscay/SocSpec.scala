@@ -93,9 +93,12 @@ class SocSpec extends AnyFunSuite {
       ClockedSimulation.run(top(click, p.copy(watchdogCycles = 5000)), name + "-watchdog", s"""
         ${upload(program)}
         wait(systemReset); #5000;
-        if(!resetReason || locked || programmed || mode != 0) $$fatal(1,"WATCHDOG_RESET_FAILED");
+        if(!resetReason || !locked || !programmed || mode != 2) $$fatal(1,"WATCHDOG_RESET_FAILED");
         read_words(0,0,7);
         if(snapshot[0+:32] !== 2) $$fatal(1,"WATCHDOG_REASON");
+        begin_image(4,0,0,32'h00010000); expect_error(2);
+        command(5); #10000;
+        if(!locked || !programmed || mode != 3) $$fatal(1,"LOCKED_IMAGE_RESTART_FAILED");
         reset=1; #2000; reset=0; #5000;
         clockEnabled=0;
         wait(resetReason); #1000;

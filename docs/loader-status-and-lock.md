@@ -59,8 +59,8 @@ measurements before the application starts. Endpoint availability alone does not
 guarantee fresh measurements: report stale/invalid data if acquisition or its
 producer stalls. Freshness must not depend on the application claiming it is
 healthy. Loss of the service clock causes an independent watchdog reset; after
-clock recovery, reset reason plus invalid/never-sampled state reports the loss of
-continuity. The host endpoint needs the service clock to respond. Uploads and
+clock recovery, the retained LF count advances sample age to expose staleness;
+the reset reason reports application recovery. The host endpoint needs the service clock to respond. Uploads and
 host reads must not suspend required board safety functions.
 
 The programming lock protects application code and metadata, not telemetry
@@ -130,13 +130,16 @@ it commits. The protection applies in both protocol wrappers under backpressure.
 | Retained sleep with MCU supply maintained | Preserved | Preserved |
 | I2C STOP, bus recovery or host-interface reset | No new validity; a discarded partial transfer stays invalid | Preserved |
 | Application fault or a local CPU-only restart that does not assert full MCU reset | Preserved if protected bytes remain unchanged; no automatic permission to execute | Preserved |
-| Full MCU reset, including full watchdog/POR/brownout reset | Cleared | Cleared |
+| Application watchdog reset (CPU and CPU transaction bridges) | Preserved; RUNNING/FAULT becomes READY, explicit START required | Preserved |
+| Full MCU manual/POR/brownout reset | Cleared | Cleared |
 | Complete loss of MCU supply | Lost; cleared on restart | Cleared on restart |
 
 Full MCU reset applies the profile's safe output values. In Groundlark this cuts
-Pi power, so it is not a harmless unlock while the Pi keeps running. CPU-only restart/retained-output
-support is not added by this contract; if later introduced, it must not silently
-clear the lock. Host reboot, malformed packets and bus recovery cannot unlock.
+Pi power, so it is not a harmless unlock while the Pi keeps running. Application
+watchdog recovery preserves permanent supervision, GPIO ownership, sensing and
+timekeeping, plus the validated image and its lock. The host may explicitly
+START the retained image after recovery. Host reboot, malformed packets and bus
+recovery cannot unlock.
 
 Status and locking prevent accidental reprogramming after a host-only restart.
 Each profile must address its host power dependency. In Groundlark, permanent

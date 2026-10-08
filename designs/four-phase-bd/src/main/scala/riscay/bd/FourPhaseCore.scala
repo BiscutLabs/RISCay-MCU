@@ -6,6 +6,7 @@ import chiselasync.bundled._
 import chiselasync.core.{AsyncModule, ResetDomain}
 import chiselasync.metadata.{BundledTiming, ExportDesign, ModelTime}
 import chiselasync.protocol.FourPhase
+import chiselasync.primitives.{ControlGate, GateOperation}
 import java.nio.file.Paths
 import riscay._
 
@@ -26,15 +27,27 @@ class FourPhaseCore(domain: ResetDomain = new ResetDomain("root")) extends Async
     new MemoryRequest, Execute.request, timing, d))
   private val join = asyncChild("join")(d => new FourPhaseJoin(new CoreState, new MemoryResponse, timing, cell, d))
   private val execute = asyncChild("execute")(d => new FourPhaseStage(
-    new Joined(new CoreState, new MemoryResponse), new CoreState,
-    (p: Joined[CoreState, MemoryResponse]) => Execute.step(p.left, p.right), timing, d))
+    new ExecutionInput, new ExecutionResult,
+    (p: ExecutionInput) => Execute.step(p.state, p.response, p.a, p.b), timing, d))
+  private val registers = asyncChild("register_file")(d => new ArchitecturalRegisters(d))
+  private val arrival = Module(new ControlGate(1,GateOperation.Buffer,cell))
+  arrival.reset := reset; arrival.a := state.out.req.asUInt; arrival.b := 0.U
+  contract.primitive("register_arrival",arrival,Map("WIDTH"->BigInt(1),"OP"->BigInt(0),
+    "DELAY_FS"->BigInt(cell.fs),"RESET_VALUE"->BigInt(0)),contract.endpoint("register_reset",reset),
+    "four-phase state request captures one writeback before following operand evaluation")
+  registers.arrival := arrival.q.asBool
+  registers.write := state.out.bits.writeback
+  registers.rs1 := join.out.bits.right.data(19,15); registers.rs2 := join.out.bits.right.data(24,20)
   FourPhase.connect(fork.in, state.out)
   FourPhase.connect(address.in, fork.out(0))
   FourPhase.connect(join.left, fork.out(1))
   FourPhase.connect(request, address.out)
   FourPhase.connect(join.right, response)
-  FourPhase.connect(execute.in, join.out)
-  FourPhase.connect(state.in, execute.out)
+  execute.in.req := join.out.req; join.out.ack := execute.in.ack
+  execute.in.bits.state := join.out.bits.left; execute.in.bits.response := join.out.bits.right
+  execute.in.bits.a := registers.a; execute.in.bits.b := registers.b
+  state.in.req := execute.out.req; execute.out.ack := state.in.ack
+  state.in.bits := execute.out.bits.state
   trace := execute.out.bits.trace
   traceEvent := execute.out.req
   contract.endpoint("trace_event", traceEvent)

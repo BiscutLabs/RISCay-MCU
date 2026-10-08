@@ -40,6 +40,8 @@ class SocFabric(p: SocParameters, boardFactory: SocParameters => BoardController
     val mode = Output(UInt(3.W)); val programmed = Output(Bool()); val locked = Output(Bool())
     val now = Output(UInt(32.W))
     val frontClock = Input(Clock())
+    val cpuReset = Input(Bool())
+    val hostSelected = Output(Bool()); val hostRejected = Output(Bool())
     val timeGray = Input(UInt(32.W)); val consumedGray = Output(UInt(32.W))
     val clockRunning = Input(Bool()); val sleepEntries = Input(UInt(32.W))
     val canSleep = Output(Bool()); val activity = Output(Bool())
@@ -47,41 +49,32 @@ class SocFabric(p: SocParameters, boardFactory: SocParameters => BoardController
     val commit = Valid(new MemoryRequest)
   })
   val config = p.config
+  val board = Module(boardFactory(p))
+  require(board.ownedRegisters.subsetOf(config.application.registers.map(_.word).toSet))
   val program = Reg(Vec(config.programBytes / 4, UInt(32.W)))
   val ram = Reg(Vec(config.workingRamBytes / 4, Vec(4, UInt(8.W))))
   val rom = VecInit(MemoryMap.boot.map(_.U(32.W)))
   val mode = RegInit(0.U(3.W))
-  val programmed = RegInit(false.B); val locked = RegInit(false.B); val started = RegInit(false.B)
+  def applicationReg[T <: Data](init: T): T = withReset(io.cpuReset.asAsyncReset) { RegInit(init) }
+  val programmed = RegInit(false.B); val locked = RegInit(false.B); val started = applicationReg(false.B)
   val lastError = RegInit(0.U(8.W))
   val imageLength = RegInit(0.U(32.W)); val entry = RegInit(0.U(32.W))
   val imageId = RegInit(0.U(32.W)); val expectedCrc = RegInit(0.U(32.W))
   val received = RegInit(0.U(32.W)); val crc = RegInit("hffffffff".U(32.W))
   io.mode := mode; io.programmed := programmed; io.locked := locked
-  val canProgram = !locked && !started
+  val canProgram = !locked && !started && !io.cpuReset
 
   val now = RegInit(0.U(32.W))
   val lowerElapsed = Wire(UInt(32.W)); val upperElapsed = Wire(UInt(32.W))
   val observationMs = Wire(UInt(32.W))
   val elapsed = if(p.lowPower.nonEmpty) {
     val lp = p.lowPower.get
-    val consumed = RegInit(0.U(32.W))
-    val target = Cat((0 until 32).reverse.map(i => io.timeGray(31, i).xorR))
-    val delta = target - consumed
-    consumed := target
-    io.consumedGray := consumed ^ (consumed >> 1)
-    // Scale only AFTER the single-step Gray CDC. Carry the fractional ms so
-    // frequent host wakes cannot round time away; subtraction survives tick wrap.
-    def scale(micros: Int): UInt = {
-      val fraction = RegInit(0.U(10.W))
-      val total = delta * micros.U +& fraction
-      when(delta =/= 0.U) { fraction := total % 1000.U }
-      (total / 1000.U)(31, 0)
-    }
-    lowerElapsed := scale(lp.minimumTickMicros)
-    upperElapsed := scale(lp.maximumTickMicros)
-    // Do not turn missed observations into confirmed stable input samples.
-    observationMs := Mux(delta === 1.U, lowerElapsed, 0.U)
-    scale(lp.tickMicros)
+    val scaler = Module(new ElapsedTicks(Seq(lp.tickMicros, lp.minimumTickMicros, lp.maximumTickMicros)))
+    scaler.io.target := Cat((0 until 32).reverse.map(i => io.timeGray(31, i).xorR))
+    io.consumedGray := scaler.io.consumed ^ (scaler.io.consumed >> 1)
+    lowerElapsed := scaler.io.elapsed(1); upperElapsed := scaler.io.elapsed(2)
+    observationMs := Mux(scaler.io.single, lowerElapsed, 0.U)
+    scaler.io.elapsed(0)
   } else {
     val divider = RegInit(0.U(log2Ceil(p.serviceHz / 1000).max(1).W))
     val pulse = divider === (p.serviceHz / 1000 - 1).U
@@ -96,8 +89,8 @@ class SocFabric(p: SocParameters, boardFactory: SocParameters => BoardController
   // they had been sampled repeatedly. Wall time/ages still advance fully.
   when(tick) { now := now + elapsed }; io.now := now
   val boardNow = RegInit(0.U(32.W)); boardNow := boardNow + lowerElapsed
-  val wakeMask = RegInit(15.U(32.W))
-  val sleepRemaining = RegInit(0.U(32.W))
+  val wakeMask = applicationReg(15.U(32.W))
+  val sleepRemaining = applicationReg(0.U(32.W))
   when(tick && sleepRemaining =/= 0.U) {
     sleepRemaining := Mux(elapsed >= sleepRemaining, 0.U, sleepRemaining - elapsed)
   }
@@ -106,17 +99,27 @@ class SocFabric(p: SocParameters, boardFactory: SocParameters => BoardController
   val heartbeat = RegInit(false.B); io.heartbeat := heartbeat
   val ack0 = RegNext(io.watchdogAck, false.B); val ack = RegNext(ack0, false.B)
   val kick = WireDefault(false.B)
-  when(((tick && (!started || (parked && sleepRemaining =/= 0.U))) || kick) && ack === heartbeat) { heartbeat := !heartbeat }
+  val kickPending = applicationReg(false.B)
+  val kickRequested = (tick && (!started || (parked && sleepRemaining =/= 0.U))) || kick
+  when(kickRequested || kickPending) {
+    when(ack === heartbeat) { heartbeat := !heartbeat; kickPending := false.B }
+      .otherwise { kickPending := true.B }
+  }
   val gpio = withClock(io.frontClock) {
     val first = RegNext(io.gpioIn, 0.U); RegNext(first, 0.U)
   }
   io.observedGpio := gpio
   val gpioPrevious = RegNext(gpio, 0.U)
-  val output = RegInit(config.application.pins.filter(_.resetHigh).map(x => BigInt(1) << x.index).sum.U(32.W))
-  val enable = RegInit(config.application.pins.filter(_.output).map(x => BigInt(1) << x.index).sum.U(32.W))
+  val output = applicationReg(config.application.pins.filter(_.resetHigh).map(x => BigInt(1) << x.index).sum.U(32.W))
+  val enable = applicationReg(config.application.pins.filter(_.output).map(x => BigInt(1) << x.index).sum.U(32.W))
   val gpioMask = ((BigInt(1) << config.gpioCount) - 1).U(32.W)
-  val application = RegInit(VecInit(Seq.fill(64)(0.U(32.W))))
-  val appIndex = RegInit(0.U(6.W))
+  val application = config.application.registers.filterNot(r => board.ownedRegisters(r.word))
+    .map(r => r.word -> applicationReg(0.U(32.W))).toMap
+  val appIndex = applicationReg(0.U(6.W))
+  def applicationWord(word: UInt): UInt = MuxLookup(word, "hffffffff".U(32.W))(
+    config.application.registers.map(r => r.word.U ->
+      (if(board.ownedRegisters(r.word)) board.io.registers(r.word) else application(r.word))))
+  def applicationExists(word: UInt): Bool = config.application.registers.map(r => word === r.word.U).foldLeft(false.B)(_ || _)
 
   val samples = RegInit(0.U.asTypeOf(Vec(config.measurements.size, new Sample)))
   // Separate reset flag avoids requiring a Bundle literal for the whole vector.
@@ -175,14 +178,13 @@ class SocFabric(p: SocParameters, boardFactory: SocParameters => BoardController
       }
     }
   }
-  val board = Module(boardFactory(p))
   board.io.tick := tick; board.io.now := boardNow; board.io.observationMs := observationMs
   board.io.gpio := gpio; board.io.samples := samples
   io.gpioOut := ((output & ~board.io.mask) | (board.io.outputs & board.io.mask)) & gpioMask
   io.gpioOe := ((enable & ~board.io.mask) | (board.io.enables & board.io.mask)) & gpioMask
 
-  val deadline = RegInit(0.U(32.W)); val armed = RegInit(false.B)
-  val pending = RegInit(0.U(32.W)); val clear = WireDefault(0.U(32.W))
+  val deadline = applicationReg(0.U(32.W)); val armed = applicationReg(false.B)
+  val pending = applicationReg(0.U(32.W)); val clear = WireDefault(0.U(32.W))
   val hostWake = WireDefault(false.B)
   val due = armed && (now - deadline).asSInt >= 0.S
   val acquisition = if(config.measurements.isEmpty) false.B else publish.map(_.valid).reduce(_ || _)
@@ -191,7 +193,7 @@ class SocFabric(p: SocParameters, boardFactory: SocParameters => BoardController
   pending := (pending & ~clear) | events // New events win an acknowledge race.
   when(due) { armed := false.B }
 
-  val responseValid = RegInit(false.B); val response = Reg(new MemoryResponse)
+  val responseValid = applicationReg(false.B); val response = Reg(new MemoryResponse)
   io.response.valid := responseValid; io.response.bits := response
   when(io.response.fire) { responseValid := false.B }
   val req = io.request.bits
@@ -204,7 +206,7 @@ class SocFabric(p: SocParameters, boardFactory: SocParameters => BoardController
   parked := io.request.valid && eventWait
   io.canSleep := p.lowPower.nonEmpty.B && io.request.valid &&
     (bootWait || (eventWait && sleepRemaining =/= 0.U)) && !responseValid && !adcBusy && !tick
-  io.request.ready := io.clockRunning && !responseValid && !bootWait && !eventWait
+  io.request.ready := !io.cpuReset && io.clockRunning && !responseValid && !bootWait && !eventWait
   io.commit.valid := io.request.fire; io.commit.bits := req
   when(io.request.fire) {
     when(waitingRead) { sleepRemaining := 0.U }
@@ -238,7 +240,7 @@ class SocFabric(p: SocParameters, boardFactory: SocParameters => BoardController
             is(40.U) { response.data := sampleValue }
             is(44.U) { response.data := 0.U }
             is(48.U) { response.data := appIndex }
-            is(52.U) { response.data := Mux(board.io.registerMask(appIndex), board.io.registers(appIndex), application(appIndex)) }
+            is(52.U) { response.data := applicationWord(appIndex); response.error := !applicationExists(appIndex) }
             is(56.U) { response.data := wakeMask }
             is(60.U) { response.data := sleepRemaining }
             is(64.U) { response.data := samplePeriod }
@@ -263,12 +265,14 @@ class SocFabric(p: SocParameters, boardFactory: SocParameters => BoardController
                 }
               }
             }
-            is(48.U) { when(req.data < 64.U) { appIndex := req.data; response.error := false.B } }
-            is(52.U) { when(!board.io.registerMask(appIndex)) { application(appIndex) := req.data; response.error := false.B } }
+            is(48.U) { when(applicationExists(req.data)) { appIndex := req.data; response.error := false.B } }
+            is(52.U) { for((word, value) <- application.toSeq.sortBy(_._1)) {
+              when(appIndex === word.U) { value := req.data; response.error := false.B }
+            } }
             is(56.U) { when((req.data & "hffffffc0".U) === 0.U) { wakeMask := req.data; response.error := false.B } }
             is(60.U) {
               when(p.lowPower.nonEmpty.B && req.data <= p.lowPower.map(_.maximumSleepMs).getOrElse(0).U) {
-                sleepRemaining := req.data; kick := true.B; response.error := false.B
+                sleepRemaining := req.data; response.error := false.B
               }
             }
             is(64.U) { when(validPeriod(req.data)) { periodUpdate.valid := true.B; periodUpdate.bits := req.data; response.error := false.B } }
@@ -277,9 +281,10 @@ class SocFabric(p: SocParameters, boardFactory: SocParameters => BoardController
       }
   }
 
-  val host = withClock(io.frontClock) { Module(new I2cTarget(p.i2cAddress)) }
+  val host = withClock(io.frontClock) { Module(new I2cTarget(p.i2cAddress, p.i2cIdleCycles)) }
   host.io.scl := io.scl; host.io.sda := io.sda; io.sdaLow := host.io.pullLow
   io.activity := host.io.busy || gpioActivity
+  io.hostSelected := host.io.selected; io.hostRejected := host.io.rejected
   val selector = RegInit(0.U(24.W))
   val frame = host.io.frame.bits
   def parameter(index: Int): UInt = Cat((0 until 4).reverse.map(i => frame.bytes(1 + index * 4 + i)))
@@ -289,6 +294,7 @@ class SocFabric(p: SocParameters, boardFactory: SocParameters => BoardController
   when(host.io.frame.valid) {
     when(frame.overflow || desiredLength === 0.U || frame.length =/= desiredLength) { lastError := 1.U }
       .elsewhen(opcode === 0.U) { selector := Cat(frame.bytes(1), frame.bytes(2), frame.bytes(3)) }
+      .elsewhen(io.cpuReset) { lastError := 3.U }
       .otherwise {
         lastError := 0.U
         switch(opcode) {
@@ -334,25 +340,35 @@ class SocFabric(p: SocParameters, boardFactory: SocParameters => BoardController
       }
   }
 
-  def hostWord(space: UInt, instance: UInt, word: UInt): UInt = {
-    val result = WireDefault("hffffffff".U(32.W))
+  // Retain the validated image and lock across a watchdog reset. Software must
+  // explicitly restart the image; the permanent supervisor continues meanwhile.
+  when(io.cpuReset && (mode === 3.U || mode === 4.U)) { mode := Mux(programmed, 2.U, 0.U) }
+
+  // Snapshot the selected service bank once, then share one word mux across
+  // byte boundaries. This retains coherent read transactions without eight
+  // parallel copies of the entire host-address decoder.
+  val bankWords = ((0 until 8) ++ config.application.registers.map(_.word)).distinct.sorted
+  val bankSize = bankWords.size
+  val bank = Wire(Vec(bankSize, UInt(32.W)))
+  bank.foreach(_ := "hffffffff".U)
+  val space = selector(23,16); val instance = selector(15,8)
     when(space === 0.U && instance === 0.U) {
       val fields = Seq("h00010000".U, config.application.id.U, config.application.version.U,
         config.programBytes.U, config.workingRamBytes.U, config.gpioCount.U,
         config.measurements.size.U, Mux(io.watchdogReason, 2.U, 1.U))
-      fields.zipWithIndex.foreach { case (value, i) => when(word === i.U) { result := value } }
+      fields.zipWithIndex.foreach { case (value, i) => bank(i) := value }
     }
     when(space === 1.U && instance === 0.U) {
       val fields = Seq(mode, programmed.asUInt, locked.asUInt, canProgram.asUInt, 0.U, lastError,
         imageId, received)
-      fields.zipWithIndex.foreach { case (value, i) => when(word === i.U) { result := value } }
+      fields.zipWithIndex.foreach { case (value, i) => bank(i) := value }
     }
     when(space === 3.U && instance === 0.U) {
       val features = (if(p.lowPower.nonEmpty) 3 | (if(p.adc.nonEmpty) 4 else 0) |
         (if(p.lowPower.exists(_.stopServiceClock)) 8 else 0) else 0).U
       val status = Cat(0.U(28.W), periodPending, sleepRemaining =/= 0.U, !io.clockRunning, p.lowPower.nonEmpty.B)
       val fields = Seq(features, now, samplePeriod, wakeMask, sleepRemaining, pending, io.sleepEntries, status)
-      fields.zipWithIndex.foreach { case (value, i) => when(word === i.U) { result := value } }
+      fields.zipWithIndex.foreach { case (value, i) => bank(i) := value }
     }
     when(space === 3.U && instance === 1.U) {
       val lp = p.lowPower
@@ -361,7 +377,7 @@ class SocFabric(p: SocParameters, boardFactory: SocParameters => BoardController
         p.minimumSampleMs.U, p.maximumSampleMs.max(0).U, p.staleMs.U,
         (if(lp.exists(_.stopServiceClock)) LowPowerParameters.hostWakeWaitUs else 0).U,
         p.watchdogCycles.U)
-      fields.zipWithIndex.foreach { case (value, i) => when(word === i.U) { result := value } }
+      fields.zipWithIndex.foreach { case (value, i) => bank(i) := value }
     }
     for(i <- config.measurements.indices) {
       when(space === 2.U && instance === i.U) {
@@ -370,16 +386,14 @@ class SocFabric(p: SocParameters, boardFactory: SocParameters => BoardController
         val flags = Cat(0.U(27.W), s.calibrated, s.fault, !sampled(i), stale, s.valid && sampled(i) && !stale)
         val fields = Seq(s.value, flags, Mux(sampled(i), s.age, "hffffffff".U), s.sequence,
           config.measurements(i).unit.U, config.measurements(i).scale10.S(32.W).asUInt)
-        fields.zipWithIndex.foreach { case (value, j) => when(word === j.U) { result := value } }
+        fields.zipWithIndex.foreach { case (value, j) => bank(j) := value }
       }
     }
     when(space === 128.U && instance === 0.U) {
       for(register <- config.application.registers) {
-        when(word === register.word.U) { result := Mux(board.io.registerMask(register.word), board.io.registers(register.word), application(register.word)) }
+        bank(bankWords.indexOf(register.word)) := applicationWord(register.word.U)
       }
     }
-    result
-  }
   val supported = (0 until 8).map { i =>
     val space = selector(23,16); val instance = selector(15,8); val word = selector(7,0) +& i.U
     val appWord = config.application.registers.map(r => word === r.word.U).foldLeft(false.B)(_ || _)
@@ -388,6 +402,10 @@ class SocFabric(p: SocParameters, boardFactory: SocParameters => BoardController
       (space === 2.U && instance < config.measurements.size.U && word < 6.U) ||
       (space === 128.U && instance === 0.U && appWord)
   }
-  host.io.snapshot := Cat(0.U(24.W), Cat(supported.reverse),
-    Cat((0 until 8).reverse.map(i => hostWord(selector(23,16), selector(15,8), selector(7,0) +& i.U))))
+  val snapshot = Reg(Vec(bankSize, UInt(32.W)))
+  val snapshotSupported = Reg(UInt(8.W))
+  when(host.io.readStart) { snapshot := bank; snapshotSupported := Cat(supported.reverse) }
+  val readIndex = selector(7,0) +& host.io.wordIndex
+  host.io.readWord := Mux(host.io.wordIndex === 8.U, Cat(0.U(24.W), snapshotSupported),
+    MuxLookup(readIndex, "hffffffff".U(32.W))(bankWords.zipWithIndex.map { case(word,i) => word.U -> snapshot(i) }))
 }

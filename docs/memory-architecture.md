@@ -35,18 +35,19 @@ count their wrappers in the results.
 
 The 256-byte working RAM budget includes static application data, a 16-byte guard,
 and a 128-byte reserved downward-growing stack. It has no heap or interrupt stack.
-CPU architectural/handshake state, loader state, measurement registers and the
-existing 64-word MMIO application bank are separate hardware storage; these
+CPU architectural/handshake state, loader state, measurement registers and
+profile-declared software-owned MMIO application words are separate storage.
+Groundlark's hardware-owned words allocate no software bank. These
 program/data capacities are not a count of every flip-flop in the MCU.
 
 Compiler sizing with pinned GCC 13.2.0, `rv32e/ilp32e`, `-Os`:
 
 | Workload | Loaded program image | Static working RAM | Static maximum stack | Guard | RAM including measured bound |
 | --- | ---: | ---: | ---: | ---: | ---: |
-| Finite event loop | 704 B | 16 B | 16 B | 16 B | 48 B |
-| Runtime stress fixture | 1204 B | 48 B | 88 B | 16 B | 152 B |
+| Finite event loop | 728 B | 16 B | 20 B | 16 B | 52 B |
+| Runtime stress fixture | 1212 B | 48 B | 88 B | 16 B | 152 B |
 
-The larger image leaves **844 bytes (41.2%)** of program headroom. Reserving 128
+The larger image leaves **836 bytes (40.8%)** of program headroom. Reserving 128
 stack bytes, rather than just its 88-byte bound, uses 192 RAM bytes including
 static data and guard, leaving **64 bytes** uncommitted. A 1 KiB program budget
 cannot hold that workload; 128 bytes of working RAM cannot hold its static data,
@@ -59,12 +60,13 @@ and `divide` (0), totaling 88 stack bytes. Startup uses no stack. The report inc
 copies of `.data` in program size and both `.data` and `.bss` in static RAM size;
 it does not confuse ELF file size or debug metadata with on-chip storage.
 
-On 2026-10-07, both binaries passed real I2C upload and execution on both native
-SoCs at these full capacities. The independent retirement-SP monitor and RAM
-watermark both measured 16 bytes for the event loop and 88 bytes for the stress
-fixture, matching the compiler bounds. Initialization, arithmetic, guard,
-sleep-retained state and programming lock checks passed. See the
-[verification record](build-and-test.md#compiled-firmware-memory-sizing-record).
+`FirmwareSpec` uploads both binaries over real I2C and executes them on both native
+SoCs at these full capacities. Independent retirement-SP and RAM-watermark checks
+must match the compiler's 20-byte event-loop and 88-byte stress bounds. It also
+checks initialization, arithmetic, guard, sleep retention and programming lock.
+The images above include explicit event acknowledgement and keyed watchdog
+servicing; earlier 704/1204-byte images predate that fix. See the
+[verification record](build-and-test.md).
 
 ## Groundlark cold-start and loading sequence
 
@@ -105,6 +107,9 @@ an unpowered Pi cannot read status or load code. The permanent bootstrap must
 decide whether Pi power is allowed without requiring a valid application or an
 upload. A full MCU reset clears the lock and image-valid flag even if RAM bits
 physically remain. A Pi-only reset/power cycle clears neither.
+Application watchdog recovery also preserves both, plus permanent power control
+and sensing. It resets the CPU transaction frontier and waits for an explicit
+START of the retained image; it does not grant permission to rewrite a locked image.
 
 ## Earlier SRAM comparison (not the selected implementation)
 

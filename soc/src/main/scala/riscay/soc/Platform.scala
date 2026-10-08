@@ -9,9 +9,10 @@ import riscay._
 final case class SocParameters(config: McuConfiguration, serviceHz: Int = 10000000,
     i2cAddress: Int = 0x35, staleMs: Int = 100, watchdogCycles: Int = 32768,
     watchdogHoldCycles: Int = 8, adc: Option[AdcParameters] = None,
-    lowPower: Option[LowPowerParameters] = None) {
+    lowPower: Option[LowPowerParameters] = None, i2cIdleCycles: Int = 262144) {
   require(serviceHz >= 1000 && serviceHz % 1000 == 0)
   require(i2cAddress >= 8 && i2cAddress < 120)
+  require(i2cIdleCycles >= 256)
   require(staleMs > 0 && watchdogCycles > watchdogHoldCycles + 4 && watchdogHoldCycles >= 2)
   require(adc.isEmpty || config.measurements.nonEmpty)
   lowPower.foreach { _ => adc.foreach { a =>
@@ -19,7 +20,7 @@ final case class SocParameters(config: McuConfiguration, serviceHz: Int = 100000
       "sample period must accommodate conversion and leave freshness margin")
   } }
   def defaultSampleMs: Int = adc.map(a => ((a.intervalCycles.toLong * 1000 + serviceHz - 1) / serviceHz).toInt).getOrElse(0)
-  def conversionMs: Int = adc.map(a => ((32L * a.halfPeriodCycles * 1000 + serviceHz - 1) / serviceHz).toInt).getOrElse(0)
+  def conversionMs: Int = adc.map(a => (((32L * a.halfPeriodCycles + 12) * 1000 + serviceHz - 1) / serviceHz).toInt).getOrElse(0)
   def minimumSampleMs: Int = conversionMs + 2 * lowPower.map(_.quantumMs).getOrElse(1)
   def maximumSampleMs: Int = lowPower.map { lp =>
     math.floor((staleMs - math.max(0, conversionMs - 1) - 2 * lp.maximumQuantumMs) * lp.slowestHz / lp.referenceHz).toInt
@@ -83,19 +84,19 @@ class BoardIO(p: SocParameters) extends Bundle {
   val outputs = Output(UInt(32.W))
   val enables = Output(UInt(32.W))
   val registers = Output(Vec(64, UInt(32.W)))
-  val registerMask = Output(UInt(64.W))
 }
 abstract class BoardController(p: SocParameters) extends Module with InlineInstance {
+  /** Static ownership permits removing software storage for hardware telemetry. */
+  def ownedRegisters: Set[Int] = Set.empty
   val io = IO(new BoardIO(p))
 }
 class GenericBoard(p: SocParameters) extends BoardController(p) {
   io.mask := 0.U; io.outputs := 0.U; io.enables := 0.U
   io.registers := VecInit(Seq.fill(64)(0.U(32.W)))
-  io.registerMask := 0.U
 }
 
-/** Independent reference clock. A timeout asserts the full system reset for a
-  * bounded interval, including the service island, CPU and both bus endpoints.
+/** Independent reference clock. A timeout asserts application reset for a
+  * bounded interval, including the CPU and its bus endpoints, not power policy.
   * Reason is retained in this POR-only domain until external reset.
   */
 class Watchdog(limit: Int, holdCycles: Int) extends Module with InlineInstance {
@@ -138,26 +139,27 @@ class SpiAdc(p: AdcParameters, autonomous: Boolean = true) extends Module with I
   val bit = RegInit(0.U(5.W))
   val shift = RegInit(0.U(16.W))
   val primed = RegInit(false.B)
+  val scaler = Module(new SampleScaler(p.numerator, p.denominator))
+  scaler.io.start := false.B; scaler.io.raw := shift(11,0)
   io.csN := !active; io.sclk := sclk
-  io.busy := active; io.done := false.B
-  io.result.valid := false.B
-  io.result.bits.value := ((shift(11, 0) * p.numerator.U) / p.denominator.U + p.offset.S(32.W).asUInt)(31, 0)
+  io.busy := active || scaler.io.busy; io.done := scaler.io.done
+  io.result.valid := scaler.io.done && primed
+  io.result.bits.value := (scaler.io.value + p.offset.S(32.W).asUInt)(31, 0)
   io.result.bits.valid := true.B
   io.result.bits.calibrated := p.calibrated.B
-  when(!active) {
+  when(scaler.io.done) { primed := true.B }
+  when(!active && !scaler.io.busy) {
     when(if(autonomous) interval === 0.U else io.start) {
       active := true.B; sclk := false.B; divider := 0.U; bit := 0.U
       interval := (p.intervalCycles - 1).U
     }.otherwise { interval := interval - 1.U }
-  }.otherwise {
+  }.elsewhen(active) {
     when(divider === (p.halfPeriodCycles - 1).U) {
       divider := 0.U; sclk := !sclk
       when(!sclk) { shift := Cat(shift(14, 0), io.miso) }
         .otherwise {
           when(bit === 15.U) {
-            active := false.B; sclk := false.B; primed := true.B
-            io.result.valid := primed
-            io.done := true.B
+            active := false.B; sclk := false.B; scaler.io.start := true.B
           }.otherwise { bit := bit + 1.U }
         }
     }.otherwise { divider := divider + 1.U }

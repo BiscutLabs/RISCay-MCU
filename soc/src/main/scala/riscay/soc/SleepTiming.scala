@@ -30,7 +30,8 @@ class SleepTimebase(p: LowPowerParameters) extends Module with InlineInstance {
   */
 class ServiceClockWake extends Module with InlineInstance {
   val io = IO(new Bundle {
-    val event = Input(Bool()); val hostActive = Input(Bool())
+    val event = Input(Bool()); val scl = Input(Bool()); val sda = Input(Bool())
+    val selected = Input(Bool()); val rejected = Input(Bool())
     val running = Input(Bool()); val enable = Output(Bool())
   })
   def hold(event: Bool, cycles: Int): Bool = withReset((reset.asBool || event).asAsyncReset) {
@@ -40,8 +41,24 @@ class ServiceClockWake extends Module with InlineInstance {
     sync.orR || remaining =/= 0.U
   }
   val eventHold = hold(io.event, 16)
-  val hostHold = hold(io.hostActive, LowPowerParameters.hostHoldCycles)
-  io.enable := reset.asBool || io.event || io.hostActive || eventHold || hostHold || io.running
+  // SDA falling while SCL is high is a START, not a static bus-low level.
+  // This small event-clocked frontier stays powered with the oscillator off.
+  // Physical integration must constrain SCL setup/hold at the SDA event flop.
+  val hostPhase = withClock((!io.sda).asClock) {
+    val phase = RegInit(false.B)
+    when(io.scl) { phase := !phase }
+    phase
+  }
+  val host0 = RegNext(hostPhase, false.B); val host1 = RegNext(host0, false.B)
+  val seen = RegInit(false.B)
+  val remaining = RegInit(0.U(log2Ceil(LowPowerParameters.hostHoldCycles + 1).W))
+  when(host1 =/= seen || io.selected) { remaining := LowPowerParameters.hostHoldCycles.U }
+    .elsewhen(remaining =/= 0.U) { remaining := remaining - 1.U }
+  seen := host1
+  // An address for another target must not extend our retry window.
+  when(io.rejected) { remaining := 0.U }
+  io.enable := reset.asBool || io.event || eventHold || hostPhase =/= seen ||
+    remaining =/= 0.U || io.running
 }
 
 /** Small ungated service-clock frontier. The Gray bus needs a physical skew
@@ -52,14 +69,14 @@ class ServiceClockWake extends Module with InlineInstance {
 class RetainedClock extends Module with InlineInstance {
   val io = IO(new Bundle {
     val gray = Input(UInt(32.W)); val consumedGray = Input(UInt(32.W))
-    val canSleep = Input(Bool()); val activity = Input(Bool())
+    val canSleep = Input(Bool()); val activity = Input(Bool()); val forceRun = Input(Bool())
     val synchronizedGray = Output(UInt(32.W))
     val running = Output(Bool()); val clockOut = Output(Clock())
     val entries = Output(UInt(32.W))
   })
   val first = RegNext(io.gray, 0.U); val second = RegNext(first, 0.U)
   io.synchronizedGray := second
-  val needClock = !io.canSleep || io.activity || second =/= io.consumedGray
+  val needClock = io.forceRun || !io.canSleep || io.activity || second =/= io.consumedGray
   // Drain bridge/reset and host STOP pipelines before closing the clock gate.
   val grace = RegInit(7.U(3.W))
   when(needClock) { grace := 7.U }.elsewhen(grace =/= 0.U) { grace := grace - 1.U }

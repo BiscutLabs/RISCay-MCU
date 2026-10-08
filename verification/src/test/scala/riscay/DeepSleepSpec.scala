@@ -31,11 +31,11 @@ reg [11:0] adcCode=2200; reg [15:0] adcShift;
 integer fastEdges=0, savedEdges, conversions=0;
 real lastRise=0, previousStart=0, period=0;
 reg [31:0] previousGray=0, grayDifference;
-always @(posedge watchdogClock or posedge systemReset) begin
+always @(posedge watchdogClock or negedge dut.porReleased) begin
   #1;
   grayDifference=dut.soc.timebase_gray ^ previousGray;
-  if(!systemReset && (grayDifference & (grayDifference-1)) !== 0) $fatal(1,"MULTIBIT_SOURCE_GRAY_TRANSITION");
-  previousGray=systemReset ? 0 : dut.soc.timebase_gray;
+  if(dut.porReleased && (grayDifference & (grayDifference-1)) !== 0) $fatal(1,"MULTIBIT_SOURCE_GRAY_TRANSITION");
+  previousGray=dut.porReleased ? dut.soc.timebase_gray : 0;
 end
 always @(posedge serviceClock) begin fastEdges=fastEdges+1; lastRise=$realtime; end
 always @(negedge serviceClock) if(lastRise>0 && $realtime-lastRise<49.999) $fatal(1,"RUNT_SOURCE_PULSE");
@@ -91,6 +91,57 @@ end endtask
           serviceStartupNs=startup,serviceModelHz=hz)
       }
     }
+    test(s"$name stuck and abandoned I2C transactions release the fast source and foreign traffic is ignored") {
+      val params=p.copy(config=config.copy(programBytes=16,workingRamBytes=32),adc=None)
+      ClockedSimulation.run(top(click,params),name+"-host-timeout","""
+        #3000000;
+        // Abandoned valid write: its opcode must never commit on later recovery.
+        start_bus(); write_byte(8'h6a); write_byte(1); write_byte(4);
+        scl=0; hostLow=0; assert_off();
+        // Simultaneous line release need not form an observable STOP.
+        scl=1; hostLow=0; #1000; transactionActive=0;
+        read_words(1,0,0);
+        if(mode !== 0 || programmed || snapshot[160+:32] !== 0) $fatal(1,"TIMED_OUT_FRAME_COMMITTED");
+        // START followed by SDA stuck low cannot act as a level wake.
+        start_bus(); scl=1; hostLow=1; assert_off();
+        scl=0; hostLow=0; #1000; scl=1; transactionActive=0;
+        read_words(0,0,0); if(snapshot[0+:32] !== 32'h00010000) $fatal(1,"HOST_TIMEOUT_RECOVERY");
+        // MCU may be driving the first read data bit when its host disappears.
+        start_bus(); write_byte(8'h6b); scl=0; assert_off();
+        if(sdaLow) $fatal(1,"TIMEOUT_KEPT_SDA_DRIVEN");
+        stop_bus();
+        // Decode another target, then continue its data clocks. Those edges
+        // are not STARTs and must not keep this MCU's oscillator enabled.
+        start_bus(); foreign_address();
+        #1000000;
+        savedEdges=fastEdges;
+        repeat(200) begin scl=0; #1000; scl=1; #1000; end
+        if(serviceClockEnable || fastEdges != savedEdges) $fatal(1,"FOREIGN_PAYLOAD_HELD_CLOCK");
+        stop_bus(); transactionActive=0;
+        read_words(1,0,0);
+        if(mode !== 0 || programmed) $fatal(1,"FOREIGN_TRAFFIC_CHANGED_LOADER");
+      ""","""
+integer fastEdges=0,savedEdges;
+always @(posedge serviceClock) fastEdges=fastEdges+1;
+task assert_off; begin
+  // Production timeout at the fixture's 10 MHz plus bounded retry hold.
+  #28000000;
+  if(serviceClockEnable || serviceClock || !sleeping) $fatal(1,"STUCK_HOST_KEPT_FAST_SOURCE");
+  savedEdges=fastEdges; #100000;
+  if(fastEdges != savedEdges) $fatal(1,"STUCK_HOST_RETRIGGERED");
+end endtask
+task foreign_address; integer b; reg [7:0] address; begin
+  address=8'h42;
+  for(b=7;b>=0;b=b-1) begin
+    hostLow=!address[b]; #1000; scl=1; #1000; scl=0; #1000;
+  end
+  hostLow=0; #1000; scl=1; #1000;
+  if(!busSda) $fatal(1,"FOREIGN_ADDRESS_ACKNOWLEDGED");
+  scl=0; #1000;
+end endtask
+""",referenceHalfPeriodNs=50000000,onChipOscillator=true,chipParameters=lp,
+        serviceStartupNs=100000,deadlineNs=200000000)
+    }
     test(s"$name stops the fast source and wakes at worst-case startup without losing host or CPU state") {
       val program = Seq(0x200000b7L,0x30000137L,
         i(0x13,3,0,0,0x123),store(1,3,0,2),
@@ -133,25 +184,43 @@ end endtask
         chipParameters=lp,serviceStartupNs=100000,deadlineNs=250000000)
     }
     test(s"$name slow-clock Groundlark cold boot, confirmation and shutdown with stopped fast source") {
-      val params=p.copy(config=Groundlark.configuration.copy(programBytes=16,workingRamBytes=16))
+      val params=p.copy(config=Groundlark.configuration.copy(programBytes=16,workingRamBytes=32))
       ClockedSimulation.run(top(click,params,x => new GroundlarkSupervisor(x,PowerPolicy(enabled=true))),
-        name+"-deep-board","""
+        name+"-deep-board",s"""
         // 361 fastest-bound ticks are needed for 30 s off time. The accelerated
         // reference is 2 ms/tick here; nominal ms must not shorten that minimum.
         #650000000;
-        if(gpioOut[0] || programmed) $fatal(1,"MINIMUM_OFF_USED_NOMINAL_TIME");
+        if(gpioOut[0] || programmed) $$fatal(1,"MINIMUM_OFF_USED_NOMINAL_TIME");
         #90000000;
-        if(!gpioOut[0] || programmed || sleepEntries < 100) $fatal(1,"DEEP_CIRCULAR_BOOT");
+        if(!gpioOut[0] || programmed || sleepEntries < 100) $$fatal(1,"DEEP_CIRCULAR_BOOT");
+        // Keep the production ratio (32 LF edges, two-edge reset hold). EBREAK
+        // halts the uploaded application and deliberately stops its heartbeat.
+        ${upload(Seq(breakpoint))}
+        guardPower=1;
+        wait(systemReset); #1;
+        if(!gpioOut[0] || gpioOut[1] || !locked || !programmed) $$fatal(1,"WATCHDOG_CUT_PI_OR_UNLOCKED");
+        wait(!systemReset); #5000;
+        if(mode !== 2) $$fatal(1,"CRASH_NOT_READY_FOR_RESTART");
+        read_words(2,0,0);
+        if(!snapshot[32]) $$fatal(1,"CRASH_STOPPED_SENSING");
+        begin_image(4,0,0,32'h00010000); expect_error(2);
+        command(5); // crash again while the permanent controller is shutting down
         adcCode=1500; wait(gpioOut[1]);
-        if(!gpioOut[0]) $fatal(1,"DEEP_EARLY_CUT");
+        if(!gpioOut[0]) $$fatal(1,"DEEP_EARLY_CUT");
+        wait(systemReset); #1;
+        if(!gpioOut[0] || !gpioOut[1] || !locked || !programmed) $$fatal(1,"CRASH_LOST_SHUTDOWN");
         gpioIn=0; #1000;
-        if(!gpioOut[0]) $fatal(1,"ACK_NOT_CONFIRMED");
+        if(!gpioOut[0]) $$fatal(1,"ACK_NOT_CONFIRMED");
+        guardPower=0;
         #7000000;
-        if(gpioOut[0] || gpioOut[1]) $fatal(1,"DEEP_ACK_LOST");
+        if(gpioOut[0] || gpioOut[1]) $$fatal(1,"DEEP_ACK_LOST");
         wait(!serviceClockEnable); reset=1; #1;
-        if(gpioOut[0] || programmed || locked || !serviceClockEnable) $fatal(1,"DEEP_POR_STATE");
-      """,monitor,referenceHalfPeriodNs=1000000,onChipOscillator=true,
-        chipParameters=lp,serviceStartupNs=100000,deadlineNs=850000000)
+        if(gpioOut[0] || programmed || locked || !serviceClockEnable) $$fatal(1,"DEEP_POR_STATE");
+      """,monitor+"""
+reg guardPower=0;
+always @(negedge gpioOut[0]) if(guardPower) $fatal(1,"UNREQUESTED_POWER_CUT");
+""",referenceHalfPeriodNs=1000000,onChipOscillator=true,
+        chipParameters=lp,serviceStartupNs=100000,deadlineNs=1200000000)
     }
   }
   test("slow elapsed time carries fractional milliseconds and bounds sample age across service outages") {

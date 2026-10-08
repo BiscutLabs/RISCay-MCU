@@ -43,11 +43,16 @@ outside this profile's current sensing hardware.
 
 The permanent bootstrap must measure voltage, apply a qualified minimum startup
 policy, power the Pi without a programmed application and continue supervision
-during upload. MCU reset disables Pi power; Pi-only reset preserves MCU image
-and lock. The programming lock never disables telemetry reads or acquisition.
+during upload. Manual/POR/brownout reset disables Pi power. Application watchdog
+reset preserves the supervisor state, power/shutdown outputs, elapsed timers,
+sensing, image and lock; the Pi can explicitly restart the retained image.
+Pi-only reset also preserves MCU image and lock. The programming lock never
+disables telemetry reads or acquisition.
 Fixed hardware implements the complete baseline power policy and owns these
 three GPIOs; uploaded firmware cannot override it. The default emitted policy
 is disabled until battery/board settings are qualified and enabled at build time.
+Tapeout must select that qualified policy deliberately; the default emitter is
+intentionally latched off.
 
 The current TI firmware uses battery readings internally and has no Pi-readable
 telemetry transport. RISCay implements digital loader, telemetry and permanent

@@ -6,6 +6,11 @@ peripherals. `event_loop` exercises deadline/leased WAIT, GPIO reads and applica
 registers. `runtime_stress` exercises nested stack frames, initialized data, BSS,
 constants, byte stores and unsigned software division. Both deliberately return
 after finite workloads, causing the startup EBREAK; they are not deployment images.
+`wait_events()` arms timing and explicitly kicks the watchdog without clearing
+pending events. Call `acknowledge_events(returned_bits)` before processing them;
+new events during processing remain for the next wait. Pending bits coalesce,
+so multiple edges on a still-pending bit are not an event queue. Lease writes
+alone no longer kick the watchdog.
 
 ## Reproduce
 
@@ -21,6 +26,8 @@ packages. Native Linux needs their runtime dependencies and `dpkg-deb`. On Windo
 the driver delegates to the Ubuntu WSL distribution. Subsequent builds omit
 `--bootstrap`. Missing tools fail; tests never substitute preloaded/handwritten
 images or skip compilation. See [toolchain-lock.json](toolchain-lock.json).
+The Python event-helper control also needs native `gcc` on Linux/Ubuntu WSL;
+it executes the actual header against mapped MMIO storage to inspect writes.
 
 The build uses `-march=rv32e -mabi=ilp32e -Os`, no compressed instructions, M,
 libc, dynamic allocation or relaxation. It emits ELF, binary, words, disassembly,

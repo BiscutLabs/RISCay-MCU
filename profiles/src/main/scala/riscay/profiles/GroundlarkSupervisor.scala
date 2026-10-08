@@ -26,6 +26,7 @@ final case class PowerPolicy(enabled: Boolean = false, shutdownMv: Int = 10000,
   * a stable inactive level after RUN, followed by a stable active level.
   */
 class GroundlarkSupervisor(p: SocParameters, policy: PowerPolicy) extends BoardController(p) {
+  override def ownedRegisters: Set[Int] = (0 until 6).toSet
   require(p.config.gpioCount >= 3 && p.config.measurements.nonEmpty)
   val state = RegInit(0.U(2.W)); val fault = RegInit(0.U(3.W))
   val timeouts = RegInit(0.U(2.W)); val offAt = RegInit(0.U(32.W))
@@ -88,7 +89,6 @@ class GroundlarkSupervisor(p: SocParameters, policy: PowerPolicy) extends BoardC
     }
   io.mask := 7.U; io.enables := 3.U
   io.outputs := Cat(0.U(30.W), state === 2.U, state === 1.U || state === 2.U)
-  io.registerMask := 63.U
   io.registers := VecInit(Seq.fill(64)(0.U(32.W)))
   io.registers(0) := state; io.registers(1) := io.outputs(0)
   io.registers(2) := io.outputs(1); io.registers(3) := halt

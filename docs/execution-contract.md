@@ -22,17 +22,27 @@ see the [SoC contract](soc-contract.md).
 - Illegal instruction, instruction alignment/access, and load/store
   alignment/access errors produce a fault record and stop until reset.
 
-Each variant circulates one architectural-state token. Fetch responses execute
+Each variant circulates one 178-bit control/writeback token. Fetch responses execute
 ordinary ALU/control-flow instructions. A load/store fetch instead creates a
 second memory transaction; its response completes that instruction. The shared
 datapath is combinational; each design owns its async storage and sequencing.
-Architectural state travels through multiple storage stages in this initial
-implementation. No small-area or low-energy claim is made for that choice.
+The architectural register file is one bank of fifteen 32-bit event registers
+outside that token. Arrival of the state token writes only its selected nonzero
+destination before the next memory response can evaluate operands. Four-phase
+uses request arrival; Click uses native request/acknowledge phase difference.
+The 107-bit retirement record stays at execute output and is not copied around
+the loop. The previous token carried 728 bits including register file and trace.
+These are structural storage reductions, not measured chip area or energy.
+
+Physical implementation must close write-data/decode setup and hold around each
+selected arrival pulse, minimum pulse width, and write-to-read settling through
+the next request/response and execute path. The published chisel-async atomic AND,
+event-register and phase primitives provide simulation models, not that proof.
 
 Four-phase reset automatically reinstalls the initial token. Click additionally
 requires `start` to rise after coordinated reset settles, then remain high until
 the next reset. `start` is currently an integration signal, not an allocated
-package pin. The MCU reset controller will eventually own it.
+package pin. The implemented SoC reset controller owns it.
 
 ## Memory request/response port
 

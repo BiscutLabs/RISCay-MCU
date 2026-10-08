@@ -115,7 +115,7 @@ README show that a prototype exists, with physical qualification still pending.
 | --- | --- | --- | --- |
 | Pi profile | Pi 4 HAT | Pi 5 proposed first | Start with the actual Groundlark Pi 4 profile. |
 | Supply sensing | ADC voltage measurement | External threshold/event input | Preserve voltage measurement; integration is a separate decision. |
-| MCU reset | RUN falls off via pulldown | Retain RUN on CPU reset | Use fail-off for both implementations; retention is on hold. |
+| MCU reset | RUN falls off via pulldown | Retain power supervision on application reset | Manual/POR/brownout remains fail-off; application watchdog reset preserves permanent policy, its outputs, image and lock in both implementations. |
 | Missing shutdown ACK | Cut power after timeout; latch off after three such timeouts | Preserve power by default; forced-off optional | Represent the current bounded forced-off behavior explicitly; no timeout is reported as graceful shutdown. |
 | Host health | Halt acknowledgement; no separate ready/heartbeat path | Ready and heartbeat monitoring | Optional extensions requiring Pi/software/interface changes. |
 
