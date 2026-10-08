@@ -13,7 +13,7 @@ The [SoC contract](soc-contract.md) specifies their wire/MMIO behavior.
 | Shared MCU | ISA/datapath, memory transactions, generic GPIO, timer/events, watchdog/reset, host ABI, loader/protection and measurement records |
 | Four-phase or Click implementation | Native handshakes, storage, timing and reset composition |
 | Board/application profile | Logical pin roles, safe reset levels, sensor meanings/units, application registers, immutable startup policy and firmware |
-| Physical implementation | Actual pads, analog frontend, memory macros and electrical/power-domain qualification |
+| Physical implementation | Actual pads, analog frontend, LF and restartable fast oscillators, POR, memory macros and electrical/power-domain qualification |
 
 The host can be a Pi, another processor or a development adapter. I2C is the
 first host transport; the logical command/register model has no Linux, Pi or
@@ -32,6 +32,7 @@ little-endian words and coherent snapshots with supported-word bits; see the
 | 0x00 | Device identity/build information | Instance 0; ABI version, application ID/version, program/working-RAM capacities, GPIO/channel counts and reset reason |
 | 0x01 | Loader status | Instance 0; MODE, PROGRAMMED, PROGRAM_LOCKED, CAN_PROGRAM, BUSY, LAST_ERROR, IMAGE_ID, RECEIVED_BYTES |
 | 0x02 | Measurements | Instance is channel; VALUE, FLAGS, AGE_MS, SEQUENCE, UNIT, SCALE10 |
+| 0x03 | Timing and sleep | Instance 0; FEATURES, NOW_MS, SAMPLE_PERIOD_MS, WAKE_MASK, SLEEP_REMAINING_MS, PENDING, SLEEP_ENTRIES, TIMING_STATUS |
 | 0x80 | Application data | Instance 0; up to 64 profile-defined read-only registers |
 
 The exact logical word order is defined by `HostSchema`. Unknown words, spaces
@@ -40,6 +41,14 @@ or another channel. Host writes to read-only words must have no side effects.
 Loader changes use explicit validated commands under the existing
 [lock contract](loader-status-and-lock.md). The application area cannot bypass
 image protection or expose unrestricted CPU-memory/peripheral writes.
+
+The timing service is generic too. Explicit `SAMPLE_PERIOD` and `WAKE` commands
+allow the host to request a bounded acquisition interval or wake a parked CPU.
+They remain available while programming is locked, cannot write executable
+memory, and do not override board power policy. Timing feature bits describe the
+build's capabilities; absent acquisition hardware rejects interval changes.
+See [retained sleep and clocks](sleep-and-clock.md) for timing limits and wake
+semantics.
 
 Read ABI and application ID/version before interpreting application words.
 Common services retain the same meaning across profiles. Application layouts
@@ -109,4 +118,6 @@ checks unknown-address rejection and channel bounds, and rejects contradictory
 configurations. Both CPU protocol suites remain required. SocSpec additionally
 runs generic and Groundlark configurations through each complete SoC's I2C pins.
 FabricSpec covers service-bus behavior, sample failures/staleness and zero-channel
-builds. These complement the independent ISA/routing and later physical qualification.
+builds. SleepSpec covers both protocols' retention, timing, wake, interval changes,
+watchdog recovery and permanent Groundlark supervision during sleep. These
+complement the independent ISA/routing and later physical qualification.

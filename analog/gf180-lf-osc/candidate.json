@@ -1,0 +1,6 @@
+{
+  "resistor_megohm": 300,
+  "buffer_stack": 8,
+  "stages": 7,
+  "timing_gate_length_um": 10.0
+}

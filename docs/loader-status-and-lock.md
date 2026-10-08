@@ -67,6 +67,10 @@ The programming lock protects application code and metadata, not telemetry
 updates. Normal sampling continues while locked. Age limits are build parameters;
 calibration flags and wire encoding are defined in the SoC contract. When
 measurements drive control decisions, telemetry must describe the same data.
+The bounded `SAMPLE_PERIOD` and `WAKE` commands remain usable while locked;
+neither modifies the image or its validation metadata. Retained sleep preserves
+RAM, validity and programming lock, and the service-clocked I2C endpoint remains
+available. See [retained sleep and clocks](sleep-and-clock.md).
 
 Groundlark maps measurement 0 to battery millivolts and its application area to
 supervisor mode, power/shutdown/ACK and faults. See its
@@ -123,6 +127,7 @@ it commits. The protection applies in both protocol wrappers under backpressure.
 | Event | Image validity | Programming lock |
 | --- | --- | --- |
 | Host reboot or host rail off/on, MCU supply retained | Preserved | Preserved |
+| Retained sleep with MCU supply maintained | Preserved | Preserved |
 | I2C STOP, bus recovery or host-interface reset | No new validity; a discarded partial transfer stays invalid | Preserved |
 | Application fault or a local CPU-only restart that does not assert full MCU reset | Preserved if protected bytes remain unchanged; no automatic permission to execute | Preserved |
 | Full MCU reset, including full watchdog/POR/brownout reset | Cleared | Cleared |
@@ -165,6 +170,12 @@ and power-specific scenarios:
   verify reads do not clear faults, change policy or interrupt supervision, and
   that the lock does not prevent new ADC results from being published.
 
-Core suites cover the ISA/protocol in isolation. SocSpec and FabricSpec exercise
-the implemented host, loader, memory, reset, telemetry and board paths; these
-directed suites are not exhaustive reset/timing or physical qualification.
+Source-stopping builds require the address-only I2C wake probe and wait described
+in [sleep and clocks](sleep-and-clock.md). The probe contains no loader command;
+do not use retries of WRITE/BEGIN as a wake mechanism. Status and locked-image
+telemetry remain available after wake without an additional pin.
+
+Core suites cover the ISA/protocol in isolation. SocSpec, FabricSpec, SleepSpec and DeepSleepSpec
+exercise the implemented host, loader, memory, reset, telemetry, board and retained
+sleep paths; these directed suites are not exhaustive reset/timing or physical
+qualification.

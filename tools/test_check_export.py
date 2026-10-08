@@ -7,10 +7,72 @@ from pathlib import Path
 import subprocess
 import tempfile
 import unittest
-from check_export import generated_reset_probe, vector_coverage_probe
+from check_export import generated_reset_probe, vector_coverage_probe, probe_timeout, sleep_clock_background
 
 
 class ResetProbeTest(unittest.TestCase):
+    def test_sleep_background_adds_coverage_and_keeps_mapping_failures(self):
+        manifest = {"top": "SleepTop"}
+        scopes = {"SleepTop": {"registers": {"gate_enabled": 1}}}
+        checks = 0
+        stimulus = "initial begin\nforce SleepTop.reset = 1'b1; #1;\n"
+        drivers = ("reset", "gate_enabled", "request", "returned", "response")
+        for control in (0, 1):
+            stimulus += "".join(f"force SleepTop.{name} = 1'h{control};\n" for name in drivers) + "#1;\n"
+            for name in drivers:
+                for value in (1, 0):
+                    stimulus += f"force SleepTop.{name} = 1'h{value};\n#1; check;\n"
+                    checks += 1
+                stimulus += f"force SleepTop.{name} = 1'h{control};\n#1;\n"
+        prelude = '''module ContractProbe;
+timeunit 1ns; timeprecision 1ps;
+reg ones_0=0, zeros_0=0;
+task check; begin
+if(SleepTop.observed !== SleepTop.expected) $fatal(1,"BINDING_MISMATCH");
+if(SleepTop.observed === 1'b1) ones_0=1;
+if(SleepTop.observed === 1'b0) zeros_0=1;
+end endtask
+'''
+        coverage = 'if (ones_0 !== 1\'h1 || zeros_0 !== 1\'h1) $fatal(1,"INACTIVE_ENDPOINT:SleepTop.observed");\n'
+        original = prelude + stimulus + coverage + f'$display("CONTRACT_PROBES_PASS:{checks}"); $finish; end endmodule'
+        augmented, count = sleep_clock_background(original, manifest, scopes, checks)
+        self.assertEqual(count, 30)
+        # Original stimulus and every assertion remain intact; only more cases
+        # and the completion count are added.
+        self.assertTrue(augmented.startswith(prelude + stimulus))
+        self.assertIn(coverage, augmented)
+        with self.assertRaisesRegex(ValueError, "REGISTER_MISMATCH"):
+            sleep_clock_background(original, manifest, {}, checks)
+        with self.assertRaisesRegex(ValueError, "SHAPE_CHANGED"):
+            sleep_clock_background("", manifest, scopes, checks)
+        for source, broken, diagnostic in ((original, False, "INACTIVE_ENDPOINT"),
+                                           (augmented, False, "CONTRACT_PROBES_PASS:30"),
+                                           (augmented, True, "BINDING_MISMATCH")):
+            with tempfile.TemporaryDirectory(prefix="riscay-sleep-probe-") as folder:
+                path = Path(folder)
+                rtl = '''module SleepTop;
+reg reset=0, gate_enabled=0, request=0, returned=0, response=0;
+wire expected=gate_enabled & (request ^ returned) & ~response;
+wire observed=%s;
+endmodule
+''' % ("1'b0" if broken else "expected")
+                (path / "test.sv").write_text(rtl + source)
+                built = subprocess.run(["iverilog", "-g2012", "-s", "SleepTop", "-s", "ContractProbe", "-o", "sim.vvp", "test.sv"],
+                                       cwd=path, capture_output=True, text=True, timeout=30)
+                self.assertEqual(built.returncode, 0, built.stderr)
+                result = subprocess.run(["vvp", "sim.vvp"], cwd=path, capture_output=True, text=True, timeout=30)
+                self.assertIn(diagnostic, result.stdout)
+                self.assertEqual(result.returncode == 0, "CONTRACT_PROBES_PASS" in diagnostic)
+
+    def test_timeout_extension_only_targets_generated_probe(self):
+        self.assertEqual(probe_timeout(["vvp", "contract_probe.vvp"], 60, 601, 602), 601)
+        self.assertEqual(probe_timeout(["iverilog", "-o", "contract_probe.vvp", "contract_probe.sv"], 60, 601, 602), 602)
+        self.assertEqual(probe_timeout(("iverilog.exe", "-o", "contract_probe.vvp", "contract_probe.sv"), 60, 601, 602), 602)
+        for command in (["vvp", "sim.vvp"], ["iverilog", "-o", "contract_probe.vvp", "design.sv"],
+                        ["iverilog", "-o", "other.vvp", "contract_probe.sv"],
+                        ["unrelated", "contract_probe.vvp"], [], "vvp contract_probe.vvp"):
+            self.assertEqual(probe_timeout(command, 60, 601, 602), 60)
+
     manifest = {"top": "FourPhaseSoc", "design": {
         "endpoints": [{"id": "system_reset", "width": 1,
                        "source": "~|FourPhaseSoc>systemReset", "rtl_path": "FourPhaseSoc.systemReset"}],

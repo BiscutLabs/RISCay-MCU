@@ -1,0 +1,30 @@
+[
+  {
+    "repository": "https://github.com/RTimothyEdwards/sky130_ef_ip__rc_osc_500k",
+    "revision": "343f4481b2199efe4ddba48428c89fcf1029ae9a",
+    "source": "netlist/schematic/sky130_ef_ip__rc_osc_500k.spice",
+    "local": "analog/gf180-lf-osc/upstream/sky130_ef_ip__rc_osc_500k.spice",
+    "sha256": "d8b934f4f9ae657e3fb8f3fee851e50e1ae774632cda733ef8cb611631e4eca3"
+  },
+  {
+    "repository": "https://github.com/RTimothyEdwards/sky130_ef_ip__rc_osc_500k",
+    "revision": "343f4481b2199efe4ddba48428c89fcf1029ae9a",
+    "source": "LICENSE",
+    "local": "analog/gf180-lf-osc/upstream/LICENSE",
+    "sha256": "c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4"
+  },
+  {
+    "repository": "https://github.com/google/globalfoundries-pdk-libs-gf180mcu_fd_pr",
+    "revision": "9f992d5a9186d1f7820c58f039c484ad35b2edea",
+    "source": "models/ngspice/design.ngspice",
+    "local": ".tools/gf180-models/design.ngspice",
+    "sha256": "8d9721a5bf8f079d3fddbd03339af9a0c84d4feb06db8e06465fbd02c7500508"
+  },
+  {
+    "repository": "https://github.com/google/globalfoundries-pdk-libs-gf180mcu_fd_pr",
+    "revision": "9f992d5a9186d1f7820c58f039c484ad35b2edea",
+    "source": "models/ngspice/sm141064.ngspice",
+    "local": ".tools/gf180-models/sm141064.ngspice",
+    "sha256": "73fc67d38747d95ce03f3c2ba5f0a25c98f56a293363a9df4c971a3a28a3dcda"
+  }
+]

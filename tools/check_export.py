@@ -2,8 +2,8 @@
 """Run chisel-async export checks with MCU timeout/generated-reset support.
 
 The library defaults to 60 seconds, which its small component probes fit. This
-adapter extends the contract_probe.vvp wall-clock limit. With --soc it checks
-child reset wiring against the registered generated system-reset endpoint, rather
+adapter extends the contract probe's compilation and simulation limits. With
+--soc it checks child reset wiring against the generated system-reset endpoint, rather
 than the external POR input. All endpoint/timing/coverage checks are retained.
 The library checkout is an explicit development dependency.
 """
@@ -14,6 +14,57 @@ import importlib.util
 from pathlib import Path
 import subprocess
 import sys
+import re
+
+
+def probe_timeout(command, original, simulation, compilation):
+    """Extend only the generated probe, not unrelated commands or RTL checks."""
+    if not isinstance(command, (list, tuple)) or len(command) < 2:
+        return original
+    executable = Path(command[0]).stem
+    if executable == "vvp" and command[1] == "contract_probe.vvp":
+        return simulation
+    if (executable == "iverilog" and "contract_probe.sv" in command and
+            any(command[i] == "-o" and command[i+1] == "contract_probe.vvp" for i in range(len(command)-1))):
+        return compilation
+    return original
+
+
+def sleep_clock_background(source: str, manifest: dict, scopes: dict, checks: int):
+    """Append an existing single-driver campaign with the gate enable held high.
+
+    The library's all-low background closes the gate; its all-high background
+    asserts responseValid and blocks new acceptance. Keep both campaigns intact
+    and add a third. This forces only a native register already in the library's
+    driver inventory, never a derived endpoint. The paired fallback is retained.
+    """
+    top = manifest["top"]
+    if scopes.get(top, {}).get("registers", {}).get("gate_enabled") != 1:
+        raise ValueError("SLEEP_GATE_REGISTER_MISMATCH")
+    anchor = f"initial begin\nforce {top}.reset = 1'b1; #1;\n"
+    if source.count(anchor) != 1:
+        raise ValueError("SLEEP_PROBE_SHAPE_CHANGED")
+    start = source.index(anchor) + len(anchor)
+    header_end = source.index("\n#1;\n", start) + len("\n#1;\n")
+    zero_header = source[start:header_end]
+    one_header = re.sub(r"(force \S+ = 1'h)0;", r"\g<1>1;", zero_header)
+    if source.count(one_header) != 1 or one_header == zero_header:
+        raise ValueError("SLEEP_PROBE_SHAPE_CHANGED")
+    end = source.index(one_header)
+    campaign = source[start:end]
+    gate = f"force {top}.gate_enabled = 1'h0;"
+    if gate not in zero_header or end <= start:
+        raise ValueError("SLEEP_GATE_DRIVER_MISSING")
+    coverage = list(re.finditer(r"^if \(ones_\d+ !==.*INACTIVE_ENDPOINT:.*$", source, re.M))
+    steps = campaign.count("#1; check;")
+    completion = f"CONTRACT_PROBES_PASS:{checks}"
+    if not coverage or not steps or source.count(completion) != 1:
+        raise ValueError("SLEEP_PROBE_SHAPE_CHANGED")
+    additional = campaign.replace(gate, f"force {top}.gate_enabled = 1'h1;")
+    count = checks + steps * len(coverage)
+    position = coverage[0].start()
+    result = source[:position] + additional + source[position:]
+    return result.replace(completion, f"CONTRACT_PROBES_PASS:{count}"), count
 
 
 def generated_reset_probe(source: str, manifest: dict) -> str:
@@ -85,11 +136,13 @@ def main() -> None:
     parser.add_argument("directory", type=Path)
     parser.add_argument("--library", type=Path, required=True)
     parser.add_argument("--probe-timeout", type=int, default=600)
+    parser.add_argument("--probe-compile-timeout", type=int, default=600)
     parser.add_argument("--soc", action="store_true", help="Validate RISCay generated system-reset fanout")
     parser.add_argument("--vector-coverage", action="store_true", help="Equivalent packed four-state coverage bookkeeping")
+    parser.add_argument("--sleep-clock", action="store_true", help="Add a clock-enabled stimulus background for retained-sleep SoCs")
     args = parser.parse_args()
-    if args.probe_timeout <= 0:
-        parser.error("--probe-timeout must be positive")
+    if args.probe_timeout <= 0 or args.probe_compile_timeout <= 0:
+        parser.error("probe compilation and simulation timeouts must be positive")
     source = args.library.resolve() / "tools" / "check_export.py"
     sys.path.insert(0, str(source.parent))
     spec = importlib.util.spec_from_file_location("riscay_library_export_checker", source)
@@ -100,9 +153,11 @@ def main() -> None:
     original_run = subprocess.run
     original_probe = module.probe_source
 
-    if args.soc or args.vector_coverage:
+    if args.soc or args.vector_coverage or args.sleep_clock:
         def probe(manifest, scopes, paired=False):
             source, count = original_probe(manifest, scopes, paired)
+            if args.sleep_clock:
+                source, count = sleep_clock_background(source, manifest, scopes, count)
             if args.soc:
                 source = generated_reset_probe(source, manifest)
             if args.vector_coverage:
@@ -111,8 +166,8 @@ def main() -> None:
         module.probe_source = probe
 
     def run(command, *pargs, **kwargs):
-        if isinstance(command, (list, tuple)) and len(command) > 1 and command[1] == "contract_probe.vvp":
-            kwargs["timeout"] = args.probe_timeout
+        kwargs["timeout"] = probe_timeout(command, kwargs.get("timeout"),
+                                         args.probe_timeout, args.probe_compile_timeout)
         return original_run(command, *pargs, **kwargs)
 
     subprocess.run = run
@@ -125,6 +180,8 @@ def main() -> None:
     print(json.dumps({"status": result["status"], "semantic_sha256": result["semantic_sha256"],
                       "endpoints": len(result["endpoints"]), "mapping_checks": result["mapping_checks"],
                       "probe_timeout_seconds": args.probe_timeout,
+                      "probe_compile_timeout_seconds": args.probe_compile_timeout,
+                      "sleep_clock_background": args.sleep_clock,
                       "coverage": "packed-equivalent" if args.vector_coverage else "library-scalar",
                       "reset_contract": "generated-system-reset" if args.soc else "flat-library-reset"}, indent=2))
 

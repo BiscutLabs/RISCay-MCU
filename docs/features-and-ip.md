@@ -66,6 +66,7 @@ every analog or timing function to be integrated on the MCU die.
 | Required | Generic GPIO | Input, output and output-enable vectors with profile-defined roles, qualification and safe reset values. Groundlark binds three GPIOs to power enable, shutdown request and ACK_N; both protocols use identical bindings. |
 | Groundlark required | Battery measurement frontend | 12-bit receive-only SPI ADC controller and generic measurement channel 0. Default conversion is nominal/uncalibrated. Analog frontend qualification remains; another profile may have zero analog channels. |
 | Required | Independent timebase and deadlines | Low-frequency tick input or oscillator/RTC subsystem, monotonic counter and next-deadline compare. Supports sampling, voltage confirmation, shutdown timeout and minimum off interval while the CPU is inactive. |
+| Required | Retained sleep | Implemented slow-tick timebase, stopped service-source control, I2C wake probe, wake masks, finite watchdog-serviced sleeps and programmable sampling. See [sleep and clocks](sleep-and-clock.md). The [GF180 LF candidate](../analog/gf180-lf-osc/README.md) supplies nominal timing; physical qualification, POR and a fast oscillator macro remain. |
 | Required | Event capture and wait | Pending event bits, atomic acknowledge and a blocking MMIO wait candidate; no lost wakeup when event, clear and sleep coincide. Defined pulse-width or held-level contracts at every input. |
 | Required | Independent watchdog | Detect stalled CPU/firmware and recover while the core is quiescent or a transaction is stuck. To cover loss of the primary timebase, it needs a separate reference or an external watchdog. |
 | Required | Reset and output policy | Power-on/brownout input, reset distribution and handshake initialization. Reset forces RUN off in the Groundlark compatibility profile; retained RUN is on hold. |
@@ -188,7 +189,7 @@ do not establish watts, leakage, or battery life. Peak instruction rate is secon
 Pi-assisted volatile application reload after power loss is required. It does
 not imply embedded flash, persistent updates or a general diagnostic interface.
 
-Manual wake, RTC scheduling, ready/heartbeat monitoring, a serial diagnostic
+Dedicated manual-wake pins, RTC scheduling, ready/heartbeat monitoring, a serial diagnostic
 interface, external configuration EEPROM, persistent firmware update and warm-reset output
 retention are explicitly on hold. Do not implement or allocate dedicated pins
 for these optional functions in either variant. QDI, a separate GALS comparison,

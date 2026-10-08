@@ -21,6 +21,7 @@ class I2cTarget(address: Int) extends Module with InlineInstance {
     val scl = Input(Bool()); val sda = Input(Bool()); val pullLow = Output(Bool())
     val frame = Valid(new HostFrame)
     val snapshot = Input(UInt(288.W))
+    val busy = Output(Bool())
   })
   val sclSync = RegInit(3.U(2.W)); sclSync := Cat(sclSync(0), io.scl)
   val sdaSync = RegInit(3.U(2.W)); sdaSync := Cat(sdaSync(0), io.sda)
@@ -29,6 +30,9 @@ class I2cTarget(address: Int) extends Module with InlineInstance {
   val rise = scl && !lastScl; val fall = !scl && lastScl
   val start = scl && lastScl && !sda && lastSda
   val stop = scl && lastScl && sda && !lastSda
+  val busActive = RegInit(false.B)
+  when(start) { busActive := true.B }.elsewhen(stop) { busActive := false.B }
+  io.busy := busActive || start || stop
   val state = RegInit(0.U(4.W))
   val addressByte = RegInit(true.B)
   val selectedWrite = RegInit(false.B)

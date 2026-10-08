@@ -13,6 +13,18 @@
 - `soc/` owns the common clocked service island; keep both native CPU bridges
   explicit. Follow `docs/soc-contract.md` for wire commands, MMIO and reset scope.
   Run SocSpec/FabricSpec after changes there and keep strict SoC exports valid.
+- Retained sleep and programmable sampling are in scope. Follow
+  `docs/sleep-and-clock.md`; run SleepSpec, DeepSleepSpec and oscillator-model tests as well.
+  Preserve the cold-boot policy, programming lock and watchdog fault coverage.
+  An oscillator model or synthesis black box is not implemented analog IP.
+- Analog oscillator work lives in `analog/gf180-lf-osc/`. Preserve upstream
+  attribution and pinned model hashes. Run its independent measurement controls
+  and SPICE campaigns after circuit changes; document any model transformation.
+  Never bind a slower analog candidate to the 4 kHz timer without updating its
+  time units, Gray CDC contract, watchdog and board timing policy together.
+  Source-stopping builds require the documented address-only I2C wake probe;
+  preserve its startup/hold bounds and do not claim the fast-source model is
+  implemented analog IP. LF reset is POR-only, never watchdog-generated reset.
 - Groundlark's permanent controller owns its power GPIOs. Keep its default policy
   disabled until qualified board/battery values are deliberately supplied.
 - Optional features are on hold. Follow `docs/features-and-ip.md` and

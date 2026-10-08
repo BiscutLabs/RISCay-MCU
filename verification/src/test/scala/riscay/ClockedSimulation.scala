@@ -12,7 +12,11 @@ import scala.jdk.CollectionConverters._
   * AsyncTest remains in use for the clockless core/route randomized campaigns.
   */
 object ClockedSimulation {
-  def run(gen: => AsyncModule, name: String, body: String, extra: String = ""): Path = {
+  def run(gen: => AsyncModule, name: String, body: String, extra: String = "",
+      referenceHalfPeriodNs: Int = 163, onChipOscillator: Boolean = false,
+      chipParameters: riscay.soc.LowPowerParameters = riscay.soc.LowPowerParameters(),
+      serviceStartupNs: Int = 500, deadlineNs: Long = 100000000L,
+      serviceModelHz: Double = 10000000): Path = {
     val root = Paths.get("build/soc-tests").toAbsolutePath; Files.createDirectories(root)
     val base = Files.createTempDirectory(root, name)
     Simulator().check(base.resolve("simulator"))
@@ -27,21 +31,28 @@ object ClockedSimulation {
       file.toString
     }
     val ports = ujson.read(Files.readString(base.resolve("ports.json")))("nodes")(0)("ports").arr.toSeq
+    val chipSources = if(onChipOscillator) {
+      Seq(riscay.soc.ChipWrapper.write(base,chipParameters).toString,
+        base.resolve("chip/riscay_lf_osc_model.sv").toString,
+        base.resolve("chip/riscay_service_osc_model.sv").toString)
+    } else Seq.empty
     def flat(p: ujson.Value) = p("source").str.split('>').last.replace('.', '_').replace('[', '_').replace("]", "")
-    val declarations = ports.map(p => s"${if(p("direction").str == "input") "reg" else "wire"} [${p("width").num.toInt-1}:0] ${flat(p)};").mkString("\n")
+    val internal = Set("serviceClock", "watchdogClock", "serviceClockEnable")
+    val declarations = ports.map(p => s"${if(p("direction").str == "input" && !(onChipOscillator && internal(flat(p)))) "reg" else "wire"} [${p("width").num.toInt-1}:0] ${flat(p)};").mkString("\n")
     val tb = s"""module Testbench;
 timeunit 1ns; timeprecision 1ps;
 $declarations
 reg hostLow=0;
 wire busSda = !(hostLow || sdaLow);
 always @* sda=busSda;
-${manifest("top").str} dut (${ports.map(p => s".${flat(p)}(${flat(p)})").mkString(",")});
+${manifest("top").str}${if(onChipOscillator) "Chip" else ""} dut (${ports.filter(p => !onChipOscillator || !internal(flat(p))).map(p => s".${flat(p)}(${flat(p)})").mkString(",")});
+${if(onChipOscillator) s"defparam dut.oscillator.NOMINAL_HZ = ${1.0e9/(2.0*referenceHalfPeriodNs)};\ndefparam dut.oscillator.STARTUP_NS = 500;\ndefparam dut.serviceOscillator.STARTUP_NS = $serviceStartupNs;\ndefparam dut.serviceOscillator.NOMINAL_HZ = $serviceModelHz;\nassign serviceClock=dut.serviceClock;\nassign watchdogClock=dut.lfClock;\nassign serviceClockEnable=dut.serviceClockEnable;" else ""}
 reg clockEnabled=1;
-initial begin serviceClock=0; forever begin #50; if(clockEnabled) serviceClock=~serviceClock; end end
-initial begin watchdogClock=0; forever #163 watchdogClock=~watchdogClock; end
-initial begin #100000000; $$fatal(1,"SOC_DEADLINE"); end
+reg referenceEnabled=1;
+${if(onChipOscillator) "" else s"initial begin serviceClock=0; forever begin #50; if(clockEnabled) serviceClock=~serviceClock; end end\ninitial begin watchdogClock=0; forever begin #$referenceHalfPeriodNs; if(referenceEnabled) watchdogClock=~watchdogClock; end end"}
+initial begin #$deadlineNs; $$fatal(1,"SOC_DEADLINE"); end
 $extra
-$hostTasks
+${if(onChipOscillator && chipParameters.stopServiceClock) wakeProbe + hostTasks.replace("task start_bus; begin", "reg transactionActive=0;\ntask start_bus; begin\n  if(!transactionActive) wake_probe(); transactionActive=1;").replace("scl=0; hostLow=1; #1200; scl=1; #1200; hostLow=0; #1200;", "scl=0; hostLow=1; #1200; scl=1; #1200; hostLow=0; #1200; transactionActive=0;") else hostTasks}
 initial begin
 ${ports.filter(p => p("direction").str == "input" && !Set("serviceClock", "watchdogClock", "sda").contains(flat(p))).map(p => s"${flat(p)}=0;").mkString("\n")}
 reset=1; scl=1; gpioIn=4; adcMiso=0;
@@ -59,11 +70,25 @@ endmodule
       require(process.exitValue() == 0, s"Simulation failure: $base/$log\n${Files.readString(file.toPath).takeRight(5000)}")
     }
     val sources = Files.readAllLines(base.resolve("filelist.f")).asScala.filter(_.trim.nonEmpty).map(s => base.resolve(s.trim).normalize().toString)
-    command(Seq("iverilog", "-g2012", "-s", "Testbench", "-o", "sim.vvp") ++ (sources ++ models).distinct ++ Seq("testbench.sv"), "compile.log")
+    command(Seq("iverilog", "-g2012", "-s", "Testbench", "-o", "sim.vvp") ++ (sources ++ models ++ chipSources).distinct ++ Seq("testbench.sv"), "compile.log")
     command(Seq("vvp", "sim.vvp"), "simulation.log")
     require(Files.readString(base.resolve("simulation.log")).linesIterator.count(_ == "RISCAY_SOC_PASS") == 1, "MISSING_SOC_COMPLETION")
     base
   }
+
+  // Address-only probe is harmless whether acknowledged, missed during startup,
+  // or observed partway through. It never carries a loader opcode or payload.
+  val wakeProbe = """
+task wake_probe; integer b; reg [7:0] address; begin
+  address=8'h6a;
+  hostLow=0; scl=1; #1200; hostLow=1; #1200; scl=0; #1200;
+  for(b=7;b>=0;b=b-1) begin
+    hostLow=!address[b]; #1000; scl=1; #1000; scl=0; #1000;
+  end
+  hostLow=0; #1000; scl=1; #1000; scl=0; #1000;
+  hostLow=1; #1200; scl=1; #1200; hostLow=0; #100000;
+end endtask
+"""
 
   val hostTasks = """
 reg [255:0] snapshot;

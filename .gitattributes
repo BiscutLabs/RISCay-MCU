@@ -1,0 +1,3 @@
+# Preserve pinned upstream bytes for cross-platform SHA-256 verification.
+analog/gf180-lf-osc/upstream/* -text
+analog/gf180-lf-osc/*.spice text eol=lf

@@ -8,6 +8,9 @@ See the [SoC contract](../../docs/soc-contract.md) for behavior and qualificatio
 
 The core is [FourPhaseCore.scala](src/main/scala/riscay/bd/FourPhaseCore.scala).
 Build instructions are in [build and test](../../docs/build-and-test.md).
+The SoC emitter enables retained sleep and also emits `chip/FourPhaseSocChip.sv`
+with internal LF and stoppable service oscillator boundaries. See [sleep and clocks](../../docs/sleep-and-clock.md)
+for simulation views and outstanding analog qualification.
 
 Own the four-phase CPU sequencing, long-hold storage, reset/token initialization,
 top-level integration, emission and protocol-specific tests in this directory.

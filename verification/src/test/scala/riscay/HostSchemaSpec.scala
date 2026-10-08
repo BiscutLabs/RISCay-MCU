@@ -29,6 +29,10 @@ class HostSchemaSpec extends AnyFunSuite {
       assert(read(c, 1, 0, 1).contains("PROGRAMMED"))
       assert(read(c, 1, 0, 2).contains("PROGRAM_LOCKED"))
       assert(read(c, 2, 0, 0).contains("VALUE"))
+      assert(read(c, 3, 0, 0).contains("FEATURES"))
+      assert(read(c, 3, 0, 2).contains("SAMPLE_PERIOD_MS"))
+      assert(read(c, 3, 1, 0).contains("TICK_US"))
+      assert(read(c, 3, 1, 6).contains("HOST_WAKE_WAIT_US"))
     }
     assert(read(counter, 128, 0, 0).contains("COUNTER_MODE"))
     assert(read(Groundlark.configuration, 128, 0, 0).contains("SUPERVISOR_MODE"))
@@ -42,6 +46,7 @@ class HostSchemaSpec extends AnyFunSuite {
         val known = (space == 0 && instance == 0 && word < 8) ||
           (space == 1 && instance == 0 && word < 8) ||
           (space == 2 && instance == 0 && word < 6) ||
+          (space == 3 && instance <= 1 && word < 8) ||
           (space == 128 && instance == 0 && word < (if(c == counter) 1 else 6))
         assert(HostSchema.resolve(c, HostAddress(space, instance, word)).isDefined == known,
           s"unexpected routing for $space/$instance/$word")

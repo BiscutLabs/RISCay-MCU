@@ -8,11 +8,49 @@ import riscay._
 
 final case class SocParameters(config: McuConfiguration, serviceHz: Int = 10000000,
     i2cAddress: Int = 0x35, staleMs: Int = 100, watchdogCycles: Int = 32768,
-    watchdogHoldCycles: Int = 8, adc: Option[AdcParameters] = None) {
+    watchdogHoldCycles: Int = 8, adc: Option[AdcParameters] = None,
+    lowPower: Option[LowPowerParameters] = None) {
   require(serviceHz >= 1000 && serviceHz % 1000 == 0)
   require(i2cAddress >= 8 && i2cAddress < 120)
   require(staleMs > 0 && watchdogCycles > watchdogHoldCycles + 4 && watchdogHoldCycles >= 2)
   require(adc.isEmpty || config.measurements.nonEmpty)
+  lowPower.foreach { _ => adc.foreach { a =>
+    require(defaultSampleMs >= minimumSampleMs && defaultSampleMs <= maximumSampleMs,
+      "sample period must accommodate conversion and leave freshness margin")
+  } }
+  def defaultSampleMs: Int = adc.map(a => ((a.intervalCycles.toLong * 1000 + serviceHz - 1) / serviceHz).toInt).getOrElse(0)
+  def conversionMs: Int = adc.map(a => ((32L * a.halfPeriodCycles * 1000 + serviceHz - 1) / serviceHz).toInt).getOrElse(0)
+  def minimumSampleMs: Int = conversionMs + 2 * lowPower.map(_.quantumMs).getOrElse(1)
+  def maximumSampleMs: Int = lowPower.map { lp =>
+    math.floor((staleMs - math.max(0, conversionMs - 1) - 2 * lp.maximumQuantumMs) * lp.slowestHz / lp.referenceHz).toInt
+  }.getOrElse(staleMs - 2)
+  def freshLimitMs: Int = staleMs - lowPower.map(lp => math.max(0, lp.maximumQuantumMs - 1)).getOrElse(0)
+}
+/** The nominal time unit is a millisecond, subject to the physical oscillator's
+  * characterized error. A finite lease prevents a forgotten WAIT from petting
+  * the application watchdog indefinitely.
+  */
+final case class LowPowerParameters(referenceHz: Double = 4000, maximumSleepMs: Int = 60000,
+    minimumHz: Double = 0, maximumHz: Double = 0, stopServiceClock: Boolean = false) {
+  require(referenceHz.isFinite && referenceHz >= 1 && referenceHz <= 1000000)
+  require(referenceHz < 1000 || referenceHz % 1000 == 0)
+  val slowestHz: Double = if(minimumHz == 0) referenceHz else minimumHz
+  val fastestHz: Double = if(maximumHz == 0) referenceHz else maximumHz
+  require(slowestHz.isFinite && fastestHz.isFinite && slowestHz >= 1 && slowestHz <= referenceHz && fastestHz >= referenceHz)
+  val divider: Int = math.max(1, (referenceHz / 1000).toInt)
+  val tickMicros: Int = math.round(1000000.0 * divider / referenceHz).toInt
+  val minimumTickMicros: Int = math.floor(1000000.0 * divider / fastestHz).toInt
+  val maximumTickMicros: Int = math.ceil(1000000.0 * divider / slowestHz).toInt
+  require(minimumTickMicros > 0)
+  val quantumMs: Int = (tickMicros + 999) / 1000
+  val maximumQuantumMs: Int = (maximumTickMicros + 999) / 1000
+  require(maximumSleepMs > 0 && maximumSleepMs < 0x40000000)
+}
+object LowPowerParameters {
+  // Guarded engineering envelope around the schematic PVT results, not silicon qualification.
+  val gf180Slow = LowPowerParameters(referenceHz=7.7307, minimumHz=5, maximumHz=12, stopServiceClock=true)
+  val hostWakeWaitUs = 100
+  val hostHoldCycles = 4096
 }
 final case class AdcParameters(halfPeriodCycles: Int = 5, intervalCycles: Int = 100000,
     numerator: Int = 25300, denominator: Int = 4095, offset: Int = 0,
@@ -38,6 +76,7 @@ class Acquisition extends Bundle {
 class BoardIO(p: SocParameters) extends Bundle {
   val tick = Input(Bool())
   val now = Input(UInt(32.W))
+  val observationMs = Input(UInt(32.W))
   val gpio = Input(UInt(32.W))
   val samples = Input(Vec(p.config.measurements.size, new Sample))
   val mask = Output(UInt(32.W))
@@ -84,12 +123,13 @@ class Watchdog(limit: Int, holdCycles: Int) extends Module with InlineInstance {
   * is discarded. All-zero and all-one samples are possible real voltages; SPI
   * has no CRC/ready signal and cannot itself detect a disconnected ADC.
   */
-class SpiAdc(p: AdcParameters) extends Module with InlineInstance {
+class SpiAdc(p: AdcParameters, autonomous: Boolean = true) extends Module with InlineInstance {
   val io = IO(new Bundle {
     val miso = Input(Bool())
     val csN = Output(Bool())
     val sclk = Output(Bool())
     val result = Valid(new Acquisition)
+    val start = Input(Bool()); val busy = Output(Bool()); val done = Output(Bool())
   })
   val active = RegInit(false.B)
   val sclk = RegInit(false.B)
@@ -99,12 +139,13 @@ class SpiAdc(p: AdcParameters) extends Module with InlineInstance {
   val shift = RegInit(0.U(16.W))
   val primed = RegInit(false.B)
   io.csN := !active; io.sclk := sclk
+  io.busy := active; io.done := false.B
   io.result.valid := false.B
   io.result.bits.value := ((shift(11, 0) * p.numerator.U) / p.denominator.U + p.offset.S(32.W).asUInt)(31, 0)
   io.result.bits.valid := true.B
   io.result.bits.calibrated := p.calibrated.B
   when(!active) {
-    when(interval === 0.U) {
+    when(if(autonomous) interval === 0.U else io.start) {
       active := true.B; sclk := false.B; divider := 0.U; bit := 0.U
       interval := (p.intervalCycles - 1).U
     }.otherwise { interval := interval - 1.U }
@@ -116,6 +157,7 @@ class SpiAdc(p: AdcParameters) extends Module with InlineInstance {
           when(bit === 15.U) {
             active := false.B; sclk := false.B; primed := true.B
             io.result.valid := primed
+            io.done := true.B
           }.otherwise { bit := bit + 1.U }
         }
     }.otherwise { divider := divider + 1.U }

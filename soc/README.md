@@ -10,6 +10,14 @@ CPU boundary bridges remain in each design folder (or use the four-phase library
 bridges). Clock/reset sources, RAM banks and bridge costs belong in comparisons.
 The CPU is asynchronous; the complete SoC is not entirely clockless.
 
+`SleepTiming.scala` supplies the single-step Gray LF timebase, retained work gate
+and event-set service-source wake control. `ChipWrapper.scala` emits internal LF
+and restartable fast oscillator boundaries with separate black-box and behavioral
+views. The slow timing scale and LF POR interface now match the
+[analog candidate](../analog/gf180-lf-osc/README.md). A physical fast source, POR
+generator and qualified macro/layout bindings remain outstanding. See
+[sleep and clocks](../docs/sleep-and-clock.md), especially the I2C wake probe.
+
 Clocked helper modules are inlined into the SoC root for export. All asynchronous
 cores/bridges retain registered contract hierarchy; no unregistered helper module
 is left outside the strict export inventory. Inlining changes hierarchy, not the

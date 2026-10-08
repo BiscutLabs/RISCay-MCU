@@ -34,30 +34,36 @@ class GroundlarkSupervisor(p: SocParameters, policy: PowerPolicy) extends BoardC
   val restartCount = RegInit(0.U(32.W)); val voltageLowCount = RegInit(0.U(32.W))
   val qualified = RegInit(false.B)
   val voltage = io.samples(0)
-  val good = voltage.valid && !voltage.never && voltage.age < p.staleMs.U &&
+  val good = voltage.valid && !voltage.never && voltage.age < p.freshLimitMs.max(0).U &&
     voltage.value >= 8000.U && voltage.value <= 18000.U
   val inactive = io.gpio(2)
   val halt = qualified && lowCount >= policy.ackStableMs.U
+  // A confirmation accrues only across consecutive matching observations.
+  // The amount is the fastest-clock lower time bound, never a count of ms
+  // fabricated from a long service outage. Input changes cancel immediately.
+  def confirm(condition: Bool, count: UInt, limit: Int): Unit = {
+    val observed = RegInit(false.B)
+    when(!condition) { count := 0.U; observed := false.B }
+      .elsewhen(io.tick) {
+        observed := true.B
+        when(io.observationMs === 0.U) { count := 0.U; observed := false.B }
+          .elsewhen(observed) {
+            val next = count +& io.observationMs
+            count := Mux(next >= limit.U, limit.U, next)
+          }
+      }
+  }
+  confirm(inactive, highCount, policy.ackStableMs)
+  confirm(!inactive, lowCount, policy.ackStableMs)
+  confirm(good && voltage.value >= policy.restartMv.U && inactive, restartCount, policy.restartConfirmMs)
+  confirm(good && voltage.value < policy.shutdownMv.U, voltageLowCount, policy.lowConfirmMs)
   def off(): Unit = {
     state := 0.U; offAt := io.now; qualified := false.B
     highCount := 0.U; lowCount := 0.U; restartCount := 0.U
   }
   when(!policy.enabled.B) { state := 3.U; fault := 1.U }
     .elsewhen(io.tick) {
-      when(inactive) {
-        lowCount := 0.U
-        when(highCount < policy.ackStableMs.U) { highCount := highCount + 1.U }
-        when((state === 1.U || state === 2.U) && highCount >= (policy.ackStableMs - 1).U) { qualified := true.B }
-      }.otherwise {
-        highCount := 0.U
-        when(lowCount < policy.ackStableMs.U) { lowCount := lowCount + 1.U }
-      }
-      when(good && voltage.value >= policy.restartMv.U && inactive) {
-        when(restartCount < policy.restartConfirmMs.U) { restartCount := restartCount + 1.U }
-      }.otherwise { restartCount := 0.U }
-      when(good && voltage.value < policy.shutdownMv.U) {
-        when(voltageLowCount < policy.lowConfirmMs.U) { voltageLowCount := voltageLowCount + 1.U }
-      }.otherwise { voltageLowCount := 0.U }
+      when(inactive && (state === 1.U || state === 2.U) && highCount >= policy.ackStableMs.U) { qualified := true.B }
       switch(state) {
         is(0.U) {
           when(good && voltage.value >= policy.restartMv.U && highCount >= policy.ackStableMs.U &&

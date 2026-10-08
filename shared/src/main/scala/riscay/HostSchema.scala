@@ -8,6 +8,7 @@ object HostSpace {
   val Device = 0
   val Loader = 1
   val Measurement = 2
+  val Timing = 3
   val Application = 128
 }
 
@@ -80,6 +81,10 @@ object HostSchema {
   val loader: Vector[HostRegister] = words("MODE", "PROGRAMMED", "PROGRAM_LOCKED", "CAN_PROGRAM",
     "BUSY", "LAST_ERROR", "IMAGE_ID", "RECEIVED_BYTES")
   val measurement: Vector[HostRegister] = words("VALUE", "FLAGS", "AGE_MS", "SEQUENCE", "UNIT", "SCALE10")
+  val timing: Vector[HostRegister] = words("FEATURES", "NOW_MS", "SAMPLE_PERIOD_MS", "WAKE_MASK",
+    "SLEEP_REMAINING_MS", "PENDING", "SLEEP_ENTRIES", "TIMING_STATUS")
+  val timingLimits: Vector[HostRegister] = words("TICK_US", "MIN_TICK_US", "MAX_TICK_US",
+    "MIN_SAMPLE_MS", "MAX_SAMPLE_MS", "STALE_MS", "HOST_WAKE_WAIT_US", "WATCHDOG_TICKS")
 
   /** Unknown/absent resources resolve to None, never alias another service or RAM. */
   def resolve(config: McuConfiguration, address: HostAddress): Option[HostRegister] = {
@@ -87,6 +92,8 @@ object HostSchema {
       case HostSpace.Device if address.instance == 0 => device
       case HostSpace.Loader if address.instance == 0 => loader
       case HostSpace.Measurement if address.instance < config.measurements.size => measurement
+    case HostSpace.Timing if address.instance == 0 => timing
+    case HostSpace.Timing if address.instance == 1 => timingLimits
       case HostSpace.Application if address.instance == 0 => config.application.registers
       case _ => Vector.empty
     }

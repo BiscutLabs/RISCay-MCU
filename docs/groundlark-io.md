@@ -40,7 +40,7 @@ revision `3f92e1b4b9a7f5af35dec87e5f9ff2f32aac84f3`:
 
 No extra Pi wake pin is needed for this full power-cycle behavior. Waking an
 already powered Pi from soft-off is a different feature and is on hold.
-The supervisor and external ADC/timebase must remain powered upstream of the
+The supervisor (including its internal LF timebase) and external ADC must remain powered upstream of the
 switched Pi rail. Preserve the existing transistor interfaces so powered MCU
 signals do not back-power the unpowered Pi.
 

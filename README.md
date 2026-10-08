@@ -40,6 +40,18 @@ Groundlark controller supervises power before upload and during application
 stalls. Its default policy is disabled until qualified battery settings are
 provided. Physical/analog, pin/package, board and Chiselator qualification remain.
 
+Both reference emitters include **retained sleep with fast-clock shutdown** and a
+nominal **7.7307 Hz** timebase matched to the
+[GF180 LF oscillator candidate](analog/gf180-lf-osc/README.md). Gray CDC counts
+single ticks; conversion to nominal milliseconds happens after synchronization.
+Programmable sensing, bounded sleep leases, status and programming lock survive
+sleep. Generated chip wrappers contain both oscillator boundaries and need no
+external clock pins. An address-only I2C wake probe and 100 us wait restart the
+fast source without another pin. The fast oscillator is an executable timing
+contract and synthesis black box; its physical implementation, qualified POR,
+LF layout and whole-chip power measurements remain outstanding. See
+[sleep and clocks](docs/sleep-and-clock.md) for timing bounds and host requirements.
+
 See the [implemented SoC contract](docs/soc-contract.md) for the wire protocol,
 memory map and reset behavior. The [feature and IP plan](docs/features-and-ip.md)
 covers essential peripherals, reusable library components, async design

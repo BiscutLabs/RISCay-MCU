@@ -17,6 +17,8 @@ abstract class SocTop(val p: SocParameters, board: SocParameters => BoardControl
   val adcMiso = IO(Input(Bool())); val adcCsN = IO(Output(Bool())); val adcSclk = IO(Output(Bool()))
   val mode = IO(Output(UInt(3.W))); val programmed = IO(Output(Bool())); val locked = IO(Output(Bool()))
   val systemReset = IO(Output(Bool())); val resetReason = IO(Output(Bool()))
+  val sleeping = IO(Output(Bool())); val sleepEntries = IO(Output(UInt(32.W)))
+  val serviceClockEnable = IO(Output(Bool()))
   val trace = IO(Output(new Retirement)); val traceEvent = IO(Output(Bool()))
   val commit = IO(Output(Valid(new MemoryRequest)))
   val watchdog = withClockAndReset(watchdogClock, reset) { Module(new Watchdog(p.watchdogCycles, p.watchdogHoldCycles)) }
@@ -26,7 +28,32 @@ abstract class SocTop(val p: SocParameters, board: SocParameters => BoardControl
   }
   systemReset := assertion || release.orR
   resetReason := watchdog.io.reason
-  protected val fabric = withClockAndReset(serviceClock, systemReset.asAsyncReset) { Module(new SocFabric(p, board)) }
+  protected val workClock = Wire(Clock())
+  protected val fabric = withClockAndReset(workClock, systemReset.asAsyncReset) { Module(new SocFabric(p, board)) }
+  fabric.io.frontClock := serviceClock
+  p.lowPower match {
+    case Some(lp) =>
+      val timebase = withClockAndReset(watchdogClock, assertion.asAsyncReset) { Module(new SleepTimebase(lp)) }
+      val gate = withClockAndReset(serviceClock, systemReset.asAsyncReset) { Module(new RetainedClock) }
+      gate.io.gray := timebase.io.gray; gate.io.consumedGray := fabric.io.consumedGray
+      gate.io.canSleep := fabric.io.canSleep; gate.io.activity := fabric.io.activity
+      workClock := gate.io.clockOut; fabric.io.clockRunning := gate.io.running
+      fabric.io.timeGray := gate.io.synchronizedGray
+      sleepEntries := gate.io.entries; sleeping := !gate.io.running
+      if(lp.stopServiceClock) {
+        val wake = withClockAndReset(serviceClock, systemReset.asAsyncReset) { Module(new ServiceClockWake) }
+        val mask = ((BigInt(1) << p.config.gpioCount) - 1).U(32.W)
+        wake.io.event := timebase.io.gray =/= fabric.io.consumedGray || ((gpioIn ^ fabric.io.observedGpio) & mask).orR
+        wake.io.hostActive := !scl || !sda
+        wake.io.running := gate.io.running
+        serviceClockEnable := wake.io.enable
+      } else { serviceClockEnable := true.B }
+    case None =>
+      workClock := serviceClock; fabric.io.clockRunning := true.B
+      fabric.io.timeGray := 0.U; sleepEntries := 0.U; sleeping := false.B
+      serviceClockEnable := true.B
+  }
+  fabric.io.sleepEntries := sleepEntries
   fabric.io.scl := scl; fabric.io.sda := sda; sdaLow := fabric.io.sdaLow
   fabric.io.gpioIn := gpioIn; gpioOut := fabric.io.gpioOut; gpioOe := fabric.io.gpioOe
   fabric.io.adcMiso := adcMiso; adcCsN := fabric.io.adcCsN; adcSclk := fabric.io.adcSclk
