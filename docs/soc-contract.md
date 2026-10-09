@@ -2,10 +2,12 @@
 
 The four-phase and native Click SoCs implement the same RV32E execution, internal
 storage and peripheral behavior. Compressed instructions remain deferred. The
-CPU and transaction routing are asynchronous. Each design owns a separate
-**clocked endpoint implementation** containing loader/MMIO state, SRAM sequencing,
-host endpoint, timer, GPIO and measurements; board policy remains in `profiles/`
-pending its checklist item. ROM/static faults complete in the native fabric.
+CPU, transaction routing and Control state loop are asynchronous. Each design
+owns its native loader/MMIO controller and separate clocked ingress, snapshots,
+status/reset projection, SRAM sequencing, host wire endpoint, timer, GPIO and
+measurements. Board policy remains in `profiles/` pending its checklist item.
+ROM/static faults complete in the native fabric. The Control integration passes
+the digital regressions and strict exports documented in the current checklist.
 See the [migration checklist and handshake contract](async-soc-migration.md). Its
 default clock is 10 MHz. Reference emitters stop that source during retained sleep
 and use nominal 7.7307 Hz for the always-on timer and watchdog (32-cycle timeout,
@@ -43,6 +45,23 @@ bytes and may leave a partial word; it does not undo committed bytes. SRAM
 controllers and loader accounting survive application reset. Sleep is inhibited
 until all accepted memory operations finish.
 
+The native Control loop serializes loader and MMIO commands using one retained
+state token. Host frames carry their reset/busy context through a bounded ingress
+mailbox; an operation received while busy is rejected, never deferred into an
+upload side effect. Lock/image/accepted SRAM accounting and the control bridges
+are POR-only. Application reset is a retained synchronized command; queued HALT
+and unaccepted CPU work are canceled, and stale START replies cannot restart the
+application. MODE still observes the synchronized reset on the third service
+edge through a clocked status projection.
+
+MMIO preparation performs native validation without mutating retained staging.
+The service-clock `commit` accepts a successful write and creates a retained
+native commit token. Accepted producer staging survives application reset;
+unaccepted preparation has no state effect. A commit precedes reset recovery,
+which clears the application word selector but preserves producer staging.
+Peripheral register effects, WAIT qualification and coherent read snapshots
+remain clocked. This migration does not make every MMIO access clockless.
+
 The ROM executes `lui x1,0x30000; lw x2,0(x1); jalr x0,x2,0`. The load blocks
 until START, then returns the validated absolute entry address. Control transfer
 does not reset the SoC or board outputs. Registers follow the core reset contract;
@@ -79,7 +98,9 @@ consume pending events or cancel its sleep lease.
 Events are bit 0 time-maintenance tick, bit 1 deadline, bit 2 any configured GPIO
 change, bit 3 acquisition result, bit 4 sleep lease expired, bit 5 host wake.
 Bits 4/5 bypass the wake mask. Events coalesce. Set wins a simultaneous
-acknowledge. GPIO uses two sampling stages; pulses must last at least three
+acknowledge. Events raised during a native MMIO validation window also win that
+transaction's clear; a deadline replacement still consumes only its previous
+deadline event. GPIO uses two sampling stages; pulses must last at least three
 service cycles after oscillator startup and meet the eventual synchronizer implementation's constraints.
 Blocking the CPU never blocks host status or the permanent controller.
 Firmware acknowledges only consumed bits before processing the wake. The

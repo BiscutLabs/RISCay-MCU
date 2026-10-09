@@ -5,8 +5,11 @@ components. The core and complete digital SoC are implemented.
 [ClickSoc.scala](src/main/scala/riscay/click/ClickSoc.scala) uses
 [native toggle/clocked bridges](src/main/scala/riscay/click/ClockBridges.scala),
 after native `ClickFabric` routing, with no four-phase adapters. ROM/static
-faults are asynchronous; MMIO, loader and peripheral state are still clocked in
-`ClickServices`. This directory owns its Platform, peripheral, scaling, sleep
+faults are asynchronous. `ClickControl` uses a seeded native Click state token,
+join, transform and fork for loader accounting/lock, MMIO validation and
+selector/producer staging. Its POR-only toggle/clocked crossings, ingress,
+snapshots, reset/status projection and peripheral effects remain explicit in
+`ClickPlatform`/`ClickServices`. This directory owns its peripheral, scaling, sleep
 and SRAM controller implementations. Follow the
 [migration checklist](../../docs/async-soc-migration.md). See the [SoC contract](../../docs/soc-contract.md).
 

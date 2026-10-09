@@ -1,12 +1,92 @@
 # Build and test
 
+## Asynchronous MMIO and loader migration
+
+Separate `FourPhaseControl` and `ClickControl` state-token loops own loader
+validation, image metadata/accounting, lock, command mode/error/start state,
+host selector and MMIO producer/application selectors. Native MMIO preparation
+is reversible; accepted staging writes use a separate retained commit command.
+Clocked host ingress, arbitration, snapshots, MODE/start reset projection,
+GPIO/event/timer effects, SRAM byte sequencing and wire peripherals remain.
+This is checklist item 2's scope, not a fully asynchronous peripheral subsystem.
+
+A fresh independent reviewer identified lost reset requests, stale queued HALT,
+staging mutation before CPU acceptance, and host busy-context loss, including
+same-edge enqueue/admission. These are fixed in both implementations.
+`ControlResetSpec` has twelve directed cases that stall the real native bridges
+and test reset/commit/accounting boundaries. `AsyncControlSpec` has four clockless
+cases with an independent byte-frame/state oracle and Java CRC reference:
+16 cell-delay seeds per normal stream and three POR-abort seeds per variant.
+Existing MMIO/event, MODE reset, SRAM, sleep and firmware assertions are retained.
+
+The export adapter distinguishes the three named POR-owned Control children
+from application-reset-owned CPU children and validates their exact owners and
+complete inventory. An independent negative control rejects each miswired reset.
+Explicit two-slot register mailboxes avoid an unregistered inferred Queue module;
+unused registered fork/bridge port fields remain present for strict ABI checks.
+The reviewer checked both changes and found no further actionable issue.
+
+Mapping-only stimulus selects real MMIO addresses and walks native command/state
+storage payloads through valid frame/decode combinations. Original bit walks,
+paired fallback, endpoint comparisons and activity requirements remain intact.
+An independent SV fixture rejects a disconnected bit; review also corrected Vec
+byte order in the new stimulus. Reply readiness requires command ownership.
+The period reply carries an ungated candidate, while `periodUpdate` alone enables
+its clocked effect; invalid candidates still return an error and cannot update it.
+
+The first whole-suite run (`final-regression.log`) passed 105 of 107 cases. Its
+two activity-estimate elaboration failures referenced an optimized-away work-clock
+alias. The monitor now uses the actual Control command bridge clock, preserving
+all activity thresholds. `first-reports/` retains those original XML reports.
+Other retained failures include the original event-clear and synchronized-MODE
+assertions, fixture setup/elaboration errors, unregistered Queue/port ABI errors,
+and the initial strict activity failures. No failed run is counted as a pass.
+
+Both production-capacity exports pass strict `--soc --vector-coverage --sleep-clock`
+validation, including native Click throughout, separate POR/application reset
+fanout and exactly three pinned SRAMs each. All 34 public top-level ports match
+the preceding SocFabric exports (`public-abi-verified.json`).
+
+| Variant | Endpoints | Mapping checks | Semantic SHA-256 |
+| --- | ---: | ---: | --- |
+| Four-phase BD | 290 | 124,673,030 | `89a837b257e6e12cc940aeda02223a44f2cbbb1c6f9de66d4edd13abe307b5f9` |
+| Native Click | 230 | 96,641,860 | `c5137cfe542d02f9bad754e66d3a65488796681b898d9c512b43b799ed7b8df9` |
+
+Exports are `four-phase-checked-soc/` and `click-checked-soc/` under
+`build/mmio-loader-migration/`; receipts are `bd-strict-checked.log` and
+`click-strict-checked.log`. All 68 Python working-tree controls pass
+(`python-verified.log`), including six preserved P&R controls outside this commit;
+all 11 pinned SRAM assets verify (`sram-assets.log`).
+
+The final run in `verified-regression.log` passes **107 verification tests across
+fourteen suites**, followed by **two core physical-policy tests**, with zero
+failures, aborted suites, skipped, canceled or pending tests. This includes both
+independent service/scaling implementations, native routing/control, core reference
+and guard controls, real I2C firmware uploads, all sleep/reset/SRAM cases, and the
+corrected activity estimates. `verification-summary.json` and `verified-reports/`
+preserve the final XML results. Earlier failing runs remain available under
+`build/mmio-loader-migration/`. This completes checklist item 2's digital scope.
+No new controller has physical timing qualification. Its simulation transform
+budget does not qualify mapped decode/CRC, fork, pulse, CDC or reset paths.
+
+Run the whole final campaign in one sbt process:
+
+```powershell
+python tools/sbt.py 'verification/test' 'physical/test'
+python -m unittest discover -s tools -p 'test_*.py' -v
+python tools/sram_assets.py --verify-only
+python tools/check_export.py build/mmio-loader-migration/four-phase-checked-soc --library P:/Personal/chisel-async --soc --vector-coverage --sleep-clock
+python tools/check_export.py build/mmio-loader-migration/click-checked-soc --library P:/Personal/chisel-async --soc --vector-coverage --sleep-clock
+```
+
 ## Asynchronous SocFabric migration
 
-The [checklist](async-soc-migration.md) defines the current scope. Separate native
-fabrics handle ROM/static faults without clocks; stateful MMIO/loader and peripheral
-logic is still clocked in each design's Services/Platform files. Historical results
-below apply only to their stated RTL; the previous P&R does not qualify these
-new controllers.
+The following results describe SocFabric commits `7f07f01` and `c6102bd`, before
+the MMIO/loader item above. At that stage, separate native fabrics handled
+ROM/static faults without clocks, while stateful MMIO/loader and peripheral
+logic was still clocked in each design's Services/Platform files. Historical
+results apply only to their stated RTL; previous P&R does not qualify the new
+controllers. The [checklist](async-soc-migration.md) defines the current scope.
 
 The fresh independent review of `7f07f01` identified unenforced composed Click
 guard bounds and optional fabric timing declarations. The follow-up enforces a

@@ -7,6 +7,23 @@ import chisel3.util.experimental.InlineInstance
 import riscay._
 import riscay.soc._
 
+/** Two explicit register slots; no inferred RAM or unregistered Queue child. */
+private class ControlMailbox extends Module with InlineInstance {
+  val io = IO(new Bundle {
+    val enq = Flipped(Decoupled(new ControlIngress)); val deq = Decoupled(new ControlIngress)
+    val count = Output(UInt(2.W))
+  })
+  val first = RegInit(0.U.asTypeOf(new ControlIngress))
+  val second = RegInit(0.U.asTypeOf(new ControlIngress))
+  val count = RegInit(0.U(2.W))
+  io.count := count; io.enq.ready := count =/= 2.U; io.deq.valid := count =/= 0.U; io.deq.bits := first
+  when(io.enq.fire && io.deq.fire) { first := io.enq.bits }
+    .elsewhen(io.enq.fire) {
+      when(count === 0.U) { first := io.enq.bits }.otherwise { second := io.enq.bits }
+      count := count + 1.U
+    }.elsewhen(io.deq.fire) { first := second; count := count - 1.U }
+}
+
 /** Clocked endpoints behind this variant's native asynchronous fabric. */
 class ClickServices(p: SocParameters, boardFactory: SocParameters => BoardController) extends ServiceEndpoint {
   val config = p.config
@@ -19,29 +36,40 @@ class ClickServices(p: SocParameters, boardFactory: SocParameters => BoardContro
     memory.io.request.bits := 0.U.asTypeOf(new SramWordRequest)
     memory.io.response.ready := true.B
   }
-  val loaderPending = RegInit(false.B)
-  val loaderWord = Reg(UInt(32.W))
+  // Native state owns decisions; this is a coherent clock-domain snapshot.
+  val controlState = RegInit(ControlState.initial)
+  val controlOutstanding = RegInit(false.B)
+  val loaderControlPending = RegInit(false.B)
+  val completionPending = RegInit(false.B)
+  val haltPending = withReset(io.cpuReset.asAsyncReset) { RegInit(false.B) }
+  val mmioCurrent = withReset(io.cpuReset.asAsyncReset) { RegInit(false.B) }
+  val mmioCommitPending = RegInit(false.B)
+  val mmioCommit = Reg(new ControlCommand)
+  val resetObserved = RegNext(io.cpuResetActive, true.B)
+  val resetEdge = io.cpuResetActive && !resetObserved
+  val resetNeeded = RegInit(true.B)
+  val resetRecovery = RegInit(true.B)
+  val resetPending = resetNeeded || resetEdge
+  val loaderPending = WireDefault(controlState.loaderPending); dontTouch(loaderPending)
+  val receivedWords = WireDefault(controlState.received >> 2); dontTouch(receivedWords)
   val loaderWrite = WireDefault(false.B)
   val cpuMemoryPending = RegInit(false.B)
+  val controlBusy = Wire(Bool())
   val memoryBusy = program.io.busy || ram.io.busy || loaderPending || cpuMemoryPending
   val rom = VecInit(MemoryMap.boot.map(_.U(32.W)))
-  val mode = RegInit(0.U(3.W))
   def applicationReg[T <: Data](init: T): T = withReset(io.cpuReset.asAsyncReset) { RegInit(init) }
-  val programmed = RegInit(false.B); val locked = RegInit(false.B); val started = applicationReg(false.B)
-  val lastError = RegInit(0.U(8.W))
-  // Host fields stay byte-addressed and are validated at their full width.
-  // Internal aligned metadata counts words, including the full-capacity count.
-  val programWords = config.programBytes / 4
-  val imageWords = RegInit(0.U(log2Ceil(programWords + 1).W))
-  val entryWord = RegInit(0.U(log2Ceil(programWords).max(1).W))
-  val receivedWords = RegInit(0.U(log2Ceil(programWords + 1).W))
-  val imageLength = Cat(imageWords, 0.U(2.W)).pad(32)
-  val entry = Cat(entryWord, 0.U(2.W)).pad(32)
-  val received = Cat(receivedWords, 0.U(2.W)).pad(32)
-  val imageId = RegInit(0.U(32.W)); val expectedCrc = RegInit(0.U(32.W))
-  val crc = RegInit("hffffffff".U(32.W))
+  // Clock-domain status projection preserves the ABI's third-edge reset
+  // observation even when the native reset command is backpressured.
+  val mode = RegInit(0.U(3.W))
+  val programmed = controlState.programmed; val locked = controlState.locked
+  // Raw application reset only drives reset pins; persistent native state
+  // consumes the synchronized reset command before any further CPU command.
+  val started = applicationReg(false.B)
+  val lastError = controlState.lastError
+  val imageLength = controlState.imageLength; val entry = controlState.entry
+  val received = controlState.received; val imageId = controlState.imageId
   io.mode := mode; io.programmed := programmed; io.locked := locked
-  val canProgram = !locked && !started && !io.cpuResetActive && !program.io.busy && !loaderPending
+  val canProgram = !locked && !started && !io.cpuResetActive && !program.io.busy && !loaderPending && !controlBusy
 
   val now = RegInit(0.U(32.W))
   val lowerElapsed = Wire(UInt(32.W)); val upperElapsed = Wire(UInt(32.W))
@@ -94,7 +122,7 @@ class ClickServices(p: SocParameters, boardFactory: SocParameters => BoardContro
   val gpioMask = ((BigInt(1) << config.gpioCount) - 1).U(32.W)
   val application = config.application.registers.filterNot(r => board.ownedRegisters(r.word))
     .map(r => r.word -> applicationReg(0.U(32.W))).toMap
-  val appIndex = applicationReg(0.U(6.W))
+  val appIndex = controlState.appIndex
   def applicationWord(word: UInt): UInt = MuxLookup(word, "hffffffff".U(32.W))(
     config.application.registers.map(r => r.word.U ->
       (if(board.ownedRegisters(r.word)) board.io.registers(r.word) else application(r.word))))
@@ -105,7 +133,7 @@ class ClickServices(p: SocParameters, boardFactory: SocParameters => BoardContro
   val sampled = RegInit(0.U.asTypeOf(Vec(config.measurements.size, Bool())))
   val publish = Wire(Vec(config.measurements.size, Valid(new Acquisition)))
   publish.foreach { x => x.valid := false.B; x.bits := 0.U.asTypeOf(new Acquisition) }
-  val sampleIndex = RegInit(0.U(4.W)); val sampleValue = RegInit(0.U(32.W))
+  val sampleIndex = controlState.sampleIndex; val sampleValue = controlState.sampleValue
   val periodUpdate = Wire(Valid(UInt(32.W))); periodUpdate.valid := false.B; periodUpdate.bits := 0.U
   val samplePeriod = RegInit(p.defaultSampleMs.U(32.W))
   val nextPeriod = RegInit(p.defaultSampleMs.U(32.W)); val periodPending = RegInit(false.B)
@@ -170,6 +198,12 @@ class ClickServices(p: SocParameters, boardFactory: SocParameters => BoardContro
   val acquisition = if(config.measurements.isEmpty) false.B else publish.map(_.valid).reduce(_ || _)
   val gpioActivity = ((gpio ^ gpioPrevious) & gpioMask).orR
   val events = Cat(0.U(26.W), hostWake, leaseExpired, acquisition, gpioActivity, due, tick)
+  // Native validation adds a handshake window before the peripheral commit.
+  // Preserve every event raised during that window against a software clear.
+  val mmioEvents = applicationReg(0.U(32.W))
+  when(controlOutstanding) { mmioEvents := mmioEvents | events }
+  when(io.controlCommand.fire && io.controlCommand.bits.kind === ControlKind.Mmio.U) { mmioEvents := events }
+
   // Replacement consumes only the old deadline, including an expiry on this
   // edge. Other new events still win acknowledgement races.
   pending := (pending & ~(clear | Mux(replaceDeadline, 2.U, 0.U))) | events
@@ -188,15 +222,20 @@ class ClickServices(p: SocParameters, boardFactory: SocParameters => BoardContro
   val eventWait = waitingRead && (pending & (wakeMask | "h30".U)) === 0.U
   parked := io.request.valid && eventWait
   io.canSleep := p.lowPower.nonEmpty.B && io.request.valid &&
-    (bootWait || (eventWait && sleepRemaining =/= 0.U)) && !responseValid && !adcBusy && !tick && !memoryBusy
-  io.request.ready := !io.cpuResetActive && io.clockRunning && !responseValid && !bootWait && !eventWait &&
+    (bootWait || (eventWait && sleepRemaining =/= 0.U)) && !responseValid && !adcBusy && !tick && !memoryBusy && !controlBusy
+  val nativeMmio = req.address >= MemoryMap.mmio.U && req.address < (MemoryMap.mmio + 76).U &&
+    req.operation =/= Operation.Halt.U
+  val mmioComplete = io.controlReply.fire && io.controlReply.bits.kind === ControlKind.Mmio.U && mmioCurrent
+  val cpuAvailable = !io.cpuResetActive && !resetRecovery && io.clockRunning && !responseValid && !bootWait && !eventWait &&
     !memoryBusy && !loaderWrite
+  io.request.ready := cpuAvailable && Mux(nativeMmio, mmioComplete, !controlBusy)
+
   io.commit.valid := io.request.fire; io.commit.bits := req
   // Accepted stores finish through a watchdog reset, but their CPU completion
   // is discarded. POR may abort a partial word; neither reset clears SRAM bits.
   when(io.cpuResetActive) { cpuMemoryPending := false.B }
   when(program.io.response.fire && loaderPending) {
-    receivedWords := receivedWords + 1.U; crc := ImageCrc.word(crc, loaderWord); loaderPending := false.B
+    completionPending := true.B
   }
   when((program.io.response.fire && !loaderPending) || ram.io.response.fire) {
     cpuMemoryPending := false.B
@@ -209,7 +248,7 @@ class ClickServices(p: SocParameters, boardFactory: SocParameters => BoardContro
     when(waitingRead) { sleepRemaining := 0.U }
     responseValid := req.operation =/= Operation.Halt.U
     response.data := 0.U; response.error := true.B
-    when(req.operation === Operation.Halt.U) { mode := 4.U }
+    when(req.operation === Operation.Halt.U) { haltPending := true.B }
       .elsewhen(req.address < (MemoryMap.boot.size * 4).U && !isWrite) {
         response.data := rom(req.address(3, 2)); response.error := false.B
       }.elsewhen(req.address >= MemoryMap.program.U && req.address < (MemoryMap.program + config.programBytes).U) {
@@ -226,37 +265,16 @@ class ClickServices(p: SocParameters, boardFactory: SocParameters => BoardContro
         responseValid := false.B; cpuMemoryPending := true.B
       }.elsewhen(!isFetch && req.address >= MemoryMap.mmio.U && req.address < (MemoryMap.mmio + 76).U && fullWord) {
         val offset = req.address(6, 0)
-        when(isRead) {
-          response.error := false.B
-          switch(offset) {
-            is(0.U) { response.data := entry + MemoryMap.program.U }
-            is(4.U) { response.data := now }
-            is(8.U) { response.data := deadline }
-            is(12.U, 16.U) { response.data := pending }
-            is(20.U) { response.data := gpio & gpioMask }
-            is(24.U) { response.data := io.gpioOut }
-            is(28.U) { response.data := io.gpioOe }
-            is(32.U) { response.data := 0.U }
-            is(36.U) { response.data := sampleIndex }
-            is(40.U) { response.data := sampleValue }
-            is(44.U) { response.data := 0.U }
-            is(48.U) { response.data := appIndex }
-            is(52.U) { response.data := applicationWord(appIndex); response.error := !applicationExists(appIndex) }
-            is(56.U) { response.data := wakeMask }
-            is(60.U) { response.data := sleepRemaining }
-            is(64.U) { response.data := samplePeriod }
-            is(68.U) { response.data := Cat(0.U(28.W), periodPending, sleepRemaining =/= 0.U, !io.clockRunning, p.lowPower.nonEmpty.B) }
-            is(72.U) { response.data := io.sleepEntries }
-          }
-        }.otherwise {
+        response := io.controlReply.bits.memory
+        when(isWrite && !io.controlReply.bits.memory.error) {
           switch(offset) {
             is(8.U) { deadline := req.data; armed := true.B; replaceDeadline := true.B; response.error := false.B }
-            is(12.U) { clear := req.data; response.error := false.B }
+            is(12.U) { clear := req.data & ~mmioEvents; response.error := false.B }
             is(24.U) { output := req.data; response.error := false.B }
             is(28.U) { enable := req.data; response.error := false.B }
             is(32.U) { when(req.data === "h57444f47".U) { kick := true.B; response.error := false.B } }
-            is(36.U) { when(req.data < config.measurements.size.U) { sampleIndex := req.data; response.error := false.B } }
-            is(40.U) { sampleValue := req.data; response.error := false.B }
+            is(36.U) { when(req.data < config.measurements.size.U) { response.error := false.B } }
+            is(40.U) { response.error := false.B }
             is(44.U) {
               for(i <- config.measurements.indices if !(i == 0 && p.adc.nonEmpty)) {
                 when(sampleIndex === i.U) {
@@ -266,7 +284,7 @@ class ClickServices(p: SocParameters, boardFactory: SocParameters => BoardContro
                 }
               }
             }
-            is(48.U) { when(applicationExists(req.data)) { appIndex := req.data; response.error := false.B } }
+            is(48.U) { when(applicationExists(req.data)) { response.error := false.B } }
             is(52.U) { for((word, value) <- application.toSeq.sortBy(_._1)) {
               when(appIndex === word.U) { value := req.data; response.error := false.B }
             } }
@@ -284,73 +302,92 @@ class ClickServices(p: SocParameters, boardFactory: SocParameters => BoardContro
 
   val host = withClock(io.frontClock) { Module(new I2cTarget(p.i2cAddress, p.i2cIdleCycles)) }
   host.io.scl := io.scl; host.io.sda := io.sda; io.sdaLow := host.io.pullLow
-  io.activity := host.io.busy || gpioActivity || memoryBusy
+  io.activity := host.io.busy || gpioActivity || memoryBusy || controlBusy
   io.hostSelected := host.io.selected; io.hostRejected := host.io.rejected
-  val selector = RegInit(0.U(24.W))
-  val frame = host.io.frame.bits
-  def parameter(index: Int): UInt = Cat((0 until 4).reverse.map(i => frame.bytes(1 + index * 4 + i)))
-  val opcode = frame.bytes(0)
-  val desiredLength = MuxLookup(opcode, 0.U)(Seq(0.U -> 4.U, 1.U -> 33.U, 2.U -> 9.U,
-    3.U -> 1.U, 4.U -> 1.U, 5.U -> 1.U, 6.U -> 1.U, 7.U -> 5.U, 8.U -> 1.U))
-  when(host.io.frame.valid) {
-    when(frame.overflow || desiredLength === 0.U || frame.length =/= desiredLength) { lastError := 1.U }
-      .elsewhen(opcode === 0.U) { selector := Cat(frame.bytes(1), frame.bytes(2), frame.bytes(3)) }
-      .elsewhen(io.cpuResetActive || ((program.io.busy || loaderPending) && opcode >= 1.U && opcode <= 6.U)) {
-        lastError := 3.U
-      }
-      .otherwise {
-        lastError := 0.U
-        switch(opcode) {
-          is(7.U) {
-            when(validPeriod(parameter(0))) { periodUpdate.valid := true.B; periodUpdate.bits := parameter(0) }
-              .otherwise { lastError := 4.U }
-          }
-          is(8.U) { hostWake := true.B }
-          is(1.U) {
-            when(!canProgram) { lastError := Mux(locked, 2.U, 3.U) }
-              .elsewhen(parameter(0) === 0.U || parameter(0) > config.programBytes.U || parameter(0)(1,0) =/= 0.U ||
-                parameter(1) >= parameter(0) || parameter(1)(1,0) =/= 0.U) { lastError := 4.U }
-              .elsewhen(parameter(3) =/= "h00010000".U || parameter(4) > config.workingRamBytes.U ||
-                (parameter(5) & ~gpioMask).orR || parameter(6) > config.measurements.size.U) { lastError := 5.U }
-              .otherwise {
-                mode := 1.U; programmed := false.B; receivedWords := 0.U; crc := "hffffffff".U
-                imageWords := parameter(0) >> 2; entryWord := parameter(1) >> 2
-                expectedCrc := parameter(2); imageId := parameter(7)
-              }
-          }
-          is(2.U) {
-            when(!canProgram) { lastError := Mux(locked, 2.U, 3.U) }
-              .elsewhen(mode =/= 1.U) { lastError := 6.U }
-              .elsewhen(parameter(0) =/= received || received >= imageLength) { lastError := 4.U }
-              .otherwise {
-                loaderWrite := true.B
-                program.io.request.valid := true.B
-                program.io.request.bits.address := received
-                program.io.request.bits.write := true.B
-                program.io.request.bits.data := parameter(1); program.io.request.bits.mask := 15.U
-                loaderWord := parameter(1); loaderPending := true.B
-              }
-          }
-          is(3.U) {
-            when(!canProgram || mode =/= 1.U) { lastError := Mux(locked, 2.U, 6.U) }
-              .elsewhen(received =/= imageLength) { lastError := 7.U }
-              .elsewhen((~crc).asUInt =/= expectedCrc) { lastError := 8.U }
-              .otherwise { programmed := true.B; mode := 2.U }
-          }
-          is(4.U, 5.U, 6.U) {
-            when(!programmed || (started && opcode =/= 4.U)) { lastError := 6.U }
-              .otherwise {
-                when(opcode === 4.U || opcode === 6.U) { locked := true.B }
-                when(opcode === 5.U || opcode === 6.U) { started := true.B; mode := 3.U }
-              }
-          }
-        }
-      }
+  val selector = controlState.selector
+  private val hostFrames = Module(new ControlMailbox)
+  io.hostFrameAccepted := hostFrames.io.enq.fire
+  hostFrames.io.enq.valid := host.io.frame.valid; hostFrames.io.enq.bits.frame := host.io.frame.bits
+  hostFrames.io.enq.bits.resetActive := io.cpuResetActive
+  hostFrames.io.enq.bits.programBusy := program.io.busy || loaderPending || loaderControlPending ||
+    (io.controlCommand.fire && io.controlCommand.bits.kind === ControlKind.Host.U &&
+      io.controlCommand.bits.frame.bytes(0) >= 1.U && io.controlCommand.bits.frame.bytes(0) <= 6.U)
+  assert(!host.io.frame.valid || hostFrames.io.enq.ready, "CONTROL_HOST_MAILBOX_OVERFLOW")
+  // Mark exactly the frames already queued at reset; later explicit STARTs
+  // belong to the new application lifetime. No wrapping epoch counter.
+  val hostResetDebt = RegInit(0.U(2.W))
+  when(hostFrames.io.deq.fire && hostResetDebt =/= 0.U) { hostResetDebt := hostResetDebt - 1.U }
+  when(resetEdge) { hostResetDebt := hostFrames.io.count - hostFrames.io.deq.fire.asUInt }
+  val mmioLaunch = io.request.valid && nativeMmio && cpuAvailable
+  controlBusy := controlOutstanding || completionPending || mmioCommitPending || resetPending || haltPending || hostFrames.io.deq.valid
+  io.controlCommand.valid := !controlOutstanding &&
+    (completionPending || mmioCommitPending || resetPending || haltPending || hostFrames.io.deq.valid || mmioLaunch)
+  io.controlCommand.bits := 0.U.asTypeOf(new ControlCommand)
+  io.controlCommand.bits.kind := Mux(completionPending, ControlKind.Stored.U,
+    Mux(mmioCommitPending, ControlKind.MmioCommit.U, Mux(resetPending, ControlKind.ResetApplication.U,
+      Mux(haltPending, ControlKind.Halt.U, Mux(hostFrames.io.deq.valid, ControlKind.Host.U, ControlKind.Mmio.U)))))
+  io.controlCommand.bits.frame := Mux(hostFrames.io.deq.valid, hostFrames.io.deq.bits.frame, 0.U.asTypeOf(new HostFrame))
+  io.controlCommand.bits.cpuResetActive := io.cpuResetActive ||
+    (hostFrames.io.deq.valid && (hostFrames.io.deq.bits.resetActive || hostResetDebt =/= 0.U))
+  io.controlCommand.bits.programBusy := program.io.busy ||
+    (hostFrames.io.deq.valid && hostFrames.io.deq.bits.programBusy)
+  io.controlCommand.bits.memory := req
+  io.controlCommand.bits.applicationWritable := application.keys.toSeq.map(i => appIndex === i.U).foldLeft(false.B)(_ || _)
+  io.controlCommand.bits.peripheralData := MuxLookup(req.address(6,0), 0.U(32.W))(Seq(
+    4.U -> now, 8.U -> deadline, 12.U -> pending, 16.U -> pending,
+    20.U -> (gpio & gpioMask), 24.U -> io.gpioOut, 28.U -> io.gpioOe,
+    52.U -> applicationWord(appIndex), 56.U -> wakeMask, 60.U -> sleepRemaining,
+    64.U -> samplePeriod, 68.U -> Cat(0.U(28.W), periodPending, sleepRemaining =/= 0.U, !io.clockRunning, p.lowPower.nonEmpty.B),
+    72.U -> io.sleepEntries))
+  when(mmioCommitPending && !completionPending) {
+    io.controlCommand.bits := mmioCommit
   }
-
-  // Retain the validated image and lock across a watchdog reset. Software must
-  // explicitly restart the image; the permanent supervisor continues meanwhile.
+  when(io.request.fire && nativeMmio && isWrite && !io.controlReply.bits.memory.error) {
+    // Native preparation is reversible. The clocked endpoint accepts the write
+    // here; its private commit token survives watchdog reset and precedes reset.
+    mmioCommitPending := true.B
+    mmioCommit := 0.U.asTypeOf(new ControlCommand)
+    mmioCommit.kind := ControlKind.MmioCommit.U; mmioCommit.memory := req
+    mmioCommit.applicationWritable := io.controlCommand.bits.applicationWritable
+  }
+  hostFrames.io.deq.ready := io.controlCommand.fire && io.controlCommand.bits.kind === ControlKind.Host.U
+  when(io.controlCommand.fire) {
+    controlOutstanding := true.B
+    loaderControlPending := io.controlCommand.bits.kind === ControlKind.Host.U &&
+      io.controlCommand.bits.frame.bytes(0) >= 1.U && io.controlCommand.bits.frame.bytes(0) <= 6.U
+    switch(io.controlCommand.bits.kind) {
+      is(ControlKind.Stored.U) { completionPending := false.B }
+      is(ControlKind.ResetApplication.U) { resetNeeded := false.B }
+      is(ControlKind.MmioCommit.U) { mmioCommitPending := false.B }
+      is(ControlKind.Mmio.U) { mmioCurrent := true.B }
+      is(ControlKind.Halt.U) { haltPending := false.B }
+    }
+  }
+  // A reply belongs to the single outstanding command, including reset recovery.
+  io.controlReply.ready := controlOutstanding
+  when(io.controlReply.fire) {
+    val result = io.controlReply.bits
+    controlOutstanding := false.B; loaderControlPending := false.B; controlState := result.state
+    mode := Mux((io.cpuResetActive || resetRecovery) && (result.state.mode === 3.U || result.state.mode === 4.U),
+      Mux(result.state.programmed, 2.U, 0.U), result.state.mode)
+    started := result.state.started && !io.cpuResetActive && !resetRecovery
+    when(result.kind === ControlKind.Mmio.U) { mmioCurrent := false.B }
+    when(result.kind === ControlKind.ResetApplication.U && !resetPending) { resetRecovery := false.B }
+    when(result.periodUpdate) { periodUpdate.valid := true.B; periodUpdate.bits := result.period }
+    when(result.hostWake) { hostWake := true.B }
+    when(result.programWrite) {
+      loaderWrite := true.B
+      program.io.request.valid := true.B
+      program.io.request.bits.address := result.state.received
+      program.io.request.bits.write := true.B
+      program.io.request.bits.data := result.state.loaderWord; program.io.request.bits.mask := 15.U
+    }
+  }
   when(io.cpuResetActive && (mode === 3.U || mode === 4.U)) { mode := Mux(programmed, 2.U, 0.U) }
+  when(resetEdge) {
+    resetNeeded := !(io.controlCommand.fire && io.controlCommand.bits.kind === ControlKind.ResetApplication.U)
+    resetRecovery := true.B
+  }
 
   // Snapshot the selected service bank once, then share one word mux across
   // byte boundaries. This retains coherent read transactions without eight
@@ -367,7 +404,7 @@ class ClickServices(p: SocParameters, boardFactory: SocParameters => BoardContro
       fields.zipWithIndex.foreach { case (value, i) => bank(i) := value }
     }
     when(space === 1.U && instance === 0.U) {
-      val fields = Seq(mode, programmed.asUInt, locked.asUInt, canProgram.asUInt, loaderPending.asUInt, lastError,
+      val fields = Seq(mode, programmed.asUInt, locked.asUInt, canProgram.asUInt, (loaderPending || loaderControlPending).asUInt, lastError,
         imageId, received)
       fields.zipWithIndex.foreach { case (value, i) => bank(i) := value }
     }

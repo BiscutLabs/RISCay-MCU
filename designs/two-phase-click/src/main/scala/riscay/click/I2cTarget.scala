@@ -7,12 +7,6 @@ import chisel3._
 import chisel3.util._
 import chisel3.util.experimental.InlineInstance
 
-class HostFrame extends Bundle {
-  val length = UInt(6.W)
-  val overflow = Bool()
-  val bytes = Vec(33, UInt(8.W))
-}
-
 /** Bounded, oversampled I2C target; service clock >= 8 * SCL. SDA is open drain.
   * Writes commit at STOP/repeated START only. START abandons partial bytes.
   * Read address acceptance captures all 8 response words in a single snapshot.

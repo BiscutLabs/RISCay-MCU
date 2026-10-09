@@ -17,10 +17,16 @@
   obtain a fresh independent agent review, address its findings, rerun affected
   checks, update its evidence/contracts, commit and push. Repeat this review loop
   for every item. Continue to the next item when the user has authorized it;
-  otherwise ask. MMIO/loader is the currently authorized next item.
-  Follow `docs/soc-contract.md` for ABI/reset scope. Run AsyncFabricSpec and both
+  otherwise ask. Do not advance beyond MMIO/loader without the user's next choice.
+  Follow `docs/soc-contract.md` for ABI/reset scope. Run AsyncFabricSpec,
+  AsyncControlSpec, ControlResetSpec and both
   service implementations' FabricSpec/ScalingSpec plus affected regressions;
   keep strict SoC exports valid. A copied clocked module is not migrated to async.
+  Native Control state and its command/reply bridges are POR-only. Keep accepted
+  MMIO commits and SRAM accounting across watchdog reset; cancel unaccepted work.
+  Preserve queued host reset/busy context, including simultaneous admission.
+  Clocked ingress/arbitration, status projection and peripheral effects remain
+  explicit boundaries until their checklist items are implemented and verified.
 - Retained sleep and programmable sampling are in scope. Follow
   `docs/sleep-and-clock.md`; run SleepSpec, DeepSleepSpec and oscillator-model tests as well.
   Preserve the cold-boot policy, programming lock and watchdog fault coverage.

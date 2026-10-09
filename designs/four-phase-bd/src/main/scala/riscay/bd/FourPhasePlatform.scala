@@ -34,6 +34,20 @@ abstract class FourPhasePlatform(p: SocParameters, board: SocParameters => Board
   }
   protected val workClock = Wire(Clock())
   protected val fabric = withClockAndReset(workClock, reset) { Module(new FourPhaseServices(p, board)) }
+  // Persistent command/state loop and both crossings are POR-only. Application
+  // reset is synchronized service data, never a reset of image/lock state.
+  val control = asyncChild("control")(d => new FourPhaseControl(p, d))
+  val controlCommandBridge = asyncChild("control_command_bridge")(d =>
+    new chiselasync.clocked.DecoupledToFourPhase(new ControlCommand, 2, d))
+  val controlReplyBridge = asyncChild("control_reply_bridge")(d =>
+    new chiselasync.clocked.FourPhaseToDecoupled(new ControlReply, 2, d))
+  controlCommandBridge.clock := workClock; controlReplyBridge.clock := workClock
+  chiselasync.protocol.FourPhase.connect(control.command, controlCommandBridge.out)
+  chiselasync.protocol.FourPhase.connect(controlReplyBridge.in, control.reply)
+  controlCommandBridge.in <> fabric.io.controlCommand
+  fabric.io.controlReply <> controlReplyBridge.out
+  // Preserve the registered bridge ABI even when this profile ignores state fields.
+  dontTouch(controlReplyBridge.out)
   fabric.io.cpuReset := systemReset
   fabric.io.cpuResetActive := cpuResetActive
   fabric.io.crashCount := crashCount

@@ -50,10 +50,11 @@ After the fabric validates the full byte address, each controller retains only
 its word index: nine bits for the 2 KiB program bank and eight for the 1 KiB
 working bank. Widths derive from the configured capacity, including one-word
 and non-power-of-two banks. The byte-lane counter supplies the two low bits.
-Loader metadata similarly uses word counts internally: ten bits each for image
-length and received count (including the full 512 words), and nine for the entry
-index. Host commands are validated before narrowing; the byte-based 32-bit ABI
-and full-width range/protection checks are unchanged.
+Native loader metadata retains full 32-bit byte lengths, entry offsets and received
+counts. Capacity/alignment/entry checks happen before any macro index conversion;
+the byte-based ABI and full-capacity/non-power-of-two checks remain unchanged.
+The `receivedWords` observation is derived from the committed byte count for the
+existing reset/physical-write oracle; it is no longer the accounting register.
 
 Address, data, write-enable and chip-enable launch from falling-edge registers.
 The following rising edge accesses the macro. A subsequent rising edge captures
@@ -62,6 +63,12 @@ falling edge disables chip enable. Four access/capture pairs form one word,
 followed by one held response. At the default 10 MHz, the bank's response becomes
 valid eight cycles after acceptance, and the fabric captures it on the next edge.
 The existing asynchronous CPU bridges add their own crossing latency.
+
+The POR-only native Control loop receives a separate completion command after
+all bytes finish. BUSY remains asserted until that command's state update returns
+through the explicit snapshot bridge. Reset cannot lose an accepted completion,
+and an upload command captured while busy cannot become a deferred write/VERIFY.
+The SRAM controller itself still uses service-clock byte sequencing.
 
 CLK connects to the qualified service clock, not to a request pulse. At the
 fast-source 20 MHz upper bound there is nominally 25 ns for each input half-cycle

@@ -27,6 +27,8 @@ object ImageCrc {
 /** Shared port schema only; each variant owns its service implementation. */
 abstract class ServiceEndpoint extends Module with InlineInstance {
   val io = IO(new Bundle {
+    val controlCommand = Decoupled(new ControlCommand)
+    val controlReply = Flipped(Decoupled(new ControlReply))
     val request = Flipped(Decoupled(new MemoryRequest))
     val response = Decoupled(new MemoryResponse)
     val scl = Input(Bool()); val sda = Input(Bool()); val sdaLow = Output(Bool())
@@ -41,6 +43,7 @@ abstract class ServiceEndpoint extends Module with InlineInstance {
     val cpuResetActive = Input(Bool())
     val crashCount = Input(UInt(32.W))
     val hostSelected = Output(Bool()); val hostRejected = Output(Bool())
+    val hostFrameAccepted = Output(Bool())
     val timeGray = Input(UInt(32.W)); val consumedGray = Output(UInt(32.W))
     val clockRunning = Input(Bool()); val sleepEntries = Input(UInt(32.W))
     val canSleep = Output(Bool()); val activity = Output(Bool())

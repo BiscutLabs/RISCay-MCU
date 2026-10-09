@@ -180,6 +180,51 @@ endmodule
                     self.assertIn("RESET_BINDING_MISMATCH", result.stdout)
                     self.assertNotIn("RESET_TEST_PASS", result.stdout)
 
+    def test_persistent_control_and_descendants_must_use_por(self):
+        manifest = copy.deepcopy(self.manifest)
+        names = {"control": "FourPhaseControl", "control_command_bridge": "DecoupledToFourPhase",
+                 "control_reply_bridge": "FourPhaseToDecoupled"}
+        for name, model in names.items():
+            manifest["design"]["children"].append({"id": name, "contract": {
+                "rtl_path": "FourPhaseSoc." + name, "module": model, "children": []}})
+        manifest["design"]["children"][1]["contract"]["children"] = [{"id": "storage", "contract": {
+            "rtl_path": "FourPhaseSoc.control.storage", "module": "Storage", "children": []}}]
+        paths = ["core", "control", "control.storage", "control_command_bridge", "control_reply_bridge"]
+        checks = "\n".join(f'if (FourPhaseSoc.{p}.reset !== FourPhaseSoc.reset) $fatal(1, "RESET_BINDING_MISMATCH");' for p in paths)
+        probe = generated_reset_probe('module ContractProbe; task check; begin\n' + checks + '''
+end endtask
+initial begin #1; check; FourPhaseSoc.watchdog=1; #1; check;
+FourPhaseSoc.reset=1; #1; check; $display("MIXED_RESET_PASS"); $finish; end endmodule
+''', manifest)
+        for broken in (None, "core", "control", "storage", "control_command_bridge", "control_reply_bridge"):
+            with tempfile.TemporaryDirectory(prefix="riscay-persistent-reset-") as folder:
+                path = Path(folder)
+                def pin(name):
+                    correct = "systemReset" if name == "core" else "reset"
+                    return ("reset" if name == "core" else "systemReset") if broken == name else correct
+                rtl = '''module Child(input reset); endmodule
+module Control(input reset, input systemReset);
+Child storage(.reset(%s)); endmodule
+module FourPhaseSoc;
+reg reset=0, watchdog=0; wire systemReset=reset|watchdog;
+Child core(.reset(%s));
+Control control(.reset(%s),.systemReset(systemReset));
+Child control_command_bridge(.reset(%s)); Child control_reply_bridge(.reset(%s)); endmodule
+''' % (pin("storage"), pin("core"), pin("control"), pin("control_command_bridge"), pin("control_reply_bridge"))
+                (path / "test.sv").write_text(rtl + probe)
+                built = subprocess.run(["iverilog", "-g2012", "-s", "FourPhaseSoc", "-s", "ContractProbe", "-o", "sim.vvp", "test.sv"],
+                                       cwd=path, capture_output=True, text=True, timeout=30)
+                self.assertEqual(built.returncode, 0, built.stderr)
+                result = subprocess.run(["vvp", "sim.vvp"], cwd=path, capture_output=True, text=True, timeout=30)
+                self.assertEqual(result.returncode == 0, broken is None, result.stdout)
+                self.assertIn("MIXED_RESET_PASS" if broken is None else "RESET_BINDING_MISMATCH", result.stdout)
+        bad = copy.deepcopy(manifest); bad["design"]["children"].pop()
+        with self.assertRaisesRegex(ValueError, "RESET_INVENTORY"):
+            generated_reset_probe("", bad)
+        bad = copy.deepcopy(manifest); bad["design"]["children"][1]["contract"]["module"] = "Unknown"
+        with self.assertRaisesRegex(ValueError, "RESET_OWNER"):
+            generated_reset_probe("", bad)
+
     def test_packed_coverage_matches_scalar_for_all_four_state_vectors(self):
         # Every 4-bit vector over {0,1,X,Z}; both empty and accumulated coverage.
         manifest = {"design": {"endpoints": [{"rtl_path": "value", "width": 4}], "children": []}}

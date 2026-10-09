@@ -56,7 +56,8 @@ class PhysicalEstimateSpec extends AnyFunSuite {
         end
         always @(negedge adcSclk) if(!adcCsN) begin adcShift=adcShift<<1; adcMiso=adcShift[15]; end
         always @(posedge serviceClock) fastEdges=fastEdges+1;
-        always @(posedge dut.soc.gate_io_clockOut) workEdges=workEdges+1;
+        // This POR-owned bridge uses the gated work clock in both variants.
+        always @(posedge dut.soc.ca_child_control_command_bridge.clock) workEdges=workEdges+1;
         initial forever begin
           ${if(click) "wait(traceEvent != seen); seen=traceEvent;" else "wait(traceEvent);"}
           if(trace_valid && trace_pc>=32'h10000000) begin

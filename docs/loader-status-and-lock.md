@@ -35,6 +35,15 @@ that write; a busy rejection has no queued side effect. Application watchdog
 reset allows an accepted loader write to finish. Full MCU reset aborts it and
 invalidates the image. See [SRAM integration](sram-integration.md).
 
+The separate native Control implementations own image metadata, validation,
+lock, loader state and CRC/received-byte accounting. Explicit clocked bridges
+carry host/MMIO commands and SRAM completion; I2C and SRAM byte sequencing remain
+clocked. BUSY also covers an accepted mutating host command whose native result
+has not returned. Ingress remembers busy/reset context, including simultaneous
+loader admission and a new frame. A pre-reset queued START or stale START reply
+cannot substitute for an explicit restart after recovery. The clocked MODE
+projection retains the specified synchronized-reset observation latency.
+
 ## Generic measurements and application telemetry
 
 Use the same I2C target for read-only measurements; no additional data pins or

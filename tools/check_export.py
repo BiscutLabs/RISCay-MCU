@@ -3,8 +3,9 @@
 
 The library defaults to 60 seconds, which its small component probes fit. This
 adapter extends the contract probe's compilation and simulation limits. With
---soc it checks child reset wiring against the generated system-reset endpoint, rather
-than the external POR input. All endpoint/timing/coverage checks are retained.
+--soc it checks CPU child resets against the generated system-reset endpoint and
+the named persistent Control children against POR. All endpoint/timing/coverage
+checks are retained.
 The library checkout is an explicit development dependency.
 """
 from __future__ import annotations
@@ -190,6 +191,108 @@ def register_file_background(source: str, manifest: dict, checks: int):
     return result.replace(completion, f"CONTRACT_PROBES_PASS:{count}"), count
 
 
+def control_background(source: str, manifest: dict, scopes: dict, checks: int):
+    """Exercise native command decodes using only catalogued storage outputs.
+
+    Single-bit and all-ones paired backgrounds do not form valid frame lengths,
+    opcodes or MMIO addresses. Keep those campaigns and all coverage/comparisons;
+    add explicit input vectors, never forces of endpoints or combinational muxes.
+    """
+    root = manifest["design"]
+    controls = [c["contract"] for c in root.get("children", []) if c["id"] == "control"]
+    if not controls:
+        return source, checks
+    top = manifest["top"]
+    click = top == "ClickSoc"
+    owner = "ClickControl" if click else "FourPhaseControl"
+    if len(controls) != 1 or controls[0]["module"] != owner:
+        raise ValueError("CONTROL_PROBE_OWNER_MISMATCH")
+    join = next((c["contract"] for c in controls[0]["children"] if c["id"] == "join"), None)
+    if join is None:
+        raise ValueError("CONTROL_PROBE_DRIVER_MISMATCH")
+    def payload(child, width):
+        node = next((c["contract"] for c in join["children"] if c["id"] == child), {})
+        cell = next((p for p in node.get("primitives", []) if p["id"] == "payload"), {})
+        if not any(p == {"name": "q", "width": width, "direction": "output"}
+                   for p in cell.get("ports", [])):
+            raise ValueError("CONTROL_PROBE_DRIVER_MISMATCH")
+        return cell["rtl_path"] + ".q"
+    state = payload("left_storage" if click else "left", 305)
+    command = payload("right_storage" if click else "right", 379)
+    request = top + ".ca_child_request_bridge.data_address"
+    now = top + ".fabric_now"
+    for path, width in ((request, 32), (now, 32)):
+        node, name = path.rsplit(".", 1)
+        if scopes.get(node, {}).get("registers", {}).get(name) != width:
+            raise ValueError("CONTROL_PROBE_DRIVER_MISMATCH")
+    anchor = f"initial begin\nforce {top}.reset = 1'b1; #1;\n"
+    if source.count(anchor) != 1:
+        raise ValueError("CONTROL_PROBE_SHAPE_CHANGED")
+    start = source.index(anchor) + len(anchor)
+    end = source.index("\n#1;\n", start) + len("\n#1;\n")
+    header = source[start:end]
+    coverage = list(re.finditer(r"^if \(ones_\d+ !==.*INACTIVE_ENDPOINT:.*$", source, re.M))
+    completion = f"CONTRACT_PROBES_PASS:{checks}"
+    if not coverage or source.count(completion) != 1:
+        raise ValueError("CONTROL_PROBE_SHAPE_CHANGED")
+    extra, steps = [header], 0
+    def force(path, width, value):
+        if f"force {path} = {width}'h0;" not in header:
+            raise ValueError("CONTROL_PROBE_DRIVER_MISMATCH")
+        extra.append(f"force {path} = {width}'h{value:x};\n")
+    def check():
+        nonlocal steps
+        extra.append("#1; check;\n"); steps += 1
+    def walk(width):
+        return [0, (1 << width)-1] + [v for bit in range(width)
+            for v in (1 << bit, ((1 << width)-1) ^ (1 << bit))]
+    # Full-width peripheral snapshot data through a real selected MMIO address.
+    force(request, 32, 4)
+    for value in walk(32):
+        force(now, 32, value); check()
+    extra.append(header)
+    # Frame payload selection requires a nonempty mailbox, whose count is wide.
+    force(top + ".fabric_hostFrames_count", 2, 1)
+    for name, width in [("length", 6), ("overflow", 1)] + [(f"bytes_{i}", 8) for i in range(33)]:
+        path = top + ".fabric_hostFrames_first_frame_" + name
+        for value in walk(width):
+            force(path, width, value); check()
+        force(path, width, 0)
+    extra.append(header)
+    force(top + ".fabric_mmioCommitPending", 1, 1)
+    force(top + ".fabric_mmioCommit_applicationWritable", 1, 1); check()
+    extra.append(header)
+    def pack(fields):
+        value = 0
+        for width, field in fields:
+            if field < 0 or field >= 1 << width:
+                raise ValueError("CONTROL_PROBE_VECTOR_RANGE")
+            value = (value << width) | field
+        return value
+    def command_value(kind=0, frame=(), operation=0, address=0, snapshot=0):
+        return pack([(3, kind), (6, len(frame)), (1, 0)] +
+                    [(8, b) for b in reversed(list(frame) + [0]*(33-len(frame)))] +
+                    [(1, 0), (1, 0), (2, operation), (32, address), (32, 0),
+                     (4, 15), (32, snapshot), (1, 0)])
+    def frame(op, *words):
+        return [op] + [(w >> (8*i)) & 255 for w in words for i in range(4)]
+    # All state fields start cold except LOADING/imageLength for WRITE admission.
+    state_widths = [3, 1, 1, 1, 8, 32, 32, 32, 32, 32, 32, 1, 32, 24, 4, 32, 6]
+    loading = [1, 0, 0, 0, 0, 12] + [0]*11
+    force(state, 305, pack(zip(state_widths, loading)))
+    force(command, 379, command_value(frame=frame(2, 0, 0xffffffff))); check()
+    force(state, 305, 0)
+    force(command, 379, command_value(frame=frame(8))); check()
+    for value in walk(32) + [1000]:
+        force(command, 379, command_value(frame=frame(7, value))); check()
+    for value in walk(32):
+        force(command, 379, command_value(kind=4, operation=1, address=0x30000004, snapshot=value)); check()
+    count = checks + steps * len(coverage)
+    position = coverage[0].start()
+    result = source[:position] + "".join(extra) + source[position:]
+    return result.replace(completion, f"CONTRACT_PROBES_PASS:{count}"), count
+
+
 def generated_reset_probe(source: str, manifest: dict) -> str:
     """Retarget only the library's flat-reset assumption; fail closed on API drift."""
     top = manifest["top"]
@@ -201,14 +304,27 @@ def generated_reset_probe(source: str, manifest: dict) -> str:
         raise ValueError("SOC_RESET_ENDPOINT_MISMATCH")
     reset = endpoints[0]["rtl_path"]
 
-    def children(node):
-        for child in node["children"]:
-            yield child["contract"]
-            yield from children(child["contract"])
+    persistent = {"control": "ClickControl" if top == "ClickSoc" else "FourPhaseControl",
+                  "control_command_bridge": "DecoupledToClick" if top == "ClickSoc" else "DecoupledToFourPhase",
+                  "control_reply_bridge": "ClickToDecoupled" if top == "ClickSoc" else "FourPhaseToDecoupled"}
+    present = {c.get("id") for c in root["children"]} & persistent.keys()
+    if present and present != persistent.keys():
+        raise ValueError("SOC_PERSISTENT_RESET_INVENTORY")
+    for child in root["children"]:
+        if child.get("id") in persistent and not re.fullmatch(
+                re.escape(persistent[child["id"]]) + r"(?:_[0-9]+)?", child["contract"].get("module", "")):
+            raise ValueError("SOC_PERSISTENT_RESET_OWNER")
 
-    for node in children(root):
+    def children(node, persistent_domain=False):
+        for child in node["children"]:
+            por = persistent_domain or (node is root and child.get("id") in persistent)
+            yield child["contract"], por
+            yield from children(child["contract"], por)
+
+    for node, por in children(root):
         old = f'if ({node["rtl_path"]}.reset !== {top}.reset) $fatal(1, "RESET_BINDING_MISMATCH");'
-        new = f'if ({node["rtl_path"]}.reset !== {reset}) $fatal(1, "RESET_BINDING_MISMATCH");'
+        target = f"{top}.reset" if por else reset
+        new = f'if ({node["rtl_path"]}.reset !== {target}) $fatal(1, "RESET_BINDING_MISMATCH");'
         if source.count(old) != 1:
             raise ValueError("SOC_RESET_CHECK_SHAPE_CHANGED")
         source = source.replace(old, new)
@@ -364,7 +480,7 @@ def validate_fabric_path(node, timing):
 
 def validate_native_click(manifest):
     """A Click export must remain native throughout its async hierarchy."""
-    if manifest["top"] not in ("ClickSoc", "ClickCore", "ClickFabric"):
+    if manifest["top"] not in ("ClickSoc", "ClickCore", "ClickFabric", "ClickControl"):
         return
     def nodes(node):
         yield node
@@ -469,6 +585,7 @@ def main() -> None:
     def probe(manifest, scopes, paired=False):
         source, count = original_probe(manifest, scopes, paired)
         source, count = register_file_background(source, manifest, count)
+        source, count = control_background(source, manifest, scopes, count)
         if args.sleep_clock:
             source, count = sleep_clock_background(source, manifest, scopes, count)
         if args.soc:

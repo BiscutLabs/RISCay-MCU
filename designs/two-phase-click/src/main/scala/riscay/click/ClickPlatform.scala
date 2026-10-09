@@ -34,6 +34,21 @@ abstract class ClickPlatform(p: SocParameters, board: SocParameters => BoardCont
   }
   protected val workClock = Wire(Clock())
   protected val fabric = withClockAndReset(workClock, reset) { Module(new ClickServices(p, board)) }
+  // Persistent native Click phases and state reset only on POR.
+  val control = asyncChild("control")(d => new ClickControl(p, d))
+  val controlCommandBridge = asyncChild("control_command_bridge")(d => new DecoupledToClick(new ControlCommand, d))
+  val controlReplyBridge = asyncChild("control_reply_bridge")(d => new ClickToDecoupled(new ControlReply, d))
+  controlCommandBridge.clock := workClock; controlReplyBridge.clock := workClock
+  val controlStart = withClockAndReset(serviceClock, reset) {
+    val stages = RegInit(0.U(2.W)); stages := Cat(stages(0), true.B); stages.andR
+  }
+  control.start := controlStart
+  chiselasync.protocol.TwoPhase.connect(control.command, controlCommandBridge.out)
+  chiselasync.protocol.TwoPhase.connect(controlReplyBridge.in, control.reply)
+  controlCommandBridge.in <> fabric.io.controlCommand
+  fabric.io.controlReply <> controlReplyBridge.out
+  // Preserve the registered bridge ABI even when this profile ignores state fields.
+  dontTouch(controlReplyBridge.out)
   fabric.io.cpuReset := systemReset
   fabric.io.cpuResetActive := cpuResetActive
   fabric.io.crashCount := crashCount

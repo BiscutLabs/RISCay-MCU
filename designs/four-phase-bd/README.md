@@ -4,8 +4,11 @@ Required RISCay-MCU implementation using Chisel and chisel-async four-phase
 bundled-data components. The core and complete digital SoC are implemented.
 [FourPhaseSoc.scala](src/main/scala/riscay/bd/FourPhaseSoc.scala) connects the core
 through `FourPhaseFabric` to its own clocked `FourPhaseServices` endpoint via
-explicit four-phase/clocked bridges. ROM/static faults are asynchronous; MMIO,
-loader and peripheral state are still clocked. This directory owns its Platform,
+explicit four-phase/clocked bridges. `FourPhaseControl` uses a seeded state token,
+join, transform and fork to own loader accounting/lock, MMIO validation and
+selector/producer staging without a periodic clock. Clocked ingress and snapshot
+crossings are explicit; peripheral effects and reset/status projection remain in
+Services. This directory owns its Platform,
 peripheral, scaling, sleep and SRAM controller implementations.
 Follow the [migration checklist](../../docs/async-soc-migration.md).
 See the [SoC contract](../../docs/soc-contract.md) for behavior and qualification limits.

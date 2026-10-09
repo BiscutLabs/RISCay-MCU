@@ -1,8 +1,8 @@
 # RISCay-MCU
 
 Migration items use a fresh independent agent review, fixes, affected verification,
-and a commit/push before completion. MMIO/loader is the next authorized item;
-see the [migration checklist](docs/async-soc-migration.md).
+and a commit/push before completion. SocFabric and MMIO/loader are digitally
+verified; see the [migration checklist](docs/async-soc-migration.md).
 
 A tiny reusable RISC-V SoC, built in Chisel with
 [chisel-async](https://github.com/BiscutLabs/chisel-async).
@@ -34,7 +34,8 @@ both writable banks use three pinned GF180 1 KiB SRAM macros, with a shared
 fixed macro model; each variant owns its byte-sequencing controller. See
 [SRAM integration](docs/sram-integration.md) and
 [memory architecture](docs/memory-architecture.md).
-Internal SRAM indices and loader counts are sized from these capacities. Both
+Internal SRAM indices are sized from these capacities. Native loader metadata
+keeps full-width byte lengths, offsets and counts. Both
 cores use a 171-bit control token and derive pending load fields from the saved
 instruction, avoiding duplicate storage.
 
@@ -45,11 +46,14 @@ telemetry remain readable when locked. See the
 [host status, telemetry and lock contract](docs/loader-status-and-lock.md).
 
 **Status: asynchronous SoC migration in progress.** Each design owns a separate
-SoC implementation. The SocFabric item is digitally verified. Native fabrics
-route ROM and static access faults without a
-service clock; stateful accesses use explicit endpoint bridges. Loader/MMIO
-state, timers/events, GPIO, scaling, SRAM controllers, I2C and SPI ADC are still
-clocked in each implementation. The independent LF timebase/watchdog remains
+SoC implementation. The SocFabric and MMIO/loader items are digitally verified.
+Native fabrics route ROM and static access faults without a
+service clock; stateful accesses use explicit endpoint bridges. Separate native
+Control modules now own loader state and MMIO validation/producer selectors;
+their integration passes both variants' regressions and strict exports. Clocked
+ingress, snapshots, MODE/reset projection, timer/event/GPIO effects, scaling,
+SRAM byte sequencing, I2C and SPI
+ADC remain explicit. The independent LF timebase/watchdog remains
 necessary. See the [migration checklist](docs/async-soc-migration.md). A permanent
 Groundlark controller supervises power before upload and during application
 stalls. Its default policy is disabled until qualified battery settings are
@@ -63,8 +67,8 @@ or MCU power loss clears the lock and returns Groundlark to its off state.
 **Tapeout must deliberately supply and qualify an enabled board policy**; the
 reference emitters' disabled `PowerPolicy()` never enables Pi power.
 Physical/analog, pin/package, board and Chiselator qualification remain.
-The new fabric controllers have no physical timing qualification. Earlier P&R
-results describe baseline `8637099` and do not qualify this migration.
+The new fabric and Control controllers have no physical timing qualification.
+Earlier P&R results describe baseline `8637099` and do not qualify this migration.
 
 Both variants have [experimental GF180 implementation inputs](docs/gf180-implementation.md):
 preserved async bindings, native matched-delay cells, compact digital tops, SRAM

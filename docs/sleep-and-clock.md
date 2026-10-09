@@ -192,9 +192,14 @@ The analog monitor's approximately 2.22 uA nominal always-on current and measure
 ## Implementation ownership during async migration
 
 Each design now owns its Platform, SleepTiming, Services and clocked peripheral
-implementation. The [migration checklist](async-soc-migration.md) currently moves
-native transaction routing; it does not replace the clocked event/lease/loader
-state machines described here. Application reset covers CPU, native fabric and
-both endpoint bridges together. Permanent supervision, SRAM accounting and
+implementation, with separate native Fabric and Control loops. Native Control
+owns loader/MMIO state and selector/producer staging. Clocked event/lease logic,
+peripheral effects, ingress and snapshots remain. Every pending control command,
+reply, accepted commit or SRAM accounting token keeps the work clock awake.
+Application reset covers CPU, native fabric and both CPU endpoint bridges
+together. The Control loop and its two additional crossings are POR-only;
+reset notification is retained until serialized recovery, and queued HALT or
+unaccepted MMIO preparation is canceled. MODE/status projection still consumes
+the synchronized reset on the original third service edge. Permanent supervision, SRAM accounting and
 programming protection keep their established reset domains. The independent
 LF timebase/watchdog remains necessary after other service work becomes async.

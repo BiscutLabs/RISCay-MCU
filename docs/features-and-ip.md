@@ -255,5 +255,8 @@ chisel-async is Apache-2.0. Preserve attribution when reusing implementation.
 
 Follow the [item-by-item checklist](async-soc-migration.md). Each design now owns
 its SoC implementation; shared `soc/` files are schemas, fixed macros and wrapper
-utilities. Native fabric routing is the first item. Clocked endpoint state is
-not considered migrated merely because its source files have been separated.
+utilities. The first two digitally verified items provide native fabric routing and
+independent native Control loops for loader and MMIO validation/staging, with
+explicit clocked ingress, snapshots and peripheral effects. Clocked endpoint
+state is not considered migrated merely because its files have been separated.
+Every item requires fresh independent review, fixes, verification and a commit/push.

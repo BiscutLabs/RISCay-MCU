@@ -28,9 +28,13 @@ when no next item has been chosen. Both implementations remain active throughout
   bridges. Expand focused and independent-service tests for both implementations;
   rerun affected SoC/sleep/firmware/SRAM, core/reference and Python controls and
   strict exports. Update contracts and evidence, then commit and push.
-- [ ] **2. MMIO and loader state.** Move state/serialization and validated-image
+- [x] **2. MMIO and loader state - digitally verified, 2026-10-08.**
+  Move state/serialization and validated-image
   accounting into each protocol; preserve full-width validation, atomic acceptance,
   upload arbitration, reset isolation and the POR-only programming lock.
+  Implementation and fresh independent review fixes pass the final 107-case
+  verification run, two core physical-policy tests, Python controls and both
+  strict exports. See the exact scope below and the linked evidence.
 - [ ] **3. GPIO, events and telemetry.** Preserve board ownership, coherent snapshots,
   set-wins event arbitration, deadline replacement and WAIT/lease semantics.
 - [ ] **4. Scaling and CRC.** Independent native sequencing with unchanged arithmetic,
@@ -51,8 +55,9 @@ when no next item has been chosen. Both implementations remain active throughout
   decode/data paths, pulse/fork/return timing, reset and CDC bounds, then new P&R
   and extracted validation. Digital passes alone cannot check this item.
 
-The user has authorized MMIO/loader after the SocFabric review. Later numbered
-candidates remain proposals. Each requires both implementations, invariant-focused
+The authorized SocFabric and MMIO/loader items are digitally verified. Ask the
+user to choose the next item; later numbered candidates remain proposals.
+Each requires both implementations, invariant-focused
 tests and a fresh independent review before it can be checked off.
 
 ## SocFabric handshake and timing contract
@@ -113,16 +118,67 @@ bind endpoint port names; `focused-ports-fixed.log` then exposed handshake error
 first BD return fix. Later strict path/scope and unsized-alias elaboration failures
 are also retained rather than overwritten.
 
-Final results: 89 distinct verification cases and two core physical-policy cases
-pass; 64 working-tree Python controls pass (six belong to the preserved earlier
+SocFabric baseline results: 89 distinct verification cases and two core
+physical-policy cases pass; 64 working-tree Python controls pass (six belong to the preserved earlier
 P&R work), and all 11 SRAM assets verify. Both production-capacity SoCs pass strict
 `--soc --vector-coverage --sleep-clock` exports with three macros each and native
 Click throughout. Exact logs, hashes, counts and qualification limits are in
 [build and test](build-and-test.md#asynchronous-socfabric-migration).
 
-SocFabric is the only checked migration item. MMIO/loader, GPIO/events/telemetry,
-scaling/CRC, permanent supervisor, SRAM sequencing, I2C, SPI ADC and slow-domain
-housekeeping remain incomplete. MMIO/loader is the authorized next item.
+The final MMIO/loader run passes all 107 verification cases across fourteen suites
+and two core physical-policy cases, with no skipped/canceled/pending tests.
+All 68 working-tree Python controls pass (six belong to the preserved P&R work),
+and all 11 SRAM assets verify. Both production exports pass strict validation
+with unchanged 34-port public ABIs and three SRAM macros each. See
+[MMIO/loader evidence](build-and-test.md#asynchronous-mmio-and-loader-migration)
+for logs, hashes, independent review fixes and retained failures.
+
+SocFabric and the scoped MMIO/loader item are digitally complete. GPIO/events/
+telemetry, scaling/CRC, permanent supervisor, SRAM sequencing, I2C, SPI ADC,
+slow-domain housekeeping and physical qualification remain unchecked.
+
+## MMIO/loader scope and contract
+
+`FourPhaseControl` and `ClickControl` own separate state-token feedback loops,
+using each native protocol's seeded storage, join, transform and fork. They own
+image length/entry/ID, received bytes/CRC, validity, programming lock, loader
+mode/error/start state, host selector, producer index/value and application word
+selector. Native MMIO preparation validates full-width accesses and permissions.
+Its retained staging changes only on a separate commit command created at the
+existing service-clock request acceptance. Abandoned preparation has no effect;
+an accepted producer-staging commit survives watchdog reset and precedes recovery.
+
+The service domain retains bounded host ingress and its busy/reset context,
+command arbitration, CPU acceptance, coherent read/status snapshots, MODE/start
+reset projection, GPIO/event/timer/peripheral effects, I2C and SRAM byte sequencing.
+MMIO accesses therefore still cross clocked endpoints. Two additional explicit,
+POR-only native/clocked bridges connect each Control loop. The Click loop and
+bridges contain no four-phase adapter. CRC is still the shared pure combinational
+function; migrating/qualifying a sequenced scaling/CRC datapath remains item 4.
+
+One outstanding command preserves order. SRAM completion, accepted MMIO commit,
+reset recovery, HALT and host/CPU commands have explicit arbitration. Host frames
+remember reset and loader-busy conditions, including same-edge loader admission;
+a busy command is rejected instead of executing later. A retained reset request
+cannot disappear behind a stalled reply. Queued HALT and unaccepted MMIO are
+application-reset-owned; stale START replies and pre-reset queued START frames
+cannot restart an application. MODE retains its third-service-edge synchronized
+reset behavior through a clocked status projection. Any pending command/reply,
+commit or accounting token inhibits retained work-clock shutdown.
+Reply acceptance requires that outstanding command. Period candidate bits are
+separate from their validated update flag, which alone permits a peripheral effect.
+
+Independent review found and prompted fixes for lost reset pulses, stale HALT,
+pre-commit staging mutation, and busy-context loss (including simultaneous host
+arrival/admission). `ControlResetSpec` targets these with independently stalled
+command/reply bridges; its boundary test verifies that the simultaneous event
+actually occurred. The original clear/event race and strict MODE reset assertions
+remain unchanged. Full-width loader/CRC/lock, native backpressure and POR abort
+also have independent clockless `AsyncControlSpec` oracles for both protocols.
+
+These are digital controllers. The complete command/decode/CRC transforms use
+declared simulation budgets; newly mapped paths, state feedback forks, pulse
+distribution, CDC/reset and physical implementation require item 10 qualification.
 
 ### Fresh SocFabric review
 
