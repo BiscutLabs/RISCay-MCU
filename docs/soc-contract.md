@@ -254,8 +254,15 @@ Legacy builds retain the elaboration-time idle delay between conversions.
 The nominal conversion is `raw * 25300 / 4095` mV, based on a 3.3 V
 ADC reference/supply and the existing 23/3 divider ratio. Build parameters permit
 gain/offset calibration; the default explicitly reports **uncalibrated**.
-Scaling uses an exact 12-cycle serial quotient/remainder calculation after SPI
-capture; the ADC remains busy until completion. There is no combinational divider.
+Scaling uses three native handshake stages of four radix-2 quotient/remainder
+steps after a native input-capture stage. Each design owns its datapath. Explicit
+POR-only clocked bridges capture SPI results and publish the scaled value; busy
+extends through native computation, publication and return drainage. The first
+conversion is still discarded, and signed offset/calibration projection is unchanged.
+The unstalled digital start-through-drain allowance is 16 service edges plus
+1 us for the native pipeline under its simulation delay envelope. Cadence bounds
+round the full SPI-plus-scaling allowance upward to milliseconds. This allowance
+needs physical qualification. There is no combinational divider.
 [ADC datasheet](https://www.ti.com/lit/ds/symlink/adc121s021.pdf)
 
 This is a digital reference interface, not a selected/qualified replacement for

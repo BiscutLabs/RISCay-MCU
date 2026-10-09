@@ -13,9 +13,9 @@ class AsyncControlSpec extends AnyFunSuite {
   private val config = McuConfiguration(12, 12, 1, Vector(MeasurementChannel(0,"test",1,0)),
     ApplicationProfile(1,1,"control",Vector(HostRegister(0,"A"),HostRegister(17,"B")),Vector.empty))
   private val p = SocParameters(config)
-  private def top(click: Boolean): AsyncModule = if(click)
-    new riscay.click.ClickControl(p,new ResetDomain("root"))
-    else new riscay.bd.FourPhaseControl(p,new ResetDomain("root"))
+  private def top(click: Boolean, parameters: SocParameters = p): AsyncModule = if(click)
+    new riscay.click.ClickControl(parameters,new ResetDomain("root"))
+    else new riscay.bd.FourPhaseControl(parameters,new ResetDomain("root"))
   private def fresh(name: String) = {
     val root=Paths.get("build/async-control-tests"); Files.createDirectories(root)
     Files.createTempDirectory(root,name)
@@ -74,6 +74,26 @@ class AsyncControlSpec extends AnyFunSuite {
       else Seq(s)
     }
   }
+  private def crcCampaign: Seq[Step] = {
+    val random = new scala.util.Random(0x435243L)
+    Seq(Seq.fill(32)(0L), Seq.fill(32)(0xffffffffL),
+      Seq(0L,0xffffffffL,0x80000000L,1L) ++ Seq.fill(28)(random.nextInt().toLong & 0xffffffffL)).flatMap { words =>
+      val oracle = new CRC32
+      val partial = words.map { w =>
+        (0 until 4).foreach(b => oracle.update(((w >>> (8*b)) & 255).toInt))
+        oracle.getValue ^ 0xffffffffL
+      }
+      Seq(Step(1), Step(0,frame(1,128,0,oracle.getValue,0x10000L,0,0,0,19),changes=Map(
+        "mode"->1L,"programmed"->0L,"imageLength"->128L,"entry"->0L,"received"->0L,
+        "imageId"->19L,"expectedCrc"->oracle.getValue,"crc"->0xffffffffL))) ++
+      words.zipWithIndex.flatMap { case(w,i) => Seq(
+        Step(0,frame(2,i*4L,w),changes=Map("loaderPending"->1L,"loaderWord"->w),write=1),
+        Step(1,changes=Map("loaderPending"->0L,"received"->((i+1)*4L),"crc"->partial(i))),
+        Step(2), // Queued while Stored is executing: accounting precedes recovery.
+        Step(1)) // Duplicate completion is inert.
+      } ++ Seq(Step(0,frame(3),changes=Map("programmed"->1L,"mode"->2L)))
+    }
+  }
   private def source(click: Boolean, steps: Seq[Step]): String = steps.zipWithIndex.map { case(s,i) =>
     val phase=if(click) (i+1)%2 else 1
     val bytes=s.bytes.padTo(33,0).zipWithIndex.map { case(v,j) => s"command_bits_frame_bytes_$j=$v;" }.mkString("\n")
@@ -114,6 +134,35 @@ class AsyncControlSpec extends AnyFunSuite {
         fork begin ${source(click,steps)} end begin ${sink(click,steps)} end join
         #1000000000;
         if(delivered_reply != ${steps.size}) $$fatal(1,"CONTROL_EXACTLY_ONCE");
+      """ }
+    }
+    test(s"$name native CRC: independent all-zero/all-one/random images, queued recovery and duplicate Stored") {
+      val steps=crcCampaign
+      AsyncTest.run(top(click,p.copy(config=config.copy(programBytes=128))),Seq(1L,2L,3L,7L,19L),fresh(name+"-crc")) { _ => s"""
+        ${if(click) "start=1;" else ""}
+        fork begin ${source(click,steps)} end begin ${sink(click,steps)} end join
+        #1000000000;
+        if(delivered_reply != ${steps.size}) $$fatal(1,"CRC_EXACTLY_ONCE");
+      """ }
+    }
+    test(s"$name native CRC: POR during a byte stage aborts pending accounting") {
+      val before=Seq(Step(0,frame(1,4,0,0,0x10000L,0,0,0,1),changes=Map(
+        "mode"->1L,"imageLength"->4L,"imageId"->1L)))
+      val after=Seq(Step(1),Step(0,frame(3),changes=Map("lastError"->6L)))
+      AsyncTest.run(top(click),Seq(1L,2L,19L),fresh(name+"-crc-por")) { _ => s"""
+        ${if(click) "start=1;" else ""}
+        fork begin ${source(click,before)} end begin ${sink(click,before)} end join
+        #1000000000;
+        command_bits_kind=0; command_bits_frame_length=9; command_bits_frame_bytes_0=2;
+        command_bits_frame_bytes_1=0; command_bits_frame_bytes_2=0; command_bits_frame_bytes_3=0; command_bits_frame_bytes_4=0;
+        command_bits_frame_bytes_5=1; command_bits_frame_bytes_6=239; command_bits_frame_bytes_7=205; command_bits_frame_bytes_8=171;
+        #2; command_req=${if(click) 0 else 1};
+        wait(dut.ca_child_crc_0.out_req == ${if(click) 0 else 1}); #1;
+        if(dut.ca_child_crc_3.out_req == ${if(click) 0 else 1}) $$fatal(1,"CRC_ALREADY_COMPLETED");
+        reset=1; command_req=0; reply_ack=0; ${if(click) "start=0;" else ""}
+        #1000000000; reset=0; #1000000000; ${if(click) "start=1;" else ""}
+        fork begin ${source(click,after)} end begin ${sink(click,after)} end join
+        #1000000000;
       """ }
     }
     test(s"$name native MMIO/loader: POR cancels a stalled reply and reinstalls cold state") {

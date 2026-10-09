@@ -19,21 +19,40 @@ class FourPhaseControl(p: SocParameters, domain: ResetDomain) extends AsyncModul
   val reply = fourPhaseOutput("reply", new ControlReply)
   private val timing = BundledTiming.Simulation
   private val cell = ModelTime.ps(1000)
-  private val state = asyncChild("state")(d => new FourPhaseFifo(new ControlState, 1,
-    timing, Seq(ControlState.initial), cell, d))
-  private val join = asyncChild("join")(d => new FourPhaseJoin(new ControlState, new ControlCommand, timing, cell, d))
-  private val update = asyncChild("update")(d => new FourPhaseStage(new Joined(new ControlState, new ControlCommand),
-    new ControlReply, (x: Joined[ControlState, ControlCommand]) => transition(x.left, x.right), timing, d))
+  private val state = asyncChild("state")(d => new FourPhaseFifo(new ControlToken, 1,
+    timing, Seq(ControlToken.initial), cell, d))
+  private val join = asyncChild("join")(d => new FourPhaseJoin(new ControlToken, new ControlCommand, timing, cell, d))
+  private val update = asyncChild("update")(d => new FourPhaseStage(new Joined(new ControlToken, new ControlCommand),
+    new ControlReply, (x: Joined[ControlToken, ControlCommand]) => transition(x.left.state, x.right, x.left.pendingCrc), timing, d))
+  // Precompute the pending word in the feedback branch. Host/MMIO replies
+  // retain their original latency; the next command waits for all four bytes.
+  // Only Stored publishes the candidate into architectural CRC/received state.
+  private val crc = (0 until 4).map { byte =>
+    asyncChild(s"crc_$byte")(d => new FourPhaseStage(new ControlToken, new ControlToken, (x: ControlToken) => {
+      val r = WireDefault(x)
+      when(x.state.loaderPending) {
+        var value = x.pendingCrc
+        for(bit <- byte * 8 until byte * 8 + 8) {
+          value = (value >> 1) ^ Mux(value(0) ^ x.state.loaderWord(bit), "hedb88320".U(32.W), 0.U(32.W))
+        }
+        r.pendingCrc := value
+      }
+      r
+    }, timing, d))
+  }
   private val fork = asyncChild("fork")(d => new FourPhaseFork(new ControlReply, 2, cell, d))
   // The registered fork contract describes its complete payload on both branches.
   // Retain the fields that the state feedback branch does not consume.
   dontTouch(fork.out(0))
   FourPhase.connect(join.left, state.out); FourPhase.connect(join.right, command)
   FourPhase.connect(update.in, join.out); FourPhase.connect(fork.in, update.out)
-  state.in.bits := fork.out(0).bits.state; state.in.req := fork.out(0).req; fork.out(0).ack := state.in.ack
+  crc.head.in.bits.state := fork.out(0).bits.state; crc.head.in.bits.pendingCrc := fork.out(0).bits.state.crc
+  crc.head.in.req := fork.out(0).req; fork.out(0).ack := crc.head.in.ack
+  crc.sliding(2).foreach { pair => FourPhase.connect(pair(1).in, pair(0).out) }
+  FourPhase.connect(state.in, crc.last.out)
   FourPhase.connect(reply, fork.out(1))
 
-  private def transition(s: ControlState, c: ControlCommand): ControlReply = {
+  private def transition(s: ControlState, c: ControlCommand, pendingCrc: UInt): ControlReply = {
     val r = WireDefault(0.U.asTypeOf(new ControlReply)); r.kind := c.kind; r.state := s
     val n = r.state
     val config = p.config
@@ -50,7 +69,7 @@ class FourPhaseControl(p: SocParameters, domain: ResetDomain) extends AsyncModul
     switch(c.kind) {
       is(ControlKind.Stored.U) {
         when(s.loaderPending) {
-          n.received := s.received + 4.U; n.crc := ImageCrc.word(s.crc, s.loaderWord); n.loaderPending := false.B
+          n.received := s.received + 4.U; n.crc := pendingCrc; n.loaderPending := false.B
         }
       }
       is(ControlKind.ResetApplication.U) {

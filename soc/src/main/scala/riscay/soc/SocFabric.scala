@@ -13,20 +13,11 @@ object MemoryMap {
   // lui x1,0x30000; lw x2,0(x1) (wait for START); jalr x0,x2,0
   val boot = Vector(0x300000b7L, 0x0000a103L, 0x00010067L)
 }
-object ImageCrc {
-  // CRC-32/ISO-HDLC, init ffffffff, reflected 04c11db7, xorout ffffffff.
-  def word(previous: UInt, data: UInt): UInt = {
-    var result = previous
-    for (i <- 0 until 32) {
-      result = (result >> 1) ^ Mux(result(0) ^ data(i), "hedb88320".U(32.W), 0.U(32.W))
-    }
-    result
-  }
-}
-
 /** Shared port schema only; each variant owns its service implementation. */
 abstract class ServiceEndpoint extends Module with InlineInstance {
   val io = IO(new Bundle {
+    val elapsedScaling = Flipped(new ElapsedScalingPort(3))
+    val sampleScaling = Flipped(new SampleScalingPort)
     val controlCommand = Decoupled(new ControlCommand)
     val controlReply = Flipped(Decoupled(new ControlReply))
     val request = Flipped(Decoupled(new MemoryRequest))
@@ -47,6 +38,7 @@ abstract class ServiceEndpoint extends Module with InlineInstance {
     val timeGray = Input(UInt(32.W)); val consumedGray = Output(UInt(32.W))
     val clockRunning = Input(Bool()); val sleepEntries = Input(UInt(32.W))
     val canSleep = Output(Bool()); val activity = Output(Bool())
+    val drainDemand = Output(Bool()); val telemetryDraining = Input(Bool())
     val observedGpio = Output(UInt(32.W))
     val commit = Valid(new MemoryRequest)
   })

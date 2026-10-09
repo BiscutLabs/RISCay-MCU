@@ -61,6 +61,27 @@ abstract class ClickPlatform(p: SocParameters, board: SocParameters => BoardCont
   telemetryCommandBridge.in <> fabric.telemetryCommand
   fabric.telemetryReply <> telemetryReplyBridge.out
   dontTouch(telemetryReplyBridge.out)
+  // Click reply acceptance returns the clocked bridge to idle on that edge.
+  // The outstanding command covers reply wait; native guard drainage is clockless.
+  fabric.io.telemetryDraining := !telemetryCommandBridge.in.ready
+  p.lowPower match {
+    case Some(lp) =>
+      val scaler = asyncChild("elapsed_scaler")(d => new ElapsedTicks(
+        Seq(lp.tickMicros, lp.minimumTickMicros, lp.maximumTickMicros), d))
+      scaler.clock := workClock; scaler.io <> fabric.io.elapsedScaling
+    case None =>
+      fabric.io.elapsedScaling.consumed := 0.U; fabric.io.elapsedScaling.valid := false.B
+      fabric.io.elapsedScaling.single := false.B; fabric.io.elapsedScaling.busy := false.B
+      fabric.io.elapsedScaling.elapsed := 0.U.asTypeOf(fabric.io.elapsedScaling.elapsed)
+  }
+  p.adc match {
+    case Some(a) =>
+      val scaler = asyncChild("sample_scaler")(d => new SampleScaler(a.numerator, a.denominator, d))
+      scaler.clock := workClock; scaler.io <> fabric.io.sampleScaling
+    case None =>
+      fabric.io.sampleScaling.busy := false.B; fabric.io.sampleScaling.done := false.B
+      fabric.io.sampleScaling.value := 0.U
+  }
   fabric.io.cpuReset := systemReset
   fabric.io.cpuResetActive := cpuResetActive
   fabric.io.crashCount := crashCount
@@ -71,6 +92,7 @@ abstract class ClickPlatform(p: SocParameters, board: SocParameters => BoardCont
       val gate = withClockAndReset(serviceClock, reset) { Module(new RetainedClock) }
       gate.io.gray := timebase.io.gray; gate.io.consumedGray := fabric.io.consumedGray
       gate.io.canSleep := fabric.io.canSleep; gate.io.activity := fabric.io.activity
+      gate.io.drainDemand := fabric.io.drainDemand
       gate.io.forceRun := cpuResetActive
       workClock := gate.io.clockOut; fabric.io.clockRunning := gate.io.running
       fabric.io.timeGray := gate.io.synchronizedGray

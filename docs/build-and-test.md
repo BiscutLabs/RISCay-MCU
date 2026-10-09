@@ -1,5 +1,96 @@
 # Build and test
 
+## Asynchronous scaling and CRC migration
+
+Item 4 moves elapsed fractional time and ADC rational arithmetic into separate
+native pipelines, with POR-only capture/publication bridges. Four byte stages in
+each Control feedback path precompute CRC candidates; Stored commits accounting
+atomically. The [migration contract](async-soc-migration.md#scalingcrc-scope-and-contract)
+defines the remaining clocked boundaries and timing limits.
+
+A fresh independent review prompted a live-target guard on one-tick observation
+credit. Regression fixes preserve the existing host reply path by keeping CRC
+precomputation in feedback, and preserve sleep opportunities by allowing the
+unchanged seven-edge ordinary drain guard to overlap tracked native maintenance.
+BD telemetry return tracks the existing clocked bridge ACK; Click reply acceptance
+restores bridge idle. Full synchronized demand and falling-edge gating remain.
+The original Groundlark sleep, loader/brownout and firmware assertions are intact.
+
+`AsyncScalingSpec` uses independent wide-integer oracles without a service clock:
+fractional and zero elapsed updates, target/quotient wrap, large denominators,
+backpressure and POR during an actual arithmetic stage or held reply. The existing
+exhaustive 4096-code ADC checks and fractional catch-up oracle remain. Their
+in-flight stimulus now waits for observed native handoff instead of assuming a
+fixed number of service edges. Wrapper tests stop the service clock after handoff,
+check that native arithmetic finishes without premature consumed-time publication,
+and reject stale one-tick observation credit. Repeated real application watchdog
+resets leave these POR-owned calculations intact.
+
+Maximum-cell-delay tests check sample start through complete bridge drainage at
+10 ns, 100 ns and 1 ms service periods, preserving the 16-edge plus 1 us digital
+budget. SPI integration checks first-conversion discard, negative offsets,
+calibration, exactly-once publication and POR. Native Java CRC32 oracles cover
+all-zero/all-one/random images, early/duplicate completion, queued recovery and
+POR inside a byte stage. Sleep tests check stalled publication, accelerated
+maintenance, ordinary activity on the last maintenance edge and reset after
+grace has expired, retaining all seven guard edges.
+
+The final audit tightened watchdog activity evidence to exclude POR pulses and
+require at least two application resets during each elapsed/sample path's pending
+lifetime. The fresh reviewer confirmed the counter separation and unchanged
+oracles. All eight `ScalingSpec` cases pass again in `watchdog-counter-focused.log`,
+with XML and counts under `post-strengthening-reports/` and
+`post-strengthening-summary.json`. This covers busy lifetime, including capture
+and drainage; it does not assert a particular internal arithmetic stage at reset.
+
+On 2026-10-09, `full-regression.log` passes all **145 verification tests across
+nineteen suites** and **two core physical-policy tests**, with no failed, aborted,
+skipped, canceled or pending cases. Evidence is retained under
+`build/scaling-crc-migration/`, including XML snapshots in `verified-reports/` and
+counts in `verification-summary.json`. The working-tree Python run passes **70
+controls** (six belong to the preserved P&R work), and all **eleven pinned SRAM
+assets** verify (`python-feedback.log`, `sram-assets.log`). Focused guard and
+drainage results remain in `guard-export.log` and `registered-drain-focused.log`.
+
+Both production exports pass strict `--soc --vector-coverage --sleep-clock`
+validation, retain the prior item's exact **34-port public ABI**, and contain
+exactly three pinned SRAM macros each. Native Click is checked throughout.
+
+| Variant | Endpoints | Mapping checks | Semantic SHA-256 |
+| --- | ---: | ---: | --- |
+| Four-phase BD | 638 | 538,434,358 | `e199754ebc99e73519f744a20ea86714401900a3e9f3204d990618546be30a76` |
+| Native Click | 517 | 430,199,836 | `d41c5448c6aa4debef40f248340c9e1156be2b40cc9496310af39f2817a3507b` |
+
+Exports are `four-phase-preserved-soc/` and `click-preserved-soc/`; receipts are
+`four-phase-strict-final.log`, `click-strict-final.log`,
+`strict-summary.json` and `public-abi-verified.json`. The larger hierarchy uses a
+3600-second simulation timeout with every mapping and coverage check retained.
+The fresh reviewer found no further actionable issue after the observation and
+gate-drainage fixes.
+
+```powershell
+python tools/sbt.py 'verification/test' 'physical/test'
+python tools/sbt.py 'fourPhaseBd/runMain riscay.bd.EmitFourPhaseSoc build/scaling-crc-migration/four-phase-preserved-soc' 'twoPhaseClick/runMain riscay.click.EmitClickSoc build/scaling-crc-migration/click-preserved-soc'
+python tools/check_export.py build/scaling-crc-migration/four-phase-preserved-soc --library P:/Personal/chisel-async --soc --vector-coverage --sleep-clock --probe-timeout 3600
+python tools/check_export.py build/scaling-crc-migration/click-preserved-soc --library P:/Personal/chisel-async --soc --vector-coverage --sleep-clock --probe-timeout 3600
+```
+
+Earlier failure evidence remains: `initial-focused.log` (constructor signature),
+`stage-signature-focused.log` (old fixed-edge test stimulus),
+`expanded-focused.log` (test bindings plus genuine sleep/host-latency failures),
+`review-fixed-focused.log` (test utility typing), `feedback-crc-focused.log` and
+`boundary-binding-focused.log` (binding/latency iterations),
+`explicit-drain-focused.log` (redundant BD return synchronization), and
+`*-strict-first.log` (optimized-away declared boundary fields). No strict ABI,
+coverage, reset or native-Click check was removed; declared boundaries are retained.
+The `*-strict-preserved.log` attempts reached their 1200-second simulation limit;
+`*-strict-final.log` reruns the same complete probes with a longer time allowance.
+
+No physical timing or power qualification is claimed. The new entire arithmetic
+transforms, feedback paths, capture pulses and crossings need item 10
+characterization. Historical baseline `8637099` P&R remains inapplicable.
+
+
 ## Asynchronous GPIO, events and telemetry migration
 
 Item 3 adds separate native `FourPhaseTelemetry` and `ClickTelemetry` state loops
@@ -507,7 +598,9 @@ crashes while checking that power, lock and supervisor state remain retained.
 `ScalingSpec` exercises both independent implementations and exhaustively
 checks all 4096 ADC codes against independent integer
 division, plus fractional tick accumulation, large missed-tick deltas, counter
-wrap, updates during catch-up and reset during serial calculation.
+wrap, updates during catch-up and POR during native calculation. Clock-stall
+and repeated application-watchdog cases verify publication ordering and retained
+fractions; maximum-delay cases check the sample bridge's full drainage budget.
 
 `SleepSpec` covers both CPUs parked through masked millisecond ticks, timed and
 host wake, finite watchdog-serviced leases, RAM/image-lock retention, runtime

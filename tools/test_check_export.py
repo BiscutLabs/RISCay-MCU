@@ -270,6 +270,47 @@ Child telemetry_command_bridge(.reset(%s)); Child telemetry_reply_bridge(.reset(
         with self.assertRaisesRegex(ValueError, "RESET_OWNER"):
             generated_reset_probe("", bad)
 
+    def test_scaling_roots_arithmetic_and_bridges_must_use_por(self):
+        for name, model in (("elapsed_scaler", "ElapsedTicks"), ("sample_scaler", "SampleScaler")):
+            manifest = copy.deepcopy(self.manifest)
+            child = {"rtl_path": "FourPhaseSoc." + name, "module": model, "children": []}
+            manifest["design"]["children"].append({"id": name, "contract": child})
+            descendants = ("native", "command_bridge", "reply_bridge")
+            for part in descendants:
+                child["children"].append({"id": part, "contract": {
+                    "rtl_path": "FourPhaseSoc." + name + "." + part, "module": "Child", "children": []}})
+            paths = ["core", name] + [name + "." + part for part in descendants]
+            checks = "\n".join(f'if (FourPhaseSoc.{p}.reset !== FourPhaseSoc.reset) $fatal(1, "RESET_BINDING_MISMATCH");' for p in paths)
+            probe = generated_reset_probe('module ContractProbe; task check; begin\n' + checks + '''
+end endtask
+initial begin #1; check; FourPhaseSoc.watchdog=1; #1; check;
+FourPhaseSoc.reset=1; #1; check; $display("SCALING_RESET_PASS"); $finish; end endmodule
+''', manifest)
+            for broken in (None, "core", name, *descendants):
+                with tempfile.TemporaryDirectory(prefix="riscay-scaling-reset-") as folder:
+                    path = Path(folder)
+                    def pin(part):
+                        correct = "systemReset" if part == "core" else "reset"
+                        return ("reset" if part == "core" else "systemReset") if broken == part else correct
+                    rtl = f'''module Child(input reset); endmodule
+module Scaler(input reset,input systemReset);
+Child native(.reset({pin("native")})); Child command_bridge(.reset({pin("command_bridge")}));
+Child reply_bridge(.reset({pin("reply_bridge")})); endmodule
+module FourPhaseSoc;
+reg reset=0, watchdog=0; wire systemReset=reset|watchdog;
+Child core(.reset({pin("core")})); Scaler {name}(.reset({pin(name)}),.systemReset(systemReset)); endmodule
+'''
+                    (path / "test.sv").write_text(rtl + probe)
+                    built = subprocess.run(["iverilog", "-g2012", "-s", "FourPhaseSoc", "-s", "ContractProbe", "-o", "sim.vvp", "test.sv"],
+                                           cwd=path, capture_output=True, text=True, timeout=30)
+                    self.assertEqual(built.returncode, 0, built.stderr)
+                    result = subprocess.run(["vvp", "sim.vvp"], cwd=path, capture_output=True, text=True, timeout=30)
+                    self.assertEqual(result.returncode == 0, broken is None, result.stdout)
+                    self.assertIn("SCALING_RESET_PASS" if broken is None else "RESET_BINDING_MISMATCH", result.stdout)
+            child["module"] = "Unknown"
+            with self.assertRaisesRegex(ValueError, "RESET_OWNER"):
+                generated_reset_probe("", manifest)
+
     def test_packed_coverage_matches_scalar_for_all_four_state_vectors(self):
         # Every 4-bit vector over {0,1,X,Z}; both empty and accumulated coverage.
         manifest = {"design": {"endpoints": [{"rtl_path": "value", "width": 4}], "children": []}}

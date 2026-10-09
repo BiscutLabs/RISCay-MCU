@@ -40,8 +40,11 @@ when no next item has been chosen. Both implementations remain active throughout
   deadline replacement, retained samples and WAIT/lease behavior. Fresh independent
   review fixes, 121 verification cases, two core physical-policy cases, 69 Python
   controls and both strict exports pass. Exact clocked boundaries remain below.
-- [ ] **4. Scaling and CRC.** Independent native sequencing with unchanged arithmetic,
-  fractional time, wrap/catch-up and image-integrity oracles.
+- [x] **4. Scaling and CRC — digitally verified, 2026-10-09.** Independent native
+  elapsed/sample pipelines and CRC feedback stages preserve fractional time,
+  wrap/catch-up and image integrity. Fresh independent review fixes, all 145
+  verification cases, two core physical-policy cases, 70 working-tree Python
+  controls and both strict exports pass. Exact boundaries and evidence are below.
 - [ ] **5. Permanent supervisor.** Independent protocol implementations of continuous
   power supervision; never make Pi bootstrap depend on uploaded firmware or reset
   it with the application watchdog. Preserve disabled-by-default production policy.
@@ -58,9 +61,9 @@ when no next item has been chosen. Both implementations remain active throughout
   decode/data paths, pulse/fork/return timing, reset and CDC bounds, then new P&R
   and extracted validation. Digital passes alone cannot check this item.
 
-The authorized SocFabric, MMIO/loader and GPIO/events/telemetry items are digitally
-verified. Ask the user to choose the next item; scaling/CRC is the next candidate.
-Each requires both implementations, invariant-focused
+The authorized SocFabric, MMIO/loader, GPIO/events/telemetry and scaling/CRC
+items are digitally verified. Ask for the next item before advancing to the
+permanent supervisor. Each item requires both implementations, invariant-focused
 tests and a fresh independent review before it can be checked off.
 
 ## SocFabric handshake and timing contract
@@ -141,8 +144,11 @@ complete. Item 3 passes 121 verification cases across sixteen suites, two core
 physical-policy cases, 69 working-tree Python controls and both strict exports.
 The 28 affected focused cases pass again after preserving the registered export
 boundary. See [item 3 evidence](build-and-test.md#asynchronous-gpio-events-and-telemetry-migration).
-Scaling/CRC, permanent supervisor, SRAM sequencing, I2C, SPI ADC, slow-domain
-housekeeping and physical qualification remain unchecked.
+Item 4 passes all 145 verification cases across nineteen suites, two core
+physical-policy cases, 70 working-tree Python controls and both strict exports.
+See [scaling/CRC evidence](build-and-test.md#asynchronous-scaling-and-crc-migration).
+Permanent supervisor, SRAM sequencing, I2C, SPI ADC, slow-domain housekeeping and
+physical qualification remain unchecked.
 
 ## GPIO/events/telemetry scope and contract
 
@@ -202,8 +208,9 @@ MODE/start reset projection, GPIO/event/timer/peripheral effects, I2C and SRAM
 byte sequencing. Item 3's separate scope above moves GPIO/event/sample state
 behind another native loop. MMIO accesses still cross clocked endpoints. Two explicit,
 POR-only native/clocked bridges connect each Control loop. The Click loop and
-bridges contain no four-phase adapter. CRC is still the shared pure combinational
-function; migrating/qualifying a sequenced scaling/CRC datapath remains item 4.
+bridges contain no four-phase adapter. Item 4 replaces the shared combinational
+CRC word function with separate four-byte native pipelines inside each Control
+feedback loop, with separate candidate and architectural accounting state.
 
 One outstanding command preserves order. SRAM completion, accepted MMIO commit,
 reset recovery, HALT and host/CPU commands have explicit arbitration. Host frames
@@ -237,3 +244,46 @@ timing obligation and marker bypassed its custom checks. Both now fail closed,
 with independent negative controls, actual guard/capture pin comparisons and
 capture-aperture observations. The reviewer found no default-policy handshake
 counterexample. See the review evidence in [build and test](build-and-test.md).
+
+## Scaling/CRC scope and contract
+
+Each design owns its native elapsed and sample datapaths and clocked boundary
+wrappers in `ConstantScaling.scala`. Four elapsed stages consume eight radix-2
+bits apiece; three sample stages consume four bits apiece after input capture.
+Elapsed fraction and target state remain in a seeded native feedback loop.
+Interfaces and payload schemas alone are shared. Click stays native throughout.
+The explicit wrappers capture requests and publish replies; no service clock
+advances the arithmetic. All stages, fractions and both crossings are POR-only.
+
+Consumed time advances only on service publication, with NOW/age/lease effects.
+New targets queue behind outstanding work. Busy covers arithmetic and bridge
+return drainage, including updates that produce zero whole milliseconds. A
+one-tick arithmetic result grants observation credit only if its target still
+matches the synchronized live count. This prevents stale supervisor confirmation
+after delayed publication. SPI framing, first-conversion discard, cadence and
+signed offset/calibration projection remain clocked, as do timer consumers and
+the independent LF timebase/watchdog. Their later checklist items are unchanged.
+
+Four native CRC byte stages precompute a candidate in each Control feedback
+branch. The internal token pairs architectural state with pendingCrc; the public
+reply ABI is unchanged. Host/MMIO replies retain their original path, while the
+next command waits for all four byte stages. Only Stored with an accepted pending
+loader word commits the completed candidate to architectural CRC, received bytes
+and loaderPending together. Intermediate candidates cannot appear in public
+state. Duplicate/early completions with no pending word are inert. Watchdog
+recovery queues behind accepted work; POR aborts it and reinstalls cold state.
+
+Fresh independent review identified stale one-tick observation credit and
+required the live-target guard above. Keep arithmetic, stall, reset, maximum-delay,
+sleep and independent Java CRC oracles. Regression fixes fused the first/last
+elapsed arithmetic steps with preparation/finalization and made maintenance
+return drainage explicit. The unchanged seven-edge ordinary activity/reset guard
+can now count down while tracked native maintenance holds the gate open. BD
+telemetry return uses the bridge's clocked ACK falling edge, which follows its
+synchronized request return; Click reply acceptance already restores bridge idle.
+New commands/outstanding work bridge those handoffs without an idle gap. CRC
+precomputation moved to feedback to keep byte stages out of the immediate host
+reply path. The original sleep and brownout assertions remain intact.
+Digital stage budgets describe entire
+transforms, including the quotient/remainder and CRC logic; no mapped timing or
+physical signoff is implied. Old P&R results remain inapplicable.

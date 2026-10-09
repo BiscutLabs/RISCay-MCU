@@ -72,6 +72,7 @@ class RetainedClock extends Module with InlineInstance {
   val io = IO(new Bundle {
     val gray = Input(UInt(32.W)); val consumedGray = Input(UInt(32.W))
     val canSleep = Input(Bool()); val activity = Input(Bool()); val forceRun = Input(Bool())
+    val drainDemand = Input(Bool())
     val synchronizedGray = Output(UInt(32.W))
     val running = Output(Bool()); val clockOut = Output(Clock())
     val entries = Output(UInt(32.W))
@@ -84,9 +85,13 @@ class RetainedClock extends Module with InlineInstance {
   val demand = io.forceRun || !io.canSleep || io.activity || second =/= io.consumedGray
   val demandFirst = RegNext(demand, true.B)
   val needClock = RegNext(demandFirst, true.B)
-  // Drain bridge/reset and host STOP pipelines before closing the clock gate.
+  // Preserve the seven-edge ordinary bridge/reset/host guard. Its countdown
+  // may overlap explicitly tracked native maintenance; needClock still blocks
+  // shutdown until every maintenance result and bridge return has drained.
+  val drainFirst = RegNext(io.forceRun || io.drainDemand, true.B)
+  val drain = RegNext(drainFirst, true.B)
   val grace = RegInit(7.U(3.W))
-  when(needClock) { grace := 7.U }.elsewhen(grace =/= 0.U) { grace := grace - 1.U }
+  when(drain) { grace := 7.U }.elsewhen(grace =/= 0.U) { grace := grace - 1.U }
   val run = needClock || grace =/= 0.U || reset.asBool
   val enabled = withClock((!clock.asBool).asClock) { RegNext(run, true.B) }
   io.running := enabled

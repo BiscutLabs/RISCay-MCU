@@ -38,6 +38,7 @@ class Watchdog(limit: Int, holdCycles: Int) extends Module with InlineInstance {
   */
 class SpiAdc(p: AdcParameters, autonomous: Boolean = true) extends Module with InlineInstance {
   val io = IO(new Bundle {
+    val scaling = Flipped(new SampleScalingPort)
     val miso = Input(Bool())
     val csN = Output(Bool())
     val sclk = Output(Bool())
@@ -51,16 +52,15 @@ class SpiAdc(p: AdcParameters, autonomous: Boolean = true) extends Module with I
   val bit = RegInit(0.U(5.W))
   val shift = RegInit(0.U(16.W))
   val primed = RegInit(false.B)
-  val scaler = Module(new SampleScaler(p.numerator, p.denominator))
-  scaler.io.start := false.B; scaler.io.raw := shift(11,0)
+  io.scaling.start := false.B; io.scaling.raw := shift(11,0)
   io.csN := !active; io.sclk := sclk
-  io.busy := active || scaler.io.busy; io.done := scaler.io.done
-  io.result.valid := scaler.io.done && primed
-  io.result.bits.value := (scaler.io.value + p.offset.S(32.W).asUInt)(31, 0)
+  io.busy := active || io.scaling.busy; io.done := io.scaling.done
+  io.result.valid := io.scaling.done && primed
+  io.result.bits.value := (io.scaling.value + p.offset.S(32.W).asUInt)(31, 0)
   io.result.bits.valid := true.B
   io.result.bits.calibrated := p.calibrated.B
-  when(scaler.io.done) { primed := true.B }
-  when(!active && !scaler.io.busy) {
+  when(io.scaling.done) { primed := true.B }
+  when(!active && !io.scaling.busy) {
     when(if(autonomous) interval === 0.U else io.start) {
       active := true.B; sclk := false.B; divider := 0.U; bit := 0.U
       interval := (p.intervalCycles - 1).U
@@ -71,7 +71,7 @@ class SpiAdc(p: AdcParameters, autonomous: Boolean = true) extends Module with I
       when(!sclk) { shift := Cat(shift(14, 0), io.miso) }
         .otherwise {
           when(bit === 15.U) {
-            active := false.B; sclk := false.B; scaler.io.start := true.B
+            active := false.B; sclk := false.B; io.scaling.start := true.B
           }.otherwise { bit := bit + 1.U }
         }
     }.otherwise { divider := divider + 1.U }

@@ -217,7 +217,7 @@ def control_background(source: str, manifest: dict, scopes: dict, checks: int):
                    for p in cell.get("ports", [])):
             raise ValueError("CONTROL_PROBE_DRIVER_MISMATCH")
         return cell["rtl_path"] + ".q"
-    state = payload("left_storage" if click else "left", 305)
+    state = payload("left_storage" if click else "left", 337)
     command = payload("right_storage" if click else "right", 379)
     request = top + ".ca_child_request_bridge.data_address"
     now = top + ".fabric_now"
@@ -279,9 +279,9 @@ def control_background(source: str, manifest: dict, scopes: dict, checks: int):
     # All state fields start cold except LOADING/imageLength for WRITE admission.
     state_widths = [3, 1, 1, 1, 8, 32, 32, 32, 32, 32, 32, 1, 32, 24, 4, 32, 6]
     loading = [1, 0, 0, 0, 0, 12] + [0]*11
-    force(state, 305, pack(zip(state_widths, loading)))
+    force(state, 337, pack(zip(state_widths, loading)) << 32)
     force(command, 379, command_value(frame=frame(2, 0, 0xffffffff))); check()
-    force(state, 305, 0)
+    force(state, 337, 0)
     force(command, 379, command_value(frame=frame(8))); check()
     for value in walk(32) + [1000]:
         force(command, 379, command_value(frame=frame(7, value))); check()
@@ -317,6 +317,7 @@ def generated_reset_probe(source: str, manifest: dict) -> str:
     if present and present != telemetry.keys():
         raise ValueError("SOC_PERSISTENT_RESET_INVENTORY")
     persistent.update(telemetry)
+    persistent.update({"elapsed_scaler": "ElapsedTicks", "sample_scaler": "SampleScaler"})
     for child in root["children"]:
         if child.get("id") in persistent and not re.fullmatch(
                 re.escape(persistent[child["id"]]) + r"(?:_[0-9]+)?", child["contract"].get("module", "")):
@@ -487,7 +488,7 @@ def validate_fabric_path(node, timing):
 
 def validate_native_click(manifest):
     """A Click export must remain native throughout its async hierarchy."""
-    if manifest["top"] not in ("ClickSoc", "ClickCore", "ClickFabric", "ClickControl", "ClickTelemetry"):
+    if manifest["top"] not in ("ClickSoc", "ClickCore", "ClickFabric", "ClickControl", "ClickTelemetry", "ClickElapsed", "ClickSample"):
         return
     def nodes(node):
         yield node

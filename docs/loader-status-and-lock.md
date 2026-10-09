@@ -44,6 +44,13 @@ loader admission and a new frame. A pre-reset queued START or stale START reply
 cannot substitute for an explicit restart after recovery. The clocked MODE
 projection retains the specified synchronized-reset observation latency.
 
+Each Control feedback path precomputes the pending word's CRC in four native
+byte stages. The internal candidate is distinct from architectural CRC. A Stored
+command cannot execute until feedback completes; it commits CRC and received
+bytes and clears the pending word atomically. Host/MMIO replies keep their
+original path and latency. Duplicate completion with no pending word is inert;
+application reset cannot erase accepted accounting or partially apply a CRC.
+
 ## Generic measurements and application telemetry
 
 Use the same I2C target for read-only measurements; no additional data pins or

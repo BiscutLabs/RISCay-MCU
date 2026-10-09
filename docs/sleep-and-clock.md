@@ -12,12 +12,17 @@ The always-on source counter increments by exactly one LF tick. Its registered
 Gray encoding therefore changes one bit per increment. At references of 1 kHz or
 more, a divider retains a nominal 1 ms source tick for legacy fixtures. Below
 1 kHz, each oscillator edge is one tick. The service domain synchronizes Gray,
-decodes it, subtracts the previously consumed tick count modulo 2^32, and only
-then converts elapsed ticks to milliseconds. Sub-millisecond remainders carry
-between updates, so frequent wakes cannot round elapsed time away.
-The common case adds one constant and carries a fractional millisecond. Missed
-ticks use a bounded 32-cycle serial quotient/remainder calculation before one
-coalesced update; three parallel multiply/divide/modulo trees are not instantiated.
+decodes it and captures a target for its own native elapsed-time engine. A
+POR-owned state token subtracts the previously processed target modulo 2^32.
+Four native handshake stages consume eight radix-2 bits each, retaining exact
+fractional milliseconds between updates. No multiplier or divider is instantiated.
+A clocked reply boundary publishes one coalesced update and advances consumedGray
+on that same edge; native internal completion alone cannot acknowledge LF work.
+Target changes during arithmetic, publication stalls and return drainage enter
+later transactions. Pending work and bridge drainage inhibit retained sleep.
+One-tick replies grant observation credit only while their target still matches
+the live synchronized count; delayed replies preserve elapsed time but cannot
+pretend missed GPIO observations occurred.
 
 The production nominal quantum is 129354 us. A single tick is bounded for this
 engineering configuration by 83333..200000 us. CPU deadlines, NOW_MS, leases and
@@ -50,6 +55,17 @@ values are supplied; this cadence is an integration configuration, not an approv
 battery policy.
 
 ## Fast-clock shutdown and wake
+
+The work gate retains its two-flop demand synchronization and falling-edge
+update. Ordinary CPU/control, ADC/SRAM, host/GPIO and reset activity reload the
+existing seven-edge grace interval. That interval may expire while explicitly
+tracked elapsed/telemetry maintenance is active; full demand still holds the
+gate open until publication and bridge drainage finish. This avoids extending
+an already safe maintenance interval by another unconditional seven edges.
+BD telemetry ACK return is a clocked bridge output, already qualified by the
+bridge's synchronized request return. Click acceptance returns its reply bridge
+to idle directly. Neither case permits an outstanding effect to disappear during
+a handoff. This is digital integration, not physical clock-gating qualification.
 
 An accepted program/working SRAM transaction keeps the service island awake
 until its byte sequence and completion finish. All three SRAM macros remain

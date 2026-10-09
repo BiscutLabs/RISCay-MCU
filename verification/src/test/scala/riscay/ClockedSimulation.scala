@@ -17,7 +17,7 @@ object ClockedSimulation {
       chipParameters: riscay.soc.LowPowerParameters = riscay.soc.LowPowerParameters(),
       serviceStartupNs: Int = 500, deadlineNs: Long = 100000000L,
       serviceModelHz: Double = 10000000, processTimeoutSeconds: Int = 90,
-      serviceHalfPeriodNs: Int = 50): Path = {
+      serviceHalfPeriodNs: Int = 50, maximumDelaySubtree: Option[String] = None): Path = {
     require(serviceHalfPeriodNs > 0)
     val root = Paths.get("build/soc-tests").toAbsolutePath; Files.createDirectories(root)
     val base = Files.createTempDirectory(root, name)
@@ -37,6 +37,28 @@ object ClockedSimulation {
       try Files.write(file, stream.readAllBytes()) finally stream.close()
       file.toString
     }
+    val maximumDelays = maximumDelaySubtree.toSeq.flatMap { prefix =>
+      nodes(manifest("design")).filter(n => n("rtl_path").str.split('.').exists(_.contains(prefix))).flatMap { n =>
+        val stage=n("timing").arr.find(_("kind").str == "long-hold-bundling-v2")
+        val click=n("timing").arr.find(_("kind").str == "click-bundling-v1")
+        n("primitives").arr.filter(p => p("parameters").obj.contains("DELAY_FS") &&
+          !Set("request_delay","output_delay","request_guard","return_guard","acknowledge_guard","output_guard").contains(p("id").str)).map { p =>
+          val id=p("id").str
+          val bound=click.map(t => t("cells")(if(id == "start_barrier") "fire" else id)).orElse(stage.flatMap { t =>
+            if(id == "data_delay") Some(t("data_delay"))
+            else if(id == "payload") Some(t("latch_delay"))
+            else t("control_delays").obj.get(id)
+          })
+          val maximum=bound.map(_("max_fs").str).getOrElse("10000000") // routing cell 1..10 ns envelope
+          p("rtl_path").str -> maximum
+        }
+      }
+    }
+    require(maximumDelaySubtree.isEmpty || maximumDelays.nonEmpty, "NO_MAXIMUM_DELAY_CELLS")
+    Files.writeString(base.resolve("maximum-delays.json"),ujson.write(ujson.Obj.from(maximumDelays.map { case(k,v) => k -> ujson.Str(v) }),indent=2))
+    val delayOverrides=maximumDelays.map { case(path,delay) =>
+      s"defparam dut.${path.split('.').drop(1).mkString(".")}.DELAY_FS=$delay;"
+    }.mkString("\n")
     val ports = ujson.read(Files.readString(base.resolve("ports.json")))("nodes")(0)("ports").arr.toSeq
     val chipSources = if(onChipOscillator) {
       Seq(riscay.soc.ChipWrapper.write(base,chipParameters).toString,
@@ -56,6 +78,7 @@ wire busSda = !(hostLow || sdaLow);
 always @* sda=busSda;
 ${manifest("top").str}${if(onChipOscillator) "Chip" else ""} dut (${ports.filter(p => !onChipOscillator || !internal(flat(p))).map(p => s".${flat(p)}(${flat(p)})").mkString(",")});
 ${if(onChipOscillator) s"defparam dut.RESET_HOLD_CYCLES = 2;\ndefparam dut.supplyMonitor.SETTLE_NS = 0;\ndefparam dut.oscillator.NOMINAL_HZ = ${1.0e9/(2.0*referenceHalfPeriodNs)};\ndefparam dut.oscillator.STARTUP_NS = 500;\ndefparam dut.serviceOscillator.STARTUP_NS = $serviceStartupNs;\ndefparam dut.serviceOscillator.NOMINAL_HZ = $serviceModelHz;\nassign serviceClock=dut.serviceClock;\nassign watchdogClock=dut.lfClock;\nassign serviceClockEnable=dut.serviceClockEnable;" else ""}
+$delayOverrides
 reg clockEnabled=1;
 reg referenceEnabled=1;
 ${if(onChipOscillator) "" else s"initial begin serviceClock=0; forever begin #$serviceHalfPeriodNs; if(clockEnabled) serviceClock=~serviceClock; end end\ninitial begin watchdogClock=0; forever begin #$referenceHalfPeriodNs; if(referenceEnabled) watchdogClock=~watchdogClock; end end"}

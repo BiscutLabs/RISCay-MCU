@@ -18,7 +18,7 @@ class ControlBackgroundTest(unittest.TestCase):
             children = [{"id": name, "contract": {"primitives": [{"id": "payload",
                 "rtl_path": prefix + ".ca_child_" + name + ".ca_primitive_payload",
                 "ports": [{"name": "q", "width": width, "direction": "output"}]}]}}
-                for name, width in ((left, 305), (right, 379))]
+                for name, width in ((left, 337), (right, 379))]
             manifest = {"top": top, "design": {"children": [{"id": "control", "contract": {
                 "module": "ClickControl" if click else "FourPhaseControl",
                 "children": [{"id": "join", "contract": {"children": children}}]}}]}}
@@ -31,7 +31,7 @@ class ControlBackgroundTest(unittest.TestCase):
                          (f"fabric_hostFrames_first_frame_bytes_{i}", 8) for i in range(33)]
             drivers = [(top + "." + name, width) for name, width in registers] + [
                 (top + ".ca_child_request_bridge.data_address", 32),
-                (prefix + ".ca_child_" + left + ".ca_primitive_payload.q", 305),
+                (prefix + ".ca_child_" + left + ".ca_primitive_payload.q", 337),
                 (prefix + ".ca_child_" + right + ".ca_primitive_payload.q", 379)]
             prelude = f'''module ContractProbe; timeunit 1ns; timeprecision 1ps;
 reg [98:0] ones_0=0, zeros_0=0;
@@ -65,7 +65,7 @@ force {top}.reset = 1'b1; #1;
 module Payload #(parameter W=1); reg [W-1:0] q=0; endmodule
 module Storage #(parameter W=1); Payload #(W) ca_primitive_payload(); endmodule
 module Join;
-Storage #(305) ca_child_{left}(); Storage #(379) ca_child_{right}();
+Storage #(337) ca_child_{left}(); Storage #(379) ca_child_{right}();
 endmodule
 module Control; Join ca_child_join(); endmodule
 module Request; reg [31:0] data_address=0; endmodule
@@ -73,13 +73,13 @@ module {top};
 {declarations}
 Control ca_child_control(); Request ca_child_request_bridge();
 wire [378:0] c=ca_child_control.ca_child_join.ca_child_{right}.ca_primitive_payload.q;
-wire [304:0] s=ca_child_control.ca_child_join.ca_child_{left}.ca_primitive_payload.q;
+wire [336:0] s=ca_child_control.ca_child_join.ca_child_{left}.ca_primitive_payload.q;
 wire host=c[378:376]==0;
 wire [31:0] candidate={{c[144:137],c[136:129],c[128:121],c[120:113]}};
 wire period=host && c[375:370]==5 && c[112:105]==7;
 wire [98:0] expected={{
   ca_child_request_bridge.data_address==4 ? fabric_now : 32'b0,
-  host && c[375:370]==9 && c[112:105]==2 && s[304:302]==1,
+  host && c[375:370]==9 && c[112:105]==2 && s[336:334]==1,
   host && c[375:370]==1 && c[112:105]==8,
   period && candidate==1000,
   period ? candidate : 32'b0,

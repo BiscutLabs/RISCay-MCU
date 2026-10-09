@@ -97,14 +97,13 @@ class FourPhaseServices(p: SocParameters, boardFactory: SocParameters => BoardCo
   val now = RegInit(0.U(32.W))
   val lowerElapsed = Wire(UInt(32.W)); val upperElapsed = Wire(UInt(32.W))
   val observationMs = Wire(UInt(32.W))
+  io.elapsedScaling.target := Cat((0 until 32).reverse.map(i => io.timeGray(31, i).xorR))
+  val scalingBusy = io.elapsedScaling.busy
   val elapsed = if(p.lowPower.nonEmpty) {
-    val lp = p.lowPower.get
-    val scaler = Module(new ElapsedTicks(Seq(lp.tickMicros, lp.minimumTickMicros, lp.maximumTickMicros)))
-    scaler.io.target := Cat((0 until 32).reverse.map(i => io.timeGray(31, i).xorR))
-    io.consumedGray := scaler.io.consumed ^ (scaler.io.consumed >> 1)
-    lowerElapsed := scaler.io.elapsed(1); upperElapsed := scaler.io.elapsed(2)
-    observationMs := Mux(scaler.io.single, lowerElapsed, 0.U)
-    scaler.io.elapsed(0)
+    io.consumedGray := io.elapsedScaling.consumed ^ (io.elapsedScaling.consumed >> 1)
+    lowerElapsed := io.elapsedScaling.elapsed(1); upperElapsed := io.elapsedScaling.elapsed(2)
+    observationMs := Mux(io.elapsedScaling.single, lowerElapsed, 0.U)
+    io.elapsedScaling.elapsed(0)
   } else {
     val divider = RegInit(0.U(log2Ceil(p.serviceHz / 1000).max(1).W))
     val pulse = divider === (p.serviceHz / 1000 - 1).U
@@ -166,8 +165,10 @@ class FourPhaseServices(p: SocParameters, boardFactory: SocParameters => BoardCo
     value >= p.minimumSampleMs.U && value <= p.maximumSampleMs.max(0).U
   when(periodUpdate.valid) { nextPeriod := periodUpdate.bits; periodPending := true.B }
   io.adcCsN := true.B; io.adcSclk := false.B
+  io.sampleScaling.start := false.B; io.sampleScaling.raw := 0.U
   p.adc.foreach { adcParameters =>
     val adc = Module(new SpiAdc(adcParameters, autonomous = p.lowPower.isEmpty)); adc.io.miso := io.adcMiso
+    io.sampleScaling <> adc.io.scaling
     adc.io.start := false.B; adcBusy := adc.io.busy
     if(p.lowPower.nonEmpty) {
       val countdown = RegInit((p.defaultSampleMs - 1).U(32.W))
@@ -250,8 +251,9 @@ class FourPhaseServices(p: SocParameters, boardFactory: SocParameters => BoardCo
   val waitingRead = isRead && fullWord && req.address === (MemoryMap.mmio + 16).U
   val eventWait = waitingRead && (pending & (wakeMask | "h30".U)) === 0.U
   parked := io.request.valid && eventWait
-  io.canSleep := p.lowPower.nonEmpty.B && io.request.valid &&
-    (bootWait || (eventWait && sleepRemaining =/= 0.U)) && !responseValid && !adcBusy && !tick && !memoryBusy && !controlBusy && !telemetryWork
+  val parkedForSleep = p.lowPower.nonEmpty.B && io.request.valid &&
+    (bootWait || (eventWait && sleepRemaining =/= 0.U)) && !responseValid && !adcBusy && !memoryBusy && !controlBusy
+  io.canSleep := parkedForSleep && !scalingBusy && !tick && !telemetryWork
   val nativeMmio = req.address >= MemoryMap.mmio.U && req.address < (MemoryMap.mmio + 76).U &&
     req.operation =/= Operation.Halt.U
   val mmioComplete = io.controlReply.fire && io.controlReply.bits.kind === ControlKind.Mmio.U && mmioCurrent
@@ -331,7 +333,10 @@ class FourPhaseServices(p: SocParameters, boardFactory: SocParameters => BoardCo
 
   val host = withClock(io.frontClock) { Module(new I2cTarget(p.i2cAddress, p.i2cIdleCycles)) }
   host.io.scl := io.scl; host.io.sda := io.sda; io.sdaLow := host.io.pullLow
-  io.activity := host.io.busy || gpioActivity || memoryBusy || controlBusy || telemetryWork
+  io.activity := scalingBusy || host.io.busy || gpioActivity || memoryBusy || controlBusy || telemetryWork
+  // The normal seven-edge guard may drain while native maintenance is busy;
+  // canSleep/activity still keep the gate open until that work actually drains.
+  io.drainDemand := !parkedForSleep || host.io.busy || gpioActivity
   io.hostSelected := host.io.selected; io.hostRejected := host.io.rejected
   val selector = controlState.selector
   private val hostFrames = Module(new ControlMailbox)
@@ -439,7 +444,7 @@ class FourPhaseServices(p: SocParameters, boardFactory: SocParameters => BoardCo
   }
   val capturesPending = telemetryCaptures.map(_.seen).foldLeft(false.B)(_ || _)
   val observationPending = telemetryEvents.orR || telemetryElapsed.orR || capturesPending
-  telemetryWork := telemetryBarrier || observationPending
+  telemetryWork := telemetryBarrier || observationPending || io.telemetryDraining
   telemetryAccepted := io.request.fire && nativeMmio && isWrite && !io.controlReply.bits.memory.error &&
     Seq(8,12,24,28,44,52).map(x => req.address(6,0) === x.U).reduce(_ || _)
   when(telemetryAccepted) {

@@ -30,6 +30,16 @@ object ControlState {
     _.loaderPending -> false.B, _.loaderWord -> 0.U, _.selector -> 0.U,
     _.sampleIndex -> 0.U, _.sampleValue -> 0.U, _.appIndex -> 0.U)
 }
+/** Internal feedback token. The speculative CRC never appears in the public
+  * loader state until an accepted Stored command commits it. */
+class ControlToken extends Bundle {
+  val state = new ControlState
+  val pendingCrc = UInt(32.W)
+}
+object ControlToken {
+  def initial: ControlToken = (new ControlToken).Lit(
+    _.state -> ControlState.initial, _.pendingCrc -> "hffffffff".U)
+}
 object ControlKind {
   val Host = 0; val Stored = 1; val ResetApplication = 2; val Halt = 3; val Mmio = 4; val MmioCommit = 5
 }

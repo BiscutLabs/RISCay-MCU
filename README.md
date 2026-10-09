@@ -46,16 +46,17 @@ telemetry remain readable when locked. See the
 [host status, telemetry and lock contract](docs/loader-status-and-lock.md).
 
 **Status: asynchronous SoC migration in progress.** Each design owns a separate
-SoC implementation. SocFabric, MMIO/loader and the scoped GPIO/events/telemetry
-item are digitally verified.
+SoC implementation. SocFabric, MMIO/loader, GPIO/events/telemetry and scaling/CRC
+are digitally verified. Separate native pipelines now own fractional elapsed-time
+and ADC arithmetic, with CRC byte stages in each Control feedback loop.
 Native fabrics route ROM and static access faults without a
 service clock; stateful accesses use explicit endpoint bridges. Separate native
 Control modules own loader state and MMIO validation/producer selectors.
 Separate native Telemetry loops now own software GPIO/application words, pending
 flags and host sample records; both variants pass regressions and strict exports. Clocked
 ingress, snapshots, reset projections, GPIO sampling, timer/lease/watchdog logic,
-the supervisor's safety sample view, scaling, SRAM byte sequencing, I2C and SPI
-ADC remain explicit. The independent LF timebase/watchdog remains
+the supervisor's safety sample view, scaling request/publication boundaries,
+SRAM byte sequencing, I2C and SPI ADC remain explicit. The independent LF timebase/watchdog remains
 necessary. See the [migration checklist](docs/async-soc-migration.md). A permanent
 Groundlark controller supervises power before upload and during application
 stalls. Its default policy is disabled until qualified battery settings are

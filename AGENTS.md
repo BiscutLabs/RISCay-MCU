@@ -17,12 +17,19 @@
   obtain a fresh independent agent review, address its findings, rerun affected
   checks, update its evidence/contracts, commit and push. Repeat this review loop
   for every item. Continue to the next item when the user has authorized it;
-  otherwise ask. GPIO/events/telemetry is the latest digitally verified item;
-  obtain the user's next choice before advancing beyond it.
+  otherwise ask. Scaling/CRC is the latest digitally verified item. Obtain
+  the user's next choice before advancing to the permanent supervisor.
   Follow `docs/soc-contract.md` for ABI/reset scope. Run AsyncFabricSpec,
   AsyncControlSpec, ControlResetSpec, AsyncTelemetrySpec, TelemetrySpec and both
   service implementations' FabricSpec/ScalingSpec plus affected regressions;
-  keep strict SoC exports valid. A copied clocked module is not migrated to async.
+  keep strict SoC exports valid. Run AsyncScalingSpec and ScalingSleepSpec after
+  arithmetic changes; preserve exhaustive sample and independent CRC oracles.
+  ConsumedGray advances on service publication, never internal native completion.
+  Keep stale single-tick replies from granting supervisor observation credit;
+  scaling work and bridge drainage inhibit sleep. Keep the seven-edge ordinary
+  drain guard and full synchronized gate demand; grace may overlap tracked native
+  maintenance. Run guard handoff and ADC discard/offset/calibration checks.
+  A copied clocked module is not migrated to async.
   Native Control state and its command/reply bridges are POR-only. Keep accepted
   MMIO commits and SRAM accounting across watchdog reset; cancel unaccepted work.
   Preserve queued host reset/busy context, including simultaneous admission.

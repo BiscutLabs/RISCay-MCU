@@ -1,11 +1,14 @@
 // SPDX-License-Identifier: Apache-2.0
 package riscay.bd
 
-import riscay.soc._
-
 import chisel3._
 import chisel3.util._
-import chisel3.util.experimental.InlineInstance
+import chiselasync.bundled._
+import chiselasync.clocked._
+import chiselasync.core.{AsyncModule, ResetDomain}
+import chiselasync.metadata.{BundledTiming, ClickTiming, ModelTime}
+import chiselasync.protocol.FourPhase
+import riscay.soc._
 
 object ConstantScaling {
   // One radix-2 step in mixed quotient/remainder form. Bounds permit at most
@@ -19,66 +22,155 @@ object ConstantScaling {
   }
 }
 
-/** Three exact fractional accumulators. One new tick takes one edge; missed
-  * ticks use a bounded 32-edge binary walk, then publish one coalesced update.
+
+/** Clockless fractional time. Four native stages each consume eight radix-2
+  * bits. The retained state token serializes targets, including count wrap.
+  * Simulation data budgets cover complete transforms; physical closure is separate.
   */
-class ElapsedTicks(micros: Seq[Int]) extends Module with InlineInstance {
-  val io = IO(new Bundle {
-    val target = Input(UInt(32.W)); val consumed = Output(UInt(32.W))
-    val valid = Output(Bool()); val single = Output(Bool()); val busy = Output(Bool())
-    val elapsed = Output(Vec(micros.size, UInt(32.W)))
-  })
-  val consumed = RegInit(0.U(32.W)); io.consumed := consumed
-  val fraction = RegInit(VecInit(Seq.fill(micros.size)(0.U(10.W))))
-  val busy = RegInit(false.B); val bits = Reg(UInt(32.W)); val left = Reg(UInt(5.W))
-  val target = Reg(UInt(32.W))
-  val quotients = Reg(Vec(micros.size, UInt(32.W)))
-  val remainders = Reg(Vec(micros.size, UInt(10.W)))
-  val delta = io.target - consumed
-  io.busy := busy || delta =/= 0.U
-  io.valid := false.B; io.single := false.B; io.elapsed := 0.U.asTypeOf(io.elapsed)
-  when(!busy && delta =/= 0.U) {
-    when(delta === 1.U) {
-      io.valid := true.B; io.single := true.B; consumed := io.target
-      for((us,i) <- micros.zipWithIndex) {
-        val next = fraction(i) +& (us % 1000).U
-        val carry = next >= 1000.U
-        fraction(i) := Mux(carry, next - 1000.U, next)
-        io.elapsed(i) := (us / 1000).U +& carry
+class FourPhaseElapsed(micros: Seq[Int], domain: ResetDomain) extends AsyncModule(domain) {
+  require(micros.nonEmpty && micros.forall(_ > 0))
+  private val lanes = micros.size
+  val command = fourPhaseInput("command", UInt(32.W))
+  val reply = fourPhaseOutput("reply", new ElapsedResult(lanes))
+
+  private val timing = BundledTiming.Simulation
+  private val cell = ModelTime.ps(1000)
+  private val state = asyncChild("state")(d => new FourPhaseFifo(new ElapsedState(lanes), 1, timing, Seq(0.U.asTypeOf(new ElapsedState(lanes))), cell, d))
+  private val join = asyncChild("join")(d => new FourPhaseJoin(new ElapsedState(lanes), UInt(32.W), timing, cell, d))
+  private val prepare = asyncChild("prepare")(d => new FourPhaseStage(new Joined(new ElapsedState(lanes), UInt(32.W)),
+    new ElapsedWork(lanes), (x: Joined[ElapsedState, UInt]) => {
+      val w = WireDefault(0.U.asTypeOf(new ElapsedWork(lanes)))
+      val delta = x.right - x.left.consumed
+      w.state := x.left; w.target := x.right; w.delta := delta
+      for((us,lane) <- micros.zipWithIndex) {
+        var q = 0.U(32.W); var r = 0.U(10.W)
+        for(bit <- 31 to 24 by -1) {
+          val next = ConstantScaling.step(q, r, delta(bit), us, 1000)
+          q = next._1; r = next._2(9,0)
+        }
+        w.quotient(lane) := q; w.remainder(lane) := r
       }
-    }.otherwise {
-      busy := true.B; bits := delta; left := 31.U; target := io.target
-      quotients.foreach(_ := 0.U); remainders.foreach(_ := 0.U)
-    }
+      w
+    }, timing, d))
+  private val steps = (1 until 3).map { group =>
+    asyncChild(s"radix_$group")(d => new FourPhaseStage(new ElapsedWork(lanes), new ElapsedWork(lanes),
+      (x: ElapsedWork) => {
+        val w = WireDefault(x)
+        for((us, lane) <- micros.zipWithIndex) {
+          var q = x.quotient(lane); var r = x.remainder(lane)
+          for(bit <- (31 - group * 8) to (24 - group * 8) by -1) {
+            val next = ConstantScaling.step(q, r, x.delta(bit), us, 1000)
+            q = next._1; r = next._2(9,0)
+          }
+          w.quotient(lane) := q; w.remainder(lane) := r
+        }
+        w
+      }, timing, d))
   }
-  when(busy) {
-    bits := bits << 1; left := left - 1.U
-    for((us,i) <- micros.zipWithIndex) {
-      val (q,r) = ConstantScaling.step(quotients(i), remainders(i), bits(31), us, 1000)
-      quotients(i) := q; remainders(i) := r
-      when(left === 0.U) {
-        val sum = r +& fraction(i); val carry = sum >= 1000.U
-        fraction(i) := Mux(carry, sum - 1000.U, sum)
-        io.elapsed(i) := q + carry
+  private val finish = asyncChild("finish")(d => new FourPhaseStage(new ElapsedWork(lanes), new ElapsedResult(lanes),
+    (x: ElapsedWork) => {
+      val r = Wire(new ElapsedResult(lanes)); r.state := x.state
+      r.state.consumed := x.target; r.single := x.delta === 1.U
+      for((us,lane) <- micros.zipWithIndex) {
+        var q = x.quotient(lane); var rem = x.remainder(lane)
+        for(bit <- 7 to 0 by -1) {
+          val next = ConstantScaling.step(q, rem, x.delta(bit), us, 1000)
+          q = next._1; rem = next._2(9,0)
+        }
+        val sum = rem +& x.state.fraction(lane); val carry = sum >= 1000.U
+        r.state.fraction(lane) := Mux(carry, sum - 1000.U, sum)
+        r.elapsed(lane) := q + carry
       }
-    }
-    when(left === 0.U) { busy := false.B; io.valid := true.B; consumed := target }
-  }
+      r
+    }, timing, d))
+  private val fork = asyncChild("fork")(d => new FourPhaseFork(new ElapsedResult(lanes), 2, cell, d))
+  dontTouch(fork.out(0))
+
+  FourPhase.connect(join.left, state.out); FourPhase.connect(join.right, command)
+  FourPhase.connect(prepare.in, join.out)
+  FourPhase.connect(steps.head.in, prepare.out)
+  steps.sliding(2).foreach { pair => FourPhase.connect(pair(1).in, pair(0).out) }
+  FourPhase.connect(finish.in, steps.last.out); FourPhase.connect(fork.in, finish.out)
+  state.in.bits := fork.out(0).bits.state; state.in.req := fork.out(0).req; fork.out(0).ack := state.in.ack
+  FourPhase.connect(reply, fork.out(1))
 }
 
-/** Exact constant rational scaling without a combinational multiply/divide. */
-class SampleScaler(numerator: Int, denominator: Int) extends Module with InlineInstance {
-  val io = IO(new Bundle {
-    val start = Input(Bool()); val raw = Input(UInt(12.W))
-    val busy = Output(Bool()); val done = Output(Bool()); val value = Output(UInt(32.W))
-  })
-  val active = RegInit(false.B); val raw = Reg(UInt(12.W)); val left = Reg(UInt(4.W))
-  val quotient = Reg(UInt(32.W)); val remainder = Reg(UInt(log2Ceil(denominator).max(1).W))
-  val (q,r) = ConstantScaling.step(quotient, remainder, raw(11), numerator, denominator)
-  io.busy := active; io.done := active && left === 0.U; io.value := q
-  when(io.start && !active) { active := true.B; raw := io.raw; left := 11.U; quotient := 0.U; remainder := 0.U }
-  when(active) {
-    raw := raw << 1; left := left - 1.U; quotient := q; remainder := r
-    when(left === 0.U) { active := false.B }
+/** Three clockless four-bit rational transforms; no multiplier or divider. */
+class FourPhaseSample(numerator: Int, denominator: Int, domain: ResetDomain) extends AsyncModule(domain) {
+  require(numerator > 0 && denominator > 0)
+  private val width = log2Ceil(denominator).max(1)
+  private val timing = BundledTiming.Simulation
+  private val cell = ModelTime.ps(1000)
+  val command = fourPhaseInput("command", UInt(12.W))
+  val reply = fourPhaseOutput("reply", UInt(32.W))
+  private val prepare = asyncChild("prepare")(d => new FourPhaseStage(UInt(12.W), new SampleWork(width),
+    (raw: UInt) => { val w = WireDefault(0.U.asTypeOf(new SampleWork(width))); w.raw := raw; w }, timing, d))
+  private val steps = (0 until 3).map { group =>
+    asyncChild(s"radix_$group")(d => new FourPhaseStage(new SampleWork(width), new SampleWork(width), (x: SampleWork) => {
+      val w = WireDefault(x); var q = x.quotient; var r = x.remainder
+      for(bit <- (11 - group * 4) to (8 - group * 4) by -1) {
+        val next = ConstantScaling.step(q, r, x.raw(bit), numerator, denominator)
+        q = next._1; r = next._2(width-1,0)
+      }
+      w.quotient := q; w.remainder := r; w
+    }, timing, d))
   }
+  FourPhase.connect(prepare.in, command); FourPhase.connect(steps.head.in, prepare.out)
+  steps.sliding(2).foreach { pair => FourPhase.connect(pair(1).in, pair(0).out) }
+  dontTouch(steps.last.out) // Preserve the complete registered native boundary.
+  reply.bits := steps.last.out.bits.quotient; reply.req := steps.last.out.req; steps.last.out.ack := reply.ack
+}
+
+/** POR-only clocked capture/publication boundary, not an arithmetic machine.
+  * Consumed advances on the same edge as time/age publication. Keep the source
+  * running through request and response bridge drainage, even with zero elapsed.
+  */
+class ElapsedTicks(micros: Seq[Int], domain: ResetDomain) extends ClockedBridge(domain, 2) {
+  val io = IO(new ElapsedScalingPort(micros.size))
+  dontTouch(io) // Profiles may ignore observation flags or duplicate elapsed lanes.
+  val native = asyncChild("native")(d => new FourPhaseElapsed(micros, d))
+  private val commandBridge = asyncChild("command_bridge")(d => new DecoupledToFourPhase(UInt(32.W), 2, d))
+  private val replyBridge = asyncChild("reply_bridge")(d => new FourPhaseToDecoupled(new ElapsedResult(micros.size), 2, d))
+  commandBridge.clock := clock; replyBridge.clock := clock
+  FourPhase.connect(native.command, commandBridge.out); FourPhase.connect(replyBridge.in, native.reply)
+
+  private val returned = synchronizedControl(!replyBridge.in.req && !replyBridge.in.ack)
+  withClockAndReset(clock, localReset) {
+    val active = RegInit(false.B); val consumed = RegInit(0.U(32.W))
+    commandBridge.in.bits := io.target
+    commandBridge.in.valid := !active && returned && io.target =/= consumed
+    when(commandBridge.in.fire) { active := true.B }
+    replyBridge.out.ready := active
+    when(replyBridge.out.fire) { active := false.B; consumed := replyBridge.out.bits.state.consumed }
+    io.consumed := consumed; io.valid := replyBridge.out.fire
+    // Observation credit requires the live target to still match this reply.
+    // Arithmetic for a once-single tick is retained even if newer ticks queued.
+    io.single := io.valid && replyBridge.out.bits.single && replyBridge.out.bits.state.consumed === io.target
+    io.elapsed := Mux(io.valid, replyBridge.out.bits.elapsed, 0.U.asTypeOf(io.elapsed))
+    io.busy := active || !returned || !commandBridge.in.ready || io.target =/= consumed
+  }
+  dontTouch(replyBridge.out)
+  contract.endpoint("reset", reset)
+}
+
+/** Capture each SPI result once; retain busy through native publication/drainage. */
+class SampleScaler(numerator: Int, denominator: Int, domain: ResetDomain) extends ClockedBridge(domain, 2) {
+  val io = IO(new SampleScalingPort)
+  val native = asyncChild("native")(d => new FourPhaseSample(numerator, denominator, d))
+  private val commandBridge = asyncChild("command_bridge")(d => new DecoupledToFourPhase(UInt(12.W), 2, d))
+  private val replyBridge = asyncChild("reply_bridge")(d => new FourPhaseToDecoupled(UInt(32.W), 2, d))
+  commandBridge.clock := clock; replyBridge.clock := clock
+  FourPhase.connect(native.command, commandBridge.out); FourPhase.connect(replyBridge.in, native.reply)
+  private val returned = synchronizedControl(!replyBridge.in.req && !replyBridge.in.ack)
+  withClockAndReset(clock, localReset) {
+    val active = RegInit(false.B); val pending = RegInit(false.B); val raw = RegInit(0.U(12.W))
+    when(io.start && !active) { active := true.B; pending := true.B; raw := io.raw }
+    commandBridge.in.valid := pending; commandBridge.in.bits := raw
+    when(commandBridge.in.fire) { pending := false.B }
+    replyBridge.out.ready := active
+    when(replyBridge.out.fire) { active := false.B }
+    io.done := replyBridge.out.fire; io.value := replyBridge.out.bits
+    io.busy := active || !returned || !commandBridge.in.ready
+  }
+  contract.endpoint("reset", reset)
 }
