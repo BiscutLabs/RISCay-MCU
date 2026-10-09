@@ -1,5 +1,72 @@
 # Build and test
 
+## Asynchronous GPIO, events and telemetry migration
+
+Item 3 adds separate native `FourPhaseTelemetry` and `ClickTelemetry` state loops
+for software GPIO/application words, pending flags and host sample records.
+Clocked ingress compacts publications without losing attempt counts, latest
+status, last successful value or elapsed age. The clocked permanent supervisor's
+safety view consumes the same publications; it remains item 5. See the
+[exact scope and contract](async-soc-migration.md#gpioeventstelemetry-scope-and-contract).
+
+A fresh independent reviewer caught a host-visible event flag disappearing while
+its Observe command was in flight. Both implementations now retain dispatched
+flags in an application-reset-owned projection until reply. The reviewer also
+requested direct host freshness coverage during publication stalls; those tests
+check both queued and dispatched updates, retained coherent value/sequence,
+advancing age, and fresh-valid suppression while the stale bit is still false.
+
+`AsyncTelemetrySpec` adds four clockless cases: sixteen delay seeds per ordinary
+stream and three POR-abort seeds per variant, with independent expected states.
+`TelemetrySpec` adds ten integration cases with actual native bridges paused:
+accepted-publication reset retention, short raw-reset pulses, stalled host event
+visibility, compacted successes/failures, exact sequence/age accounting, CPU
+progress when every edge ticks, deadline replacement and host freshness.
+Existing test assertions and activity limits are unchanged.
+
+Initial evidence under `build/gpio-telemetry-migration/`: all 37 focused
+AsyncTelemetry/Fabric/Sleep/DeepSleep cases pass (`focused-first.log`), all ten
+integration cases pass (`integration-second.log`), and 69 working-tree Python
+controls pass (`python-second.log`, including six preserved P&R controls).
+All eleven pinned SRAM assets verify. `full-regression.log` passes all **121
+verification tests across sixteen suites** and **two core physical-policy tests**,
+with no failed, aborted, skipped, canceled or pending cases. The XML snapshots
+and counts are in `verified-reports/` and `verification-summary.json`.
+Both refreshed exports retain the preceding MMIO/loader exports' identical
+34-port public ABI (`public-abi-verified.json`). After preserving the registered
+capture boundary, all 28 AsyncTelemetry/Telemetry/Fabric cases pass again in
+`checked-emit-focused.log` (XML in `post-preservation-reports/`). Both production
+exports pass strict `--soc --vector-coverage --sleep-clock` validation. Each has
+exactly three pinned SRAMs; native Click is checked throughout the hierarchy.
+
+| Variant | Endpoints | Mapping checks | Semantic SHA-256 |
+| --- | ---: | ---: | --- |
+| Four-phase BD | 397 | 230,090,084 | `dce56e1ebe70d6fbf790c1891037e7272f709f8a05d954930a33bc5e71f293cf` |
+| Native Click | 312 | 175,825,104 | `4a84ce3b4c4193fb25e6ddbc49042e8418ceee386758c73ed4bfb55cb8726a75` |
+
+Exports are `four-phase-checked-soc/` and `click-checked-soc/`; receipts are
+`four-phase-strict-checked.log`, `click-strict-checked.log` and `strict-summary.json`
+in the same evidence directory. The fresh review's final pass found no remaining
+RTL issue and corrected one outdated contract sentence. All mapping comparisons,
+activity requirements and original regression expectations remain intact.
+
+```powershell
+python tools/sbt.py 'verification/test' 'physical/test'
+python tools/sbt.py 'fourPhaseBd/runMain riscay.bd.EmitFourPhaseSoc build/gpio-telemetry-migration/four-phase-checked-soc' 'twoPhaseClick/runMain riscay.click.EmitClickSoc build/gpio-telemetry-migration/click-checked-soc'
+python tools/check_export.py build/gpio-telemetry-migration/four-phase-checked-soc --library P:/Personal/chisel-async --soc --vector-coverage --sleep-clock
+python tools/check_export.py build/gpio-telemetry-migration/click-checked-soc --library P:/Personal/chisel-async --soc --vector-coverage --sleep-clock
+```
+
+Retained failure evidence includes the initial elaboration cycle, empty-vector
+schema rejection, test-fixture source-info syntax error, and strict port mismatch
+for a profile-constant acquisition calibration field. Native channel schemas
+omit empty vectors and preserve the complete registered capture boundary.
+The export adapter checks each telemetry controller, bridge and descendant uses
+POR, rejects incomplete/wrong-owner inventories, and rejects hidden RTZ logic
+inside standalone ClickTelemetry. Independent Python controls deliberately
+miswire every telemetry reset boundary. These digital checks do not establish
+physical timing qualification or validate old P&R against the new RTL.
+
 ## Asynchronous MMIO and loader migration
 
 Separate `FourPhaseControl` and `ClickControl` state-token loops own loader

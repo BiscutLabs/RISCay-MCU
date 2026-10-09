@@ -17,9 +17,10 @@
   obtain a fresh independent agent review, address its findings, rerun affected
   checks, update its evidence/contracts, commit and push. Repeat this review loop
   for every item. Continue to the next item when the user has authorized it;
-  otherwise ask. Do not advance beyond MMIO/loader without the user's next choice.
+  otherwise ask. GPIO/events/telemetry is the latest digitally verified item;
+  obtain the user's next choice before advancing beyond it.
   Follow `docs/soc-contract.md` for ABI/reset scope. Run AsyncFabricSpec,
-  AsyncControlSpec, ControlResetSpec and both
+  AsyncControlSpec, ControlResetSpec, AsyncTelemetrySpec, TelemetrySpec and both
   service implementations' FabricSpec/ScalingSpec plus affected regressions;
   keep strict SoC exports valid. A copied clocked module is not migrated to async.
   Native Control state and its command/reply bridges are POR-only. Keep accepted
@@ -27,6 +28,11 @@
   Preserve queued host reset/busy context, including simultaneous admission.
   Clocked ingress/arbitration, status projection and peripheral effects remain
   explicit boundaries until their checklist items are implemented and verified.
+  Native Telemetry and its bridges are POR-only. Preserve acquisition ingress
+  across application reset; immediately reset application GPIO/event projections
+  and suppress stale replies. Never drop dispatched events from host visibility.
+  Keep the supervisor's clocked safety sample view fed by the same publication
+  stream until its own migration. Include queued elapsed time in host freshness.
 - Retained sleep and programmable sampling are in scope. Follow
   `docs/sleep-and-clock.md`; run SleepSpec, DeepSleepSpec and oscillator-model tests as well.
   Preserve the cold-boot policy, programming lock and watchdog fault coverage.

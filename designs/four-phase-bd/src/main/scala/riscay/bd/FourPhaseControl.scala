@@ -12,7 +12,7 @@ import riscay.soc._
 
 /** POR-owned native state token. Application reset is a serialized command;
   * accepted SRAM completion is accounted independently of application lifetime.
-  * Peripheral event/GPIO effects remain explicit clocked endpoint operations.
+  * Peripheral commits route through explicit endpoint boundaries.
   */
 class FourPhaseControl(p: SocParameters, domain: ResetDomain) extends AsyncModule(domain) {
   val command = fourPhaseInput("command", new ControlCommand)

@@ -10,7 +10,7 @@ when no next item has been chosen. Both implementations remain active throughout
 
 - Four-phase bundled-data implementation: `designs/four-phase-bd/src/main/scala/riscay/bd/`.
 - Native two-phase Click implementation: `designs/two-phase-click/src/main/scala/riscay/click/`.
-- Each owns its Fabric, Services, Platform, ClockedPeripherals, ConstantScaling,
+- Each owns its Fabric, Control, Telemetry, Services, Platform, ClockedPeripherals, ConstantScaling,
   I2cTarget, SleepTiming and SramBank code. Copying the former service island into
   these directories establishes ownership; it does not migrate its state machines.
 - Share port schemas, parameter/ISA definitions, fixed macro models and verification
@@ -35,8 +35,11 @@ when no next item has been chosen. Both implementations remain active throughout
   Implementation and fresh independent review fixes pass the final 107-case
   verification run, two core physical-policy tests, Python controls and both
   strict exports. See the exact scope below and the linked evidence.
-- [ ] **3. GPIO, events and telemetry.** Preserve board ownership, coherent snapshots,
-  set-wins event arbitration, deadline replacement and WAIT/lease semantics.
+- [x] **3. GPIO, events and telemetry - digitally verified, 2026-10-08.** Separate
+  native state loops preserve board ownership, coherent snapshots, set-wins events,
+  deadline replacement, retained samples and WAIT/lease behavior. Fresh independent
+  review fixes, 121 verification cases, two core physical-policy cases, 69 Python
+  controls and both strict exports pass. Exact clocked boundaries remain below.
 - [ ] **4. Scaling and CRC.** Independent native sequencing with unchanged arithmetic,
   fractional time, wrap/catch-up and image-integrity oracles.
 - [ ] **5. Permanent supervisor.** Independent protocol implementations of continuous
@@ -55,8 +58,8 @@ when no next item has been chosen. Both implementations remain active throughout
   decode/data paths, pulse/fork/return timing, reset and CDC bounds, then new P&R
   and extracted validation. Digital passes alone cannot check this item.
 
-The authorized SocFabric and MMIO/loader items are digitally verified. Ask the
-user to choose the next item; later numbered candidates remain proposals.
+The authorized SocFabric, MMIO/loader and GPIO/events/telemetry items are digitally
+verified. Ask the user to choose the next item; scaling/CRC is the next candidate.
 Each requires both implementations, invariant-focused
 tests and a fresh independent review before it can be checked off.
 
@@ -133,9 +136,54 @@ with unchanged 34-port public ABIs and three SRAM macros each. See
 [MMIO/loader evidence](build-and-test.md#asynchronous-mmio-and-loader-migration)
 for logs, hashes, independent review fixes and retained failures.
 
-SocFabric and the scoped MMIO/loader item are digitally complete. GPIO/events/
-telemetry, scaling/CRC, permanent supervisor, SRAM sequencing, I2C, SPI ADC,
-slow-domain housekeeping and physical qualification remain unchecked.
+SocFabric and the scoped MMIO/loader and GPIO/events/telemetry items are digitally
+complete. Item 3 passes 121 verification cases across sixteen suites, two core
+physical-policy cases, 69 working-tree Python controls and both strict exports.
+The 28 affected focused cases pass again after preserving the registered export
+boundary. See [item 3 evidence](build-and-test.md#asynchronous-gpio-events-and-telemetry-migration).
+Scaling/CRC, permanent supervisor, SRAM sequencing, I2C, SPI ADC, slow-domain
+housekeeping and physical qualification remain unchecked.
+
+## GPIO/events/telemetry scope and contract
+
+`FourPhaseTelemetry` and `ClickTelemetry` own separate native seeded state-token
+loops for software GPIO output/enable, firmware-owned application words, pending
+events and host measurement records. Empty channel/application sets omit those
+payload fields; Groundlark does not allocate a duplicate software application bank.
+The native loops and their command/reply bridges reset only on POR. Click uses
+native Click storage, join, transform, fork and endpoint bridges throughout.
+
+Clocked ingress captures GPIO edges, timer/lease/deadline/host events and acquisition
+publications. Event sets coalesce. Accepted clears mask only eligible old bits;
+events observed during MMIO validation or on the acceptance edge win. Deadline
+replacement removes the old expiry from both queued ingress and native pending
+state. A newly armed expiry enters a later batch and survives that replacement.
+Captured and dispatched event sets remain visible to host snapshots until native
+commit, without a temporary disappearing flag. CPU effects serialize against
+outstanding telemetry; background observations cannot starve CPU validation.
+
+Acquisition ingress is POR-owned and compacts an arbitrary stalled batch into
+an attempt count (modulo the ABI's 32-bit sequence), latest validity/calibration,
+last successful value and its elapsed age. Upper elapsed time saturates rather
+than wrapping. Software publication enters this retained ingress on CPU acceptance,
+even if application reset cancels its outstanding CPU completion. Native sample
+records survive application reset. Host snapshots conservatively include queued
+and dispatched elapsed time and suppress fresh-valid for a channel with an
+uncommitted publication. The existing 36-byte I2C snapshot remains coherent.
+
+Application GPIO, application-word and event projections have immediate raw
+application-reset pins. Retained recovery commands clear their native state;
+stale replies cannot restore pre-reset values. Accepted CPU effects wait for
+native completion before replying. Buffered work and recovery inhibit sleep.
+
+The permanent supervisor and its clocked safety sample view remain **item 5**.
+Both safety and native host records consume the same acquisition publication
+stream; supervisor freshness and power decisions do not wait for native telemetry
+backpressure. GPIO synchronizers, NOW/deadline/mask/lease/watchdog timing, ADC
+sequencing, I2C snapshots and peripheral ingress remain explicitly clocked under
+their later items. This migration does not qualify new physical timing: native
+transform data paths, compacted ingress crossings, reset recovery, forks and
+capture pulses still require item 10 characterization.
 
 ## MMIO/loader scope and contract
 
@@ -148,10 +196,11 @@ Its retained staging changes only on a separate commit command created at the
 existing service-clock request acceptance. Abandoned preparation has no effect;
 an accepted producer-staging commit survives watchdog reset and precedes recovery.
 
-The service domain retains bounded host ingress and its busy/reset context,
-command arbitration, CPU acceptance, coherent read/status snapshots, MODE/start
-reset projection, GPIO/event/timer/peripheral effects, I2C and SRAM byte sequencing.
-MMIO accesses therefore still cross clocked endpoints. Two additional explicit,
+At item 2 completion the service domain retained bounded host ingress and its
+busy/reset context, command arbitration, CPU acceptance, coherent snapshots,
+MODE/start reset projection, GPIO/event/timer/peripheral effects, I2C and SRAM
+byte sequencing. Item 3's separate scope above moves GPIO/event/sample state
+behind another native loop. MMIO accesses still cross clocked endpoints. Two explicit,
 POR-only native/clocked bridges connect each Control loop. The Click loop and
 bridges contain no four-phase adapter. CRC is still the shared pure combinational
 function; migrating/qualifying a sequenced scaling/CRC datapath remains item 4.

@@ -48,6 +48,17 @@ abstract class FourPhasePlatform(p: SocParameters, board: SocParameters => Board
   fabric.io.controlReply <> controlReplyBridge.out
   // Preserve the registered bridge ABI even when this profile ignores state fields.
   dontTouch(controlReplyBridge.out)
+  val telemetry = asyncChild("telemetry")(d => new FourPhaseTelemetry(p, fabric.telemetryWords, d))
+  val telemetryCommandBridge = asyncChild("telemetry_command_bridge")(d =>
+    new chiselasync.clocked.DecoupledToFourPhase(new TelemetryCommand(p.config.measurements.size), 2, d))
+  val telemetryReplyBridge = asyncChild("telemetry_reply_bridge")(d =>
+    new chiselasync.clocked.FourPhaseToDecoupled(new TelemetryReply(p.config.measurements.size, fabric.telemetryWords.size), 2, d))
+  chiselasync.protocol.FourPhase.connect(telemetry.command, telemetryCommandBridge.out)
+  chiselasync.protocol.FourPhase.connect(telemetryReplyBridge.in, telemetry.reply)
+  telemetryCommandBridge.clock := workClock; telemetryReplyBridge.clock := workClock
+  telemetryCommandBridge.in <> fabric.telemetryCommand
+  fabric.telemetryReply <> telemetryReplyBridge.out
+  dontTouch(telemetryReplyBridge.out)
   fabric.io.cpuReset := systemReset
   fabric.io.cpuResetActive := cpuResetActive
   fabric.io.crashCount := crashCount

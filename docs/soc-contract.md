@@ -2,10 +2,11 @@
 
 The four-phase and native Click SoCs implement the same RV32E execution, internal
 storage and peripheral behavior. Compressed instructions remain deferred. The
-CPU, transaction routing and Control state loop are asynchronous. Each design
-owns its native loader/MMIO controller and separate clocked ingress, snapshots,
-status/reset projection, SRAM sequencing, host wire endpoint, timer, GPIO and
-measurements. Board policy remains in `profiles/` pending its checklist item.
+CPU, transaction routing, Control and Telemetry state loops are asynchronous.
+Each design owns its native loader/MMIO, software GPIO/application-word, event
+and host measurement state. Ingress, snapshots, reset projections, GPIO sampling,
+timer/lease/watchdog logic, SRAM and wire endpoints remain clocked. Board policy
+and its safety sample view remain in the clocked domain pending item 5.
 ROM/static faults complete in the native fabric. The Control integration passes
 the digital regressions and strict exports documented in the current checklist.
 See the [migration checklist and handshake contract](async-soc-migration.md). Its
@@ -59,8 +60,12 @@ The service-clock `commit` accepts a successful write and creates a retained
 native commit token. Accepted producer staging survives application reset;
 unaccepted preparation has no state effect. A commit precedes reset recovery,
 which clears the application word selector but preserves producer staging.
-Peripheral register effects, WAIT qualification and coherent read snapshots
-remain clocked. This migration does not make every MMIO access clockless.
+Software GPIO/application words, event flags and host sample records commit in
+the separate native Telemetry loop. Accepted publications survive application
+reset; application-owned GPIO/word/event effects and their CPU completions are
+canceled by reset. Timer/peripheral effects, WAIT qualification, observation
+ingress and coherent read snapshots remain clocked. MMIO still crosses those
+explicit boundaries.
 
 The ROM executes `lui x1,0x30000; lw x2,0(x1); jalr x0,x2,0`. The load blocks
 until START, then returns the validated absolute entry address. Control transfer

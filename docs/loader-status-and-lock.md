@@ -198,3 +198,12 @@ Core suites cover the ISA/protocol in isolation. SocSpec, FabricSpec, SleepSpec 
 exercise the implemented host, loader, memory, reset, telemetry, board and retained
 sleep paths; these directed suites are not exhaustive reset/timing or physical
 qualification.
+
+During item 3, native Telemetry state owns host measurement records. Clocked
+POR-owned ingress retains publication attempts, latest status, last good value
+and elapsed age while native replies stall. A pending acquisition suppresses
+fresh-valid until commit; snapshots conservatively account for buffered elapsed
+time. Application reset preserves accepted samples and sequence counts while
+canceling application GPIO/event state. The supervisor's existing clocked safety
+view consumes the same publications and remains independent of this backpressure.
+See the [migration scope](async-soc-migration.md#gpioeventstelemetry-scope-and-contract).

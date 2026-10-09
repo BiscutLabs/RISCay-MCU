@@ -49,6 +49,18 @@ abstract class ClickPlatform(p: SocParameters, board: SocParameters => BoardCont
   fabric.io.controlReply <> controlReplyBridge.out
   // Preserve the registered bridge ABI even when this profile ignores state fields.
   dontTouch(controlReplyBridge.out)
+  val telemetry = asyncChild("telemetry")(d => new ClickTelemetry(p, fabric.telemetryWords, d))
+  val telemetryCommandBridge = asyncChild("telemetry_command_bridge")(d =>
+    new DecoupledToClick(new TelemetryCommand(p.config.measurements.size), d))
+  val telemetryReplyBridge = asyncChild("telemetry_reply_bridge")(d =>
+    new ClickToDecoupled(new TelemetryReply(p.config.measurements.size, fabric.telemetryWords.size), d))
+  telemetry.start := controlStart
+  chiselasync.protocol.TwoPhase.connect(telemetry.command, telemetryCommandBridge.out)
+  chiselasync.protocol.TwoPhase.connect(telemetryReplyBridge.in, telemetry.reply)
+  telemetryCommandBridge.clock := workClock; telemetryReplyBridge.clock := workClock
+  telemetryCommandBridge.in <> fabric.telemetryCommand
+  fabric.telemetryReply <> telemetryReplyBridge.out
+  dontTouch(telemetryReplyBridge.out)
   fabric.io.cpuReset := systemReset
   fabric.io.cpuResetActive := cpuResetActive
   fabric.io.crashCount := crashCount

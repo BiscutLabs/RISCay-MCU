@@ -29,6 +29,9 @@ class FourPhaseServices(p: SocParameters, boardFactory: SocParameters => BoardCo
   val config = p.config
   val board = Module(boardFactory(p))
   require(board.ownedRegisters.subsetOf(config.application.registers.map(_.word).toSet))
+  val telemetryWords = config.application.registers.filterNot(r => board.ownedRegisters(r.word)).map(_.word).toVector
+  val telemetryCommand = IO(Decoupled(new TelemetryCommand(config.measurements.size)))
+  val telemetryReply = IO(Flipped(Decoupled(new TelemetryReply(config.measurements.size, telemetryWords.size))))
   val program = Module(new SramBank(config.programBytes))
   val ram = Module(new SramBank(config.workingRamBytes))
   Seq(program, ram).foreach { memory =>
@@ -58,6 +61,26 @@ class FourPhaseServices(p: SocParameters, boardFactory: SocParameters => BoardCo
   val memoryBusy = program.io.busy || ram.io.busy || loaderPending || cpuMemoryPending
   val rom = VecInit(MemoryMap.boot.map(_.U(32.W)))
   def applicationReg[T <: Data](init: T): T = withReset(io.cpuReset.asAsyncReset) { RegInit(init) }
+  val telemetryOutstanding = RegInit(false.B)
+  val telemetryResetNeeded = applicationReg(true.B)
+  val telemetryRecovery = applicationReg(true.B)
+  val telemetryCommitPending = applicationReg(false.B)
+  val telemetryCpuPending = applicationReg(false.B)
+  val telemetryCommit = Reg(new TelemetryCommand(config.measurements.size))
+  val telemetryBarrier = telemetryOutstanding || telemetryResetNeeded || telemetryRecovery || telemetryCpuPending
+  val telemetryWork = Wire(Bool())
+  val telemetryAccepted = WireDefault(false.B)
+  val telemetryDispatchedEvents = applicationReg(0.U(6.W))
+  val telemetryEvents = applicationReg(0.U(6.W))
+  val telemetryElapsed = RegInit(0.U(32.W))
+  val telemetryCaptures = RegInit(0.U.asTypeOf(Vec(config.measurements.size, new TelemetryCapture)))
+  // Retain the complete registered boundary, including profile-constant flags.
+  telemetryCaptures.foreach(dontTouch(_))
+  val telemetryInFlight = RegInit(0.U.asTypeOf(new TelemetryCommand(config.measurements.size)))
+  val hostSamples = RegInit(TelemetryState.initial(p, telemetryWords.size).samples.getOrElse(0.U.asTypeOf(Vec(0, new Sample))))
+  def saturatingAdd(a: UInt, b: UInt): UInt = {
+    val sum = a +& b; Mux(sum(32), "hffffffff".U(32.W), sum(31,0))
+  }
   // Clock-domain status projection preserves the ABI's third-edge reset
   // observation even when the native reset command is backpressured.
   val mode = RegInit(0.U(3.W))
@@ -120,14 +143,15 @@ class FourPhaseServices(p: SocParameters, boardFactory: SocParameters => BoardCo
   val output = applicationReg(config.application.pins.filter(_.resetHigh).map(x => BigInt(1) << x.index).sum.U(32.W))
   val enable = applicationReg(config.application.pins.filter(_.output).map(x => BigInt(1) << x.index).sum.U(32.W))
   val gpioMask = ((BigInt(1) << config.gpioCount) - 1).U(32.W)
-  val application = config.application.registers.filterNot(r => board.ownedRegisters(r.word))
-    .map(r => r.word -> applicationReg(0.U(32.W))).toMap
+  val application = telemetryWords.map(word => word -> applicationReg(0.U(32.W))).toMap
   val appIndex = controlState.appIndex
   def applicationWord(word: UInt): UInt = MuxLookup(word, "hffffffff".U(32.W))(
     config.application.registers.map(r => r.word.U ->
       (if(board.ownedRegisters(r.word)) board.io.registers(r.word) else application(r.word))))
   def applicationExists(word: UInt): Bool = config.application.registers.map(r => word === r.word.U).foldLeft(false.B)(_ || _)
 
+  // Existing supervisor safety view; item 5 owns its migration. Host records
+  // below come from the native loop, fed by the same publication stream.
   val samples = RegInit(0.U.asTypeOf(Vec(config.measurements.size, new Sample)))
   // Separate reset flag avoids requiring a Bundle literal for the whole vector.
   val sampled = RegInit(0.U.asTypeOf(Vec(config.measurements.size, Bool())))
@@ -191,7 +215,11 @@ class FourPhaseServices(p: SocParameters, boardFactory: SocParameters => BoardCo
   io.gpioOe := ((enable & ~board.io.mask) | (board.io.enables & board.io.mask)) & gpioMask
 
   val deadline = applicationReg(0.U(32.W)); val armed = applicationReg(false.B)
-  val pending = applicationReg(0.U(32.W)); val clear = WireDefault(0.U(32.W))
+  val pendingState = applicationReg(0.U(6.W))
+  // Captured sets are irrevocable and visible while awaiting native commit.
+  // A CPU clear/replacement is serialized against in-flight native work.
+  val pending = pendingState | telemetryEvents | telemetryDispatchedEvents
+  val clear = WireDefault(0.U(32.W))
   val replaceDeadline = WireDefault(false.B)
   val hostWake = WireDefault(false.B)
   val due = armed && !replaceDeadline && (now - deadline).asSInt >= 0.S
@@ -206,7 +234,8 @@ class FourPhaseServices(p: SocParameters, boardFactory: SocParameters => BoardCo
 
   // Replacement consumes only the old deadline, including an expiry on this
   // edge. Other new events still win acknowledgement races.
-  pending := (pending & ~(clear | Mux(replaceDeadline, 2.U, 0.U))) | events
+  val acceptedClear = (clear | Mux(replaceDeadline, 2.U, 0.U))(5,0)
+  telemetryEvents := (Mux(telemetryCommand.fire, 0.U, telemetryEvents) & ~acceptedClear) | events(5,0)
   when(due) { armed := false.B }
 
   val responseValid = applicationReg(false.B); val response = Reg(new MemoryResponse)
@@ -222,12 +251,12 @@ class FourPhaseServices(p: SocParameters, boardFactory: SocParameters => BoardCo
   val eventWait = waitingRead && (pending & (wakeMask | "h30".U)) === 0.U
   parked := io.request.valid && eventWait
   io.canSleep := p.lowPower.nonEmpty.B && io.request.valid &&
-    (bootWait || (eventWait && sleepRemaining =/= 0.U)) && !responseValid && !adcBusy && !tick && !memoryBusy && !controlBusy
+    (bootWait || (eventWait && sleepRemaining =/= 0.U)) && !responseValid && !adcBusy && !tick && !memoryBusy && !controlBusy && !telemetryWork
   val nativeMmio = req.address >= MemoryMap.mmio.U && req.address < (MemoryMap.mmio + 76).U &&
     req.operation =/= Operation.Halt.U
   val mmioComplete = io.controlReply.fire && io.controlReply.bits.kind === ControlKind.Mmio.U && mmioCurrent
   val cpuAvailable = !io.cpuResetActive && !resetRecovery && io.clockRunning && !responseValid && !bootWait && !eventWait &&
-    !memoryBusy && !loaderWrite
+    !memoryBusy && !loaderWrite && !telemetryBarrier
   io.request.ready := cpuAvailable && Mux(nativeMmio, mmioComplete, !controlBusy)
 
   io.commit.valid := io.request.fire; io.commit.bits := req
@@ -270,8 +299,8 @@ class FourPhaseServices(p: SocParameters, boardFactory: SocParameters => BoardCo
           switch(offset) {
             is(8.U) { deadline := req.data; armed := true.B; replaceDeadline := true.B; response.error := false.B }
             is(12.U) { clear := req.data & ~mmioEvents; response.error := false.B }
-            is(24.U) { output := req.data; response.error := false.B }
-            is(28.U) { enable := req.data; response.error := false.B }
+            is(24.U) { response.error := false.B }
+            is(28.U) { response.error := false.B }
             is(32.U) { when(req.data === "h57444f47".U) { kick := true.B; response.error := false.B } }
             is(36.U) { when(req.data < config.measurements.size.U) { response.error := false.B } }
             is(40.U) { response.error := false.B }
@@ -286,7 +315,7 @@ class FourPhaseServices(p: SocParameters, boardFactory: SocParameters => BoardCo
             }
             is(48.U) { when(applicationExists(req.data)) { response.error := false.B } }
             is(52.U) { for((word, value) <- application.toSeq.sortBy(_._1)) {
-              when(appIndex === word.U) { value := req.data; response.error := false.B }
+              when(appIndex === word.U) { response.error := false.B }
             } }
             is(56.U) { when((req.data & "hffffffc0".U) === 0.U) { wakeMask := req.data; response.error := false.B } }
             is(60.U) {
@@ -302,7 +331,7 @@ class FourPhaseServices(p: SocParameters, boardFactory: SocParameters => BoardCo
 
   val host = withClock(io.frontClock) { Module(new I2cTarget(p.i2cAddress, p.i2cIdleCycles)) }
   host.io.scl := io.scl; host.io.sda := io.sda; io.sdaLow := host.io.pullLow
-  io.activity := host.io.busy || gpioActivity || memoryBusy || controlBusy
+  io.activity := host.io.busy || gpioActivity || memoryBusy || controlBusy || telemetryWork
   io.hostSelected := host.io.selected; io.hostRejected := host.io.rejected
   val selector = controlState.selector
   private val hostFrames = Module(new ControlMailbox)
@@ -364,7 +393,8 @@ class FourPhaseServices(p: SocParameters, boardFactory: SocParameters => BoardCo
     }
   }
   // A reply belongs to the single outstanding command, including reset recovery.
-  io.controlReply.ready := controlOutstanding
+  io.controlReply.ready := controlOutstanding &&
+    (io.controlReply.bits.kind =/= ControlKind.Mmio.U || !mmioCurrent || !telemetryBarrier)
   when(io.controlReply.fire) {
     val result = io.controlReply.bits
     controlOutstanding := false.B; loaderControlPending := false.B; controlState := result.state
@@ -387,6 +417,70 @@ class FourPhaseServices(p: SocParameters, boardFactory: SocParameters => BoardCo
   when(resetEdge) {
     resetNeeded := !(io.controlCommand.fire && io.controlCommand.bits.kind === ControlKind.ResetApplication.U)
     resetRecovery := true.B
+  }
+
+  // POR ingress compacts every publication and elapsed interval independently
+  // of native backpressure. The permanent supervisor above consumes this exact
+  // publication stream in its existing clocked safety domain (item 5).
+  val ageStep = Mux(tick, upperElapsed, 0.U)
+  telemetryElapsed := saturatingAdd(Mux(telemetryCommand.fire, 0.U, telemetryElapsed), ageStep)
+  for(i <- config.measurements.indices) {
+    val capture = telemetryCaptures(i)
+    val base = Mux(telemetryCommand.fire, 0.U.asTypeOf(new TelemetryCapture), capture)
+    capture := base
+    capture.tailAge := saturatingAdd(base.tailAge, ageStep)
+    when(publish(i).valid) {
+      capture.seen := true.B; capture.count := base.count + 1.U
+      capture.valid := publish(i).bits.valid; capture.calibrated := publish(i).bits.calibrated
+      when(publish(i).bits.valid) {
+        capture.hadValid := true.B; capture.value := publish(i).bits.value; capture.tailAge := 0.U
+      }
+    }
+  }
+  val capturesPending = telemetryCaptures.map(_.seen).foldLeft(false.B)(_ || _)
+  val observationPending = telemetryEvents.orR || telemetryElapsed.orR || capturesPending
+  telemetryWork := telemetryBarrier || observationPending
+  telemetryAccepted := io.request.fire && nativeMmio && isWrite && !io.controlReply.bits.memory.error &&
+    Seq(8,12,24,28,44,52).map(x => req.address(6,0) === x.U).reduce(_ || _)
+  when(telemetryAccepted) {
+    telemetryCommitPending := true.B; telemetryCpuPending := true.B
+    telemetryCommit := 0.U.asTypeOf(new TelemetryCommand(config.measurements.size))
+    telemetryCommit.kind := TelemetryKind.Commit.U; telemetryCommit.offset := req.address(6,0)
+    telemetryCommit.data := req.data; telemetryCommit.appIndex := appIndex; telemetryCommit.clear := acceptedClear
+    responseValid := false.B
+  }
+  // CPU validation has priority over background batching. In particular a tick
+  // on every service edge cannot prevent forward progress at serviceHz=1000.
+  telemetryCommand.valid := !telemetryOutstanding && !io.cpuResetActive &&
+    (telemetryResetNeeded || telemetryCommitPending ||
+      (observationPending && !mmioCurrent && !mmioLaunch && !io.request.fire))
+  telemetryCommand.bits := 0.U.asTypeOf(new TelemetryCommand(config.measurements.size))
+  when(telemetryCommitPending) { telemetryCommand.bits := telemetryCommit }
+  when(telemetryResetNeeded) { telemetryCommand.bits.kind := TelemetryKind.ResetApplication.U }
+  telemetryCommand.bits.events := telemetryEvents
+  telemetryCommand.bits.elapsedUpper := telemetryElapsed
+  telemetryCommand.bits.captures.foreach(_ := telemetryCaptures)
+  when(telemetryCommand.fire) {
+    telemetryOutstanding := true.B; telemetryInFlight := telemetryCommand.bits
+    telemetryDispatchedEvents := telemetryCommand.bits.events
+    when(telemetryCommand.bits.kind === TelemetryKind.ResetApplication.U) { telemetryResetNeeded := false.B }
+    when(telemetryCommand.bits.kind === TelemetryKind.Commit.U) { telemetryCommitPending := false.B }
+  }
+  telemetryReply.ready := telemetryOutstanding
+  when(telemetryReply.fire) {
+    val result = telemetryReply.bits
+    telemetryDispatchedEvents := 0.U
+    telemetryOutstanding := false.B; telemetryInFlight := 0.U.asTypeOf(new TelemetryCommand(config.measurements.size))
+    result.state.samples.foreach(hostSamples := _)
+    val recovered = result.kind === TelemetryKind.ResetApplication.U && !telemetryResetNeeded && !io.cpuResetActive
+    when(recovered) { telemetryRecovery := false.B }
+    when(!io.cpuResetActive && (!telemetryRecovery || recovered)) {
+      output := result.state.output; enable := result.state.enable; pendingState := result.state.pending
+      for((word,index) <- telemetryWords.zipWithIndex) { application(word) := result.state.application.get(index) }
+      when(result.kind === TelemetryKind.Commit.U && telemetryCpuPending) {
+        telemetryCpuPending := false.B; responseValid := true.B
+      }
+    }
   }
 
   // Snapshot the selected service bank once, then share one word mux across
@@ -426,10 +520,12 @@ class FourPhaseServices(p: SocParameters, boardFactory: SocParameters => BoardCo
     }
     for(i <- config.measurements.indices) {
       when(space === 2.U && instance === i.U) {
-        val s = samples(i)
-        val stale = s.age >= p.freshLimitMs.max(0).U
-        val flags = Cat(0.U(27.W), s.calibrated, s.fault, !sampled(i), stale, s.valid && sampled(i) && !stale)
-        val fields = Seq(s.value, flags, Mux(sampled(i), s.age, "hffffffff".U), s.sequence,
+        val s = hostSamples(i)
+        val age = saturatingAdd(saturatingAdd(s.age, telemetryInFlight.elapsedUpper), telemetryElapsed)
+        val uncommitted = telemetryCaptures(i).seen || telemetryInFlight.captures.get(i).seen
+        val stale = age >= p.freshLimitMs.max(0).U
+        val flags = Cat(0.U(27.W), s.calibrated, s.fault, s.never, stale, s.valid && !s.never && !stale && !uncommitted)
+        val fields = Seq(s.value, flags, Mux(s.never, "hffffffff".U, age), s.sequence,
           config.measurements(i).unit.U, config.measurements(i).scale10.S(32.W).asUInt)
         fields.zipWithIndex.foreach { case (value, j) => bank(j) := value }
       }

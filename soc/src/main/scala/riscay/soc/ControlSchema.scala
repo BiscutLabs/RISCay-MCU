@@ -42,9 +42,9 @@ class ControlCommand extends Bundle {
   val frame = new HostFrame
   val cpuResetActive = Bool(); val programBusy = Bool()
   val memory = new MemoryRequest
-  // Snapshot of an explicitly clocked peripheral endpoint. Loader-owned reads
-  // use native state instead. Effects commit when the clocked endpoint accepts
-  // the reply, retaining event/deadline arbitration in its existing domain.
+  // Snapshot assembled at the clocked peripheral boundary. Loader-owned reads
+  // use native state instead. Accepted effects route either to native Telemetry
+  // commits or to the remaining clocked timer/peripheral owners.
   val peripheralData = UInt(32.W)
   val applicationWritable = Bool()
 }
