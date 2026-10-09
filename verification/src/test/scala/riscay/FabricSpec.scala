@@ -8,7 +8,7 @@ import org.scalatest.funsuite.AnyFunSuite
 import riscay.soc._
 
 /** Direct service-bus fixture complements the full serial-host/CPU SoC tests. */
-class FabricFixture(p: SocParameters) extends SocTop(p, x => new GenericBoard(x)) {
+class FabricFixture(p: SocParameters) extends riscay.bd.FourPhasePlatform(p, x => new GenericBoard(x)) {
   val request = IO(Flipped(Decoupled(new MemoryRequest)))
   val response = IO(Decoupled(new MemoryResponse))
   val timeNow = IO(Output(UInt(32.W))); timeNow := fabric.io.now
@@ -28,6 +28,32 @@ class WaitValidationFixture(p: SocParameters) extends FabricFixture(p) {
 }
 
 class ResetCrossingFixture(p: SocParameters) extends FabricFixture(p) {
+  val heartbeatEnabled = IO(Input(Bool()))
+  val resetObserved = IO(Output(Bool())); resetObserved := cpuResetActive
+  val gatedClock = IO(Output(Clock())); gatedClock := workClock
+  watchdog.io.heartbeat := Mux(heartbeatEnabled, fabric.io.heartbeat, false.B)
+}
+
+class ClickFabricFixture(p: SocParameters) extends riscay.click.ClickPlatform(p, x => new GenericBoard(x)) {
+  val request = IO(Flipped(Decoupled(new MemoryRequest)))
+  val response = IO(Decoupled(new MemoryResponse))
+  val timeNow = IO(Output(UInt(32.W))); timeNow := fabric.io.now
+  fabric.io.request <> request; response <> fabric.io.response
+  trace := 0.U.asTypeOf(new Retirement); traceEvent := false.B
+  contract.clockedChannel("request", request, serviceClock, new Channel(new MemoryRequest, resetDomain), "input")
+  contract.clockedChannel("response", response, serviceClock, new Channel(new MemoryResponse, resetDomain), "output")
+}
+
+class ClickKickFixture(p: SocParameters) extends ClickFabricFixture(p) {
+  val ack = IO(Input(Bool())); val heartbeat = IO(Output(Bool()))
+  fabric.io.watchdogAck := ack; heartbeat := fabric.io.heartbeat
+}
+
+class ClickWaitValidationFixture(p: SocParameters) extends ClickFabricFixture(p) {
+  val sleepEligible = IO(Output(Bool())); sleepEligible := fabric.io.canSleep
+}
+
+class ClickResetCrossingFixture(p: SocParameters) extends ClickFabricFixture(p) {
   val heartbeatEnabled = IO(Input(Bool()))
   val resetObserved = IO(Output(Bool())); resetObserved := cpuResetActive
   val gatedClock = IO(Output(Clock())); gatedClock := workClock
@@ -65,9 +91,15 @@ task write_bus(input [31:0] address, input [31:0] value);
 begin issue(2,address,value,15); answer(0,0,3); end endtask
 reg [31:0] timeValue;
 """
-  test("invalid boot/WAIT read masks fault promptly without parking or consuming events and leases") {
+  for(click <- Seq(false,true)) {
+    def fixture(p: SocParameters): SocTop = if(click) new ClickFabricFixture(p) else new FabricFixture(p)
+    def waitFixture(p: SocParameters): SocTop = if(click) new ClickWaitValidationFixture(p) else new WaitValidationFixture(p)
+    def resetFixture(p: SocParameters): SocTop = if(click) new ClickResetCrossingFixture(p) else new ResetCrossingFixture(p)
+    def kickFixture(p: SocParameters): SocTop = if(click) new ClickKickFixture(p) else new KickFixture(p)
+    val variant = if(click) "click" else "bd"
+  test(s"$variant: invalid boot/WAIT read masks fault promptly without parking or consuming events and leases") {
     val params = SocParameters(config, watchdogCycles=1000000, lowPower=Some(LowPowerParameters()))
-    ClockedSimulation.run(new WaitValidationFixture(params), "wait-validation", """
+    ClockedSimulation.run(waitFixture(params), "wait-validation", """
       // Freeze the timebase before its first edge so a lease cannot age and
       // no periodic event can accidentally release a malformed WAIT.
       referenceEnabled=0;
@@ -104,8 +136,8 @@ end endtask
 """, referenceHalfPeriodNs=10000000)
   }
 
-  test("deadline replacement consumes stale or coincident expiry, preserves GPIO, and arms the next wait") {
-    ClockedSimulation.run(new FabricFixture(SocParameters(config,serviceHz=100000,watchdogCycles=1000000)),
+  test(s"$variant: deadline replacement consumes stale or coincident expiry, preserves GPIO, and arms the next wait") {
+    ClockedSimulation.run(fixture(SocParameters(config,serviceHz=100000,watchdogCycles=1000000)),
       "deadline-replacement","""
       gpioIn=1; #1000;
       write_bus(32'h30000038,2); // Only deadline wakes the blocking read.
@@ -150,10 +182,10 @@ end endtask
       timeValue=response_bits_data; answer(timeValue,0,1);
     """,tasks+"reg [31:0] targetTime;\n")
   }
-  test("watchdog reset data uses two service edges and the retained clock has complete pulses") {
+  test(s"$variant: watchdog reset data uses two service edges and the retained clock has complete pulses") {
     val params=SocParameters(config,watchdogCycles=32,watchdogHoldCycles=2,
       lowPower=Some(LowPowerParameters.gf180Slow.copy(stopServiceClock=false)))
-    ClockedSimulation.run(new ResetCrossingFixture(params),"reset-crossing","""
+    ClockedSimulation.run(resetFixture(params),"reset-crossing","""
       heartbeatEnabled=1; #100000;
       read_words(0,0,8); if(supported !== 1 || snapshot[0+:32] !== 0) $fatal(1,"POR_COUNTED_AS_CRASH");
       for(crashes=1;crashes<=3;crashes=crashes+1) begin
@@ -194,8 +226,8 @@ always @(negedge gatedClock) begin
 end
 """,referenceHalfPeriodNs=17003)
   }
-  test("shared fabric: access errors, byte lanes, backpressure, events, failed/stale samples and interrupted reset") {
-    ClockedSimulation.run(new FabricFixture(SocParameters(config, staleMs=2)), "fabric", """
+  test(s"$variant: clocked services: access errors, byte lanes, backpressure, events, failed/stale samples and interrupted reset") {
+    ClockedSimulation.run(fixture(SocParameters(config, staleMs=2)), "fabric", """
       issue(0,0,0,15); answer(32'h300000b7,0,7);
       issue(2,0,0,15); answer(0,1,2);
       issue(0,32'h20000000,0,15); answer(0,1,2);
@@ -255,18 +287,18 @@ end
       if(programmed || locked) $fatal(1,"RESET_REPLAYED_PARTIAL_UPLOAD");
     """, tasks)
   }
-  test("zero-channel, zero-GPIO profile elaborates and rejects absent resources") {
+  test(s"$variant: zero-channel, zero-GPIO profile elaborates and rejects absent resources") {
     val minimal = config.copy(gpioCount=0, measurements=Vector.empty)
-    ClockedSimulation.run(new FabricFixture(SocParameters(minimal)), "empty-profile", """
+    ClockedSimulation.run(fixture(SocParameters(minimal)), "empty-profile", """
       read_words(0,0,0);
       if(snapshot[160+:32] !== 0 || snapshot[192+:32] !== 0) $fatal(1,"NONEMPTY_CAPACITIES");
       read_words(2,0,0); if(supported !== 0) $fatal(1,"ABSENT_MEASUREMENT");
       issue(2,32'h30000024,0,15); answer(0,1,1);
     """, tasks)
   }
-  test("watchdog kicks queue behind CDC acknowledgement; lease writes cannot substitute for the magic word") {
+  test(s"$variant: watchdog kicks queue behind CDC acknowledgement; lease writes cannot substitute for the magic word") {
     val params=SocParameters(config,watchdogCycles=1000,lowPower=Some(LowPowerParameters.gf180Slow))
-    ClockedSimulation.run(new KickFixture(params),"kick-queue","""
+    ClockedSimulation.run(kickFixture(params),"kick-queue","""
       // Stop reference before its first edge: no automatic bootstrap tick.
       referenceEnabled=0;
       write_bus(32'h3000003c,0);
@@ -286,10 +318,10 @@ end
       if(heartbeat) $fatal(1,"KICK_POR");
     """,tasks,referenceHalfPeriodNs=10000000)
   }
-  test("sparse application words reject holes and share coherent snapshot data across byte boundaries") {
+  test(s"$variant: sparse application words reject holes and share coherent snapshot data across byte boundaries") {
     val sparse=config.copy(application=config.application.copy(registers=Vector(
       HostRegister(0,"FIRST"),HostRegister(1,"NEXT"),HostRegister(17,"MIDDLE"),HostRegister(63,"LAST"))))
-    ClockedSimulation.run(new FabricFixture(SocParameters(sparse)),"sparse-application","""
+    ClockedSimulation.run(fixture(SocParameters(sparse)),"sparse-application","""
       write_bus(32'h30000034,32'h12345678);
       write_bus(32'h30000030,1); write_bus(32'h30000034,32'h02468ace);
       write_bus(32'h30000030,17); write_bus(32'h30000034,32'h89abcdef);
@@ -317,5 +349,6 @@ end
       if(laterWord !== 32'h02468ace) $fatal(1,"TORN_LATER_WORD");
       read_words(128,0,0); if(snapshot[0+:32] !== 32'hffffffff) $fatal(1,"SNAPSHOT_NOT_REFRESHED");
     """,tasks+"reg [7:0] firstByte,secondByte,thirdByte,fourthByte,laterByte; reg [31:0] laterWord; integer byteNo;\n")
+  }
   }
 }

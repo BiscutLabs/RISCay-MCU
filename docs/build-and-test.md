@@ -1,5 +1,90 @@
 # Build and test
 
+## Asynchronous SocFabric migration
+
+The [checklist](async-soc-migration.md) defines the current scope. Separate native
+fabrics handle ROM/static faults without clocks; stateful MMIO/loader and peripheral
+logic is still clocked in each design's Services/Platform files. Historical results
+below apply only to their stated RTL; the previous P&R does not qualify these
+new controllers.
+
+Run one sbt process at a time. On this Windows workstation:
+
+```powershell
+$env:JAVA_HOME='P:\Personal\chisel-async\.tools\jdk21\jdk-21.0.12.1+1'
+$env:CHISEL_FIRTOOL_PATH='P:\Personal\chisel-async\.tools\firtool-1.160.0\firtool-1.160.0\bin'
+python tools/sbt.py 'verification/testOnly riscay.AsyncFabricSpec riscay.FabricSpec riscay.ScalingSpec'
+python tools/sbt.py 'verification/testOnly riscay.SramSpec riscay.SocSpec riscay.SleepSpec riscay.DeepSleepSpec riscay.FirmwareSpec riscay.CoreSpec riscay.NativeRoutingSpec riscay.HostSchemaSpec'
+python -m unittest discover -s tools -p 'test_*.py' -v
+python tools/sram_assets.py --verify-only
+```
+
+`AsyncFabricSpec` uses clockless native ports and automatic handshake/data-hold
+monitors across delay corners and seeded cell variations. Its independent oracle
+checks all boot words, static faults/invalid MMIO widths, alternating local and
+service traffic, endpoint errors, separate response/request return stalls, 2 fs
+source reuse and endpoint latency, payload reuse, reset with a pending endpoint
+or stalled reply, and HALT without a fabricated completion. The Click negative
+control must reject bypassed release guards for capture-drain violation.
+`FabricSpec`, `ScalingSpec` and `SramSpec` each run the same independent oracle
+against both separate implementations.
+
+The export adapter recognizes only the two MCU fabric response-mux path kinds,
+checks their native port schema/storage/owner and retains all library budget,
+marker, mapping and activity checks. Added probes compare the BD mux to reply
+storage and the Click data/capture endpoints to event-register pins. Independent
+negative controls reject wrong owners, protocols, widths, missing/changed guards
+and disconnected pins. A complete Click hierarchy is also checked for RTZ
+channels, four-phase helpers or closing-latch primitives.
+
+On 2026-10-08, **89 distinct verification tests across eleven suites**, plus
+**two core physical-policy tests**, have passing final results with no skipped,
+canceled or pending cases. All **64 Python working-tree controls** pass, including
+five new fabric-export controls and six pre-existing P&R controls preserved
+outside this migration commit. All 11 pinned SRAM assets verify unchanged.
+
+The native fabric stream uses 64 cell-delay seeds per variant, plus independent
+fast-source/endpoint and reset campaigns. FabricSpec has 14 cases, ScalingSpec
+two and SramSpec eight, covering both independent implementations. Both compiler
+firmware workloads pass on both SoCs. The seven inherited BD failures are fixed.
+Host ABI expectations, watchdog/reset, lock, sleep and memory assertions were
+retained. All 34 public top-level port names, widths and directions match the
+prior exports. The service-clock `commit` observation covers endpoint acceptance;
+ROM/static-fault traffic now completes outside that observation boundary.
+
+Fresh exports pass `--soc --vector-coverage --sleep-clock`:
+
+| Variant | Endpoints | Mapping checks | Semantic SHA-256 |
+| --- | ---: | ---: | --- |
+| Four-phase BD | 183 | 29,518,632 | `4e5e1052d28c2403aa2a06fce5f8002fb7c62c3619f285d4283b20fb13d28218` |
+| Native Click | 148 | 5,229,728 | `ec5902e50824ab4fe0862ef59156496bca7f8a5a661223afae210824b2661142` |
+
+Each export retains exactly three pinned SRAM instances. Click's complete async
+hierarchy contains no RTZ channels, four-phase helpers or closing latches.
+Exports are `build/async-fabric-migration/four-phase-final-soc/` and
+`click-verified-soc/`; receipts are `four-phase-strict-final.log` and
+`click-strict-verified.log` in that parent directory.
+
+`verification-summary.json` consolidates individual test results across the
+preserved XML reports. Passing campaigns are `return-ack-regression.log`,
+`focused-expanded.log`, the first five-suite command in `final-regression.log`,
+`click-final-regression.log`, and `verified-focused-emit.log`. Python/asset
+receipts are `python-final.log` and `sram-assets.log`.
+
+Failure evidence remains: inherited `regression.log` (41/48), the earlier lock
+error, focused port-name/handshake failures, initial strict path/scope failures,
+and the later 11 Click elaboration failures in `final-regression.log` from an
+unsized probe alias. That alias has an explicit width in the passing rerun.
+The BD repair retains endpoint acknowledgement through request return and waits
+for both endpoint channels to drain. Click guards cover its composed control
+path; endpoint parity and reply payload now share the capture pulse, avoiding
+a separately gated pulse that could be filtered by cell skew.
+
+This completes **SocFabric's digital migration item**, not the remaining clocked
+service-state items or physical qualification. The physical-policy tests check
+the unchanged core policy; they do not qualify the new fabric controllers.
+No new P&R, extracted timing closure, analog SPICE or power result is claimed.
+
 ## WAIT validation and bounded storage
 
 The 2026-10-08 review fixes validate full-word MMIO accesses before applying
@@ -240,7 +325,8 @@ events arriving during processing and acknowledges only consumed bits.
 Full-capacity compiled-image simulations have a bounded 300-second process
 allowance; other clocked harness tests retain their 90-second default.
 
-`FabricSpec` drives the shared service bus independently of the CPU to check
+`FabricSpec` drives both independent clocked service implementations through
+the common bus schema, independently of the CPU, to check
 response stability under backpressure, exactly-once acceptance, ROM/unmapped
 errors, event/clear races, deadlines, failed/stale samples, interrupted upload,
 reset cancellation and zero-channel/zero-GPIO configurations. Groundlark tests
@@ -254,7 +340,8 @@ Reset cases verify two-flop assertion/release latency against the raw reset,
 immediate application reset, complete gated clock pulses and POR-only crash
 counting. Production-ratio Groundlark cases read counts 1 and 2 after separate
 crashes while checking that power, lock and supervisor state remain retained.
-`ScalingSpec` exhaustively checks all 4096 ADC codes against independent integer
+`ScalingSpec` exercises both independent implementations and exhaustively
+checks all 4096 ADC codes against independent integer
 division, plus fractional tick accumulation, large missed-tick deltas, counter
 wrap, updates during catch-up and reset during serial calculation.
 

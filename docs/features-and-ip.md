@@ -157,9 +157,10 @@ protocol-specific implementations separate:
 
 Both core RTL implementations exist. The shared datapath has no protocol state;
 four-phase uses long-hold composition and Click uses native storage and native
-fork/join routing. Both SoCs integrate the same memories/peripherals and permanent
-supervisor policy through explicit clocked boundaries. Count that common clocked
-island and each protocol's bridges in area/energy comparisons.
+fork/join routing. Each SoC owns its peripheral and SRAM-controller implementation
+behind explicit native endpoint bridges, with the same fixed macros and board
+policy. Native fabric routing is the first migration item; count the remaining
+clocked endpoints, independent timebase/watchdog and bridges in comparisons.
 
 | Candidate | Why it belongs in the comparison | Cost or obligation |
 | --- | --- | --- |
@@ -226,7 +227,7 @@ they are not supplied merely by generating RTL.
    Real Pi behavior, analog accuracy, physical timing and power remain later
    board/silicon qualification gates.
 
-Core, native-routing, host/schema, shared fabric and complete generic/Groundlark
+Core, native-routing, host/schema, both service endpoints and complete generic/Groundlark
 SoC suites are implemented; see [build and test](build-and-test.md). Full ISA,
 exhaustive reset/timing, deployment-firmware and board qualification remain. Core
 tests alone are not whole-chip acceptance.
@@ -249,3 +250,10 @@ chisel-async is Apache-2.0. Preserve attribution when reusing implementation.
 [async-click]: https://github.com/BiscutLabs/chisel-async/blob/468b12eb362f368e0ff25e376ec3a4489de242a3/docs/click.md
 [async-qdi]: https://github.com/BiscutLabs/chisel-async/blob/468b12eb362f368e0ff25e376ec3a4489de242a3/docs/dual-rail.md
 [click-paper]: https://arc.cecs.pdx.edu/wp-content/uploads/2023/04/Peeters_Click_ASYNC2010.pdf
+
+## Asynchronous SoC migration
+
+Follow the [item-by-item checklist](async-soc-migration.md). Each design now owns
+its SoC implementation; shared `soc/` files are schemas, fixed macros and wrapper
+utilities. Native fabric routing is the first item. Clocked endpoint state is
+not considered migrated merely because its source files have been separated.

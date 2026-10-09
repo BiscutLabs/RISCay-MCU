@@ -4,7 +4,11 @@ Required RISCay-MCU implementation using Chisel and chisel-async native Click
 components. The core and complete digital SoC are implemented.
 [ClickSoc.scala](src/main/scala/riscay/click/ClickSoc.scala) uses
 [native toggle/clocked bridges](src/main/scala/riscay/click/ClockBridges.scala),
-with no four-phase adapters. See the [SoC contract](../../docs/soc-contract.md).
+after native `ClickFabric` routing, with no four-phase adapters. ROM/static
+faults are asynchronous; MMIO, loader and peripheral state are still clocked in
+`ClickServices`. This directory owns its Platform, peripheral, scaling, sleep
+and SRAM controller implementations. Follow the
+[migration checklist](../../docs/async-soc-migration.md). See the [SoC contract](../../docs/soc-contract.md).
 
 The core is [ClickCore.scala](src/main/scala/riscay/click/ClickCore.scala), with
 [native fork/join routing](src/main/scala/riscay/click/NativeRouting.scala).

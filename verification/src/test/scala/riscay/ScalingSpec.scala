@@ -5,29 +5,35 @@ import chisel3._
 import org.scalatest.funsuite.AnyFunSuite
 import riscay.soc._
 
-class ScalingFixture extends FabricFixture(SocParameters(McuConfiguration(
+class ScalingFixture(click: Boolean) extends FabricFixture(SocParameters(McuConfiguration(
   8,8,0,Vector.empty,ApplicationProfile(1,1,"scaling",Vector.empty,Vector.empty)))) {
   val target = IO(Input(UInt(32.W)))
   val consumed = IO(Output(UInt(32.W))); val valid = IO(Output(Bool()))
   val single = IO(Output(Bool())); val elapsed = IO(Output(Vec(3,UInt(32.W))))
   val start = IO(Input(Bool())); val raw = IO(Input(UInt(12.W)))
   val done = IO(Output(Vec(3,Bool()))); val values = IO(Output(Vec(3,UInt(32.W))))
-  val ticks = withClockAndReset(serviceClock,reset) { Module(new ElapsedTicks(Seq(129354,83333,200000))) }
-  ticks.io.target := target; consumed := ticks.io.consumed; valid := ticks.io.valid
-  single := ticks.io.single; elapsed := ticks.io.elapsed
+  val ticks = withClockAndReset(serviceClock,reset) {
+    if(click) Module(new riscay.click.ElapsedTicks(Seq(129354,83333,200000))).io
+    else Module(new riscay.bd.ElapsedTicks(Seq(129354,83333,200000))).io
+  }
+  ticks.target := target; consumed := ticks.consumed; valid := ticks.valid
+  single := ticks.single; elapsed := ticks.elapsed
   for(((n,d),i) <- Seq((25300,4095),(1000,4095),(7,1)).zipWithIndex) {
-    val scaler = withClockAndReset(serviceClock,reset) { Module(new SampleScaler(n,d)) }
-    scaler.io.start := start; scaler.io.raw := raw
-    done(i) := scaler.io.done; values(i) := scaler.io.value
+    val scaler = withClockAndReset(serviceClock,reset) {
+      if(click) Module(new riscay.click.SampleScaler(n,d)).io
+      else Module(new riscay.bd.SampleScaler(n,d)).io
+    }
+    scaler.start := start; scaler.raw := raw
+    done(i) := scaler.done; values(i) := scaler.value
   }
 }
 
 class ScalingSpec extends AnyFunSuite {
-  test("fractional elapsed ticks match a wide integer oracle through missed ticks and count wrap; ADC scaling is exhaustive") {
+  for(click <- Seq(false,true)) test(s"${if(click) "click" else "bd"}: fractional elapsed ticks match a wide integer oracle through missed ticks and count wrap; ADC scaling is exhaustive") {
     val random = new scala.util.Random(0x5353414cL)
     val deltas = Seq(1L,1L,17L,0xffffffffL,0x80000000L,1L) ++
       Seq.fill(128)(random.nextInt().toLong & 0xffffffffL) ++ Seq.fill(1000)(1L)
-    ClockedSimulation.run(new ScalingFixture,"constant-scaling",s"""
+    ClockedSimulation.run(new ScalingFixture(click),"constant-scaling",s"""
       ${deltas.map(d => s"advance(32'h${d.toHexString});").mkString("\n")}
       // Target updates during the 32-cycle catch-up must be consumed afterwards.
       @(negedge serviceClock); target=target+100;

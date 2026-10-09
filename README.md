@@ -27,7 +27,8 @@ RAM plus 1 KiB working RAM and a 12-byte boot ROM. Compiler-built RV32E
 [sizing fixtures](firmware/README.md) support that budget, with a 128-byte stack
 reserve and 16-byte guard inside working RAM. Capacities remain build parameters;
 both writable banks use three pinned GF180 1 KiB SRAM macros, with a shared
-byte-sequencing controller implementation. See the [SRAM integration](docs/sram-integration.md) and
+fixed macro model; each variant owns its byte-sequencing controller. See
+[SRAM integration](docs/sram-integration.md) and
 [memory architecture](docs/memory-architecture.md).
 Internal SRAM indices and loader counts are sized from these capacities. Both
 cores use a 171-bit control token and derive pending load fields from the saved
@@ -39,9 +40,13 @@ state. Programming lock lasts until full MCU reset or power loss; status and
 telemetry remain readable when locked. See the
 [host status, telemetry and lock contract](docs/loader-status-and-lock.md).
 
-**Status: complete baseline digital RTL.** Both async RV32E cores connect to the
-same on-chip ROM/RAM and clocked peripheral island: I2C loader/status, GPIO,
-timer/events, measurements, SPI ADC and independent watchdog. A permanent
+**Status: asynchronous SoC migration in progress.** Each design owns a separate
+SoC implementation. The SocFabric item is digitally verified. Native fabrics
+route ROM and static access faults without a
+service clock; stateful accesses use explicit endpoint bridges. Loader/MMIO
+state, timers/events, GPIO, scaling, SRAM controllers, I2C and SPI ADC are still
+clocked in each implementation. The independent LF timebase/watchdog remains
+necessary. See the [migration checklist](docs/async-soc-migration.md). A permanent
 Groundlark controller supervises power before upload and during application
 stalls. Its default policy is disabled until qualified battery settings are
 provided. Watchdog recovery resets the application and its CPU bridges while
@@ -54,6 +59,8 @@ or MCU power loss clears the lock and returns Groundlark to its off state.
 **Tapeout must deliberately supply and qualify an enabled board policy**; the
 reference emitters' disabled `PowerPolicy()` never enables Pi power.
 Physical/analog, pin/package, board and Chiselator qualification remain.
+The new fabric controllers have no physical timing qualification. Earlier P&R
+results describe baseline `8637099` and do not qualify this migration.
 
 Both variants have [experimental GF180 implementation inputs](docs/gf180-implementation.md):
 preserved async bindings, native matched-delay cells, compact digital tops, SRAM
@@ -101,8 +108,9 @@ Two implementations are active comparison targets:
 
 For each profile, both use the same execution contract, firmware, memory sizes,
 board I/O and acceptance tests. Shared material belongs in [shared/](shared/README.md);
-protocol-specific controllers and storage belong in their respective design
-folders. Complete SoC tops use internal memory; standalone core tests retain
+each SoC implementation and its protocol controllers/storage belong in its own
+design folder. `soc/` shares schemas, fixed macros and wrapper utilities. Complete
+SoC tops use internal memory; standalone core tests retain
 independent memory models. Optional peripherals, compressed instructions and
 additional architecture variants are on hold.
 

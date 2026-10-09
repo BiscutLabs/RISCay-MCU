@@ -10,9 +10,14 @@
   targets. Keep ISA, firmware, memory/MMIO, board I/O and functional tests equal.
 - Native Click core routing must not silently use four-phase wrappers. Identify
   every external boundary conversion and include it in comparison costs.
-- `soc/` owns the common clocked service island; keep both native CPU bridges
-  explicit. Follow `docs/soc-contract.md` for wire commands, MMIO and reset scope.
-  Run SocSpec/FabricSpec after changes there and keep strict SoC exports valid.
+- Each `designs/` target owns its separate SoC implementation. `soc/` retains
+  schemas, parameters, fixed macro models and wrapper utilities, not a shared
+  service implementation. Keep Click native and endpoint bridges explicit.
+  Follow `docs/async-soc-migration.md`: finish and verify one checklist item,
+  update its evidence/contracts, commit and push, then ask for the next item.
+  Follow `docs/soc-contract.md` for ABI/reset scope. Run AsyncFabricSpec and both
+  service implementations' FabricSpec/ScalingSpec plus affected regressions;
+  keep strict SoC exports valid. A copied clocked module is not migrated to async.
 - Retained sleep and programmable sampling are in scope. Follow
   `docs/sleep-and-clock.md`; run SleepSpec, DeepSleepSpec and oscillator-model tests as well.
   Preserve the cold-boot policy, programming lock and watchdog fault coverage.
@@ -30,9 +35,9 @@
   held SoC/LF reset. Keep the >=5 ms continuous-good hold and asynchronous assertion.
   Test real hold counts separately from accelerated full-SoC regressions.
 - Both writable memories use pinned GF180 1 KiB SRAM macros: two for the 2 KiB
-  program bank, one for 1 KiB working RAM. Preserve the shared backend across
-  both variants. Follow `docs/sram-integration.md`; run SramSpec, FirmwareSpec,
-  SocSpec/FabricSpec and sleep regressions after memory/controller changes.
+  program bank, one for 1 KiB working RAM. Share the fixed macro model; each
+  variant owns its SRAM controller. Follow `docs/sram-integration.md`; run
+  SramSpec, FirmwareSpec, SocSpec/FabricSpec and sleep regressions after memory/controller changes.
   Keep macro contents uninitialized in simulation; SYNTHESIS must retain physical
   macro instances. Verify upstream asset hashes with tools/sram_assets.py.
   Validate full-width addresses and loader fields before narrowing to internal

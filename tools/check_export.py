@@ -254,6 +254,114 @@ def vector_coverage_probe(source: str, manifest: dict) -> str:
     return source.replace("task check; begin", "\n".join(declarations) + "\ntask check; begin")
 
 
+# These two path kinds describe MCU-owned controllers, not library primitives.
+BD_FABRIC_PATH = "ROM/static permission decode and service response mux"
+CLICK_FABRIC_PATH = "complete ROM/static permission decode and service response mux before event register"
+
+
+def validate_fabric_path(node, timing):
+    """Fail closed on custom-path identity, schema, storage and native protocol.
+
+    The library still validates every timing field, budget/guard, marker parameter,
+    primitive, elaborated pin, endpoint mapping and endpoint activity afterwards.
+    """
+    logic = timing.get("logic")
+    if logic not in (BD_FABRIC_PATH, CLICK_FABRIC_PATH):
+        return
+    click = logic == CLICK_FABRIC_PATH
+    protocol = "two-phase-bundled-v1" if click else "four-phase-bundled-v1"
+    expected = ([], "data_delay", "reply_sources", "register_data") if click else (
+        ["reply"], "data_delay", "mux_sources", "mux_result")
+    if (node["module"] != ("ClickFabric" if click else "FourPhaseFabric") or
+            tuple(timing[k] for k in ("delay_owner", "delay_cell", "source", "sink")) != expected or
+            {c["id"]: (c["protocol"], c["role"]) for c in node["channels"]} != {
+                "request": (protocol, "input"), "response": (protocol, "output"),
+                "service_request": (protocol, "output"), "service_response": (protocol, "input")}):
+        raise ValueError("MCU_FABRIC_PATH_IDENTITY")
+    endpoints = {e["id"]: e for e in node["endpoints"]}
+    if any(endpoints.get(name, {}).get("width") != width for name, width in (
+            (timing["source"], 103), (timing["sink"], 33),
+            ("request_data", 70), ("response_data", 33),
+            ("service_request_data", 70), ("service_response_data", 33))):
+        raise ValueError("MCU_FABRIC_PATH_WIDTH")
+    if click:
+        cells = {p["id"]: p for p in node["primitives"]}
+        if (node["children"] or endpoints.get("capture_event", {}).get("width") != 1 or
+                cells.get("payload", {}).get("model") != "ChiselAsyncEventRegister_v1" or
+                cells.get("payload", {}).get("parameters", {}).get("WIDTH") != "33" or
+                cells.get("service_response_phase", {}).get("model") != "ChiselAsyncEventRegister_v1" or
+                cells.get("service_response_phase", {}).get("parameters", {}).get("WIDTH") != "1"):
+            raise ValueError("MCU_FABRIC_CAPTURE_CELL")
+        for name in ("request_guard", "request_delay", "acknowledge_guard", "output_guard", "return_guard"):
+            cell = cells.get(name, {})
+            params = cell.get("parameters", {})
+            if (cell.get("model") != "ChiselAsyncControlGate_v1" or
+                    any(params.get(k) != v for k, v in {"WIDTH": "1", "OP": "0", "RESET_VALUE": "0"}.items()) or
+                    int(params.get("DELAY_FS", "0")) <= 0):
+                raise ValueError("MCU_FABRIC_GUARD_CELL")
+    else:
+        children = node["children"]
+        if (len(children) != 1 or children[0]["id"] != "reply" or
+                not re.fullmatch(r"FourPhaseStage(?:_[0-9]+)?", children[0]["contract"]["module"])):
+            raise ValueError("MCU_FABRIC_REPLY_OWNER")
+
+
+def validate_native_click(manifest):
+    """A Click export must remain native throughout its async hierarchy."""
+    if manifest["top"] not in ("ClickSoc", "ClickCore", "ClickFabric"):
+        return
+    def nodes(node):
+        yield node
+        for child in node["children"]:
+            yield from nodes(child["contract"])
+    for node in nodes(manifest["design"]):
+        if ("FourPhase" in node["module"] or
+                any(c["protocol"] == "four-phase-bundled-v1" for c in node["channels"]) or
+                any(p["model"] == "ChiselAsyncClosingLatch_v1" for p in node["primitives"])):
+            raise ValueError("MCU_CLICK_HAS_RTZ_IMPLEMENTATION")
+
+
+def fabric_path_bindings(node, timing):
+    """Actual mux/storage pin comparisons added to the unchanged library probe."""
+    endpoints = {e["id"]: e["rtl_path"] for e in node["endpoints"]}
+    if timing.get("logic") == BD_FABRIC_PATH:
+        owner = next(c["contract"] for c in node["children"] if c["id"] == "reply")
+        cell = next(p["rtl_path"] for p in owner["primitives"] if p["id"] == "data_delay")
+        storage = next(e["rtl_path"] for e in owner["endpoints"] if e["id"] == "in_data")
+        return [(endpoints["mux_result"], storage), (endpoints["mux_result"], cell + ".a")]
+    if timing.get("logic") == CLICK_FABRIC_PATH:
+        cells = {p["id"]: p["rtl_path"] for p in node["primitives"]}
+        return [(endpoints["register_data"], cells["data_delay"] + ".q"),
+                (endpoints["register_data"], cells["payload"] + ".d"),
+                (endpoints["capture_event"], cells["payload"] + ".trigger"),
+                (endpoints["capture_event"], cells["accepted_phase"] + ".trigger"),
+                (endpoints["capture_event"], cells["service_response_phase"] + ".trigger"),
+                (endpoints["service_response_request"], cells["service_response_phase"] + ".d")]
+    return []
+
+
+def fabric_checker_source(source):
+    """Extend the pinned checker's closed path table; reject upstream API drift.
+
+    No original check is deleted. New entries use the same generic budget/marker
+    checks and add explicit MCU data/capture pin comparisons to the probe.
+    """
+    anchor = '"initial-token-literal-mux": ([], "data", "mux_state", "out_data")}'
+    if source.count(anchor) != 1:
+        raise ValueError("MCU_FABRIC_CHECKER_SHAPE_CHANGED")
+    extra = (anchor[:-1] + f', {BD_FABRIC_PATH!r}: (["reply"], "data_delay", "mux_sources", "mux_result"),'
+             + f' {CLICK_FABRIC_PATH!r}: ([], "data_delay", "reply_sources", "register_data")}}'
+             + "\n                validate_fabric_path(node, timing)")
+    source = source.replace(anchor, extra)
+    anchor = 'if timing["logic"] in ("exclusive-merge-input-mux", "controlled-multiplexer-input-mux"):'
+    if source.count(anchor) != 1:
+        raise ValueError("MCU_FABRIC_CHECKER_SHAPE_CHANGED")
+    return source.replace(anchor,
+        f'if timing["logic"] in ({BD_FABRIC_PATH!r}, {CLICK_FABRIC_PATH!r}):\n'
+        '                    pairs = fabric_path_bindings(node, timing)\n'
+        '                el' + anchor)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("directory", type=Path)
@@ -272,8 +380,16 @@ def main() -> None:
     if spec is None or spec.loader is None:
         raise RuntimeError(f"Cannot load {source}")
     module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
+    module.validate_fabric_path = validate_fabric_path
+    module.fabric_path_bindings = fabric_path_bindings
+    exec(compile(fabric_checker_source(source.read_text()), str(source), "exec"), module.__dict__)
     original_run = subprocess.run
+    original_manifest = module.validate_manifest
+    def manifest(document):
+        result = original_manifest(document)
+        validate_native_click(result)
+        return result
+    module.validate_manifest = manifest
     original_probe = module.probe_source
     original_memories = module.validate_memories
     original_vvp = module.read_vvp
@@ -307,6 +423,7 @@ def main() -> None:
         result = module.validate_export(args.directory.resolve())
     finally:
         subprocess.run = original_run
+        module.validate_manifest = original_manifest
         module.probe_source = original_probe
         module.validate_memories = original_memories
         module.read_vvp = original_vvp

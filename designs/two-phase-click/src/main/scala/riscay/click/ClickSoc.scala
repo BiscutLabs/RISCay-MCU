@@ -12,14 +12,17 @@ import riscay._
 class ClickSoc(p: SocParameters, board: SocParameters => BoardController = p => new GenericBoard(p),
     timing: ClickTiming = ClickTiming.Simulation,
     executeData: ModelTime = RegisterTiming.executeData)
-    extends SocTop(p, board) {
+    extends ClickPlatform(p, board) {
   val core = asyncChild("core")(d => new ClickCore(d, timing=timing, executeData=executeData))
+  val transactions = asyncChild("transactions")(d => new ClickFabric(p.config, timing, d))
   val requestBridge = asyncChild("request_bridge")(d => new ClickToDecoupled(new MemoryRequest, d))
   val responseBridge = asyncChild("response_bridge")(d => new DecoupledToClick(new MemoryResponse, d))
-  Seq(core, requestBridge, responseBridge).foreach(_.reset := systemReset.asAsyncReset)
+  Seq(core, transactions, requestBridge, responseBridge).foreach(_.reset := systemReset.asAsyncReset)
   requestBridge.clock := serviceClock; responseBridge.clock := serviceClock
   core.start := !systemReset
-  TwoPhase.connect(requestBridge.in, core.request); TwoPhase.connect(core.response, responseBridge.out)
+  TwoPhase.connect(transactions.request, core.request); TwoPhase.connect(core.response, transactions.response)
+  TwoPhase.connect(requestBridge.in, transactions.serviceRequest)
+  TwoPhase.connect(transactions.serviceResponse, responseBridge.out)
   fabric.io.request <> requestBridge.out; responseBridge.in <> fabric.io.response
   trace := core.trace; traceEvent := core.traceEvent
 }

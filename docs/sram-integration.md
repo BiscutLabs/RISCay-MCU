@@ -1,7 +1,7 @@
 # GF180 SRAM integration
 
-Both native CPU variants use the same `SramBank` service-island controller and
-the same physical macro, `gf180mcu_ocd_ip_sram__sram1024x8m8wm1`. Groundlark has
+Each native variant owns a separate, still-clocked `SramBank` controller under
+its `designs/` directory. Both use the same fixed physical macro, `gf180mcu_ocd_ip_sram__sram1024x8m8wm1`. Groundlark has
 two macros for 2 KiB program storage and one macro for 1 KiB working storage.
 The boot ROM, loader, permanent supervisor and architectural registers are
 unchanged in purpose. No external memory or new pins are required.

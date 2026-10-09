@@ -28,7 +28,8 @@ the generic logical host catalog, measurement descriptors and build parameters.
 It supplies no I2C transport, peripheral RTL or physical memory. Board-specific
 registers and pin roles belong in [profiles/](../profiles/README.md), never in the
 shared CPU or common device/loader services.
-Common clocked peripheral RTL lives in [soc/](../soc/README.md), and SoC/board
+Shared interface schemas and fixed macros live in [soc/](../soc/README.md);
+clocked peripheral implementations live separately under each design. SoC/board
 tests live in `verification/`. Compiler-built firmware and memory budgets are in
 [firmware/](../firmware/README.md). Both designs must pass the same functional tests; each also
 needs its own protocol/timing negative controls. Compare committed instruction

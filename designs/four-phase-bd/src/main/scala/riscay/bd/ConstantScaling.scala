@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
-package riscay.soc
+package riscay.bd
+
+import riscay.soc._
 
 import chisel3._
 import chisel3.util._

@@ -17,6 +17,15 @@ class MemoryResetFixture(p: SocParameters) extends FabricFixture(p) {
   fabric.io.cpuResetActive := cpuResetActive || observed
 }
 
+class ClickMemoryResetFixture(p: SocParameters) extends ClickFabricFixture(p) {
+  val applicationReset = IO(Input(Bool()))
+  val observed = withClockAndReset(serviceClock, reset) {
+    val first = RegNext(applicationReset, false.B); RegNext(first, false.B)
+  }
+  fabric.io.cpuReset := systemReset || applicationReset
+  fabric.io.cpuResetActive := cpuResetActive || observed
+}
+
 class SramSpec extends AnyFunSuite {
   private val p = SocParameters(Groundlark.configuration, watchdogCycles=10000000)
   private val pinTiming = Seq("program_macros_0", "program_macros_1", "ram_macros_0").zipWithIndex.map { case(name, i) =>
@@ -58,11 +67,15 @@ reg [31:0] expected, value;
 always @(posedge serviceClock) if(!dut.fabric_ram_macros_0.CEN && !dut.fabric_ram_macros_0.GWEN)
   writes=writes+1;
 """
-  test("three physical SRAM macros cover every program/data word, byte mask, boundary and stalled response") {
+  for(click <- Seq(false,true)) {
+    val variant = if(click) "click" else "bd"
+    def fixture(p: SocParameters): SocTop = if(click) new ClickFabricFixture(p) else new FabricFixture(p)
+    def resetFixture(p: SocParameters): SocTop = if(click) new ClickMemoryResetFixture(p) else new MemoryResetFixture(p)
+  test(s"$variant: three physical SRAM macros cover every program/data word, byte mask, boundary and stalled response") {
     val words=(0 until 512).map(i => (0x9e3779b9L * (i+1)) & 0xffffffffL)
     val crc=new CRC32
     words.foreach(w => (0 until 4).foreach(b => crc.update(((w >>> (8*b)) & 255).toInt)))
-    val dir=ClockedSimulation.run(new FabricFixture(p),"sram-capacity",s"""
+    val dir=ClockedSimulation.run(fixture(p),"sram-capacity",s"""
       read_words(0,0,0);
       if(snapshot[96+:32] !== 2048 || snapshot[128+:32] !== 1024) $$fatal(1,"SRAM_DISCOVERY");
       issue(1,32'h20000000,0,15); wait(response_valid);
@@ -121,17 +134,17 @@ always @(posedge serviceClock) if(!dut.fabric_ram_macros_0.CEN && !dut.fabric_ra
       command(5);
       issue(1,32'h30000000,0,15); answer(32'h100007fc,0);
     """,tasks,deadlineNs=400000000L,processTimeoutSeconds=180,serviceHalfPeriodNs=25)
-    val rtl=Files.readString(dir.resolve("FabricFixture.sv"))
+    val rtl=Files.readString(dir.resolve(if(click) "ClickFabricFixture.sv" else "FabricFixture.sv"))
     assert("gf180mcu_ocd_ip_sram__sram1024x8m8wm1\\s+fabric_".r.findAllIn(rtl).size == 3)
   }
 
-  test("word indices and loader counts support one-word and non-power-of-two capacities") {
+  test(s"$variant: word indices and loader counts support one-word and non-power-of-two capacities") {
     for(bytes <- Seq(4, 12)) {
       val words=(0 until bytes/4).map(i => 0x12345678L + i)
       val crc=new CRC32
       words.foreach(w => (0 until 4).foreach(b => crc.update(((w >>> (8*b)) & 255).toInt)))
       val params=p.copy(config=p.config.copy(programBytes=bytes,workingRamBytes=bytes))
-      ClockedSimulation.run(new FabricFixture(params),s"sram-small-$bytes",s"""
+      ClockedSimulation.run(fixture(params),s"sram-small-$bytes",s"""
         start_bus(); write_byte(8'h6a); write_byte(1);
         write_word($bytes); write_word(${bytes-4}); write_word(32'h${crc.getValue.toHexString}); write_word(32'h00010000);
         write_word($bytes); write_word(0); write_word(0); write_word(32'h12345678); stop_bus();
@@ -152,8 +165,8 @@ always @(posedge serviceClock) if(!dut.fabric_ram_macros_0.CEN && !dut.fabric_ra
     }
   }
 
-  test("watchdog at every word phase completes accepted stores and discards responses; POR aborts without replay") {
-    ClockedSimulation.run(new MemoryResetFixture(p),"sram-reset","""
+  test(s"$variant: watchdog at every word phase completes accepted stores and discards responses; POR aborts without replay") {
+    ClockedSimulation.run(resetFixture(p),"sram-reset","""
       for(phase=0;phase<10;phase=phase+1) begin
         issue(2,32'h200003fc,32'h12345678+phase,15);
         repeat(phase) @(posedge serviceClock);
@@ -185,10 +198,10 @@ always @(posedge serviceClock) if(!dut.fabric_ram_macros_0.CEN && !dut.fabric_ra
     """,tasks)
   }
 
-  test("loader accounts only completed SRAM words, survives watchdog, and invalidates partial POR uploads") {
+  test(s"$variant: loader accounts only completed SRAM words, survives watchdog, and invalidates partial POR uploads") {
     val word=0x89abcdefL
     val crc=new CRC32; (0 until 4).foreach(b => crc.update(((word >>> (8*b)) & 255).toInt))
-    ClockedSimulation.run(new MemoryResetFixture(p),"sram-loader-reset",s"""
+    ClockedSimulation.run(resetFixture(p),"sram-loader-reset",s"""
       for(m=0;m<2;m=m+1) for(phase=0;phase<10;phase=phase+1) begin
         begin_image(4,0,32'h${crc.getValue.toHexString},32'h00010000);
         fork
@@ -220,5 +233,6 @@ always @(posedge serviceClock) if(!dut.fabric_ram_macros_0.CEN && !dut.fabric_ra
 always @(posedge serviceClock) if(!reset && dut.fabric_loaderPending && dut.fabric_receivedWords !== 0)
   $fatal(1,"LOADER_PREMATURE_RECEIVED_BYTES");
 """,deadlineNs=100000000L)
+  }
   }
 }

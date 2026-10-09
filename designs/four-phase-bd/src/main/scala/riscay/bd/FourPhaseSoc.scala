@@ -13,13 +13,16 @@ import riscay.profiles._
 class FourPhaseSoc(p: SocParameters, board: SocParameters => BoardController = p => new GenericBoard(p),
     timing: BundledTiming = BundledTiming.Simulation,
     executeTiming: BundledTiming = BundledTiming.simulation(dataMax=RegisterTiming.executeData))
-    extends SocTop(p, board) {
+    extends FourPhasePlatform(p, board) {
   val core = asyncChild("core")(d => new FourPhaseCore(d, timing=timing, executeTiming=executeTiming))
+  val transactions = asyncChild("transactions")(d => new FourPhaseFabric(p.config, timing, d))
   val requestBridge = asyncChild("request_bridge")(d => new FourPhaseToDecoupled(new MemoryRequest, 2, d))
   val responseBridge = asyncChild("response_bridge")(d => new DecoupledToFourPhase(new MemoryResponse, 2, d))
-  Seq(core, requestBridge, responseBridge).foreach(_.reset := systemReset.asAsyncReset)
+  Seq(core, transactions, requestBridge, responseBridge).foreach(_.reset := systemReset.asAsyncReset)
   requestBridge.clock := serviceClock; responseBridge.clock := serviceClock
-  FourPhase.connect(requestBridge.in, core.request); FourPhase.connect(core.response, responseBridge.out)
+  FourPhase.connect(transactions.request, core.request); FourPhase.connect(core.response, transactions.response)
+  FourPhase.connect(requestBridge.in, transactions.serviceRequest)
+  FourPhase.connect(transactions.serviceResponse, responseBridge.out)
   fabric.io.request <> requestBridge.out; responseBridge.in <> fabric.io.response
   trace := core.trace; traceEvent := core.traceEvent
 }

@@ -188,3 +188,13 @@ clock, manual reset, asleep brownout and total power loss. `DeepSleepSpec` tests
 supply faults during sleep, partial upload and locked execution on both cores.
 The analog monitor's approximately 2.22 uA nominal always-on current and measured
 39.84..62.02 us dip response must be included in physical power/rail analysis.
+
+## Implementation ownership during async migration
+
+Each design now owns its Platform, SleepTiming, Services and clocked peripheral
+implementation. The [migration checklist](async-soc-migration.md) currently moves
+native transaction routing; it does not replace the clocked event/lease/loader
+state machines described here. Application reset covers CPU, native fabric and
+both endpoint bridges together. Permanent supervision, SRAM accounting and
+programming protection keep their established reset domains. The independent
+LF timebase/watchdog remains necessary after other service work becomes async.

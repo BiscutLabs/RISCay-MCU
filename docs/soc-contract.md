@@ -2,8 +2,11 @@
 
 The four-phase and native Click SoCs implement the same RV32E execution, internal
 storage and peripheral behavior. Compressed instructions remain deferred. The
-CPU is asynchronous; a **shared clocked service island** contains the memories,
-host endpoint, timer, GPIO, measurements and permanent board controller. Its
+CPU and transaction routing are asynchronous. Each design owns a separate
+**clocked endpoint implementation** containing loader/MMIO state, SRAM sequencing,
+host endpoint, timer, GPIO and measurements; board policy remains in `profiles/`
+pending its checklist item. ROM/static faults complete in the native fabric.
+See the [migration checklist and handshake contract](async-soc-migration.md). Its
 default clock is 10 MHz. Reference emitters stop that source during retained sleep
 and use nominal 7.7307 Hz for the always-on timer and watchdog (32-cycle timeout,
 two-cycle reset hold). The portable tops expose both clocks and a service-source
@@ -24,7 +27,7 @@ See [sleep and clock integration](sleep-and-clock.md) for the exact gating scope
 | `0x30000000..0x3000004b` | MMIO | Aligned 32-bit data accesses only |
 
 All storage is on chip. Groundlark uses two 1 KiB GF180 SRAM macros for program
-storage and one for its 1 KiB working RAM. A shared controller sequences four
+storage and one for its 1 KiB working RAM. Each variant's controller sequences four
 byte operations per word; macro inputs launch on falling service-clock edges.
 See [SRAM integration](sram-integration.md). RAM is not reset-cleared. POR/manual/brownout reset
 clears image validity; watchdog recovery preserves it. Application startup must initialize
@@ -32,7 +35,8 @@ its data, BSS and stack before use. No simulator preload is necessary or used by
 the serial upload tests. A successful store returns data zero; read responses are
 aligned little-endian words. Unmapped/protected accesses return an access error.
 One accepted CPU transaction produces one response, held stable under backpressure.
-The `commit` observation pulse denotes request acceptance; SRAM writes finish
+The service-clock `commit` observation pulse denotes endpoint request acceptance
+(local ROM/static-fault replies do not pass that endpoint); SRAM writes finish
 later, before successful completion. Watchdog reset discards CPU replies but
 allows accepted stores to finish. Full POR/manual/brownout reset aborts remaining
 bytes and may leave a partial word; it does not undo committed bytes. SRAM
