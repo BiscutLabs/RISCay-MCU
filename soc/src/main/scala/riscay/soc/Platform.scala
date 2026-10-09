@@ -78,23 +78,10 @@ class Acquisition extends Bundle {
   val valid = Bool()
   val calibrated = Bool()
 }
-class BoardIO(p: SocParameters) extends Bundle {
-  val tick = Input(Bool())
-  val now = Input(UInt(32.W))
-  val observationMs = Input(UInt(32.W))
-  val gpio = Input(UInt(32.W))
-  val samples = Input(Vec(p.config.measurements.size, new Sample))
-  val mask = Output(UInt(32.W))
-  val outputs = Output(UInt(32.W))
-  val enables = Output(UInt(32.W))
-  val registers = Output(Vec(64, UInt(32.W)))
-}
-abstract class BoardController(p: SocParameters) extends Module with InlineInstance {
-  /** Static ownership permits removing software storage for hardware telemetry. */
+/** Immutable board binding; runtime controllers belong to each native design. */
+abstract class BoardProfile(val parameters: SocParameters) {
   def ownedRegisters: Set[Int] = Set.empty
-  val io = IO(new BoardIO(p))
+  def mask: BigInt = 0
+  def enables: BigInt = 0
 }
-class GenericBoard(p: SocParameters) extends BoardController(p) {
-  io.mask := 0.U; io.outputs := 0.U; io.enables := 0.U
-  io.registers := VecInit(Seq.fill(64)(0.U(32.W)))
-}
+class GenericBoard(p: SocParameters) extends BoardProfile(p)

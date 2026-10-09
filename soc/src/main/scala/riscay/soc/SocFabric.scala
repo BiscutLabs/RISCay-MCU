@@ -39,6 +39,7 @@ abstract class ServiceEndpoint extends Module with InlineInstance {
     val clockRunning = Input(Bool()); val sleepEntries = Input(UInt(32.W))
     val canSleep = Output(Bool()); val activity = Output(Bool())
     val drainDemand = Output(Bool()); val telemetryDraining = Input(Bool())
+    val boardDraining = Input(Bool())
     val observedGpio = Output(UInt(32.W))
     val commit = Valid(new MemoryRequest)
   })

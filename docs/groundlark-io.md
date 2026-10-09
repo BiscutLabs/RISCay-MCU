@@ -31,12 +31,18 @@ revision `3f92e1b4b9a7f5af35dec87e5f9ff2f32aac84f3`:
 1. The always-on supervisor monitors battery voltage while Pi power is off.
 2. Once voltage and minimum-off/restart confirmation policy permit it, assert
    `pi_power_enable`. The target Pi 4 cold-boots when its 5 V rail is restored.
-   Following total supervisor power loss, permanent bootstrap code performs this
+   Following total supervisor power loss, permanent native control logic performs this
    step and maintains essential supervision while the Pi uploads the application.
 3. When policy requests shutdown, assert `pi_shutdown_request` and keep power on
    while waiting for qualified `pi_halted_n` or the configured timeout.
 4. Deassert `pi_power_enable` after halt, or after the explicit forced-off timeout
    policy. Wait the minimum off interval and voltage recovery before restarting.
+
+Applied output feedback records logical minimum-off and shutdown epochs after
+the GPIO projection changes. The published lower-time count is quantized; LF
+phase and publication-latency bounds remain part of timing qualification.
+Current-boot ACK qualification starts only after applied power-on. Native state and dedicated crossings retain these obligations through
+application watchdog resets. See the [supervisor migration contract](async-soc-migration.md#permanent-supervisor-scope-and-contract).
 
 No extra Pi wake pin is needed for this full power-cycle behavior. Waking an
 already powered Pi from soft-off is a different feature and is on hold.

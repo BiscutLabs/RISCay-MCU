@@ -20,8 +20,8 @@ class PhysicalEstimateSpec extends AnyFunSuite {
       val p=SocParameters(Groundlark.configuration,staleMs=3000,watchdogCycles=32,watchdogHoldCycles=2,
         adc=Some(AdcParameters(intervalCycles=10000000)),lowPower=Some(LowPowerParameters.gf180Slow))
       val policy=PowerPolicy(enabled=true)
-      val top=if(click) () => new ClickSoc(p,x => new GroundlarkSupervisor(x,policy))
-        else () => new FourPhaseSoc(p,x => new GroundlarkSupervisor(x,policy))
+      val top=if(click) () => new ClickSoc(p,x => new GroundlarkBoard(x,policy))
+        else () => new FourPhaseSoc(p,x => new GroundlarkBoard(x,policy))
       // Each iteration: wait for a deadline, acknowledge consumed events, read GPIO,
       // perform 32 integer additions, store the result, renew the lease and park.
       val setup=Seq(0x300000b7L,0x20000137L,0x574451b7L,i(0x13,3,0,3,-185),

@@ -3,7 +3,7 @@ package riscay.profiles
 
 import riscay._
 
-/** Groundlark descriptors. GroundlarkSupervisor supplies permanent control;
+/** Groundlark descriptors. GroundlarkBoard selects design-owned permanent control;
   * physical pads and qualified battery policy are separate board decisions.
   */
 object Groundlark {

@@ -2,7 +2,8 @@
 
 Profiles bind the reusable MCU to a particular board and firmware application.
 The `profiles` sbt project depends on the common `soc`/`shared` projects. CPU
-logic has no profile dependency; SoC emitters select a board-controller factory.
+logic has no profile dependency; SoC emitters select an immutable `BoardProfile` factory. Each design supplies
+its own native runtime controller; profiles contain descriptors and policy only.
 Both variants must use the same profile in any comparison.
 
 - [Groundlark](groundlark/README.md) is the first deployment profile.

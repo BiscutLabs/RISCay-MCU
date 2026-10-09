@@ -10,7 +10,7 @@ when no next item has been chosen. Both implementations remain active throughout
 
 - Four-phase bundled-data implementation: `designs/four-phase-bd/src/main/scala/riscay/bd/`.
 - Native two-phase Click implementation: `designs/two-phase-click/src/main/scala/riscay/click/`.
-- Each owns its Fabric, Control, Telemetry, Services, Platform, ClockedPeripherals, ConstantScaling,
+- Each owns its Fabric, Control, Telemetry, Supervisor, Services, Platform, ClockedPeripherals, ConstantScaling,
   I2cTarget, SleepTiming and SramBank code. Copying the former service island into
   these directories establishes ownership; it does not migrate its state machines.
 - Share port schemas, parameter/ISA definitions, fixed macro models and verification
@@ -45,9 +45,11 @@ when no next item has been chosen. Both implementations remain active throughout
   wrap/catch-up and image integrity. Fresh independent review fixes, all 145
   verification cases, two core physical-policy cases, 70 working-tree Python
   controls and both strict exports pass. Exact boundaries and evidence are below.
-- [ ] **5. Permanent supervisor.** Independent protocol implementations of continuous
-  power supervision; never make Pi bootstrap depend on uploaded firmware or reset
-  it with the application watchdog. Preserve disabled-by-default production policy.
+- [x] **5. Permanent supervisor — digitally verified, 2026-10-09.** Separate native
+  state and safety-sample loops preserve firmware-independent Pi bootstrap and
+  watchdog isolation, with disabled-by-default production policy. Fresh review
+  fixes, 161 verification cases, two core policy cases, 71 working-tree Python
+  controls and both strict exports pass. Scope and timing limits are below.
 - [ ] **6. SRAM access sequencing.** Native request ownership/arbitration around the
   fixed synchronous GF180 macros; qualify any local clock generation explicitly.
   Preserve byte effects, accepted-store completion and uninitialized retention.
@@ -61,9 +63,8 @@ when no next item has been chosen. Both implementations remain active throughout
   decode/data paths, pulse/fork/return timing, reset and CDC bounds, then new P&R
   and extracted validation. Digital passes alone cannot check this item.
 
-The authorized SocFabric, MMIO/loader, GPIO/events/telemetry and scaling/CRC
-items are digitally verified. Ask for the next item before advancing to the
-permanent supervisor. Each item requires both implementations, invariant-focused
+Items 1–5 are digitally verified. Ask before SRAM access sequencing.
+Each item requires both implementations, invariant-focused
 tests and a fresh independent review before it can be checked off.
 
 ## SocFabric handshake and timing contract
@@ -147,8 +148,11 @@ boundary. See [item 3 evidence](build-and-test.md#asynchronous-gpio-events-and-t
 Item 4 passes all 145 verification cases across nineteen suites, two core
 physical-policy cases, 70 working-tree Python controls and both strict exports.
 See [scaling/CRC evidence](build-and-test.md#asynchronous-scaling-and-crc-migration).
-Permanent supervisor, SRAM sequencing, I2C, SPI ADC, slow-domain housekeeping and
-physical qualification remain unchecked.
+Item 5 passes 161 verification cases across 21 suites, two core policy cases,
+71 working-tree Python controls and both strict exports. Its strengthened six-case
+boundary rerun also passes. See [supervisor evidence](build-and-test.md#asynchronous-permanent-supervisor-migration).
+SRAM sequencing, I2C, SPI ADC, slow-domain housekeeping and physical qualification
+remain unchecked.
 
 ## GPIO/events/telemetry scope and contract
 
@@ -182,10 +186,10 @@ application-reset pins. Retained recovery commands clear their native state;
 stale replies cannot restore pre-reset values. Accepted CPU effects wait for
 native completion before replying. Buffered work and recovery inhibit sleep.
 
-The permanent supervisor and its clocked safety sample view remain **item 5**.
-Both safety and native host records consume the same acquisition publication
-stream; supervisor freshness and power decisions do not wait for native telemetry
-backpressure. GPIO synchronizers, NOW/deadline/mask/lease/watchdog timing, ADC
+Item 5 replaces the permanent supervisor's clocked safety sample view with a
+separate native record. Safety and host records consume the same acquisition
+publication stream through independent retained ingress; supervisor freshness
+and power decisions do not wait for native telemetry backpressure. GPIO synchronizers, NOW/deadline/mask/lease/watchdog timing, ADC
 sequencing, I2C snapshots and peripheral ingress remain explicitly clocked under
 their later items. This migration does not qualify new physical timing: native
 transform data paths, compacted ingress crossings, reset recovery, forks and
@@ -287,3 +291,48 @@ reply path. The original sleep and brownout assertions remain intact.
 Digital stage budgets describe entire
 transforms, including the quotient/remainder and CRC logic; no mapped timing or
 physical signoff is implied. Old P&R results remain inapplicable.
+
+## Permanent supervisor scope and contract
+
+`FourPhaseSupervisor` and `ClickSupervisor` own independent native seeded state
+loops for OFF/RUN/SHUTDOWN/LATCHED, faults/timeouts, four confirmation counters,
+current-boot acknowledgment qualification, dwell epochs and the safety sample
+record. `GroundlarkBoard`/`PowerPolicy` are immutable descriptors in `profiles/`;
+no shared clocked board controller remains. Disabled production defaults cannot
+energize the Pi. Native Click storage, join, transform, fork and bridges contain
+no four-phase conversion. Both complete transforms currently use digital
+simulation budgets; physical data, pulse, fork, CDC and reset timing is unqualified.
+
+Each supervisor has dedicated POR-only command/reply bridges. The service island
+retains GPIO synchronization, generic acquisition/time history and coherent output
+projection, but no power-policy qualification counters or shadow safety sample
+bank. ADC acquisition, elapsed request/publication boundaries, LF/watchdog and
+board NOW remain clocked under their later items. Application reset neither aborts accepted
+supervisor commands nor resets native state, input history or applied GPIO outputs.
+Control or Telemetry stalls cannot block this independent loop. Pending input,
+outstanding work and bridge return drainage inhibit service-clock shutdown.
+
+Ingress compacts all publication attempts, last validity/calibration, last good
+value, first-publication elapsed age, largest inter-publication gap, last-good age,
+voltage extrema, any failed acquisition, GPIO changes and any zero-credit time
+observation. Ages saturate; publication sequence wraps at 32 bits. A publication
+resets current sample age but includes its coincident upper elapsed tick in the
+preceding freshness interval. Ambiguous or interrupted batches cancel confirmation
+credit; a recovered last sample cannot erase invalid/stale/out-of-range history.
+While RUN is active, sensing faults consumed between ticks remain latched until
+the next policy evaluation, even if recovery arrives in a separate command.
+This is conservative under stalls. Native sample and power decisions do not wait
+for host telemetry publication. The ABI still reports the same six board words.
+
+Power transitions wait for feedback from the applied service-domain GPIO projection
+before recording minimum-off/shutdown epochs or granting current-boot inactive-ACK
+credit. Stalled crossings therefore defer recording the epoch until feedback
+and cannot count pre-power ACK history. Minimum-off records the published lower-time count
+after power removal feedback; shutdown records it after request feedback. These
+are quantized logical-time epochs, not timestamps of the GPIO edges. The tests
+preserve configured dwell in that model. LF phase, fractional rounding and elapsed
+publication-latency bounds still require timing qualification before asserting
+absolute physical durations; that limitation predates this migration. RUN clears previous
+ACK observations through the first applied-power command. Later stable inactive,
+then stable active-low observations qualify halt. The fixed independent timebase
+and watchdog remain necessary even though native state has no service clock.

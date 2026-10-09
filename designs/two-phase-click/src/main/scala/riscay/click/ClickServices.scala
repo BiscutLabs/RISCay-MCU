@@ -25,13 +25,19 @@ private class ControlMailbox extends Module with InlineInstance {
 }
 
 /** Clocked endpoints behind this variant's native asynchronous fabric. */
-class ClickServices(p: SocParameters, boardFactory: SocParameters => BoardController) extends ServiceEndpoint {
+class ClickServices(p: SocParameters, boardFactory: SocParameters => BoardProfile) extends ServiceEndpoint {
   val config = p.config
-  val board = Module(boardFactory(p))
+  val board = boardFactory(p)
   require(board.ownedRegisters.subsetOf(config.application.registers.map(_.word).toSet))
   val telemetryWords = config.application.registers.filterNot(r => board.ownedRegisters(r.word)).map(_.word).toVector
   val telemetryCommand = IO(Decoupled(new TelemetryCommand(config.measurements.size)))
   val telemetryReply = IO(Flipped(Decoupled(new TelemetryReply(config.measurements.size, telemetryWords.size))))
+  val boardCommand = IO(Decoupled(new SupervisorCommand))
+  val boardReply = IO(Flipped(Decoupled(new BoardResult)))
+  val boardResult = RegInit(0.U.asTypeOf(new BoardResult))
+  val boardWork = WireDefault(false.B)
+  boardCommand.valid := false.B; boardCommand.bits := 0.U.asTypeOf(new SupervisorCommand)
+  boardReply.ready := false.B
   val program = Module(new SramBank(config.programBytes))
   val ram = Module(new SramBank(config.workingRamBytes))
   Seq(program, ram).foreach { memory =>
@@ -146,14 +152,10 @@ class ClickServices(p: SocParameters, boardFactory: SocParameters => BoardContro
   val appIndex = controlState.appIndex
   def applicationWord(word: UInt): UInt = MuxLookup(word, "hffffffff".U(32.W))(
     config.application.registers.map(r => r.word.U ->
-      (if(board.ownedRegisters(r.word)) board.io.registers(r.word) else application(r.word))))
+      (if(board.ownedRegisters(r.word)) boardResult.registers(r.word) else application(r.word))))
   def applicationExists(word: UInt): Bool = config.application.registers.map(r => word === r.word.U).foldLeft(false.B)(_ || _)
 
-  // Existing supervisor safety view; item 5 owns its migration. Host records
-  // below come from the native loop, fed by the same publication stream.
-  val samples = RegInit(0.U.asTypeOf(Vec(config.measurements.size, new Sample)))
-  // Separate reset flag avoids requiring a Bundle literal for the whole vector.
-  val sampled = RegInit(0.U.asTypeOf(Vec(config.measurements.size, Bool())))
+  // Both native consumers receive the same retained acquisition stream.
   val publish = Wire(Vec(config.measurements.size, Valid(new Acquisition)))
   publish.foreach { x => x.valid := false.B; x.bits := 0.U.asTypeOf(new Acquisition) }
   val sampleIndex = controlState.sampleIndex; val sampleValue = controlState.sampleValue
@@ -194,26 +196,51 @@ class ClickServices(p: SocParameters, boardFactory: SocParameters => BoardContro
     io.adcCsN := adc.io.csN; io.adcSclk := adc.io.sclk
     publish(0) := adc.io.result
   }
-  for(i <- config.measurements.indices) {
-    samples(i).never := !sampled(i)
-    when(tick) {
-      val aged = samples(i).age +& upperElapsed
-      samples(i).age := Mux(aged(32), "hffffffff".U, aged(31,0))
-    }
-    when(publish(i).valid) {
-      samples(i).sequence := samples(i).sequence + 1.U
-      samples(i).valid := publish(i).bits.valid
-      samples(i).fault := !publish(i).bits.valid
-      samples(i).calibrated := publish(i).bits.calibrated && publish(i).bits.valid
-      when(publish(i).bits.valid) {
-        samples(i).value := publish(i).bits.value; samples(i).age := 0.U; sampled(i) := true.B
+  // POR-owned input history. No power policy or qualification counter is
+  // clocked here. Min/max, validity gaps and GPIO discontinuities prevent a
+  // stalled native consumer from fabricating stable observations.
+  if(board.ownedRegisters.nonEmpty) {
+    val outstanding=RegInit(false.B); val needed=RegInit(true.B)
+    val queued=RegInit(0.U.asTypeOf(new SupervisorCommand))
+    // Retain the complete registered ABI even when a board's ADC fixes flags.
+    dontTouch(queued.capture)
+    val previousGpio=RegNext(gpio,0.U)
+    val changes=(gpio ^ previousGpio) & gpioMask
+    val ageStep=Mux(tick,upperElapsed,0.U)
+    val pub=publish(0)
+    boardCommand.valid := needed && !outstanding
+    boardCommand.bits := queued; boardCommand.bits.now := boardNow
+    boardCommand.bits.power := boardResult.outputs(0); boardCommand.bits.shutdown := boardResult.outputs(1)
+    boardReply.ready := outstanding
+    when(boardCommand.fire) { outstanding := true.B; needed := false.B }
+    when(boardReply.fire) { outstanding := false.B; boardResult := boardReply.bits }
+    when(tick || changes.orR || pub.valid) { needed := true.B }
+    val base=Mux(boardCommand.fire,0.U.asTypeOf(new SupervisorCommand),queued)
+    queued := base; queued.gpio := gpio; queued.gpioChanged := base.gpioChanged | changes
+    queued.tick := base.tick || tick
+    queued.elapsedUpper := saturatingAdd(base.elapsedUpper,ageStep)
+    queued.observationMs := saturatingAdd(base.observationMs,Mux(tick,observationMs,0.U))
+    when(tick && !base.tick) { queued.firstObservationMs := observationMs }
+    queued.observationGap := base.observationGap || (tick && observationMs === 0.U)
+    val capture=queued.capture; val prior=base.capture
+    val ageAtPublication=saturatingAdd(prior.tailAge,ageStep)
+    capture.tailAge := ageAtPublication
+    when(pub.valid) {
+      capture.seen := true.B; capture.count := prior.count+1.U
+      capture.valid := pub.bits.valid; capture.calibrated := pub.bits.calibrated
+      capture.failed := prior.failed || !pub.bits.valid
+      when(pub.bits.valid) {
+        capture.hadValid := true.B; capture.value := pub.bits.value; capture.tailAge := 0.U
+        capture.minimum := Mux(!prior.hadValid || pub.bits.value < prior.minimum,pub.bits.value,prior.minimum)
+        capture.maximum := Mux(!prior.hadValid || pub.bits.value > prior.maximum,pub.bits.value,prior.maximum)
+        when(!prior.hadValid) { capture.firstAge := ageAtPublication }
+          .otherwise { capture.maximumGap := Mux(ageAtPublication > prior.maximumGap,ageAtPublication,prior.maximumGap) }
       }
     }
+    boardWork := needed || outstanding || io.boardDraining
   }
-  board.io.tick := tick; board.io.now := boardNow; board.io.observationMs := observationMs
-  board.io.gpio := gpio; board.io.samples := samples
-  io.gpioOut := ((output & ~board.io.mask) | (board.io.outputs & board.io.mask)) & gpioMask
-  io.gpioOe := ((enable & ~board.io.mask) | (board.io.enables & board.io.mask)) & gpioMask
+  io.gpioOut := ((output & ~board.mask.U(32.W)) | (boardResult.outputs & board.mask.U(32.W))) & gpioMask
+  io.gpioOe := ((enable & ~board.mask.U(32.W)) | (board.enables.U(32.W) & board.mask.U(32.W))) & gpioMask
 
   val deadline = applicationReg(0.U(32.W)); val armed = applicationReg(false.B)
   val pendingState = applicationReg(0.U(6.W))
@@ -253,7 +280,7 @@ class ClickServices(p: SocParameters, boardFactory: SocParameters => BoardContro
   parked := io.request.valid && eventWait
   val parkedForSleep = p.lowPower.nonEmpty.B && io.request.valid &&
     (bootWait || (eventWait && sleepRemaining =/= 0.U)) && !responseValid && !adcBusy && !memoryBusy && !controlBusy
-  io.canSleep := parkedForSleep && !scalingBusy && !tick && !telemetryWork
+  io.canSleep := parkedForSleep && !scalingBusy && !tick && !telemetryWork && !boardWork
   val nativeMmio = req.address >= MemoryMap.mmio.U && req.address < (MemoryMap.mmio + 76).U &&
     req.operation =/= Operation.Halt.U
   val mmioComplete = io.controlReply.fire && io.controlReply.bits.kind === ControlKind.Mmio.U && mmioCurrent
@@ -333,7 +360,7 @@ class ClickServices(p: SocParameters, boardFactory: SocParameters => BoardContro
 
   val host = withClock(io.frontClock) { Module(new I2cTarget(p.i2cAddress, p.i2cIdleCycles)) }
   host.io.scl := io.scl; host.io.sda := io.sda; io.sdaLow := host.io.pullLow
-  io.activity := scalingBusy || host.io.busy || gpioActivity || memoryBusy || controlBusy || telemetryWork
+  io.activity := scalingBusy || host.io.busy || gpioActivity || memoryBusy || controlBusy || telemetryWork || boardWork
   // The normal seven-edge guard may drain while native maintenance is busy;
   // canSleep/activity still keep the gate open until that work actually drains.
   io.drainDemand := !parkedForSleep || host.io.busy || gpioActivity
@@ -425,8 +452,8 @@ class ClickServices(p: SocParameters, boardFactory: SocParameters => BoardContro
   }
 
   // POR ingress compacts every publication and elapsed interval independently
-  // of native backpressure. The permanent supervisor above consumes this exact
-  // publication stream in its existing clocked safety domain (item 5).
+  // of native backpressure. The separate native supervisor receives the same
+  // publications through independent POR-owned ingress and crossings.
   val ageStep = Mux(tick, upperElapsed, 0.U)
   telemetryElapsed := saturatingAdd(Mux(telemetryCommand.fire, 0.U, telemetryElapsed), ageStep)
   for(i <- config.measurements.indices) {

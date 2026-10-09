@@ -211,6 +211,7 @@ POR-owned ingress retains publication attempts, latest status, last good value
 and elapsed age while native replies stall. A pending acquisition suppresses
 fresh-valid until commit; snapshots conservatively account for buffered elapsed
 time. Application reset preserves accepted samples and sequence counts while
-canceling application GPIO/event state. The supervisor's existing clocked safety
-view consumes the same publications and remains independent of this backpressure.
+canceling application GPIO/event state. The separate native Supervisor safety
+record consumes the same publications through its own retained ingress and
+bridges, independently of Control/Telemetry backpressure.
 See the [migration scope](async-soc-migration.md#gpioeventstelemetry-scope-and-contract).

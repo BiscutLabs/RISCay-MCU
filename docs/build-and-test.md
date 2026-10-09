@@ -1,5 +1,85 @@
 # Build and test
 
+## Asynchronous permanent supervisor migration
+
+Item 5 moves Groundlark power policy, safety samples, confirmation counters and
+dwell epochs into independent `FourPhaseSupervisor` and `ClickSupervisor` loops.
+Profiles retain immutable descriptors/policy. Dedicated POR-only crossings and
+retained ingress/projection preserve supervision through application reset and
+Control/Telemetry stalls. See the [exact migration contract](async-soc-migration.md#permanent-supervisor-scope-and-contract).
+
+Fresh independent review prompted two safety fixes: include the coincident upper
+time increment in first/later publication freshness gaps, and retain bad sensing
+consumed between ticks until policy evaluation even after a separate recovery
+command. Strict reset validation now recognizes the complete supervisor/bridge
+set and all descendants as POR-owned, with deliberate miswire and missing/unknown
+owner controls. The physical emitter selects the new immutable board descriptor.
+
+`AsyncSupervisorSpec` has ten clockless cases across both protocols: randomized
+native delay seeds, reply stalls, cold boot/current-boot ACK, minimum-off and
+shutdown dwell feedback, low-voltage confirmation boundaries and recovery,
+three-timeout latch, sensing-history gaps, counter saturation, disabled policy
+and POR during requests/held replies. `SupervisorSpec` adds six real crossing
+cases: first/subsequent coincident-tick freshness boundaries, accumulated failure
+and GPIO history, stalled SHUTDOWN/OFF projections, independent progress during
+Control/Telemetry stalls and repeated production-ratio 32-edge watchdog resets.
+Its timers wait for applied GPIO transitions, then assert configured dwell in
+the test's logical-time model. These checks do not bound LF phase, fractional
+rounding or elapsed-publication latency in physical wall time.
+The existing SoC, sleep, deep-sleep and firmware expectations are unchanged.
+
+On 2026-10-09, `full-regression.log` passes **161 verification cases across 21
+suites** and **two core physical-policy tests**, without failures, skipped,
+canceled, pending or aborted cases. XML snapshots and counts are preserved in
+`verified-reports/` and `verification-summary.json`. All **71 working-tree Python
+controls** pass (six belong to the preserved earlier P&R work), and all **eleven
+pinned SRAM assets** verify. The original full-capacity SRAM, independent core
+reference, firmware, retained/deep-sleep and reset assertions remain intact.
+Evidence lives in `build/supervisor-migration/`.
+
+The final six-case `SupervisorSpec` rerun in `watchdog-hold-focused.log` passes
+again after requiring at least two new application watchdog resets during each
+tested held reply, excluding earlier startup resets. Its XML and receipt are
+in `post-strengthening-reports/` and `post-strengthening-summary.json`. Enabled
+and disabled POR campaigns are included in the full clockless suite. The fresh
+reviewer found no further issue after these strengthenings.
+
+Both production-capacity exports pass strict `--soc --vector-coverage --sleep-clock`
+validation, retain the exact prior-item **34-port public ABI**, and contain three
+pinned SRAM macros each. Native Click is checked throughout; supervisor roots,
+bridges and all descendants are checked against POR.
+
+| Variant | Endpoints | Mapping checks | Semantic SHA-256 |
+| --- | ---: | ---: | --- |
+| Four-phase BD | 745 | 835,219,500 | `0e5f3986a2e5a4c4c3fa9b1d6f903502c5e2c9830e8255c51a4bd2634cb5461f` |
+| Native Click | 599 | 658,292,015 | `199a2b45f18057c95e6c3fef708163cb7bd40f0ca5e4cfbedbec0559c324c72c` |
+
+Receipts are `four-phase-strict-final.log`, `click-strict-final.log` and
+`strict-summary.json`; exports are `four-phase-preserved-soc/` and
+`click-preserved-soc/`. ABI comparisons are in `public-abi-verified.json`.
+The larger complete probes use a 7200-second simulation allowance; coverage,
+reset, native-protocol and mapping assertions remain enabled.
+
+Use fresh output directories for reproduction:
+
+```powershell
+python tools/sbt.py 'verification/test' 'physical/test'
+python tools/sbt.py 'fourPhaseBd/runMain riscay.bd.EmitFourPhaseSoc build/supervisor-recheck/four-phase-soc' 'twoPhaseClick/runMain riscay.click.EmitClickSoc build/supervisor-recheck/click-soc'
+python tools/check_export.py build/supervisor-recheck/four-phase-soc --library P:/Personal/chisel-async --soc --vector-coverage --sleep-clock --probe-timeout 7200
+python tools/check_export.py build/supervisor-recheck/click-soc --library P:/Personal/chisel-async --soc --vector-coverage --sleep-clock --probe-timeout 7200
+```
+
+The interrupted pre-retention regression remains in
+`regression-before-boundary-retention.log`; it is not counted as a completed pass.
+Earlier failures remain in `first-integration.log` and `integration-repair.log`
+(Boolean status padding during elaboration) and `*-strict-initial.log` (constant
+acquisition flags removed from the registered ABI). Explicitly retaining the
+complete registered capture boundary fixes the ABI; no check is removed.
+
+No physical timing or power qualification is claimed. Entire native transforms,
+feedback forks, capture pulses and crossings require item 10 characterization.
+Historical baseline `8637099` P&R is not applicable to this RTL.
+
 ## Asynchronous scaling and CRC migration
 
 Item 4 moves elapsed fractional time and ADC rational arithmetic into separate
@@ -96,8 +176,9 @@ characterization. Historical baseline `8637099` P&R remains inapplicable.
 Item 3 adds separate native `FourPhaseTelemetry` and `ClickTelemetry` state loops
 for software GPIO/application words, pending flags and host sample records.
 Clocked ingress compacts publications without losing attempt counts, latest
-status, last successful value or elapsed age. The clocked permanent supervisor's
-safety view consumes the same publications; it remains item 5. See the
+status, last successful value or elapsed age. At item 3 completion, the permanent
+supervisor's safety view was still clocked; item 5 later replaces it with a
+dedicated native loop consuming the same publications. See the
 [exact scope and contract](async-soc-migration.md#gpioeventstelemetry-scope-and-contract).
 
 A fresh independent reviewer caught a host-visible event flag disappearing while

@@ -136,7 +136,7 @@ class FabricExportTest(unittest.TestCase):
                          lambda n: n["primitives"][2].update(model="ChiselAsyncClosingLatch_v1")):
             bad = copy.deepcopy(node); mutation(bad)
             parent = copy.deepcopy(node); parent["children"] = [{"id": "hidden", "contract": bad}]
-            for top in ("ClickSoc", "ClickTelemetry"):
+            for top in ("ClickSoc", "ClickTelemetry", "ClickSupervisor"):
                 with self.assertRaisesRegex(ValueError, "HAS_RTZ_IMPLEMENTATION"):
                     validate_native_click({"top": top, "design": parent})
 

@@ -8,7 +8,7 @@ import riscay._
 import riscay.soc._
 
 /** This variant owns clock, reset, wake and endpoint integration. */
-abstract class ClickPlatform(p: SocParameters, board: SocParameters => BoardController) extends SocTop(p) {
+abstract class ClickPlatform(p: SocParameters, board: SocParameters => BoardProfile) extends SocTop(p) {
   val watchdog = withClockAndReset(watchdogClock, reset) { Module(new Watchdog(p.watchdogCycles, p.watchdogHoldCycles)) }
   val assertion = reset.asBool || watchdog.io.expired
   val release = withClockAndReset(serviceClock, assertion.asAsyncReset) {
@@ -64,6 +64,34 @@ abstract class ClickPlatform(p: SocParameters, board: SocParameters => BoardCont
   // Click reply acceptance returns the clocked bridge to idle on that edge.
   // The outstanding command covers reply wait; native guard drainage is clockless.
   fabric.io.telemetryDraining := !telemetryCommandBridge.in.ready
+  // Immutable profile selects this design's native permanent controller.
+  val supervisorBridges = board(p) match {
+    case profile: riscay.profiles.GroundlarkBoard =>
+      val supervisor = asyncChild("supervisor")(d => new ClickSupervisor(p,profile.policy,d))
+      val supervisorCommandBridge = asyncChild("supervisor_command_bridge")(d => new DecoupledToClick(new SupervisorCommand, d))
+      val supervisorReplyBridge = asyncChild("supervisor_reply_bridge")(d => new ClickToDecoupled(new SupervisorState, d))
+      supervisorCommandBridge.clock := workClock; supervisorReplyBridge.clock := workClock
+      supervisor.start := controlStart
+      chiselasync.protocol.TwoPhase.connect(supervisor.command,supervisorCommandBridge.out)
+      chiselasync.protocol.TwoPhase.connect(supervisorReplyBridge.in,supervisor.reply)
+      supervisorCommandBridge.in <> fabric.boardCommand
+      supervisorReplyBridge.out.ready := fabric.boardReply.ready
+      fabric.boardReply.valid := supervisorReplyBridge.out.valid
+      val result=supervisorReplyBridge.out.bits
+      val power=result.mode === 1.U || result.mode === 2.U
+      val shutdown=result.mode === 2.U
+      fabric.boardReply.bits.outputs := Cat(0.U(30.W),shutdown,power)
+      fabric.boardReply.bits.registers := VecInit(Seq(result.mode.pad(32),Cat(0.U(31.W),power),Cat(0.U(31.W),shutdown),
+        Cat(0.U(31.W),result.qualified && result.counts(1) >= profile.policy.ackStableMs.U),result.fault.pad(32),result.timeouts.pad(32)))
+      dontTouch(supervisorReplyBridge.out)
+      fabric.io.boardDraining := !supervisorCommandBridge.in.ready
+      Some((supervisorCommandBridge,supervisorReplyBridge))
+    case _: GenericBoard =>
+      fabric.boardCommand.ready := true.B; fabric.boardReply.valid := false.B
+      fabric.boardReply.bits := 0.U.asTypeOf(new BoardResult); fabric.io.boardDraining := false.B
+      None
+    case _ => throw new IllegalArgumentException("Board profile needs a native implementation in this design")
+  }
   p.lowPower match {
     case Some(lp) =>
       val scaler = asyncChild("elapsed_scaler")(d => new ElapsedTicks(

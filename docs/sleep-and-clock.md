@@ -159,6 +159,10 @@ The board controller and GPIO override, ADC/samples, elapsed-time accumulator,
 loader/image/lock and LF counter retain state. RUNNING/FAULT returns to READY;
 the host may explicitly restart the validated image without unlocking it.
 The supervisor still requests orderly shutdown on low battery during a crash.
+Each native supervisor has its own POR-only ingress and command/reply bridges;
+pending input, outstanding state updates and response drainage keep the service
+gate open. This work is independent of stalled Control/Telemetry consumers.
+The permanent output projection remains retained while application GPIO resets.
 Watchdog reset **does not reset the LF oscillator**. Only POR/brownout reset drives its
 `rst_n`. The analog candidate requires reset low during the supply ramp and at
 least 5 ms after valid supply. The wrapper now connects the supply-monitor macro

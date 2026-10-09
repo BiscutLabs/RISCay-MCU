@@ -321,9 +321,11 @@ for supply thresholds, detection latency and physical limitations.
 
 ## Groundlark permanent policy
 
-[GroundlarkSupervisor](../profiles/src/main/scala/riscay/profiles/GroundlarkSupervisor.scala)
-implements the bootstrap safety policy in fixed logic rather than requiring an
-uploaded or compiler-built supervisor. GPIO 0/1 are permanently owned outputs;
+[GroundlarkBoard](../profiles/src/main/scala/riscay/profiles/GroundlarkBoard.scala)
+selects an immutable power policy. `FourPhaseSupervisor` and `ClickSupervisor`
+implement it in separate native state-token loops without uploaded firmware.
+The native state, dedicated bridges, acquisition history and output projection
+are POR-owned; no application watchdog reset clears them. GPIO 0/1 are permanently owned outputs;
 GPIO 2 remains the halt input. Firmware cannot override their ownership. Stable
 inactive ACK must be observed after each power-on before a subsequent stable
 active ACK is accepted. A stale active ACK blocks initial startup.

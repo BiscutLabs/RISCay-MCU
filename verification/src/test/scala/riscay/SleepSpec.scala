@@ -17,7 +17,7 @@ class SleepSpec extends AnyFunSuite {
   private val p = SocParameters(config, watchdogCycles=4000,
     adc=Some(AdcParameters(halfPeriodCycles=2)), lowPower=Some(LowPowerParameters(maximumSleepMs=1000)))
   private def top(click: Boolean, params: SocParameters = p,
-      board: SocParameters => BoardController = x => new GenericBoard(x)): SocTop =
+      board: SocParameters => BoardProfile = x => new GenericBoard(x)): SocTop =
     if(click) new ClickSoc(params,board) else new FourPhaseSoc(params,board)
   private def upload(program: Seq[Long]): String = {
     val crc = new CRC32
@@ -117,7 +117,7 @@ end endtask
       // Storage capacity is irrelevant to this permanent-controller test; the
       // production-capacity exports are checked separately.
       val params = p.copy(config=Groundlark.configuration.copy(programBytes=16,workingRamBytes=16), watchdogCycles=20000)
-      ClockedSimulation.run(top(click,params,x => new GroundlarkSupervisor(x,PowerPolicy(enabled=true))),
+      ClockedSimulation.run(top(click,params,x => new GroundlarkBoard(x,PowerPolicy(enabled=true))),
         name+"-sleep-groundlark","""
         // 1 nominal ms = 2 us here; conversion latency is still real service cycles.
         #61000000;

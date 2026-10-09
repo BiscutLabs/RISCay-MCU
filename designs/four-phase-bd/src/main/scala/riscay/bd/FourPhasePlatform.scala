@@ -8,7 +8,7 @@ import riscay._
 import riscay.soc._
 
 /** This variant owns clock, reset, wake and endpoint integration. */
-abstract class FourPhasePlatform(p: SocParameters, board: SocParameters => BoardController) extends SocTop(p) {
+abstract class FourPhasePlatform(p: SocParameters, board: SocParameters => BoardProfile) extends SocTop(p) {
   val watchdog = withClockAndReset(watchdogClock, reset) { Module(new Watchdog(p.watchdogCycles, p.watchdogHoldCycles)) }
   val assertion = reset.asBool || watchdog.io.expired
   val release = withClockAndReset(serviceClock, assertion.asAsyncReset) {
@@ -69,6 +69,40 @@ abstract class FourPhasePlatform(p: SocParameters, board: SocParameters => Board
   }
   fabric.io.telemetryDraining := !telemetryCommandBridge.in.ready ||
     (telemetryReturning && telemetryReplyBridge.in.ack)
+  // Immutable profile selects this design's native permanent controller.
+  val supervisorBridges = board(p) match {
+    case profile: riscay.profiles.GroundlarkBoard =>
+      val supervisor = asyncChild("supervisor")(d => new FourPhaseSupervisor(p,profile.policy,d))
+      val supervisorCommandBridge = asyncChild("supervisor_command_bridge")(d => new chiselasync.clocked.DecoupledToFourPhase(new SupervisorCommand, 2, d))
+      val supervisorReplyBridge = asyncChild("supervisor_reply_bridge")(d => new chiselasync.clocked.FourPhaseToDecoupled(new SupervisorState, 2, d))
+      supervisorCommandBridge.clock := workClock; supervisorReplyBridge.clock := workClock
+
+      chiselasync.protocol.FourPhase.connect(supervisor.command,supervisorCommandBridge.out)
+      chiselasync.protocol.FourPhase.connect(supervisorReplyBridge.in,supervisor.reply)
+      supervisorCommandBridge.in <> fabric.boardCommand
+      supervisorReplyBridge.out.ready := fabric.boardReply.ready
+      fabric.boardReply.valid := supervisorReplyBridge.out.valid
+      val result=supervisorReplyBridge.out.bits
+      val power=result.mode === 1.U || result.mode === 2.U
+      val shutdown=result.mode === 2.U
+      fabric.boardReply.bits.outputs := Cat(0.U(30.W),shutdown,power)
+      fabric.boardReply.bits.registers := VecInit(Seq(result.mode.pad(32),Cat(0.U(31.W),power),Cat(0.U(31.W),shutdown),
+        Cat(0.U(31.W),result.qualified && result.counts(1) >= profile.policy.ackStableMs.U),result.fault.pad(32),result.timeouts.pad(32)))
+      dontTouch(supervisorReplyBridge.out)
+      val returning = withClockAndReset(workClock, reset) {
+        val pending=RegInit(false.B)
+        when(supervisorReplyBridge.out.fire) { pending := true.B }
+          .elsewhen(!supervisorReplyBridge.in.ack) { pending := false.B }
+        pending
+      }
+      fabric.io.boardDraining := !supervisorCommandBridge.in.ready || (returning && supervisorReplyBridge.in.ack)
+      Some((supervisorCommandBridge,supervisorReplyBridge))
+    case _: GenericBoard =>
+      fabric.boardCommand.ready := true.B; fabric.boardReply.valid := false.B
+      fabric.boardReply.bits := 0.U.asTypeOf(new BoardResult); fabric.io.boardDraining := false.B
+      None
+    case _ => throw new IllegalArgumentException("Board profile needs a native implementation in this design")
+  }
   p.lowPower match {
     case Some(lp) =>
       val scaler = asyncChild("elapsed_scaler")(d => new ElapsedTicks(

@@ -33,7 +33,7 @@ object EmitPhysical extends App {
     lowPower=Some(LowPowerParameters.gf180Slow))
   // Preserve the complete supervisor in implementation experiments. These
   // defaults are deliberately NOT a board-qualified battery/tapeout policy.
-  def board(p: SocParameters) = new GroundlarkSupervisor(p,PowerPolicy(enabled=true))
+  def board(p: SocParameters) = new GroundlarkBoard(p,PowerPolicy(enabled=true))
   Seq("bd", "click").foreach { variant =>
     val out = root.resolve(variant)
     if(variant == "bd") ExportDesign.emit(new FourPhaseSoc(p,board,

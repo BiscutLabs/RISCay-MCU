@@ -317,6 +317,13 @@ def generated_reset_probe(source: str, manifest: dict) -> str:
     if present and present != telemetry.keys():
         raise ValueError("SOC_PERSISTENT_RESET_INVENTORY")
     persistent.update(telemetry)
+    supervisor = {"supervisor": "ClickSupervisor" if top == "ClickSoc" else "FourPhaseSupervisor",
+                  "supervisor_command_bridge": "DecoupledToClick" if top == "ClickSoc" else "DecoupledToFourPhase",
+                  "supervisor_reply_bridge": "ClickToDecoupled" if top == "ClickSoc" else "FourPhaseToDecoupled"}
+    present = {c.get("id") for c in root["children"]} & supervisor.keys()
+    if present and present != supervisor.keys():
+        raise ValueError("SOC_PERSISTENT_RESET_INVENTORY")
+    persistent.update(supervisor)
     persistent.update({"elapsed_scaler": "ElapsedTicks", "sample_scaler": "SampleScaler"})
     for child in root["children"]:
         if child.get("id") in persistent and not re.fullmatch(
@@ -488,7 +495,7 @@ def validate_fabric_path(node, timing):
 
 def validate_native_click(manifest):
     """A Click export must remain native throughout its async hierarchy."""
-    if manifest["top"] not in ("ClickSoc", "ClickCore", "ClickFabric", "ClickControl", "ClickTelemetry", "ClickElapsed", "ClickSample"):
+    if manifest["top"] not in ("ClickSoc", "ClickCore", "ClickFabric", "ClickControl", "ClickTelemetry", "ClickSupervisor", "ClickElapsed", "ClickSample"):
         return
     def nodes(node):
         yield node

@@ -10,8 +10,8 @@ The [SoC contract](soc-contract.md) specifies their wire/MMIO behavior.
 
 | Layer | Owns |
 | --- | --- |
-| Shared MCU | ISA/datapath, memory transactions, generic GPIO, timer/events, watchdog/reset, host ABI, loader/protection and measurement records |
-| Four-phase or Click implementation | Native handshakes, storage, timing and reset composition |
+| Shared definitions | ISA definitions, memory/host wire schemas, parameters, fixed macro models and verification utilities |
+| Four-phase or Click implementation | Separate CPU and SoC runtime logic: native handshakes/state, loader, GPIO/events/measurements, arithmetic, permanent supervision, service endpoints, timing and reset composition |
 | Board/application profile | Logical pin roles, safe reset levels, sensor meanings/units, application registers, immutable startup policy and firmware |
 | Physical implementation | Actual pads, analog frontend, LF and restartable fast oscillators, POR, memory macros and electrical/power-domain qualification |
 

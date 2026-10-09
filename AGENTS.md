@@ -17,8 +17,8 @@
   obtain a fresh independent agent review, address its findings, rerun affected
   checks, update its evidence/contracts, commit and push. Repeat this review loop
   for every item. Continue to the next item when the user has authorized it;
-  otherwise ask. Scaling/CRC is the latest digitally verified item. Obtain
-  the user's next choice before advancing to the permanent supervisor.
+  otherwise ask. Permanent supervisor is the latest digitally verified item;
+  obtain the user's next choice before advancing to SRAM access sequencing.
   Follow `docs/soc-contract.md` for ABI/reset scope. Run AsyncFabricSpec,
   AsyncControlSpec, ControlResetSpec, AsyncTelemetrySpec, TelemetrySpec and both
   service implementations' FabricSpec/ScalingSpec plus affected regressions;
@@ -38,8 +38,12 @@
   Native Telemetry and its bridges are POR-only. Preserve acquisition ingress
   across application reset; immediately reset application GPIO/event projections
   and suppress stale replies. Never drop dispatched events from host visibility.
-  Keep the supervisor's clocked safety sample view fed by the same publication
-  stream until its own migration. Include queued elapsed time in host freshness.
+  Native Supervisor state, input history, output projection and both bridges are
+  POR-only. Keep its acquisition stream independent of Control/Telemetry stalls.
+  Include coincident ticks in publication freshness gaps; qualify dwell times and
+  current-boot ACK after applied output publication. Run AsyncSupervisorSpec and
+  SupervisorSpec, including repeated 32-edge watchdog resets and stalled crossings.
+  Include queued elapsed time in host freshness.
 - Retained sleep and programmable sampling are in scope. Follow
   `docs/sleep-and-clock.md`; run SleepSpec, DeepSleepSpec and oscillator-model tests as well.
   Preserve the cold-boot policy, programming lock and watchdog fault coverage.

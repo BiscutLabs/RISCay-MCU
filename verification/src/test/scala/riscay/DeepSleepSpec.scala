@@ -17,7 +17,7 @@ class DeepSleepSpec extends AnyFunSuite {
   private val p = SocParameters(config, staleMs=3000, watchdogCycles=32, watchdogHoldCycles=2,
     adc=Some(AdcParameters(halfPeriodCycles=2,intervalCycles=10000000)),lowPower=Some(lp))
   private def top(click: Boolean, params: SocParameters = p,
-      board: SocParameters => BoardController = x => new GenericBoard(x)): SocTop =
+      board: SocParameters => BoardProfile = x => new GenericBoard(x)): SocTop =
     if(click) new ClickSoc(params,board) else new FourPhaseSoc(params,board)
   private def upload(program: Seq[Long]): String = {
     val crc = new CRC32
@@ -185,7 +185,7 @@ end endtask
     }
     test(s"$name slow-clock Groundlark cold boot, confirmation and shutdown with stopped fast source") {
       val params=p.copy(config=Groundlark.configuration.copy(programBytes=16,workingRamBytes=32))
-      ClockedSimulation.run(top(click,params,x => new GroundlarkSupervisor(x,PowerPolicy(enabled=true))),
+      ClockedSimulation.run(top(click,params,x => new GroundlarkBoard(x,PowerPolicy(enabled=true))),
         name+"-deep-board",s"""
         // 361 fastest-bound ticks are needed for 30 s off time. The accelerated
         // reference is 2 ms/tick here; nominal ms must not shorten that minimum.

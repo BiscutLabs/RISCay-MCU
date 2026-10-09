@@ -1,8 +1,8 @@
 # RISCay-MCU
 
 Migration items use a fresh independent agent review, fixes, affected verification,
-and a commit/push before completion. SocFabric, MMIO/loader and
-GPIO/events/telemetry are digitally verified; see the [migration checklist](docs/async-soc-migration.md).
+and a commit/push before completion. SocFabric, MMIO/loader,
+GPIO/events/telemetry, scaling/CRC and permanent supervision are digitally verified; see the [migration checklist](docs/async-soc-migration.md).
 
 A tiny reusable RISC-V SoC, built in Chisel with
 [chisel-async](https://github.com/BiscutLabs/chisel-async).
@@ -19,9 +19,9 @@ and control the external Pi power switch.
 
 The [reusable interface](docs/reusable-interface.md) separates common device,
 loader and measurement services from [application profiles](profiles/README.md).
-CPU and common peripheral RTL have no Groundlark dependencies. Both SoCs include
-the host interface, loader, memory protection and generic peripherals; the
-Groundlark controller is a separate profile.
+CPU RTL is application-independent. Each SoC includes host services, memory
+protection and generic peripherals, plus its own native controller selected by
+the immutable Groundlark board profile.
 
 Both variants use **on-chip boot ROM, executable RAM and working RAM**. No external
 memory chip is required. A host may reload firmware after complete power loss.
@@ -46,8 +46,8 @@ telemetry remain readable when locked. See the
 [host status, telemetry and lock contract](docs/loader-status-and-lock.md).
 
 **Status: asynchronous SoC migration in progress.** Each design owns a separate
-SoC implementation. SocFabric, MMIO/loader, GPIO/events/telemetry and scaling/CRC
-are digitally verified. Separate native pipelines now own fractional elapsed-time
+SoC implementation. SocFabric, MMIO/loader, GPIO/events/telemetry, scaling/CRC
+and permanent supervision are digitally verified. Separate native pipelines now own fractional elapsed-time
 and ADC arithmetic, with CRC byte stages in each Control feedback loop.
 Native fabrics route ROM and static access faults without a
 service clock; stateful accesses use explicit endpoint bridges. Separate native
@@ -55,11 +55,12 @@ Control modules own loader state and MMIO validation/producer selectors.
 Separate native Telemetry loops now own software GPIO/application words, pending
 flags and host sample records; both variants pass regressions and strict exports. Clocked
 ingress, snapshots, reset projections, GPIO sampling, timer/lease/watchdog logic,
-the supervisor's safety sample view, scaling request/publication boundaries,
+supervisor input/output and scaling request/publication boundaries,
 SRAM byte sequencing, I2C and SPI ADC remain explicit. The independent LF timebase/watchdog remains
 necessary. See the [migration checklist](docs/async-soc-migration.md). A permanent
 Groundlark controller supervises power before upload and during application
-stalls. Its default policy is disabled until qualified battery settings are
+stalls. Its state, safety sample record and confirmation counters now reside
+in independent native loops, with dedicated POR-only command/reply bridges. Its default policy is disabled until qualified battery settings are
 provided. Watchdog recovery resets the application and its CPU bridges while
 preserving the power supervisor, sensing, timebase, validated image and programming
 lock. The host can explicitly restart that image and distinguish successive
@@ -70,7 +71,8 @@ or MCU power loss clears the lock and returns Groundlark to its off state.
 **Tapeout must deliberately supply and qualify an enabled board policy**; the
 reference emitters' disabled `PowerPolicy()` never enables Pi power.
 Physical/analog, pin/package, board and Chiselator qualification remain.
-The new Fabric, Control and Telemetry controllers have no physical timing qualification.
+The new Fabric, Control, Telemetry, arithmetic and Supervisor controllers have
+no physical timing qualification.
 Earlier P&R results describe baseline `8637099` and do not qualify this migration.
 
 Both variants have [experimental GF180 implementation inputs](docs/gf180-implementation.md):

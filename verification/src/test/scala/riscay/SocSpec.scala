@@ -14,7 +14,7 @@ class SocSpec extends AnyFunSuite {
     Vector(MeasurementChannel(0, "test", MeasurementUnit.Count, 0)),
     ApplicationProfile(0x54455354L, 1, "test", Vector(HostRegister(0,"RESULT"), HostRegister(1,"SECOND")), Vector.empty))
   private val p = SocParameters(config, watchdogCycles = 100000, staleMs = 2)
-  private def top(click: Boolean, params: SocParameters = p, board: SocParameters => BoardController = x => new GenericBoard(x)): SocTop =
+  private def top(click: Boolean, params: SocParameters = p, board: SocParameters => BoardProfile = x => new GenericBoard(x)): SocTop =
     if(click) new ClickSoc(params, board) else new FourPhaseSoc(params, board)
   private def hex(word: Long): String = "32'h" + java.lang.Long.toHexString(word & 0xffffffffL)
   private def checksum(program: Seq[Long]): Long = {
@@ -117,7 +117,7 @@ reg [15:0] adcShift;
 always @(negedge adcCsN) begin adcShift={4'b0,adcCode}; adcMiso=adcShift[15]; end
 always @(negedge adcSclk) if(!adcCsN) begin adcShift=adcShift<<1; adcMiso=adcShift[15]; end
 """
-      ClockedSimulation.run(top(click, params, x => new GroundlarkSupervisor(x, PowerPolicy(enabled=true))),
+      ClockedSimulation.run(top(click, params, x => new GroundlarkBoard(x, PowerPolicy(enabled=true))),
         name + "-groundlark", s"""
         if(gpioOut[0] || programmed) $$fatal(1,"UNQUALIFIED_BOOT");
         gpioIn=0;
