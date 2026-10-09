@@ -1,5 +1,9 @@
 # RISCay-MCU
 
+Migration items use a fresh independent agent review, fixes, affected verification,
+and a commit/push before completion. MMIO/loader is the next authorized item;
+see the [migration checklist](docs/async-soc-migration.md).
+
 A tiny reusable RISC-V SoC, built in Chisel with
 [chisel-async](https://github.com/BiscutLabs/chisel-async).
 

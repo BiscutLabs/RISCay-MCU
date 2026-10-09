@@ -1,8 +1,10 @@
 # Asynchronous SoC migration checklist
 
 This checklist is the migration boundary, not a claim that all peripheral RTL is
-asynchronous. Complete, verify, document, commit and push one item, then ask the
-user which item to take next. Both implementations remain active throughout.
+asynchronous. Complete and verify one item, obtain a fresh independent agent
+review, implement fixes, rerun affected checks, document, commit and push. Repeat
+this review loop for each item. Continue only to an authorized next item; ask
+when no next item has been chosen. Both implementations remain active throughout.
 
 ## Ownership and invariants
 
@@ -49,9 +51,9 @@ user which item to take next. Both implementations remain active throughout.
   decode/data paths, pulse/fork/return timing, reset and CDC bounds, then new P&R
   and extracted validation. Digital passes alone cannot check this item.
 
-The numbered candidates after SocFabric are proposals; the user chooses the next
-item. Each requires both implementations and invariant-focused tests before it
-can be checked off. Do not start the next item automatically.
+The user has authorized MMIO/loader after the SocFabric review. Later numbered
+candidates remain proposals. Each requires both implementations, invariant-focused
+tests and a fresh independent review before it can be checked off.
 
 ## SocFabric handshake and timing contract
 
@@ -80,6 +82,12 @@ The seven cells are one comparator and two serial AND networks. The bound is
 checked at source acknowledgement. Endpoint response parity samples its request
 on the common capture pulse; local transactions keep that phase unchanged.
 There is no separately gated capture pulse that can be filtered by unequal delays.
+ClickFabric currently accepts only `ClickTiming.Simulation`: custom stage timing
+policies are rejected until their composed-controller bounds can be exported and
+exercised. Its strict adapter independently checks the fixed 1..10 ns envelope,
+nominal cells, request/data guards, strict return-guard minima and guard pin
+connections. Required mux and capture-aperture obligations cannot be omitted.
+Focused tests monitor setup/hold and high/low pulse widths at all capture registers.
 Source payload reuse must follow capture
 pulse drainage. Exported data-path budgets include
 the complete ROM/decode/response mux, not an extra physical data buffer.
@@ -114,5 +122,13 @@ Click throughout. Exact logs, hashes, counts and qualification limits are in
 
 SocFabric is the only checked migration item. MMIO/loader, GPIO/events/telemetry,
 scaling/CRC, permanent supervisor, SRAM sequencing, I2C, SPI ADC and slow-domain
-housekeeping remain future choices. Ask the user which item to take next after
-committing and pushing this item.
+housekeeping remain incomplete. MMIO/loader is the authorized next item.
+
+### Fresh SocFabric review
+
+An independent agent reviewed `7f07f01` and found two export-validation gaps:
+positive-but-undersized Click guards were accepted, and removing a fabric's mux
+timing obligation and marker bypassed its custom checks. Both now fail closed,
+with independent negative controls, actual guard/capture pin comparisons and
+capture-aperture observations. The reviewer found no default-policy handshake
+counterexample. See the review evidence in [build and test](build-and-test.md).

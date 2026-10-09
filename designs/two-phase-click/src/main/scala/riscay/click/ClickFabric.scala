@@ -16,6 +16,10 @@ import riscay.soc.MemoryMap
   */
 class ClickFabric(config: McuConfiguration, timing: ClickTiming, domain: ResetDomain)
     extends AsyncModule(domain) {
+  // This composed controller has a separately checked digital envelope. Do not
+  // accept arbitrary stage policies until their cell bounds/pulse distribution
+  // can be exported and exercised as a fabric contract in their own right.
+  require(timing == ClickTiming.Simulation, "CLICK_FABRIC_REQUIRES_SIMULATION_POLICY")
   val request = twoPhaseInput("request", new MemoryRequest)
   val response = twoPhaseOutput("response", new MemoryResponse)
   val serviceRequest = twoPhaseOutput("service_request", new MemoryRequest)
@@ -131,5 +135,7 @@ class ClickFabric(config: McuConfiguration, timing: ClickTiming, domain: ResetDo
   contract.dataPathTiming("response_mux", "reply_sources", "register_data",
     BundledTiming.simulation(dataMax=timing.data.max).copy(dataDelay=timing.data),
     "complete ROM/static permission decode and service response mux before event register")
+  contract.setupHold("capture_aperture", "request_request", "request_data", "register_data",
+    "capture_event", "response_data", timing.setup, timing.hold)
   contract.capacity(1)
 }

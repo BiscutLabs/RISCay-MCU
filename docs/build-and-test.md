@@ -8,6 +8,23 @@ logic is still clocked in each design's Services/Platform files. Historical resu
 below apply only to their stated RTL; the previous P&R does not qualify these
 new controllers.
 
+The fresh independent review of `7f07f01` identified unenforced composed Click
+guard bounds and optional fabric timing declarations. The follow-up enforces a
+Simulation-only ClickFabric policy, the strict 80.2 ns drainage inequality,
+capture setup/hold observations and a mandatory per-fabric timing inventory.
+Actual guard pins are compared with the native phases and public channels.
+All nine focused tests pass with capture-register setup/hold/pulse monitors;
+all 66 working-tree Python controls pass, including seven fabric-export controls
+and six preserved P&R controls. Receipts under `build/async-fabric-migration/`:
+`review-focused-emit-2.log`, `review-python.log`, `review-bd-strict.log`, and
+`review-click-strict.log`. The first focused attempt's testbench syntax error
+and the later incorrect sbt project name are retained in the review logs.
+The fresh Click export is `build/async-fabric-review/click-soc/`, with semantic
+SHA-256 `7e8f05de6fc5ce2afe215c24a948b0bdcc1bf1662d2ef29864f1ff313cd1ad57`.
+Endpoint/mapping counts remain 148/5,229,728. The unchanged BD export is rechecked
+with the stricter adapter. These changes do not alter synthesized functional RTL
+or establish physical timing qualification.
+
 Run one sbt process at a time. On this Windows workstation:
 
 ```powershell

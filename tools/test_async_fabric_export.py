@@ -6,7 +6,8 @@ import subprocess
 import tempfile
 import unittest
 from check_export import (BD_FABRIC_PATH, CLICK_FABRIC_PATH, validate_fabric_path,
-                          fabric_path_bindings, fabric_checker_source, validate_native_click)
+                          fabric_path_bindings, fabric_checker_source, validate_native_click,
+                          validate_fabric_inventory, validate_click_fabric_controls)
 
 
 def fixture(click):
@@ -21,24 +22,75 @@ def fixture(click):
                           ("service_request", "output"), ("service_response", "input"))],
             "endpoints": [{"id": name, "rtl_path": "Top." + name, "width": width} for name, width in
                           ((source, 103), (sink, 33), ("capture_event", 1), ("request_data", 70),
-                           ("response_data", 33), ("service_request_data", 70), ("service_response_data", 33), ("service_response_request", 1))],
+                           ("response_data", 33), ("service_request_data", 70), ("service_response_data", 33), ("service_response_request", 1),
+                           ("request_acknowledge", 1), ("response_request", 1), ("service_response_acknowledge", 1), ("service_request_request", 1))],
             "primitives": [primitive("data_delay"), primitive("accepted_phase")], "timing": []}
     if click:
         node["primitives"] += [primitive("payload", "ChiselAsyncEventRegister_v1", WIDTH="33"),
                                primitive("service_response_phase", "ChiselAsyncEventRegister_v1", WIDTH="1")]
         node["primitives"] += [primitive(name, WIDTH="1", OP="0", RESET_VALUE="0", DELAY_FS="110200001")
-                               for name in ("request_guard", "request_delay", "acknowledge_guard", "output_guard", "return_guard")]
+                               for name in ("request_guard", "request_delay", "output_delay", "acknowledge_guard", "output_guard", "return_guard")]
+        node["primitives"] += [primitive("service_request_phase")]
     else:
-        node["children"] = [{"id": "reply", "contract": {"module": "FourPhaseStage_2",
+        node["children"] = [{"id": "reply", "contract": {"module": "FourPhaseStage_2", "children": [],
                              "primitives": [primitive("data_delay")],
                              "endpoints": [{"id": "in_data", "rtl_path": "Top.storage_data"}]}}]
-    timing = {"logic": CLICK_FABRIC_PATH if click else BD_FABRIC_PATH,
+    timing = {"id": "response_mux", "kind": "bundled-data-path-v1", "logic": CLICK_FABRIC_PATH if click else BD_FABRIC_PATH,
               "delay_owner": [] if click else ["reply"], "delay_cell": "data_delay",
               "source": source, "sink": sink}
+    node["timing"] = [timing]
+    if click:
+        node["timing"].append(dict(id="capture_aperture", kind="bundled-setup-hold-v1", launch="request_request",
+            transaction="request_data", data_valid="register_data", capture="capture_event", captured="response_data",
+            setup_fs="100000", hold_fs="100000"))
+        models = {"accepted_phase": "PhaseRegister", "service_request_phase": "PhaseRegister",
+                  "payload": "EventRegister", "service_response_phase": "EventRegister",
+                  "dispatch": "AsymmetricC", "request_pending": "Xor", "response_occupied": "Xor"}
+        models.update({prefix + suffix: "ControlGate" for prefix in ("runnable", "capture") for suffix in ("_na", "_nb", "_or", "")})
+        for name, model in models.items():
+            cell = next((p for p in node["primitives"] if p["id"] == name), None)
+            if cell is None:
+                cell = primitive(name); node["primitives"].append(cell)
+            cell["model"] = "ChiselAsync" + model + "_v1"
+            cell["parameters"]["DELAY_FS"] = "1000000"
+        for name, delay in (("data_delay", 10000000), ("request_guard", 11000000), ("request_delay", 11000000), ("output_delay", 32000000)):
+            next(p for p in node["primitives"] if p["id"] == name)["parameters"]["DELAY_FS"] = str(delay)
     return node, timing
 
 
 class FabricExportTest(unittest.TestCase):
+    def test_timing_obligations_cannot_be_removed_or_renamed(self):
+        for click in (False, True):
+            node, _ = fixture(click)
+            validate_fabric_inventory({"design": node})
+            for index in range(len(node["timing"])):
+                for remove in (False, True):
+                    bad = copy.deepcopy(node)
+                    if remove:
+                        bad["timing"].pop(index)
+                    else:
+                        bad["timing"][index]["id"] = "unrecognized"
+                    with self.assertRaisesRegex(ValueError, "TIMING_INVENTORY"):
+                        validate_fabric_inventory({"design": {"module": "Top", "children": [{"contract": bad}]}})
+
+    def test_click_composed_drain_bound_aperture_and_cell_envelope(self):
+        node, _ = fixture(True)
+        validate_click_fabric_controls(node)
+        for name in ("acknowledge_guard", "output_guard", "return_guard"):
+            for delay in (1, 32000000, 80200000):
+                bad = copy.deepcopy(node)
+                next(p for p in bad["primitives"] if p["id"] == name)["parameters"]["DELAY_FS"] = str(delay)
+                with self.assertRaisesRegex(ValueError, "DRAIN_GUARD"):
+                    validate_click_fabric_controls(bad)
+        for name in ("payload", "accepted_phase", "dispatch", "request_pending", "capture_na", "runnable"):
+            bad = copy.deepcopy(node)
+            next(p for p in bad["primitives"] if p["id"] == name)["parameters"]["DELAY_FS"] = "1000001"
+            with self.assertRaisesRegex(ValueError, "CELL_POLICY"):
+                validate_click_fabric_controls(bad)
+        bad = copy.deepcopy(node); bad["timing"][1]["hold_fs"] = "0"
+        with self.assertRaisesRegex(ValueError, "APERTURE"):
+            validate_click_fabric_controls(bad)
+
     def test_custom_paths_reject_changed_owner_schema_and_protocol(self):
         for click in (False, True):
             node, timing = fixture(click)

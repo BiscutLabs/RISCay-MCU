@@ -259,6 +259,62 @@ BD_FABRIC_PATH = "ROM/static permission decode and service response mux"
 CLICK_FABRIC_PATH = "complete ROM/static permission decode and service response mux before event register"
 
 
+def validate_fabric_inventory(manifest):
+    """Required obligations cannot vanish along with their passive markers."""
+    def visit(node):
+        module = node["module"]
+        if re.fullmatch(r"(?:FourPhase|Click)Fabric(?:_[0-9]+)?", module):
+            click = module.startswith("Click")
+            expected = {"response_mux": ("bundled-data-path-v1", CLICK_FABRIC_PATH if click else BD_FABRIC_PATH)}
+            if click:
+                expected["capture_aperture"] = ("bundled-setup-hold-v1", None)
+            actual = {t["id"]: (t["kind"], t.get("logic")) for t in node["timing"]}
+            if actual != expected or len(node["timing"]) != len(expected):
+                raise ValueError("MCU_FABRIC_TIMING_INVENTORY")
+            if click:
+                validate_click_fabric_controls(node)
+        for child in node["children"]:
+            visit(child["contract"])
+    visit(manifest["design"])
+
+
+def validate_click_fabric_controls(node):
+    """Independent fixed digital policy for the MCU's composed Click network.
+
+    These are the 1..10 ns experiment bounds, not characterized cell timing.
+    ClickFabric rejects other policies; default AsyncTest routing variation uses
+    exactly this envelope. Check actual model parameters and composed guards,
+    rather than applying the library's atomic-AND ClickStage formula here.
+    """
+    cells = {p["id"]: p for p in node["primitives"]}
+    aperture = next((t for t in node["timing"] if t["id"] == "capture_aperture"), {})
+    if any(aperture.get(k) != v for k, v in {
+            "kind": "bundled-setup-hold-v1", "launch": "request_request", "transaction": "request_data",
+            "data_valid": "register_data", "capture": "capture_event", "captured": "response_data",
+            "setup_fs": "100000", "hold_fs": "100000"}.items()):
+        raise ValueError("MCU_CLICK_FABRIC_APERTURE")
+    expected = {"accepted_phase": "ChiselAsyncPhaseRegister_v1",
+                "service_request_phase": "ChiselAsyncPhaseRegister_v1",
+                "service_response_phase": "ChiselAsyncEventRegister_v1",
+                "payload": "ChiselAsyncEventRegister_v1", "dispatch": "ChiselAsyncAsymmetricC_v1",
+                "request_pending": "ChiselAsyncXor_v1", "response_occupied": "ChiselAsyncXor_v1"}
+    for prefix in ("runnable", "capture"):
+        expected.update({prefix + suffix: "ChiselAsyncControlGate_v1" for suffix in ("_na", "_nb", "_or", "")})
+    for name, model in expected.items():
+        cell = cells.get(name, {})
+        if cell.get("model") != model or cell.get("parameters", {}).get("DELAY_FS") != "1000000":
+            raise ValueError("MCU_CLICK_FABRIC_CELL_POLICY")
+    for name, delay in (("request_guard", 11000000), ("request_delay", 11000000),
+                        ("output_delay", 32000000), ("data_delay", 10000000)):
+        if cells.get(name, {}).get("parameters", {}).get("DELAY_FS") != str(delay):
+            raise ValueError("MCU_CLICK_FABRIC_FIXED_GUARD")
+    # Phase propagation + XOR + two three-cell ANDs + skew + low/hold margin.
+    limit = 10000000 + 7 * 10000000 + 100000 + 100000
+    for name in ("acknowledge_guard", "output_guard", "return_guard"):
+        if int(cells.get(name, {}).get("parameters", {}).get("DELAY_FS", "0")) <= limit:
+            raise ValueError("MCU_CLICK_FABRIC_DRAIN_GUARD")
+
+
 def validate_fabric_path(node, timing):
     """Fail closed on custom-path identity, schema, storage and native protocol.
 
@@ -292,7 +348,7 @@ def validate_fabric_path(node, timing):
                 cells.get("service_response_phase", {}).get("model") != "ChiselAsyncEventRegister_v1" or
                 cells.get("service_response_phase", {}).get("parameters", {}).get("WIDTH") != "1"):
             raise ValueError("MCU_FABRIC_CAPTURE_CELL")
-        for name in ("request_guard", "request_delay", "acknowledge_guard", "output_guard", "return_guard"):
+        for name in ("request_guard", "request_delay", "output_delay", "acknowledge_guard", "output_guard", "return_guard"):
             cell = cells.get(name, {})
             params = cell.get("parameters", {})
             if (cell.get("model") != "ChiselAsyncControlGate_v1" or
@@ -336,7 +392,15 @@ def fabric_path_bindings(node, timing):
                 (endpoints["capture_event"], cells["payload"] + ".trigger"),
                 (endpoints["capture_event"], cells["accepted_phase"] + ".trigger"),
                 (endpoints["capture_event"], cells["service_response_phase"] + ".trigger"),
-                (endpoints["service_response_request"], cells["service_response_phase"] + ".d")]
+                (endpoints["service_response_request"], cells["service_response_phase"] + ".d"),
+                (cells["accepted_phase"] + ".q", cells["acknowledge_guard"] + ".a"),
+                (cells["accepted_phase"] + ".q", cells["output_guard"] + ".a"),
+                (cells["service_response_phase"] + ".q", cells["return_guard"] + ".a"),
+                (cells["service_request_phase"] + ".q", cells["output_delay"] + ".a"),
+                (endpoints["request_acknowledge"], cells["acknowledge_guard"] + ".q"),
+                (endpoints["response_request"], cells["output_guard"] + ".q"),
+                (endpoints["service_response_acknowledge"], cells["return_guard"] + ".q"),
+                (endpoints["service_request_request"], cells["output_delay"] + ".q")]
     return []
 
 
@@ -387,6 +451,7 @@ def main() -> None:
     original_manifest = module.validate_manifest
     def manifest(document):
         result = original_manifest(document)
+        validate_fabric_inventory(result)
         validate_native_click(result)
         return result
     module.validate_manifest = manifest

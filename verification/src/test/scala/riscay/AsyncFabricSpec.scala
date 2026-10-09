@@ -90,7 +90,36 @@ class AsyncFabricSpec extends AnyFunSuite {
     def cell(id: String) = "dut." + design("primitives").arr.find(_("id").str == id).get("rtl_path")
       .str.split('.').drop(1).mkString(".")
     val guard=cell("acknowledge_guard")
-    s"""fork begin
+    val apertures = Seq("payload", "accepted_phase", "service_response_phase").map { id =>
+      val p = cell(id)
+      s"""begin
+        time rise=0, fall=0, changed=0;
+        bit rose=0, fell=0, dataSeen=0;
+        fork
+          begin forever begin @(posedge $p.trigger or posedge reset);
+            if(reset) begin rose=0; fell=0; dataSeen=0; end
+            else begin
+              if(fell && $$time-fall <= 100000) $$fatal(1,"FABRIC_PULSE_LOW_$id");
+              ${if(id == "payload") s"if(dataSeen && $$time-changed <= 100000) $$fatal(1,\"FABRIC_SETUP\");" else ""}
+              rise=$$time; rose=1;
+            end
+          end end
+          begin forever begin @(negedge $p.trigger);
+            if(!reset && rose) begin
+              if($$time-rise <= 100000) $$fatal(1,"FABRIC_PULSE_HIGH_$id");
+              fall=$$time; fell=1;
+            end
+          end end
+          ${if(id == "payload") s"""begin forever begin @($p.d);
+            if(!reset) begin
+              if(rose && $$time-rise <= 100000) $$fatal(1,"FABRIC_HOLD");
+              changed=$$time; dataSeen=1;
+            end
+          end end""" else ""}
+        join
+      end"""
+    }.mkString("\n")
+    s"""fork $apertures begin
       forever begin @($guard.q); #2;
         if(!reset && (${cell("capture")}.q || ${cell("dispatch")}.q))
           $$fatal(1,"FABRIC_RELEASE_BEFORE_CAPTURE_DRAIN");

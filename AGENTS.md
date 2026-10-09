@@ -14,7 +14,10 @@
   schemas, parameters, fixed macro models and wrapper utilities, not a shared
   service implementation. Keep Click native and endpoint bridges explicit.
   Follow `docs/async-soc-migration.md`: finish and verify one checklist item,
-  update its evidence/contracts, commit and push, then ask for the next item.
+  obtain a fresh independent agent review, address its findings, rerun affected
+  checks, update its evidence/contracts, commit and push. Repeat this review loop
+  for every item. Continue to the next item when the user has authorized it;
+  otherwise ask. MMIO/loader is the currently authorized next item.
   Follow `docs/soc-contract.md` for ABI/reset scope. Run AsyncFabricSpec and both
   service implementations' FabricSpec/ScalingSpec plus affected regressions;
   keep strict SoC exports valid. A copied clocked module is not migrated to async.
