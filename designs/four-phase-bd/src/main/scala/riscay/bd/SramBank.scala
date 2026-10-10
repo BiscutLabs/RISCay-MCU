@@ -41,9 +41,11 @@ class SramBank(bytes: Int) extends Module with InlineInstance {
     io.request(i).ready := state === idle && selected === i.U && !reset.asBool
     io.response(i).valid := state === answer && tag === i.U && !reset.asBool
     io.response(i).bits := result
+    // Check each actual firing lane; avoids an Icarus-unsupported variable
+    // array index followed by a packed slice in the inline assertion.
+    when(io.request(i).fire) { assert(io.request(i).bits.address < bytes.U) }
   }
   when(state === idle && io.request(selected).fire) {
-    assert(io.request(selected).bits.address < bytes.U)
     assert(PopCount(VecInit(io.request.map(_.valid))) === 1.U)
     saved := io.request(selected).bits; tag := selected; state := access
   }

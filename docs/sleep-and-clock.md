@@ -215,8 +215,9 @@ The analog monitor's approximately 2.22 uA nominal always-on current and measure
 ## Implementation ownership during async migration
 
 Each design now owns its Platform, SleepTiming, Services and clocked peripheral
-implementation, with separate native Fabric, Control and Telemetry loops. Native
-Control owns loader/MMIO state and selector/producer staging. Native Telemetry
+implementation, with separate native Fabric, Control, Telemetry, Supervisor,
+scaling, SRAM sequencing and I2C protocol logic. Native Control owns loader/MMIO
+state and selector/producer staging. Native Telemetry
 owns software GPIO/application words, pending flags and host sample records.
 Clocked event capture, deadline/lease/watchdog timing, peripheral ingress and
 snapshots remain. Every pending command, reply, accepted commit, buffered
@@ -228,3 +229,19 @@ unaccepted MMIO preparation is canceled. MODE/status projection still consumes
 the synchronized reset on the original third service edge. Permanent supervision, SRAM accounting and
 programming protection keep their established reset domains. The independent
 LF timebase/watchdog remains necessary after other service work becomes async.
+
+
+### Native I2C migration boundary
+
+I2C protocol state is now separate native BD/Click RTL. The source-start detector,
+two-flop wire sampler, captured-edge ring, inactivity counter and coherent
+service publication remain clocked. Busy covers native transaction activity and
+held frame/read-start effects through synchronized return; inactive foreign
+payload edges do not retain the clock. Native rejection is synchronized as a
+retained level and converted to one service-edge event before wake policy, so a
+prior foreign-address rejection cannot cancel the next START wake hold.
+The existing address-only probe, 100 us wait, 50 us entry window and seven-edge
+drain guard remain unchanged. POR alone resets I2C state/crossings; frame and
+read-start publication waits for local POR release. Pending frames retain
+intervening watchdog-reset history. Independent LF/watchdog timing
+remains necessary. See the migration checklist for qualification status.

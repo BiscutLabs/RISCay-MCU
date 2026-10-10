@@ -71,7 +71,7 @@ class FirmwareSpec extends AnyFunSuite {
         write_word(${image.length}); write_word(0); write_word(${hex(crc.getValue)}); write_word(32'h00010000);
         write_word(${production.workingRamBytes}); write_word(0); write_word(0); write_word(32'h53495a45);
         ${words.zipWithIndex.map { case(w,i) => s"start_bus(); write_byte(8'h6a); write_byte(2); write_word(${i*4}); write_word(${hex(w)});" }.mkString("\n")}
-        start_bus(); write_byte(8'h6a); write_byte(3); stop_bus();
+        start_bus(); write_byte(8'h6a); write_byte(3); stop_bus(); await_ready();
         if(!programmed) $$fatal(1,"COMPILED_VERIFY");
         $$display("FIRMWARE_UPLOADED:$app");
         command(6);

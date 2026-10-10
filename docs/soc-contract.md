@@ -2,11 +2,12 @@
 
 The four-phase and native Click SoCs implement the same RV32E execution, internal
 storage and peripheral behavior. Compressed instructions remain deferred. The
-CPU, transaction routing, Control, Telemetry and Supervisor state loops are asynchronous.
+CPU, transaction routing, Control, Telemetry, Supervisor and I2C protocol state
+loops are asynchronous.
 Each design owns its native loader/MMIO, software GPIO/application-word, event
 and host measurement state. Ingress, snapshots, reset projections, GPIO sampling,
-timer/lease/watchdog logic, individual synchronous SRAM byte accesses and wire
-endpoints remain clocked. Separate native SRAM word sequencing passes the
+timer/lease/watchdog logic, individual synchronous SRAM byte accesses, I2C wire
+sampling/timeout and SPI ADC sequencing remain clocked. Separate native SRAM word sequencing passes the
 item 6 digital regressions and strict exports. Board policy and its safety sample view
 use independent POR-only native loops with clocked ingress/output projection.
 ROM/static faults complete in the native fabric. The Control integration passes
@@ -127,7 +128,11 @@ availability on the intended board. SDA is represented by input plus open-drain
 pull-low output. SCL is an input. No stretching or multimaster MCU operation.
 Use standard-mode 100 kHz or fast-mode 400 kHz with the default service clock;
 the digital sampling contract requires at least eight service cycles per SCL
-period and four per high/low phase. Electrical rise-time/pad qualification remains.
+period and four per high/low phase. Native protocol processing also requires an
+absolute latency bound; the current 1..10 ns cell/10 ns data simulation envelope
+is exercised at 400 kHz with 3.2 MHz and 20 MHz service clocks. A clock-cycle
+ratio alone does not qualify arbitrary faster clocks. Electrical rise-time/pad
+and physical native timing qualification remain.
 
 **Source-stopping builds require a wake preamble before each new transaction:**
 send an address-only write probe and STOP (ACK or NACK accepted), wait 100 us,
@@ -140,14 +145,23 @@ cycles without a synchronized SCL/SDA edge (13.1072..32.768 ms at 20..8 MHz).
 It releases SDA and discards the buffered command without committing it.
 This SMBus-style recovery bound is not a claim of SMBus protocol compliance.
 STOP, final read NACK and foreign-address rejection release transaction activity.
+The native state retains rejection for reliable CDC; the clocked boundary emits
+one rejection event to source-wake policy, so an old rejection cannot cancel a
+later START. The separate native BD/Click controllers own protocol/byte/serializer
+state. SCL/SDA sampling, captured-edge ingress, inactivity timing, coherent host
+bank capture and frame/read-start publication remain explicit clocked boundaries.
+See the [migration contract](async-soc-migration.md#i2c-scope-and-timing-contract).
 
 A write transaction begins with an opcode, followed by the exact payload below.
 All multi-byte numbers are unsigned little-endian words unless described
 otherwise. STOP or repeated START accepts a completed frame. An accepted WRITE then
 commits its four SRAM bytes before advancing RECEIVED_BYTES and CRC.
 Incomplete/oversize/unknown commands cause no image mutation. ACK means the byte
-was received; read LAST_ERROR to determine command acceptance. There is no queue
-of pending writes and no deferred memory write after a command completes.
+was received; read LAST_ERROR to determine command acceptance. Command completion
+and service-domain status publication follow frame acceptance; STOP does not
+promise an immediate status-pin update. Verification preserves the earliest
+next on-wire status read, without extra SELECT transactions or polling delays.
+There is no queue of pending writes and no deferred memory write after a command completes.
 
 | Opcode | Payload after opcode | Effect |
 | ---: | --- | --- |

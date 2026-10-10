@@ -10,8 +10,8 @@ when no next item has been chosen. Both implementations remain active throughout
 
 - Four-phase bundled-data implementation: `designs/four-phase-bd/src/main/scala/riscay/bd/`.
 - Native two-phase Click implementation: `designs/two-phase-click/src/main/scala/riscay/click/`.
-- Each owns its Fabric, Control, Telemetry, Supervisor, SRAM sequencing, Services,
-  Platform, ClockedPeripherals, ConstantScaling,
+- Each owns its Fabric, Control, Telemetry, Supervisor, SRAM sequencing, I2C protocol,
+  Services, Platform, ClockedPeripherals, ConstantScaling,
   I2cTarget, SleepTiming and SramBank code. Copying the former service island into
   these directories establishes ownership; it does not migrate its state machines.
 - Share port schemas, parameter/ISA definitions, fixed macro models and verification
@@ -57,8 +57,11 @@ when no next item has been chosen. Both implementations remain active throughout
   Fresh independent review, all 169 verification cases, two core policy cases,
   74 working-tree Python controls and both strict SoC exports pass. Scope,
   retained failure evidence and physical limits are documented below.
-- [ ] **7. I2C.** Native controller implementation with the existing wire protocol,
-  address-only wake probe, startup wait and stuck/foreign-bus release behavior.
+- [x] **7. I2C - digitally verified, 2026-10-09.** Separate native protocol
+  loops preserve wire behavior, coherent reads, reset isolation, address-only wake
+  and stuck/foreign-bus release. Fresh review fixes, 190 verification outcomes,
+  two core policy cases, 80 Python controls, thirteen actual wiring mutation
+  controls and both strict SoC exports pass. Scope and physical limits are below.
 - [ ] **8. SPI ADC.** Preserve conversion timing, invalid-first sample, cadence,
   reconfiguration boundaries, freshness and supervision independent of CPU progress.
 - [ ] **9. Slow-domain housekeeping.** Native coordination where appropriate while
@@ -67,7 +70,8 @@ when no next item has been chosen. Both implementations remain active throughout
   decode/data paths, pulse/fork/return timing, reset and CDC bounds, then new P&R
   and extracted validation. Digital passes alone cannot check this item.
 
-Items 1–6 are digitally verified. Ask before starting item 7, I2C.
+Items 1–7 are digitally verified.
+Ask before starting item 8, SPI ADC.
 Each item requires both implementations, invariant-focused
 tests and a fresh independent review before it can be checked off.
 
@@ -158,7 +162,10 @@ boundary rerun also passes. See [supervisor evidence](build-and-test.md#asynchro
 Item 6 passes 169 final verification outcomes, two core policy cases, 74 working-tree
 Python controls and both strict exports after independent review. See
 [SRAM evidence](build-and-test.md#asynchronous-sram-access-sequencing-migration).
-I2C, SPI ADC, slow-domain housekeeping and physical qualification remain unchecked.
+Item 7 passes 190 verification outcomes, two core policy cases, 80 working-tree
+Python controls, thirteen actual wiring mutations and both strict exports after
+independent review. See [I2C evidence](build-and-test.md#native-i2c-migration---digitally-verified-2026-10-09).
+SPI ADC, slow-domain housekeeping and physical qualification remain unchecked.
 
 ## GPIO/events/telemetry scope and contract
 
@@ -384,3 +391,65 @@ The complete native transforms and acknowledgment/credit feedback currently
 have digital simulation bounds only. Macro duty cycle, input/Q paths, native
 feedback/fork/capture paths and CDC/reset placement need physical qualification.
 The older baseline P&R results do not qualify these controllers.
+
+
+## I2C scope and timing contract
+
+`FourPhaseI2c` and `ClickI2c` own independent native protocol state: address
+selection, receive/ACK sequencing, byte storage and length/overflow validation,
+STOP/repeated-START frame formation, read serialization and master-NACK release.
+Their feedback loops, publication storage and frame/snapshot channels use their
+respective native protocols. Click contains no four-phase adapters.
+
+Each separate `I2cTarget` retains a clocked wire boundary: two-flop SCL/SDA
+sampling, edge detection, an eight-entry captured-edge ring, and the independent
+inactivity counter. Slots include sampled SDA/read-word and admission context;
+occupied slots remain immutable until the native published head returns through
+two Gray-pointer synchronizers. Both binary pointers have an extra wrap bit and
+registered Gray representations. Full-ring overwrite is a contract violation,
+with a simulation assertion. Physical pointer skew/metastability qualification
+is still required. The protocol loop consumes retained observations, never live
+wire levels. Inactivity is counted from the sampled wire change so native
+publication latency does not extend the configured timeout.
+
+A common native capture projects the open-drain drive and protocol state, and
+stores independent frame and snapshot effects. A held effect retains its own
+payload while unrelated observations advance; a second effect of the same kind
+backpressures publication. BD offers remain asserted through input return and
+output acknowledgment, preventing a second offer from a delayed source return.
+Click captures output phase feedback on that same event as all payloads.
+
+POR-only frame/read-start bridges publish into the service domain only after
+the target's two-edge local POR release. Coherent host-bank capture, word selection,
+Control mailbox arbitration, the wire sampler,
+startup wake qualification, timeout clock, LF/watchdog and source gating remain
+clocked boundaries. Native I2C does not replace the independent timebase.
+A POR-owned 64-bit reset epoch travels with completed frames; a mismatch on
+service delivery retains an intervening watchdog episode, even if it ended
+before delivery. Epoch wrap is outside the supported lifetime and asserted in
+simulation. Current and sampled reset/busy context are also retained. POR aborts
+pending effects; watchdog reset does not reset this hierarchy.
+
+Busy combines synchronized native activity and held effects, bridge publication,
+and START/STOP activity. Arbitrary inactive ring traffic does not retain service
+clock demand, preserving foreign-address release. The existing seven-edge drain
+and address-only source-start probe remain in force. Read-bank capture must
+finish before the first data launch after address ACK; completed SELECT frames
+must publish before the following read snapshot. ACK is byte reception, not
+loader command completion. Internal status projection can follow STOP later
+than the old clocked target's incidental testbench delay; architectural state,
+error assertions and the earliest legal on-wire status observation remain checks.
+
+The complete projection mux (including Click phase feedback) has one fixed
+10 ns digital data-path model, an 11 ns request guard, 1..10 ns storage/control
+cell experiments and 110 ns source/output guards. All event/phase registers
+share the capture event; setup/hold and high/low pulse checks cover each register.
+These composed-controller guards, primitive inventory, actual mux/storage pins,
+phase pins, internal composed-AND connections and reset ownership are strict-export
+obligations. They are digital simulation assumptions, not characterized physical paths. Bus-rate qualification
+must bound absolute native latency as well as the existing >=8 service cycles
+per SCL period and >=4 cycles per phase; a cycle ratio alone is insufficient.
+The focused wire campaign targets 400 kHz at 3.2 MHz and 20 MHz service clocks
+with maximum native delays, including adjacent sampled SDA changes. Physical
+SDA setup, feedback/fork timing, Gray CDC, reset recovery and output pads remain
+unqualified. Older P&R artifacts do not apply.

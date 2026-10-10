@@ -1,5 +1,91 @@
 # Build and test
 
+## Native I2C migration - digitally verified, 2026-10-09
+
+Item 7 uses separate BD and native Click protocol loops, an immutable eight-slot
+sampled-edge ring, independent held frame/read-start effects, and explicit clocked
+wire, timeout and host-publication boundaries. See the migration checklist for
+reset, sleep and timing scope. No physical qualification is claimed.
+
+Evidence is under `build/i2c-migration/`. The broad `regression-first.log` ran
+188 tests across 24 suites: 186 passed and two immediate SocSpec BEGIN pin
+observations failed. `review-final.log` passed all 26 SocSpec/I2cSpec/AsyncI2cSpec
+cases after the reviewed observation fixes, plus both physical-policy cases.
+The later POR admission change was followed by `admission-regression.log`:
+SoC, sleep, deep-sleep and compiled firmware cases all passed; ten I2cSpec cases
+failed to compile a new monitor's optimized-away hierarchical signal reference.
+That test reference was corrected by exposing the actual read-start output.
+`i2c-reviewed-final.log` passes all 21 I2cSpec/AsyncI2cSpec cases, including two
+new held-snapshot POR/recovery cases. No expectation was removed to clear a bug.
+The final reports for all 24 suites contain 190 passing verification outcomes,
+with no failures, errors, skips or pending cases; both physical-policy cases also
+pass. `verification-reviewed-summary.json` records each suite and timestamp.
+
+`python-internal.log` passes all 80 working-tree Python controls (six belong to
+the preserved earlier P&R work). `sram-assets.log` verifies all 11 pinned assets.
+Both public 34-port ABI nodes match item 6 exactly
+(`public-abi-admission-verified.json`). Final production exports are
+`four-phase-admission-soc/` and `click-admission-soc/`; strict checks with
+`--soc --vector-coverage --sleep-clock --probe-timeout 7200` pass all endpoint
+activity, mapping, generated-reset, native Click and three-SRAM obligations:
+
+| Variant | Endpoints | Mapping checks | Semantic SHA-256 |
+| --- | ---: | ---: | --- |
+| BD | 1698 | 434360286 | `33a7642087d01f7df0e2519d52cf065b60d72913a6e200515b307596980867bc` |
+| Click | 1459 | 357167577 | `e82781cf2819e0e0f637e8d1841478f43666ff5a7780f9e76994e50a30936d1a` |
+
+Exact strict receipts are `bd-strict-reviewed.log`, `click-strict-reviewed.log`
+and `strict-reviewed-summary.json`. Source-only mapping stimuli additionally
+exercise valid native read-address and completed-write STOP contexts, preserving
+all generic campaigns, comparisons and endpoint activity requirements.
+
+Fresh independent review reproduced BEGIN/LOCK pin publication at STOP +1.6 us:
+frame delivery was +0.9 us, Control admission +1.0 us, while the old immediate
+assertion ran at +1.2 us. Both original full SocSpec scenarios pass with bounded
+pin-completion observations. Untouched failures and replay receipts remain in
+`review-command-publication/` and `regression-first.log`. Earliest legal 400 kHz
+wire reads at 3.2/20 MHz and maximum native delays independently check SELECT
+with repeated START, BEGIN replacement, WRITE accounting/CRC, VERIFY and LOCK.
+Neither an extra SELECT nor polling delays hides command publication latency.
+
+The reviewer also disconnected an actual Click internal gate input and found
+that the old probe incorrectly passed (`review-internal-gate-binding/`). Added
+pin comparisons cover all nine internal connections of the three composed ANDs.
+`tools/check_i2c_wiring_controls.py` now independently disconnects the actual
+request input, capture trigger and internal gate inputs in isolated export copies.
+All thirteen mutations compile and fail `DATA_PATH_BINDING_MISMATCH` using the
+byte-identical baseline probe; original exports remain unchanged. Baselines pass
+124560 BD and 124500 Click checks. See `wiring-controls-internal.log` and
+`wiring-controls-internal/{commands.json,results.json}`. Run the tool with
+`--bd <BD-publication-export> --click <Click-publication-export>
+--library <chisel-async> --out <new-evidence-directory>` after AsyncI2cSpec emits
+the standalone fixtures. Synthetic comparison checks alone are insufficient.
+
+Retain initial compile/elaboration/latency failures in `loader-*.log`,
+`native-first.log`, `focused-second.log` and `wire-*.log`. The first broad focused
+run passed 11/19: six immediate pin observations needed the reviewed completion
+contract, while two unchanged foreign-bus recovery cases exposed a real retained
+rejection wake bug. Native rejection now produces one synchronized service event.
+
+The overflow negative control exposed previously uninstantiated Chisel assertion
+layers. `chisel3.layer.elideBlocks` now emits their bodies inline for Icarus.
+Each SRAM lane's full-width address assertion checks its actual `fire`, equivalent
+to the old selected-lane assertion, while avoiding an Icarus variable-array/slice
+limitation. All final clocked regressions execute these assertions; deliberate
+edge-ring overflow must fail with its specific assertion.
+
+Earlier strict failures are preserved: `*-strict-first.log` found optimized-away
+observation ports; `*-strict-final.log` found an unnamed packed wire-input source.
+Explicit retention fixes both. The first activity probes then found only the two
+permanently high bridge ready inputs in each design. Diagnostic copies preserve
+all stimulus/mapping checks and print every inactive endpoint; their completion
+marker explicitly is not a validation pass. Their logs remain in
+`*-checked-soc/activity_diagnostic.log`. Both bridges now require local POR release
+before service publication, with direct reset/ready/read-start monitors and held
+frame/snapshot recovery tests. Interrupted fallback/probe runs are also retained
+and are not counted as passes. No ABI, binding or activity check was removed.
+
+
 ## Asynchronous SRAM access sequencing migration
 
 Item 6 is digitally verified on 2026-10-09. Separate `FourPhaseSram`

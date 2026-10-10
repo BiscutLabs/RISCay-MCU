@@ -17,13 +17,15 @@ object ClockedSimulation {
       chipParameters: riscay.soc.LowPowerParameters = riscay.soc.LowPowerParameters(),
       serviceStartupNs: Int = 500, deadlineNs: Long = 100000000L,
       serviceModelHz: Double = 10000000, processTimeoutSeconds: Int = 90,
-      serviceHalfPeriodNs: Int = 50, maximumDelaySubtree: Option[String] = None): Path = {
+      serviceHalfPeriodNs: Double = 50, maximumDelaySubtree: Option[String] = None): Path = {
     require(serviceHalfPeriodNs > 0)
     val root = Paths.get("build/soc-tests").toAbsolutePath; Files.createDirectories(root)
     val base = Files.createTempDirectory(root, name)
     Simulator().check(base.resolve("simulator"))
     var design: AsyncModule = null
-    ExportDesign.emit({ design=gen; design }, base)
+    // Icarus does not bind extracted Chisel verification layers automatically.
+    // Keep their bodies inline so every hardware assertion actually executes.
+    ExportDesign.emit(chisel3.layer.elideBlocks { design=gen; design }, base)
     design match {
       case soc: riscay.soc.SocTop => riscay.soc.SramInventory.write(base, soc.p.config)
       case _ =>
@@ -149,6 +151,33 @@ end endtask
 task write_word(input [31:0] value); integer b; begin
   for(b=0;b<4;b=b+1) write_byte(value[8*b+:8]);
 end endtask
+// Native acceptance and service publication are distinct. This bounded pin
+// observation is used only where a test asserts completion immediately after
+// STOP; wire timing and all architectural/error expectations remain unchanged.
+task await_ready; begin
+  fork
+    begin wait(programmed && mode==2); end
+    begin #5000; $fatal(1,"LOADER_COMPLETION_DEADLINE"); end
+  join_any
+  disable fork;
+end endtask
+
+task await_loading; begin
+  fork
+    begin wait(!programmed && mode==1); end
+    begin #5000; $fatal(1,"BEGIN_COMPLETION_DEADLINE"); end
+  join_any
+  disable fork;
+end endtask
+
+task await_locked; begin
+  fork
+    begin wait(programmed && locked); end
+    begin #5000; $fatal(1,"LOCK_COMPLETION_DEADLINE"); end
+  join_any
+  disable fork;
+end endtask
+
 task command(input [7:0] opcode); begin
   start_bus(); write_byte(8'h6a); write_byte(opcode); stop_bus();
 end endtask

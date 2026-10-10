@@ -364,22 +364,24 @@ class FourPhaseServices(p: SocParameters, boardFactory: SocParameters => BoardPr
       }
   }
 
-  val host = withClock(io.frontClock) { Module(new I2cTarget(p.i2cAddress, p.i2cIdleCycles)) }
-  host.io.scl := io.scl; host.io.sda := io.sda; io.sdaLow := host.io.pullLow
-  io.activity := scalingBusy || host.io.busy || gpioActivity || memoryBusy || controlBusy || telemetryWork || boardWork
+  io.activity := scalingBusy || io.i2c.busy || gpioActivity || memoryBusy || controlBusy || telemetryWork || boardWork
   // The normal seven-edge guard may drain while native maintenance is busy;
   // canSleep/activity still keep the gate open until that work actually drains.
-  io.drainDemand := !parkedForSleep || host.io.busy || gpioActivity
-  io.hostSelected := host.io.selected; io.hostRejected := host.io.rejected
+  io.drainDemand := !parkedForSleep || io.i2c.busy || gpioActivity
+  io.hostSelected := io.i2c.selected; io.hostRejected := io.i2c.rejected
   val selector = controlState.selector
   private val hostFrames = Module(new ControlMailbox)
-  io.hostFrameAccepted := hostFrames.io.enq.fire
-  hostFrames.io.enq.valid := host.io.frame.valid; hostFrames.io.enq.bits.frame := host.io.frame.bits
-  hostFrames.io.enq.bits.resetActive := io.cpuResetActive
-  hostFrames.io.enq.bits.programBusy := io.program.busy || loaderPending || loaderControlPending ||
+  io.i2c.resetActive := io.cpuResetActive
+  io.i2c.programBusy := io.program.busy || loaderPending || loaderControlPending ||
     (io.controlCommand.fire && io.controlCommand.bits.kind === ControlKind.Host.U &&
       io.controlCommand.bits.frame.bytes(0) >= 1.U && io.controlCommand.bits.frame.bytes(0) <= 6.U)
-  assert(!host.io.frame.valid || hostFrames.io.enq.ready, "CONTROL_HOST_MAILBOX_OVERFLOW")
+  io.hostFrameAccepted := hostFrames.io.enq.fire
+  hostFrames.io.enq.valid := io.i2c.frame.valid; hostFrames.io.enq.bits.frame := io.i2c.frame.bits.frame
+  hostFrames.io.enq.bits.resetActive := io.cpuResetActive || io.i2c.frame.bits.resetActive
+  hostFrames.io.enq.bits.programBusy := io.i2c.frame.bits.programBusy || io.program.busy || loaderPending || loaderControlPending ||
+    (io.controlCommand.fire && io.controlCommand.bits.kind === ControlKind.Host.U &&
+      io.controlCommand.bits.frame.bytes(0) >= 1.U && io.controlCommand.bits.frame.bytes(0) <= 6.U)
+  assert(!io.i2c.frame.valid || hostFrames.io.enq.ready, "CONTROL_HOST_MAILBOX_OVERFLOW")
   // Mark exactly the frames already queued at reset; later explicit STARTs
   // belong to the new application lifetime. No wrapping epoch counter.
   val hostResetDebt = RegInit(0.U(2.W))
@@ -584,8 +586,8 @@ class FourPhaseServices(p: SocParameters, boardFactory: SocParameters => BoardPr
   }
   val snapshot = Reg(Vec(bankSize, UInt(32.W)))
   val snapshotSupported = Reg(UInt(8.W))
-  when(host.io.readStart) { snapshot := bank; snapshotSupported := Cat(supported.reverse) }
-  val readIndex = selector(7,0) +& host.io.wordIndex
-  host.io.readWord := Mux(host.io.wordIndex === 8.U, Cat(0.U(24.W), snapshotSupported),
+  when(io.i2c.readStart) { snapshot := bank; snapshotSupported := Cat(supported.reverse) }
+  val readIndex = selector(7,0) +& io.i2c.wordIndex
+  io.i2c.readWord := Mux(io.i2c.wordIndex === 8.U, Cat(0.U(24.W), snapshotSupported),
     MuxLookup(readIndex, "hffffffff".U(32.W))(bankWords.zipWithIndex.map { case(word,i) => word.U -> snapshot(i) }))
 }

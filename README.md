@@ -2,7 +2,7 @@
 
 Migration items use a fresh independent agent review, fixes, affected verification,
 and a commit/push before completion. SocFabric, MMIO/loader,
-GPIO/events/telemetry, scaling/CRC, permanent supervision and SRAM word sequencing are digitally verified; see the [migration checklist](docs/async-soc-migration.md).
+GPIO/events/telemetry, scaling/CRC, permanent supervision, SRAM word sequencing and I2C protocol state are digitally verified; see the [migration checklist](docs/async-soc-migration.md).
 
 A tiny reusable RISC-V SoC, built in Chisel with
 [chisel-async](https://github.com/BiscutLabs/chisel-async).
@@ -48,7 +48,7 @@ telemetry remain readable when locked. See the
 
 **Status: asynchronous SoC migration in progress.** Each design owns a separate
 SoC implementation. SocFabric, MMIO/loader, GPIO/events/telemetry, scaling/CRC,
-permanent supervision and SRAM word sequencing are digitally verified.
+permanent supervision, SRAM word sequencing and I2C protocol state are digitally verified.
 Separate native pipelines now own fractional elapsed-time
 and ADC arithmetic, with CRC byte stages in each Control feedback loop.
 Native fabrics route ROM and static access faults without a
@@ -59,7 +59,9 @@ flags and host sample records; both variants pass regressions and strict exports
 ingress, snapshots, reset projections, GPIO sampling, timer/lease/watchdog logic,
 supervisor input/output and scaling request/publication boundaries remain explicit.
 Separate native SRAM controllers retain word ownership, sequence bytes and assemble
-reads around explicit synchronous macro boundaries. I2C and SPI ADC remain clocked. The independent LF timebase/watchdog remains
+reads around explicit synchronous macro boundaries. Separate native I2C controllers
+pass digital verification; wire sampling, timeout and host publication remain clocked.
+SPI ADC remains clocked. The independent LF timebase/watchdog remains
 necessary. See the [migration checklist](docs/async-soc-migration.md). A permanent
 Groundlark controller supervises power before upload and during application
 stalls. Its state, safety sample record and confirmation counters now reside
@@ -74,7 +76,7 @@ or MCU power loss clears the lock and returns Groundlark to its off state.
 **Tapeout must deliberately supply and qualify an enabled board policy**; the
 reference emitters' disabled `PowerPolicy()` never enables Pi power.
 Physical/analog, pin/package, board and Chiselator qualification remain.
-The new Fabric, Control, Telemetry, arithmetic, Supervisor and SRAM controllers have
+The new Fabric, Control, Telemetry, arithmetic, Supervisor, SRAM and I2C controllers have
 no physical timing qualification.
 Earlier P&R results describe baseline `8637099` and do not qualify this migration.
 

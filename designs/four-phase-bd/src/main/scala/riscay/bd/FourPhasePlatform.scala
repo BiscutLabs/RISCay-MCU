@@ -34,6 +34,9 @@ abstract class FourPhasePlatform(p: SocParameters, board: SocParameters => Board
   }
   protected val workClock = Wire(Clock())
   protected val fabric = withClockAndReset(workClock, reset) { Module(new FourPhaseServices(p, board)) }
+  val host = asyncChild("i2c")(d => new I2cTarget(p.i2cAddress,p.i2cIdleCycles,d))
+  host.clock := serviceClock; host.scl := scl; host.sda := sda
+  fabric.io.i2c <> host.host; sdaLow := host.pullLow
   val programAccess = asyncChild("program_access")(d => new SramAccess(d))
   val ramAccess = asyncChild("ram_access")(d => new SramAccess(d))
   programAccess.clock := workClock; ramAccess.clock := workClock
@@ -155,7 +158,6 @@ abstract class FourPhasePlatform(p: SocParameters, board: SocParameters => Board
       serviceClockEnable := true.B
   }
   fabric.io.sleepEntries := sleepEntries
-  fabric.io.scl := scl; fabric.io.sda := sda; sdaLow := fabric.io.sdaLow
   fabric.io.gpioIn := gpioIn; gpioOut := fabric.io.gpioOut; gpioOe := fabric.io.gpioOe
   fabric.io.adcMiso := adcMiso; adcCsN := fabric.io.adcCsN; adcSclk := fabric.io.adcSclk
   fabric.io.watchdogReason := watchdogReasonActive; watchdog.io.heartbeat := fabric.io.heartbeat

@@ -38,7 +38,13 @@ invalidates the image. See [SRAM integration](sram-integration.md).
 The separate native Control implementations own image metadata, validation,
 lock, loader state and CRC/received-byte accounting. Explicit clocked bridges
 carry host/MMIO commands and SRAM completion. Native SRAM word sequencing
-surrounds explicit clocked per-byte macro accesses; I2C remains clocked.
+surrounds explicit clocked per-byte macro accesses. Separate native I2C controllers
+own framing and serialization; wire sampling, timeout, frame publication and
+coherent read-bank capture remain explicit clocked boundaries. Completed frames
+retain intervening watchdog-reset history until service delivery. Byte ACK and
+STOP do not promise immediate command completion or a status-pin update; read the
+reported status. The earliest supported next wire read is verified without extra
+SELECT transactions or polling delays.
 BUSY also covers an accepted mutating host command whose native result
 has not returned. Ingress remembers busy/reset context, including simultaneous
 loader admission and a new frame. A pre-reset queued START or stale START reply
@@ -93,8 +99,8 @@ calibration flags and wire encoding are defined in the SoC contract. When
 measurements drive control decisions, telemetry must describe the same data.
 The bounded `SAMPLE_PERIOD` and `WAKE` commands remain usable while locked;
 neither modifies the image or its validation metadata. Retained sleep preserves
-RAM, validity and programming lock, and the service-clocked I2C endpoint remains
-available. See [retained sleep and clocks](sleep-and-clock.md).
+RAM, validity and programming lock. The native I2C endpoint remains available
+through its service-clock sampling/publication boundaries. See [retained sleep and clocks](sleep-and-clock.md).
 
 Groundlark maps measurement 0 to battery millivolts and its application area to
 supervisor mode, power/shutdown/ACK and faults. See its

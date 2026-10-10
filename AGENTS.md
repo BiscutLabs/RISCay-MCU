@@ -17,8 +17,8 @@
   obtain a fresh independent agent review, address its findings, rerun affected
   checks, update its evidence/contracts, commit and push. Repeat this review loop
   for every item. Continue to the next item when the user has authorized it;
-  otherwise ask. Items 1–6 are digitally verified;
-  obtain the user's next choice before advancing to I2C.
+  otherwise ask. Items 1–7 are digitally verified;
+  obtain the user's next choice before advancing to SPI ADC.
   Follow `docs/soc-contract.md` for ABI/reset scope. Run AsyncFabricSpec,
   AsyncControlSpec, ControlResetSpec, AsyncTelemetrySpec, TelemetrySpec and both
   service implementations' FabricSpec/ScalingSpec plus affected regressions;
@@ -44,6 +44,16 @@
   current-boot ACK after applied output publication. Run AsyncSupervisorSpec and
   SupervisorSpec, including repeated 32-edge watchdog resets and stalled crossings.
   Include queued elapsed time in host freshness.
+- I2C migration uses separate native protocol loops and POR-only publication.
+  Keep sampled wire slots immutable until the synchronized published head frees
+  them; keep Click phase feedback in the complete projection timing aperture.
+  Retain completed-frame reset history across whole watchdog episodes. Run
+  AsyncI2cSpec, I2cSpec and the real serial loader/sleep/firmware cases; preserve
+  maximum-delay wire checks and earliest on-wire completion observations.
+  Clocked sampling, timeout, coherent bank capture and source wake remain explicit.
+  Keep Chisel verification bodies inline in ClockedSimulation: Icarus does not
+  execute uninstantiated extracted assertion modules. Run overflow negative controls
+  and tools/check_i2c_wiring_controls.py against both standalone publication exports.
 - Retained sleep and programmable sampling are in scope. Follow
   `docs/sleep-and-clock.md`; run SleepSpec, DeepSleepSpec and oscillator-model tests as well.
   Preserve the cold-boot policy, programming lock and watchdog fault coverage.

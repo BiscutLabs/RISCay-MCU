@@ -188,7 +188,7 @@ always @(posedge serviceClock) if(!dut.fabric_ram_macros_0.CEN && !dut.fabric_ra
         wait(!memoryBusy); wait(sleeping); #10000;
         @(negedge serviceClock); request_valid=0;
         if(m==0) begin
-          command(3);
+          command(3); await_ready();
           if(!programmed || dut.fabric_receivedWords !== 1) $$fatal(1,"LATE_WATCHDOG_LOADER_LOST");
           issue(0,32'h10000000,0,15); answer(32'h89abcdef,0);
         end else if(programmed || locked || dut.fabric_receivedWords !== 0 || dut.fabric_loaderPending)
@@ -243,7 +243,7 @@ always @(posedge serviceClock) if(!reset && memoryBusy && (sleepEligible || slee
       ${words.zipWithIndex.map { case(w,i) => s"put_word(${i*4},32'h${w.toHexString});" }.mkString("\n")}
       read_words(1,0,0); if(snapshot[224+:32] !== 2048) $$fatal(1,"FULL_IMAGE_COUNT_WRAPPED");
       put_word(2048,0); expect_error(4);
-      command(3); command(4);
+      command(3); command(4); await_locked();
       if(!programmed || !locked) $$fatal(1,"SRAM_PROGRAM_VERIFY");
       ${words.zipWithIndex.map { case(w,i) => s"issue(0,32'h${(MemoryMap.program+4*i).toHexString},0,15); answer(32'h${w.toHexString},0);" }.mkString("\n")}
       issue(2,32'h10000000,0,15); answer(0,1);
@@ -282,7 +282,7 @@ always @(posedge serviceClock) if(!reset && memoryBusy && (sleepEligible || slee
         ${words.zipWithIndex.map { case(w,i) => s"put_word(${i*4},32'h${w.toHexString});" }.mkString("\n")}
         read_words(1,0,0); if(snapshot[224+:32] !== $bytes) $$fatal(1,"SMALL_COUNT_WRAPPED");
         put_word($bytes,0); expect_error(4);
-        command(3); command(6);
+        command(3); command(6); await_locked();
         if(!programmed || !locked) $$fatal(1,"SMALL_IMAGE_VERIFY");
         issue(1,32'h30000000,0,15); answer(32'h${(MemoryMap.program+bytes-4).toHexString},0);
         ${words.zipWithIndex.map { case(w,i) => s"issue(0,32'h${(MemoryMap.program+4*i).toHexString},0,15); answer(32'h${w.toHexString},0);" }.mkString("\n")}
@@ -348,7 +348,7 @@ always @(posedge serviceClock) if(!reset && memoryBusy && (sleepEligible || slee
         join
         #5000;
         if(m==0) begin
-          command(3); if(!programmed || dut.fabric_receivedWords !== 1) $$fatal(1,"WATCHDOG_LOST_LOADER_WRITE");
+          command(3); await_ready(); if(!programmed || dut.fabric_receivedWords !== 1) $$fatal(1,"WATCHDOG_LOST_LOADER_WRITE");
           issue(0,32'h10000000,0,15); answer(32'h89abcdef,0);
         end else begin
           if(programmed || locked || dut.fabric_receivedWords !== 0 || dut.fabric_loaderPending)

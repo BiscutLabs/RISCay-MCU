@@ -25,7 +25,7 @@ class SocSpec extends AnyFunSuite {
   private def upload(program: Seq[Long], start: Int = 6): String = s"""
     begin_image(${program.size * 4},0,${hex(checksum(program))},32'h00010000);
     ${program.zipWithIndex.map { case(word, i) => s"put_word(${i*4},${hex(word)});" }.mkString("\n")}
-    command(3);
+    command(3); await_ready();
     if(!programmed || mode != 2) $$fatal(1,"VERIFY_NOT_READY");
     ${if(start >= 0) s"command($start);" else ""}
   """
@@ -112,11 +112,13 @@ end
         put_word(0,0); expect_error(6);
         if(!programmed || mode != 2) $$fatal(1,"READY_IMAGE_MUTATED");
         begin_image(4,0,${hex(checksum(Seq(breakpoint)))},32'h00010000);
+        await_loading();
         if(programmed || mode != 1) $$fatal(1,"BEGIN_DID_NOT_INVALIDATE");
         put_word(0,${hex(breakpoint)}); command(3); command(5); #50000;
         if(locked || !programmed || mode != 4) $$fatal(1,"UNLOCKED_START_FAILED");
         begin_image(4,0,0,32'h00010000); expect_error(3);
         command(4);
+        await_locked();
         if(!locked) $$fatal(1,"EXPLICIT_LOCK_FAILED");
       """, protectionTrace)
     }

@@ -24,7 +24,7 @@ abstract class ServiceEndpoint extends Module with InlineInstance {
     val controlReply = Flipped(Decoupled(new ControlReply))
     val request = Flipped(Decoupled(new MemoryRequest))
     val response = Decoupled(new MemoryResponse)
-    val scl = Input(Bool()); val sda = Input(Bool()); val sdaLow = Output(Bool())
+    val i2c = Flipped(new I2cHostPort)
     val gpioIn = Input(UInt(32.W)); val gpioOut = Output(UInt(32.W)); val gpioOe = Output(UInt(32.W))
     val adcMiso = Input(Bool()); val adcCsN = Output(Bool()); val adcSclk = Output(Bool())
     val watchdogReason = Input(Bool()); val heartbeat = Output(Bool())

@@ -534,8 +534,8 @@ endmodule
             with self.assertRaisesRegex(ValueError, "RESET_OWNER"):
                 generated_reset_probe("", bad)
 
-    def test_scaling_roots_arithmetic_and_bridges_must_use_por(self):
-        for name, model in (("elapsed_scaler", "ElapsedTicks"), ("sample_scaler", "SampleScaler")):
+    def test_scaling_and_i2c_roots_native_state_and_bridges_must_use_por(self):
+        for name, model in (("elapsed_scaler", "ElapsedTicks"), ("sample_scaler", "SampleScaler"), ("i2c", "I2cTarget")):
             manifest = copy.deepcopy(self.manifest)
             child = {"rtl_path": "FourPhaseSoc." + name, "module": model, "children": []}
             manifest["design"]["children"].append({"id": name, "contract": child})

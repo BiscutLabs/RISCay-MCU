@@ -67,6 +67,7 @@ end endtask
         dut.supplyMonitor.supply_voltage=3.3; #3000000;
         read_words(1,0,0); if(snapshot[0+:32] !== 0 || programmed || locked) $$fatal(1,"PARTIAL_IMAGE_SURVIVED");
         ${upload(Seq(breakpoint))}
+        await_locked();
         if(!programmed || !locked) $$fatal(1,"LOCK_SETUP");
         dut.supplyMonitor.supply_voltage=2.8; #1;
         if(!systemReset || programmed || locked) $$fatal(1,"LOCK_SURVIVED_BROWNOUT");
