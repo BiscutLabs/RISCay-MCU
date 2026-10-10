@@ -17,7 +17,7 @@
   obtain a fresh independent agent review, address its findings, rerun affected
   checks, update its evidence/contracts, commit and push. Repeat this review loop
   for every item. Continue to the next item when the user has authorized it;
-  otherwise ask. Items 1-9, 10a, 10b1 and 10b2a are digitally verified within their scopes.
+  otherwise ask. Items 1-9, 10a, 10b1, 10b2a and 10b2b are digitally verified within their scopes.
   The user has authorized deeper migration under expanded items 10-16: native
   service coordination, observation reduction, publication, direct interconnect
   and physically justified boundary minimization. Audit every remaining clocked
@@ -54,6 +54,22 @@
   Eligibility alone is not a response-valid signal. Release reset debt only
   after owner/receipt/word/byte drainage; wordDrained must exclude receipt bridges.
   Keep source phases/effects POR-only and run AsyncRamSourceSpec/RamSourceSpec.
+  Native program ownership tags each slot CPU-read or loader-write. Late Control
+  work may cancel an unaccepted CPU slot; revalidate image permissions after
+  BEGIN and fault invalid reads without a word effect. Loader reserve, grant,
+  commit, publication and Stored delivery all bypass CPU reset debt. Stored
+  acknowledgment means its Control command fired; retain admission-time busy
+  history until the Stored reply publishes. Click Stored history is independent
+  of CPU/cancel parity. BD Stored return gates reserve ACK falling, not rising.
+  Run AsyncProgramSourceSpec/ProgramSourceSpec, held grant/decision/byte/publication
+  and Stored command/reply-edge cases, plus actual RTL mutation controls.
+  Run tools/check_program_capture_controls.py for all six custom Click registers;
+  require every seed/skew fixture, actual-pin setup/hold/pulse/distribution checks
+  and their negative controls. Preserve the original functional oracles.
+  The specialized Stored receipt crossing retains two request synchronizers and
+  POR phase/ACK ownership; ACK means Control acceptance. Its payload is held by
+  the native Stored buffer through acknowledgment. Run StoredReceiptSpec and
+  earliest on-wire I2C status tests; qualify the complete bundled-data CDC path.
   Application reset asserts immediately and releases after eight ungated service
   edges (>=350 ns at the 20 MHz ceiling), restarting on every raw pulse. Audit
   all custom timing bounds against the 250 ns digital reset-settlement budget.
@@ -61,7 +77,7 @@
   Run AsyncCompletionSpec/CompletionSpec and real completion wiring mutation
   controls; preserve the full emitted port ABI even for constant error fields.
   Strict completion stimulus may force only catalogued source registers or the
-  exactly validated RAM eligibility EventRegister output. Preserve
+  exactly validated source eligibility EventRegister output. Preserve
   every dynamic bit's polarity activity; the three literal bridge input leaves
   require exact emitted bindings, schemas and per-check value assertions. Reject
   dynamic expressions before granting a constant mask. Keep actual-RTL mutation

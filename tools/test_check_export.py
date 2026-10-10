@@ -113,35 +113,42 @@ $display("CONTRACT_PROBES_PASS:1"); $finish; end endmodule
             reply = {"state": 2, "data_programWrite": 1, "data_state_received": 32, "data_state_loaderWord": 32}
             request = {"state": 2, "data_operation": 2, "data_address": 32, "data_data": 32, "data_mask": 4}
             inventories = {top: root, top+".ca_child_control_reply_bridge": reply,
-                           top+".ca_child_request_bridge": request}
+                           top+".ca_child_request_bridge": request,
+                           top+".ca_child_program_grant_bridge": dict(state=2,data=1)}
             for bank in ("program", "ram"):
                 inventories[top+f".ca_child_{bank}_access"] = sync
+                inventories[top+f".ca_child_{bank}_access.ca_child_reply_bridge"] = dict(state=2,data=32)
             scopes = {path: {"registers": regs} for path, regs in inventories.items()}
             manifest = {"top": top, "design": {"children": [{"id": bank+"_access", "contract": {
                 "module": "SramAccess", "rtl_path": top+f".ca_child_{bank}_access"}} for bank in ("program", "ram")]}}
             def declarations(regs):
                 return "\n".join(f"reg [{width-1}:0] {name};" for name,width in regs.items())
-            rtl = "module Access;\n"+declarations(sync)+"\nwire idle = !active && " + " && ".join(
+            rtl = "module WordReply; reg [1:0] state; reg [31:0] data; endmodule\n"
+            rtl += "module Access; WordReply ca_child_reply_bridge();\n"+declarations(sync)+"\nwire idle = !active && " + " && ".join(
                 name for name in sync if name.endswith("_1")) + "; endmodule\n"
             rtl += "module Reply;\n"+declarations(reply)+"\nendmodule\n"
             rtl += "module Request;\n"+declarations(request)+"\nendmodule\n"
+            rtl += "module Grant; reg [1:0] state; reg data; endmodule\n"
             rtl += f"module {top}; reg reset;\n"+declarations(root)+"""
 Access ca_child_program_access(); Access ca_child_ram_access();
 Reply ca_child_control_reply_bridge(); Request ca_child_request_bridge();
+Grant ca_child_program_grant_bridge();
 wire program_valid = ca_child_program_access.idle && gate_enabled && fabric_controlOutstanding &&
-    ca_child_control_reply_bridge.state == 2 && ca_child_control_reply_bridge.data_programWrite;
+    ca_child_control_reply_bridge.state == 2 && ca_child_control_reply_bridge.data_programWrite &&
+    ca_child_program_grant_bridge.state == 2 && ca_child_program_grant_bridge.data;
 wire ram_valid = ca_child_ram_access.idle && gate_enabled && ca_child_request_bridge.state == 2 &&
     ca_child_request_bridge.data_operation == 2 && ca_child_request_bridge.data_address == 32'h20000000;
 wire [7:0] lanes = { (4'b1 << fabric_program_tag) & {4{fabric_program_state == 3}},
                      (4'b1 << fabric_ram_tag) & {4{fabric_ram_state == 3}} };
-wire [9:0] expected = {program_valid, ram_valid, lanes};
-wire [9:0] observed = expected;
+wire program_published = ca_child_program_access.active && ca_child_program_access.ca_child_reply_bridge.state == 2;
+wire [10:0] expected = {program_published, program_valid, ram_valid, lanes};
+wire [10:0] observed = expected;
 endmodule
 """
             header = f"force {top}.reset = 1'b0;\n" + "".join(
                 f"force {path}.{name} = {width}'h0;\n" for path,regs in inventories.items() for name,width in regs.items()) + "#1;\n"
             source = f"""module ContractProbe; timeunit 1ns; timeprecision 1ps;
-reg [9:0] ones_0=0, zeros_0=0;
+reg [10:0] ones_0=0, zeros_0=0;
 task check; begin
 if ({top}.observed !== {top}.expected) $fatal(1,"BINDING_MISMATCH");
 ones_0 = ones_0 | {top}.observed; zeros_0 = zeros_0 | ~{top}.observed;
@@ -149,7 +156,7 @@ end endtask
 initial begin
 force {top}.reset = 1'b1; #1;
 {header}check;
-if (ones_0 !== 10'h3ff || zeros_0 !== 10'h3ff) $fatal(1,"INACTIVE_ENDPOINT:observed");
+if (ones_0 !== 11'h7ff || zeros_0 !== 11'h7ff) $fatal(1,"INACTIVE_ENDPOINT:observed");
 $display("CONTRACT_PROBES_PASS:1"); $finish; end endmodule
 """
             extended, count = sram_background(source, manifest, scopes, 1)
@@ -163,7 +170,15 @@ $display("CONTRACT_PROBES_PASS:1"); $finish; end endmodule
                 path = Path(folder)
                 for stimulus, model, diagnostic in ((source,rtl,"INACTIVE_ENDPOINT"),
                         (extended,rtl,"CONTRACT_PROBES_PASS"),
-                        (extended,rtl.replace("observed = expected;", "observed = expected ^ 10'b1;"),"BINDING_MISMATCH")):
+                        (extended.replace(f"force {top}.ca_child_program_grant_bridge.data = 1'h1;",
+                                          f"force {top}.ca_child_program_grant_bridge.data = 1'h0;"),rtl,"INACTIVE_ENDPOINT"),
+                        (extended.replace(f"force {top}.ca_child_program_grant_bridge.state = 2'h2;",
+                                          f"force {top}.ca_child_program_grant_bridge.state = 2'h0;"),rtl,"INACTIVE_ENDPOINT"),
+                        (extended.replace(f"force {top}.ca_child_program_access.active = 1'h1;",
+                                          f"force {top}.ca_child_program_access.active = 1'h0;"),rtl,"INACTIVE_ENDPOINT"),
+                        (extended.replace(f"force {top}.ca_child_program_access.ca_child_reply_bridge.state = 2'h2;",
+                                          f"force {top}.ca_child_program_access.ca_child_reply_bridge.state = 2'h0;"),rtl,"INACTIVE_ENDPOINT"),
+                        (extended,rtl.replace("observed = expected;", "observed = expected ^ 11'b1;"),"BINDING_MISMATCH")):
                     (path/"test.sv").write_text(model+stimulus)
                     built = subprocess.run(["iverilog","-g2012","-s",top,"-s","ContractProbe","-o","sim.vvp","test.sv"],
                         cwd=path,capture_output=True,text=True,timeout=30)
@@ -181,6 +196,11 @@ $display("CONTRACT_PROBES_PASS:1"); $finish; end endmodule
             bad=copy.deepcopy(manifest);bad["design"]["children"].pop()
             with self.assertRaisesRegex(ValueError,"SRAM_PROBE_OWNER_MISMATCH"):
                 sram_background(source,bad,scopes,1)
+            for name in ("state","data"):
+                bad=copy.deepcopy(scopes)
+                del bad[top+".ca_child_program_grant_bridge"]["registers"][name]
+                with self.assertRaisesRegex(ValueError,"SRAM_PROBE_DRIVER_MISMATCH"):
+                    sram_background(source,manifest,bad,1)
 
     def test_register_file_background_adds_activity_without_masking_bad_mapping(self):
         manifest = {"top": "RfTop", "design": {"module": "ArchitecturalRegisters", "primitives": [

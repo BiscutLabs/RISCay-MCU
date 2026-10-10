@@ -1,5 +1,83 @@
 # Build and test
 
+## Native program source ownership - digitally verified, 2026-10-10
+
+Substep 10b2b replaces clocked program-read and Stored-pending ownership with
+separate BD and native Click controllers. Tagged reservations precede word
+acceptance; actual loader publication creates exactly one native Stored token.
+Five POR crossings and clocked client/drain projections remain explicit.
+
+Evidence is under `build/async-program-source-migration/`.
+`full-regression-r4.log` passes **309 tests across 37 verification suites** and
+both physical-policy tests, with no failures, errors, skips or pending cases.
+This includes both cores against independent references, all firmware, sleep,
+watchdog, native/service, serial I2C and actual SRAM effect regressions. Fresh
+XML reports are copied and hashed in `verification-summary.json`. Final SoC
+re-emission is byte-identical to the strict inputs (`final-emit-equivalence.json`).
+`python-capture-reviewed.log` passes all **105 working-tree Python controls**,
+including the preserved P&R controls; all 11 pinned SRAM assets pass validation.
+The 34 public ports and emitted declarations match baseline `396bf7d` exactly.
+
+The final actual-RTL campaigns reject **50 defects**: 34 native/source/Stored
+integration mutations, ten custom Click register timing defects, and six strict
+completion-boundary constant corruptions. A further 218 metadata mutations and
+six dynamic-binding substitutions are rejected. Receipts are
+`program-controls-final/results.json`, `capture-controls-reviewed/results.json`
+and `boundary-controls/results.json`; none counts compilation failure or timeout
+as a successful negative control. Original source/oracle hashes are preserved.
+
+The custom Click pin campaign replays all 126 original seed/skew oracles plus
+one legal 100 ps clock-distribution case. It requires the complete fixture set
+before simulation, asserts activity at every targeted register in mixed and
+fast histories, and checks the actual D/trigger pins of all six EventRegisters.
+Setup, hold, high/low pulse and distribution defects are exercised independently
+of the functional assertions. The declared 100 ps aperture/distribution envelope
+is a digital assumption, not measured physical timing.
+
+Both production strict exports pass on their first full r4 probes with dynamic
+bit activity, sleep-clock stimulus, exact constants, reset policy and native
+Click checks retained. Their `contract_first_probe.sv` and first simulation logs
+are preserved; no paired fallback pass is substituted. Final policy revalidation
+proves the stronger Stored writer/reset policy leaves each dynamic probe unchanged.
+
+| Variant | Endpoints | Mapping checks | Semantic SHA-256 |
+| --- | ---: | ---: | --- |
+| four-phase | 2254 | 657563928 | `56c19c784f3b3c2019a9ca860dcd829646c77e1f3f2546ec773a7347261c3e21` |
+| click | 1942 | 542276312 | `92da31d9786c68557daeb7bf01a00209d09ae8c00f22c577d8b9ef8e0c71dc93` |
+
+Receipts are `bd-strict-r4.log`, `click-strict-r4.log`, both `*-soc-r4/resolved.json`,
+`final-policy-recheck.json` and `qualification-evidence.json`. Fresh independent
+review covers native timing/history, reset/priority, Stored CDC, export-policy
+closure and capture-checker completeness. All actionable findings were fixed and
+the affected checks rerun. No physical qualification is implied.
+
+Failure evidence is retained. The first full run passed 303 of 305 tests and
+failed both earliest 400 kHz WRITE-status cases at 3.2 MHz with
+`I2C_EARLIEST_WRITE_STATUS`. Stored accounting published one service edge after
+snapshot capture. The specialized Stored crossing now keeps two request
+synchronizers and producer-held data, acknowledging only Control acceptance;
+removing redundant payload/capture state saves two service edges. Both original
+I2C timing/status oracles pass in the final Scala-generated full run.
+
+Earlier native metadata, return-phase fixture and integration failures remain
+in their original logs. `debug-begin/simulation.log` records a fixture's NBA idle
+sampling transient. `debug-late/simulation.log` records a late BEGIN invalidating
+a held CPU read: the ABI requires exactly one access fault and zero word effects,
+not zero CPU admissions. Review corrected that oracle to require both effects.
+A first Stored-reset mutation reached only a deadline; the strengthened
+independent phase/count and model-bounded receipt assertions now reject it
+directly. The failed control is not counted as a pass.
+
+The first r3 strict probes failed at the newly gated program-word ingress.
+Review identified missing tagged-grant and publication source combinations.
+The checker now drives only catalogued source registers, with all binding and
+activity checks intact; new unit controls reject omitted source fields and bad
+bindings. Those first failed probes and stopped fallback state remain recorded.
+The r4 source-copy setup failures are also retained. Capture preflights preserve
+an inactive Stored negative fixture and injected-wire declaration errors; the
+reviewed campaign uses active mixed histories and compiles every mutation.
+Interrupted runs and targeted diagnostic replays are never counted as full passes.
+
 ## Native RAM source ownership - digitally verified, 2026-10-10
 
 Substep 10b2a adds separate native BD and Click reservations before CPU RAM

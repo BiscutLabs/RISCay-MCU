@@ -61,11 +61,42 @@ reset hold. Debt and its release history reset asynchronously, and fresh admissi
 waits for the owner, all four source bridges and the existing SRAM paths to drain.
 The word-drained input excludes the new receipt bridges, avoiding a circular wait.
 
-RAM no longer uses Services' `cpuMemoryPending`; that register still owns program
-reads until 10b2b. Four ownership crossings, synchronized idle/debt qualification,
+RAM no longer uses Services' `cpuMemoryPending`; substep 10b2b now removes that
+program-read flag and the clocked Stored-pending flag, with digital qualification complete.
+Four RAM ownership crossings, synchronized idle/debt qualification,
 `SramAccess.active`, word crossings and the synchronous macro boundary remain.
 Later checklist items remove those round trips under this ownership contract.
 No reset, bundled-path, CDC or physical macro timing closure is claimed.
+
+## Native program source reservation (10b2b; digitally verified)
+
+Each variant reserves one tagged CPU-read or loader-write slot. A late Control
+winner cancels an uncommitted CPU reservation; a winning BEGIN invalidates the
+image and the pending read faults after revalidation. CPU/grant/decision/word
+acceptance agree. Loader reserve, grant, decision, publication and native Stored
+delivery bypass CPU reset debt, retaining accepted writes and accounting.
+
+Actual word publication feeds the source receipt before word drainage can finish.
+It creates one Stored token for a committed loader; CPU reads and cancellations
+do not create Stored. The token carries the retained reservation tag, which stays
+stable through its full return. Stored acceptance means its Control command fired;
+native `ControlState.loaderPending` retains CRC/received obligations until that
+command, and clocked status retains busy history through reply publication.
+
+BD retains Stored acceptance separately from full return: it permits the main
+reservation ACK to rise, while Stored RTZ gates that ACK falling and slot reuse.
+Click captures an immutable next-Stored target at reservation arm and retains
+an independent issued phase. Only committed loader slots wait for that target;
+CPU publications and cancellations leave Stored history unchanged. Decisions
+must follow grant/word acceptance. Its 241.200001 ns guards exceed conservative
+111.2 ns selection, 91.2 ns Stored feedback and 121.2 ns retirement-feedback
+digital bounds. Actual-pin monitors cover all six custom Click registers across
+127 positive replays and reject ten setup/hold/pulse/distribution defects. The
+model envelope remains uncharacterized physically.
+
+Five POR bridges, synchronized drainage/reset debt, whole-word crossings,
+`SramAccess.active` and physical byte access remain for subsequent checklist
+items. Source wordDrained excludes source receipt bridges to avoid circular waits.
 
 ## Access and arbitration
 
@@ -123,6 +154,25 @@ independent WAKE/SAMPLE_PERIOD commands remain available. There is no unbounded 
 normal interval between complete wire frames exceeds a memory transaction.
 Host software must still follow BUSY, LAST_ERROR and RECEIVED_BYTES rather than
 assuming ACK means completion. Lock/verify cannot overtake an unfinished write.
+
+## Stored receipt crossing
+
+The ProgramSource's native Stored buffer retains its one-bit payload throughout
+backpressure. A separate `FourPhaseStoredReceipt` or `ClickStoredReceipt` observes
+the request through two service-clock synchronizers, presents that held payload,
+and acknowledges only when Control accepts the Stored command. BD acknowledgment
+returns only after synchronized request return; Click retains the accepted phase.
+There is no duplicate clocked payload register or capture FSM in this crossing.
+
+The native buffer must meet its complete output-bundling contract before request
+publication. Two synchronizer stages and the subsequent consumer edge add at
+least two service periods of settling (100 ns at the 20 MHz digital ceiling).
+After acceptance, the native buffer retains the payload through BD return or
+until a subsequent Click reservation reaches a new Stored capture. The return
+and source-reuse paths must preserve the consumer's hold aperture as well.
+Physical data-path delay, metastability, placement, clock uncertainty, clock-to-Q,
+fork skew, consumer hold and reset release still need qualification. This is a narrowly qualified held-token
+boundary, not a replacement policy for generic data-bus crossings.
 
 ## Reset and sleep
 

@@ -88,8 +88,11 @@ review, all 253 verification cases, both core policy cases, 90 working-tree
 Python controls and strict exports. Its clocked-client crossing remains explicit.
 Native RAM source ownership/cancellation (10b2a) passes fresh review, all 276
 verification cases, both core policy cases, 96 Python controls, mutation controls
-and strict exports. Program-memory and other source flags, publication
-crossings and reset/drain projections remain tracked for subsequent migration.
+and strict exports. Native program-memory CPU/loader ownership and Stored
+delivery (10b2b) pass fresh review, all 309 verification cases, both core policy
+cases, 105 Python controls, 50 actual RTL mutation controls and strict exports. Other source
+flags, publication crossings and reset/drain projections remain tracked for
+subsequent migration.
 The independent LF timebase/watchdog remains necessary. See the [migration checklist](docs/async-soc-migration.md). A permanent
 Groundlark controller supervises power before upload and during application
 stalls. Its state, safety sample record and confirmation counters now reside

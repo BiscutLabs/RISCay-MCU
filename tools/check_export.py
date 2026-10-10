@@ -25,6 +25,7 @@ from check_completion_integration import completion_background, completion_const
 from check_admission_export import validate_admission, literal_nets, admission_probe
 from check_application_reset import validate_application_reset, persistent_reset_children
 from check_ram_source_export import ARM_PATH, RETIRE_PATH, validate_ram_source, ram_source_bindings, ram_source_probe
+from check_program_source_export import PROGRAM_PATHS, validate_program_source, program_source_bindings, program_source_probe, validate_program_receipts
 
 
 def sram_array_shapes(contents, scopes):
@@ -437,6 +438,11 @@ def sram_background(source: str, manifest: dict, scopes: dict, checks: int):
     force(top + ".fabric_controlOutstanding", 1, 1)
     force(reply + ".state", 2, 2)
     force(reply + ".data_programWrite", 1, 1)
+    # The loader's actual word admission now requires its retained tagged grant.
+    # Both fields are catalogued crossing registers; never force request.valid,
+    # grant.valid or any derived readiness/selection expression.
+    force(top + ".ca_child_program_grant_bridge.state", 2, 2)
+    force(top + ".ca_child_program_grant_bridge.data", 1, 1)
     check()
     for field in ("received", "loaderWord"):
         for value in walk(32):
@@ -453,6 +459,16 @@ def sram_background(source: str, manifest: dict, scopes: dict, checks: int):
     # Invalid addresses exercise the offered payload, never admitted effects.
     for value in walk(32):
         force(request + ".data_address", 32, (0x20000000 + value) & 0xffffffff); check()
+    # A retained word publishes only when ownership and the reply crossing agree.
+    # Generic all-high backgrounds also assert the crossing's local reset, while
+    # individual driver walks cannot combine active=1 with reply state=2.
+    # RAM already receives the same coherent publication walk in completion_background.
+    idle()
+    owner = owners["program_access"]["rtl_path"]
+    force(owner + ".active", 1, 1)
+    force(owner + ".ca_child_reply_bridge.state", 2, 2)
+    for value in walk(32):
+        force(owner + ".ca_child_reply_bridge.data", 32, value); check()
     extra.append(header)
     for bank in ("program", "ram"):
         force(top + f".fabric_{bank}_state", 2, 3)
@@ -723,6 +739,8 @@ def validate_fabric_inventory(manifest):
     """Required obligations cannot vanish along with their passive markers."""
     def visit(node):
         module = node["module"]
+        if re.fullmatch(r"(?:FourPhase|Click)ProgramSource(?:_[0-9]+)?", module):
+            validate_program_source(node)
         if re.fullmatch(r"(?:FourPhase|Click)RamSource(?:_[0-9]+)?", module):
             validate_ram_source(node)
         if re.fullmatch(r"(?:FourPhase|Click)Admission(?:_[0-9]+)?", module):
@@ -790,6 +808,9 @@ def validate_fabric_path(node, timing):
     primitive, elaborated pin, endpoint mapping and endpoint activity afterwards.
     """
     logic = timing.get("logic")
+    if logic in PROGRAM_PATHS:
+        validate_program_source(node)
+        return
     if logic in (ARM_PATH, RETIRE_PATH):
         validate_ram_source(node)
         return
@@ -841,7 +862,7 @@ def validate_fabric_path(node, timing):
 
 def validate_native_click(manifest):
     """A Click export must remain native throughout its async hierarchy."""
-    if manifest["top"] not in ("ClickSoc", "ClickCore", "ClickFabric", "ClickControl", "ClickTelemetry", "ClickSupervisor", "ClickElapsed", "ClickSample", "ClickSram", "ClickI2c", "ClickSpiAdc", "ClickHousekeeping", "ClickCompletion", "ClickAdmission", "ClickRamSource"):
+    if manifest["top"] not in ("ClickSoc", "ClickCore", "ClickFabric", "ClickControl", "ClickTelemetry", "ClickSupervisor", "ClickElapsed", "ClickSample", "ClickSram", "ClickI2c", "ClickSpiAdc", "ClickHousekeeping", "ClickCompletion", "ClickAdmission", "ClickRamSource", "ClickProgramSource"):
         return
     def nodes(node):
         yield node
@@ -908,6 +929,8 @@ def spi_program_probe(source, manifest, scopes):
 
 def fabric_path_bindings(node, timing):
     """Actual mux/storage pin comparisons added to the unchanged library probe."""
+    if timing.get("logic") in PROGRAM_PATHS:
+        return program_source_bindings(node)
     if timing.get("logic") in (ARM_PATH, RETIRE_PATH):
         return ram_source_bindings(node)
     if timing.get("logic") in (BD_COMPLETION_PATH, CLICK_COMPLETION_PATH):
@@ -954,14 +977,17 @@ def fabric_checker_source(source):
              + f' {BD_COMPLETION_PATH!r}: (["reply"], "data_delay", "result_sources", "result"),'
              + f' {CLICK_COMPLETION_PATH!r}: ([], "data_delay", "result_sources", "register_data"),'
              + f' {ARM_PATH!r}: ([], "arm_data_delay", "reserved", "arm_data"),'
-             + f' {RETIRE_PATH!r}: ([], "data_delay", "retire_sources", "register_data")}}'
+             + f' {RETIRE_PATH!r}: ([], "data_delay", "retire_sources", "register_data"),'
+             + f' {PROGRAM_PATHS[0]!r}: ([], "arm_data_delay", "arm_sources", "arm_data"),'
+             + f' {PROGRAM_PATHS[1]!r}: ([], "data_delay", "retire_sources", "register_data"),'
+             + f' {PROGRAM_PATHS[2]!r}: ([], "stored_data_delay", "stored_target", "stored_phase_data")}}'
              + "\n                validate_fabric_path(node, timing)")
     source = source.replace(anchor, extra)
     anchor = 'if timing["logic"] in ("exclusive-merge-input-mux", "controlled-multiplexer-input-mux"):'
     if source.count(anchor) != 1:
         raise ValueError("MCU_FABRIC_CHECKER_SHAPE_CHANGED")
     source = source.replace(anchor,
-        f'if timing["logic"] in ({BD_FABRIC_PATH!r}, {CLICK_FABRIC_PATH!r}, {I2C_PROJECTION_PATH!r}, {BD_COMPLETION_PATH!r}, {CLICK_COMPLETION_PATH!r}, {ARM_PATH!r}, {RETIRE_PATH!r}):\n'
+        f'if timing["logic"] in ({BD_FABRIC_PATH!r}, {CLICK_FABRIC_PATH!r}, {I2C_PROJECTION_PATH!r}, {BD_COMPLETION_PATH!r}, {CLICK_COMPLETION_PATH!r}, {ARM_PATH!r}, {RETIRE_PATH!r}, {PROGRAM_PATHS[0]!r}, {PROGRAM_PATHS[1]!r}, {PROGRAM_PATHS[2]!r}):\n'
         '                    pairs = fabric_path_bindings(node, timing)\n'
         '                el' + anchor)
     anchor = '    if "INACTIVE_ENDPOINT:" in simulation.stdout:'
@@ -1016,6 +1042,7 @@ def main() -> None:
     def probe(manifest, scopes, paired=False):
         top_rtl=(args.directory / (manifest["top"]+".sv")).read_text(encoding="utf-8")
         validate_application_reset(manifest,scopes,top_rtl)
+        validate_program_receipts(manifest,args.directory)
         source, count = original_probe(manifest, scopes, paired)
         source = spi_program_probe(source, manifest, scopes)
         source, count = register_file_background(source, manifest, count)
@@ -1034,6 +1061,7 @@ def main() -> None:
             (args.directory / (manifest["top"]+".sv")).read_text(encoding="utf-8"))
         source = admission_probe(source, manifest, scopes)
         source = ram_source_probe(source, manifest, scopes)
+        source = program_source_probe(source, manifest, scopes)
         return source, count
     module.probe_source = probe
 

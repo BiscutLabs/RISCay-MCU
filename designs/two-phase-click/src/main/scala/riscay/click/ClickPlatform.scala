@@ -130,6 +130,44 @@ abstract class ClickPlatform(p: SocParameters, board: SocParameters => BoardProf
   }
   fabric.io.ramSource.resetDebt:=ramResetDebt
   fabric.io.ramSource.draining:=ramResetDebt || !ramSourceEmpty
+  val programSource=asyncChild("program_source")(d => new ClickProgramSource(d))
+  val programReserve=asyncChild("program_reserve_bridge")(d => new DecoupledToClick(Bool(),d))
+  val programGrant=asyncChild("program_grant_bridge")(d => new ClickToDecoupled(Bool(),d))
+  val programDecision=asyncChild("program_decision_bridge")(d => new DecoupledToClick(Bool(),d))
+  val programPublication=asyncChild("program_publication_bridge")(d => new DecoupledToClick(Bool(),d))
+  val programStored=asyncChild("program_stored_bridge")(d => new ClickStoredReceipt(d))
+  Seq(programReserve,programDecision,programPublication).foreach { b =>
+    b.clock:=workClock; dontTouch(b.in); dontTouch(b.out)
+  }
+  programGrant.clock:=workClock; dontTouch(programGrant.in); dontTouch(programGrant.out)
+  programStored.clock:=workClock; dontTouch(programStored.in); dontTouch(programStored.out)
+  chiselasync.protocol.TwoPhase.connect(programStored.in,programSource.stored)
+  fabric.io.programSource.stored <> programStored.out
+  fabric.io.programSource.ownerLoader:=programSource.ownerLoader
+  chiselasync.protocol.TwoPhase.connect(programSource.reserve,programReserve.out)
+  chiselasync.protocol.TwoPhase.connect(programGrant.in,programSource.grant)
+  chiselasync.protocol.TwoPhase.connect(programSource.decision,programDecision.out)
+  chiselasync.protocol.TwoPhase.connect(programSource.publication,programPublication.out)
+  programReserve.in <> fabric.io.programSource.reserve; fabric.io.programSource.grant <> programGrant.out
+  programDecision.in <> fabric.io.programSource.decision; programPublication.in <> fabric.io.programSource.publication
+  programSource.applicationReset:=fabric.io.cpuReset.asAsyncReset
+  programSource.wordDrained:= !programAccess.io.busy // Excludes its own receipt bridges.
+  fabric.io.programSource.eligible:=programSource.eligible
+  val programOwnerIdle=withClockAndReset(workClock,reset) {
+    val first=RegNext(programSource.idle,false.B); RegNext(first,false.B)
+  }
+  val programSourceEmpty=programOwnerIdle && !programAccess.io.busy && programReserve.in.ready &&
+    programDecision.in.ready && programPublication.in.ready && !programGrant.out.valid && !programStored.out.valid
+  val programResetDebt=withClockAndReset(workClock,fabric.io.cpuReset.asAsyncReset) {
+    val debt=RegInit(true.B)
+    // Restart the release history on EVERY raw pulse, even between clock edges.
+    val previousSafe=RegInit(false.B)
+    previousSafe:=programSourceEmpty && !fabric.io.cpuResetActive
+    when(previousSafe && programSourceEmpty && !fabric.io.cpuResetActive) { debt:=false.B }
+    debt
+  }
+  fabric.io.programSource.resetDebt:=programResetDebt
+  fabric.io.programSource.draining:=programResetDebt || !programSourceEmpty
   val control = asyncChild("control")(d => new ClickControl(p, d))
   val controlCommandBridge = asyncChild("control_command_bridge")(d => new DecoupledToClick(new ControlCommand, d))
   val controlReplyBridge = asyncChild("control_reply_bridge")(d => new ClickToDecoupled(new ControlReply, d))

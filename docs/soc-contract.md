@@ -45,8 +45,19 @@ RAM source cancellation now uses a native exclusive reservation (10b2a;
 digitally verified). Grant, CPU/word acceptance and a commit receipt agree;
 actual word publication qualifies CPU completion, and cancellation cannot undo
 accepted SRAM effects. All source phases and receipt crossings are POR-only.
-The application resets only eligibility and reset-debt release history. Program
-pending state and the existing SRAM word crossings remain explicit boundaries.
+The application resets only eligibility and reset-debt release history.
+Program-source ownership and Stored delivery now use separate native owners
+(10b2b, digitally verified), replacing clocked CPU/Stored pending flags.
+The retained tag classifies actual word responses; projected loader state does
+not classify them. CPU eligibility can be cancelled while every accepted loader
+obligation, its phases and accounting remain POR-owned. A higher-priority BEGIN
+may invalidate a held CPU read before commitment; revalidation then faults it
+without a word access. Loader decisions follow held grant/word acceptance and
+remain operational throughout application reset debt. Stored is offered only
+after actual publication and acknowledged only at Control-command acceptance.
+Host admission retains its busy history through Stored-reply publication.
+Five source crossings, drain/debt projections and existing SRAM word crossings
+remain explicit boundaries for later migration.
 
 Application reset asserts immediately and releases after eight ungated service
 edges. With a maximum service clock of 20 MHz, the minimum hold is 350 ns; the

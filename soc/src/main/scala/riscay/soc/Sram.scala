@@ -85,3 +85,16 @@ class RamSourceBoundaryPort extends Bundle {
   val resetDebt = Input(Bool())
   val draining = Input(Bool())
 }
+
+/** Program-source schemas only; retained ownership and Stored phases are native. */
+class ProgramSourceBoundaryPort extends Bundle {
+  val reserve = Decoupled(Bool()) // True: accepted loader obligation; false: CPU read.
+  val grant = Flipped(Decoupled(Bool()))
+  val decision = Decoupled(Bool()) // True iff the selected client and word accepted together.
+  val publication = Decoupled(Bool()) // Actual response bit zero.
+  val stored = Flipped(Decoupled(Bool())) // ACK only on Stored Control command acceptance.
+  val ownerLoader = Input(Bool())
+  val eligible = Input(Bool())
+  val resetDebt = Input(Bool())
+  val draining = Input(Bool())
+}

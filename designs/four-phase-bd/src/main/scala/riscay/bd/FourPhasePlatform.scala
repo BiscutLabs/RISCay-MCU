@@ -129,6 +129,46 @@ abstract class FourPhasePlatform(p: SocParameters, board: SocParameters => Board
   fabric.io.ramSource.draining:=ramResetDebt || !ramSourceEmpty
   // Persistent command/state loop and both crossings are POR-only. Application
   // reset is synchronized service data, never a reset of image/lock state.
+  val programSource=asyncChild("program_source")(d => new FourPhaseProgramSource(d))
+  val programReserve=asyncChild("program_reserve_bridge")(d => new chiselasync.clocked.DecoupledToFourPhase(Bool(),2,d))
+  val programGrant=asyncChild("program_grant_bridge")(d => new chiselasync.clocked.FourPhaseToDecoupled(Bool(),2,d))
+  val programDecision=asyncChild("program_decision_bridge")(d => new chiselasync.clocked.DecoupledToFourPhase(Bool(),2,d))
+  val programPublication=asyncChild("program_publication_bridge")(d => new chiselasync.clocked.DecoupledToFourPhase(Bool(),2,d))
+  val programStored=asyncChild("program_stored_bridge")(d => new FourPhaseStoredReceipt(d))
+  Seq(programReserve,programDecision,programPublication).foreach { b =>
+    b.clock:=workClock; dontTouch(b.in); dontTouch(b.out)
+  }
+  programGrant.clock:=workClock; dontTouch(programGrant.in); dontTouch(programGrant.out)
+  programStored.clock:=workClock; dontTouch(programStored.in); dontTouch(programStored.out)
+  chiselasync.protocol.FourPhase.connect(programStored.in,programSource.stored)
+  fabric.io.programSource.stored <> programStored.out
+  fabric.io.programSource.ownerLoader:=programSource.ownerLoader
+  chiselasync.protocol.FourPhase.connect(programSource.reserve,programReserve.out)
+  chiselasync.protocol.FourPhase.connect(programGrant.in,programSource.grant)
+  chiselasync.protocol.FourPhase.connect(programSource.decision,programDecision.out)
+  chiselasync.protocol.FourPhase.connect(programSource.publication,programPublication.out)
+  programReserve.in <> fabric.io.programSource.reserve; fabric.io.programSource.grant <> programGrant.out
+  programDecision.in <> fabric.io.programSource.decision; programPublication.in <> fabric.io.programSource.publication
+  programSource.applicationReset:=fabric.io.cpuReset.asAsyncReset
+  programSource.wordDrained:= !programAccess.io.busy // Excludes its own receipt bridges.
+  fabric.io.programSource.eligible:=programSource.eligible
+  val programOwnerIdle=withClockAndReset(workClock,reset) {
+    val first=RegNext(programSource.idle,false.B); RegNext(first,false.B)
+  }
+  val programSourceEmpty=programOwnerIdle && !programAccess.io.busy && programReserve.in.ready &&
+    programDecision.in.ready && programPublication.in.ready && !programGrant.out.valid && !programStored.out.valid
+  val programResetDebt=withClockAndReset(workClock,fabric.io.cpuReset.asAsyncReset) {
+    val debt=RegInit(true.B)
+    // Restart the release history on EVERY raw pulse, even between clock edges.
+    val previousSafe=RegInit(false.B)
+    previousSafe:=programSourceEmpty && !fabric.io.cpuResetActive
+    when(previousSafe && programSourceEmpty && !fabric.io.cpuResetActive) { debt:=false.B }
+    debt
+  }
+  fabric.io.programSource.resetDebt:=programResetDebt
+  fabric.io.programSource.draining:=programResetDebt || !programSourceEmpty
+  // Persistent command/state loop and both crossings are POR-only. Application
+  // reset is synchronized service data, never a reset of image/lock state.
   val control = asyncChild("control")(d => new FourPhaseControl(p, d))
   val controlCommandBridge = asyncChild("control_command_bridge")(d =>
     new chiselasync.clocked.DecoupledToFourPhase(new ControlCommand, 2, d))

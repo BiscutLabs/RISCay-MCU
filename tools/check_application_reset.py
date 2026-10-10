@@ -84,6 +84,15 @@ def persistent_reset_children(manifest):
     if present and present != ram_source.keys():
         raise ValueError("SOC_RAM_SOURCE_RESET_INVENTORY")
     persistent.update(ram_source)
+    program_source = {"program_source": "ClickProgramSource" if top == "ClickSoc" else "FourPhaseProgramSource"}
+    program_source["program_grant_bridge"] = "ClickToDecoupled" if top == "ClickSoc" else "FourPhaseToDecoupled"
+    program_source["program_stored_bridge"] = "ClickStoredReceipt" if top == "ClickSoc" else "FourPhaseStoredReceipt"
+    program_source.update({"program_"+n+"_bridge": "DecoupledToClick" if top == "ClickSoc" else "DecoupledToFourPhase"
+                           for n in ("reserve", "decision", "publication")})
+    present = {c.get("id") for c in root["children"]} & program_source.keys()
+    if present and present != program_source.keys():
+        raise ValueError("SOC_PROGRAM_SOURCE_RESET_INVENTORY")
+    persistent.update(program_source)
     persistent["i2c"] = "I2cTarget"
     persistent.update({"elapsed_scaler": "ElapsedTicks", "sample_scaler": "SampleScaler", "spi_adc": "SpiAdc"})
     for child in root["children"]:

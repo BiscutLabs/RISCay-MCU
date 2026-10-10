@@ -10,7 +10,7 @@ when no next item has been chosen. Both implementations remain active throughout
 
 - Four-phase bundled-data implementation: `designs/four-phase-bd/src/main/scala/riscay/bd/`.
 - Native two-phase Click implementation: `designs/two-phase-click/src/main/scala/riscay/click/`.
-- Each owns its Fabric, Completion, Admission, RAM source, Control, Telemetry, Supervisor, Housekeeping, SRAM sequencing, I2C and SPI ADC protocol,
+- Each owns its Fabric, Completion, Admission, RAM/program sources, Control, Telemetry, Supervisor, Housekeeping, SRAM sequencing, I2C and SPI ADC protocol,
   Services, Platform, ClockedPeripherals, ConstantScaling,
   I2cTarget, SleepTiming and SramBank code. Copying the former service island into
   these directories establishes ownership; it does not migrate its state machines.
@@ -129,7 +129,7 @@ when no next item has been chosen. Both implementations remain active throughout
         Coverage includes the full timing policy, emitted reset distribution,
         early publication/return, repeated pulses and actual macro write counts.
         Evidence: `build/async-ram-source-migration/qualification-evidence.json`.
-      - [ ] **10b2b. Program-memory CPU/loader ownership.** Preserve exactly-once
+      - [x] **10b2b. Program-memory CPU/loader ownership - digitally verified, 2026-10-10.** Preserve exactly-once
         `Stored` accounting and loader priority through cancellation and recovery.
         Reserve a native slot tagged CPU read or loader write before word
         acceptance. If higher-priority Control work arrives before CPU commit,
@@ -146,9 +146,55 @@ when no next item has been chosen. Both implementations remain active throughout
         publication before waiting for word drainage; retain admission-time busy
         history through the Stored command/reply gap. Cover independent phase
         histories and directed selector skew with newly derived timing bounds.
+        Separate owners now remove Services' `cpuMemoryPending` and
+        `completionPending`. Five POR crossings, clocked drain/debt projection
+        and the SRAM whole-word round trip remain explicit. Fresh independent
+        review fixes, all 309 verification cases, both core policy cases, 105
+        Python controls and both strict exports pass. Original functional
+        oracles reject 50 actual RTL defects, 218 metadata mutations and six
+        dynamic-binding changes. Custom Click register pin checks pass 127
+        positive replays and reject ten timing defects (included in the 50).
+        Earliest on-wire I2C status exposed a redundant Stored capture stage;
+        a specialized two-synchronizer receipt crossing fixes it without
+        changing the timing/status oracle. Evidence and retained failures:
+        `build/async-program-source-migration/qualification-evidence.json`.
       - [ ] **10b2c. Publication receipts and recovery debt.** Move Telemetry and
         Housekeeping CPU eligibility only with their publication acknowledgments;
         repeated resets cannot let an old recovery clear newly incurred debt.
+        - [ ] **10b2c1. CPU eligibility and exclusive publication receipts.**
+          Reserve before CPU acceptance, including both sources for deadline
+          writes. Cancel uncommitted grants without consuming admission; keep
+          offered-request event history visible during stalls. Do not let a
+          reservation block its own commit through the ordinary busy predicate.
+          A cancelled Telemetry commit may disappear before dispatch, whereas
+          accepted POR-owned Housekeeping actions must still execute and publish.
+          Retain an independent reset/full-drain fence until native recovery is
+          qualified; remove each clocked CPU-pending bit with its native owner.
+          - [ ] Retain publication receipts and acknowledge their ingress
+            independently of owner retirement. Prove that no captured receipt
+            remains in flight before cancellation permits reuse. Keep separate
+            Click publication/drain phase histories and complete BD returns.
+          - [ ] Issue a persistent drain offer for every committed decision,
+            including one accepted before application reset. Acknowledgment
+            must prove the old dispatch, command, reply and publication paths
+            quiet; accumulated observations and undispatched recovery work must
+            not prevent that proof or lose their retained history.
+          - [ ] Hold the validated MMIO Control reply until all required grants
+            and decision ingresses can commit together. Leave parked WAITs
+            unreserved; separate engine readiness from reservation occupancy.
+          - [ ] Publish receipts even for cancelled CPU lifetimes. Qualify live
+            completion with actual service publication, native eligibility and
+            the reset fence. Receipt retirement never advances `consumedGray`.
+          - [ ] Verify independent crossing stalls, reset during capture and
+            return, both deadline arrival orders, skipped phase histories,
+            continuous ticks, permanent supervision and immediate source reuse.
+        - [ ] **10b2c2. Fresh recovery attribution and native debt.** An old reset
+          reply cannot clear a later raw reset pulse, even when several pulses
+          occur before publication. Associate recovery with a retained exclusive
+          slot and prove older command/publication/cancellation return before
+          reuse. Qualify each projection update with that same identity; keep
+          physical reset release and clock-domain observations explicit. Avoid
+          a cycle in which debt blocks the recovery dispatch needed to clear it.
       - [ ] **10b2d. Remove whole-word response round trips.** Use the verified
         ownership/isolation contract to connect native completion paths directly
         and remove superseded pending flags and crossings.
@@ -243,23 +289,28 @@ invariant-focused tests and a fresh independent review before completion.
 
 ## Preliminary residual-state inventory
 
-The 10b2a production exports still contain substantial clocked state. An emitted
+The current 10b2b production exports still contain substantial clocked state. An emitted
 candidate inventory is retained in
-`build/async-ram-source-migration/residual-register-candidates.json` with each
+`build/async-program-source-migration/residual-register-candidates.json` with each
 register's width and local event control. It excludes fixed async primitive state,
 probe state and SRAM arrays. These are elaborated declarations, not mapped flop
 counts, area, power or proof that any remaining boundary is physically necessary.
-The later RAM/Completion guard fixes change only native primitives, not this inventory.
+Moving program ownership adds five temporary clocked-client crossings and drain
+projection state while removing two clocked ownership flags. This checkpoint
+therefore increases the candidate inventory by 35 registers / 39 bits; the later
+direct-connection items must remove crossings as their clients migrate.
+This inventory includes the Stored-crossing fix, which removes a duplicate payload
+register and capture FSM. Digital qualification is complete; physical timing remains open.
 
 | Candidate group | BD registers / bits | Click registers / bits | Follow-up |
 | --- | ---: | ---: | --- |
-| Flattened SoC/Services state | 294 / 3,275 | 293 / 3,276 | Split ownership across items 10-16 |
+| Flattened SoC/Services state | 296 / 3,277 | 295 / 3,278 | Split ownership across items 10-16 |
 | I2C sampling, capture and projection | 101 / 941 | 101 / 941 | Items 13-15 |
 | SPI waveform/capture boundary | 18 / 175 | 18 / 175 | Items 12-15 |
 | Two SRAM access wrappers | 26 / 26 | 26 / 26 | Items 10b2d, 14-15 |
 | Elapsed ingress wrapper | 6 / 37 | 6 / 37 | Items 12, 14-15 |
-| 46 explicit clocked bridge instances | 582 / 4,133 | 582 / 4,133 | Remove as their clocked clients migrate |
-| Total candidates in 52 emitted owners | 1,027 / 8,587 | 1,026 / 8,588 | Item 16 must account for every owner |
+| 51 explicit clocked bridge instances | 615 / 4,170 | 615 / 4,170 | Remove as their clocked clients migrate |
+| Total candidates in 57 emitted owners | 1,062 / 8,626 | 1,061 / 8,627 | Item 16 must account for every owner |
 
 An owner is retained only with a specific physical or interface obligation and
 supporting evidence. Independent time/watchdog operation and the pinned synchronous

@@ -52,7 +52,6 @@ class ClickServices(p: SocParameters, boardFactory: SocParameters => BoardProfil
   val controlState = RegInit(ControlState.initial)
   val controlOutstanding = RegInit(false.B)
   val loaderControlPending = RegInit(false.B)
-  val completionPending = RegInit(false.B)
   val haltPending = withReset(io.cpuReset.asAsyncReset) { RegInit(false.B) }
   val mmioCurrent = withReset(io.cpuReset.asAsyncReset) { RegInit(false.B) }
   val mmioCommitPending = RegInit(false.B)
@@ -65,10 +64,8 @@ class ClickServices(p: SocParameters, boardFactory: SocParameters => BoardProfil
   val loaderPending = WireDefault(controlState.loaderPending); dontTouch(loaderPending)
   val receivedWords = WireDefault(controlState.received >> 2); dontTouch(receivedWords)
   val loaderWrite = WireDefault(false.B)
-  // Program-fetch ownership remains clocked until checklist 10b2b; RAM uses its native source.
-  val cpuMemoryPending = withReset(io.cpuReset.asAsyncReset) { RegInit(false.B) }
   val controlBusy = Wire(Bool())
-  val memoryBusy = io.program.busy || io.ram.busy || loaderPending || cpuMemoryPending
+  val memoryBusy = io.program.busy || io.ram.busy || loaderPending
   val rom = VecInit(MemoryMap.boot.map(_.U(32.W)))
   def applicationReg[T <: Data](init: T): T = withReset(io.cpuReset.asAsyncReset) { RegInit(init) }
   val telemetryOutstanding = RegInit(false.B)
@@ -321,13 +318,50 @@ class ClickServices(p: SocParameters, boardFactory: SocParameters => BoardProfil
   when(io.ramSource.decision.fire && !io.ramSource.decision.bits) {
     assert(io.ramSource.resetDebt && !io.ram.request.fire && !ramCommit,"RAM_SOURCE_CANCELLED_EFFECT")
   }
+  // A source reservation precedes acceptance, but does not block higher-priority
+  // host work. A late Control winner cancels an uncommitted CPU slot; the next
+  // attempt rechecks image permissions. Accepted loader obligations bypass all
+  // CPU reset/recovery gates and retain their independent Stored receipt.
+  val programCpuOperation = req.address >= MemoryMap.program.U &&
+    req.address < (MemoryMap.program + config.programBytes).U && (isRead || isFetch) &&
+    programmed && (req.address - MemoryMap.program.U) < imageLength
+  val loaderOffer = controlOutstanding && io.controlReply.valid && io.controlReply.bits.programWrite
+  io.programSource.reserve.valid := loaderOffer || (io.request.valid && programCpuOperation &&
+    !controlBusy && !io.cpuResetActive && !resetRecovery && !io.programSource.resetDebt)
+  io.programSource.reserve.bits := loaderOffer
+  val programCpuCommit = io.request.fire && programCpuOperation
+  val programLoaderCommit = io.controlReply.fire && io.controlReply.bits.programWrite
+  val programCancel = !io.programSource.grant.bits &&
+    (io.programSource.resetDebt || io.cpuResetActive || resetRecovery || controlBusy ||
+      !io.request.valid || !programCpuOperation)
+  io.programSource.grant.ready := io.programSource.decision.ready &&
+    (programCpuCommit || programLoaderCommit || programCancel)
+  io.programSource.decision.valid := io.programSource.grant.fire
+  io.programSource.decision.bits := programCpuCommit || programLoaderCommit
+  io.program.response.ready := io.programSource.publication.ready
+  io.programSource.publication.valid := io.program.response.valid
+  io.programSource.publication.bits := io.program.response.bits(0)
+  val programLoaderReady = io.programSource.grant.valid && io.programSource.grant.bits &&
+    io.programSource.decision.ready && io.program.request.ready
+  io.programSource.stored.ready := io.controlCommand.fire && io.controlCommand.bits.kind === ControlKind.Stored.U
+  when(programCpuCommit || programLoaderCommit) {
+    assert(io.programSource.grant.fire && io.programSource.decision.fire && io.program.request.fire,
+      "PROGRAM_SOURCE_COMMIT_NOT_ATOMIC")
+    assert(io.programSource.grant.bits === programLoaderCommit &&
+      io.programSource.ownerLoader === programLoaderCommit,"PROGRAM_SOURCE_GRANT_IDENTITY")
+    assert(!programCpuCommit || io.programSource.eligible,"PROGRAM_SOURCE_CPU_NOT_ELIGIBLE")
+  }
+  assert(io.program.request.fire === (programCpuCommit || programLoaderCommit),"PROGRAM_SOURCE_UNRESERVED_WORD")
+  when(io.programSource.decision.fire && !io.programSource.decision.bits) {
+    assert(!io.programSource.grant.bits && !io.program.request.fire,"PROGRAM_SOURCE_CANCELLED_EFFECT")
+  }
   val bootWait = isRead && fullWord && req.address === MemoryMap.mmio.U && !started
   val waitingRead = isRead && fullWord && req.address === (MemoryMap.mmio + 16).U
   val eventWait = waitingRead && (pending & (wakeMask | "h30".U)) === 0.U
   parked := io.request.valid && eventWait
   val parkedForSleep = p.lowPower.nonEmpty.B && io.request.valid &&
     (bootWait || (eventWait && sleepRemaining =/= 0.U)) && io.admissionGrant.valid && !adcBusy && !memoryBusy && !controlBusy
-  io.canSleep := parkedForSleep && !io.ramSource.draining && !scalingBusy && !tick && !telemetryWork && !boardWork
+  io.canSleep := parkedForSleep && !io.programSource.draining && !io.ramSource.draining && !scalingBusy && !tick && !telemetryWork && !boardWork
   val nativeMmio = req.address >= MemoryMap.mmio.U && req.address < (MemoryMap.mmio + 76).U &&
     req.operation =/= Operation.Halt.U
   val mmioComplete = io.controlReply.fire && io.controlReply.bits.kind === ControlKind.Mmio.U && mmioCurrent
@@ -335,24 +369,20 @@ class ClickServices(p: SocParameters, boardFactory: SocParameters => BoardProfil
     !memoryBusy && !loaderWrite && !telemetryBarrier && !housekeepingBarrierBusy
   val ramAdmission = io.ramSource.grant.valid && io.ramSource.decision.ready &&
     !io.ramSource.resetDebt && io.ram.request.ready
+  val programAdmission = io.programSource.grant.valid && !io.programSource.grant.bits &&
+    io.programSource.decision.ready && !io.programSource.resetDebt && io.program.request.ready
   io.request.ready := cpuAvailable && Mux(nativeMmio, mmioComplete, !controlBusy) &&
-    (!ramOperation || ramAdmission)
+    (!ramOperation || ramAdmission) && (!programCpuOperation || programAdmission)
 
   io.commit.valid := io.request.fire; io.commit.bits := req
   // Accepted stores finish through a watchdog reset, but their CPU completion
   // is discarded. POR may abort a partial word; neither reset clears SRAM bits.
-  when(io.cpuResetActive) { cpuMemoryPending := false.B }
-  when(io.program.response.fire && loaderPending) {
-    completionPending := true.B
-  }
-  when(io.program.response.fire && !loaderPending) {
-    cpuMemoryPending := false.B
-    when(cpuMemoryPending && !io.cpuResetActive) {
-      io.completionMemory.valid := true.B
-      io.completionMemory.bits.error := false.B
-      io.completionMemory.bits.data := io.program.response.bits
-      assert(io.completionMemory.ready,"COMPLETION_MEMORY_OVERFLOW")
-    }
+  when(io.program.response.fire && !io.programSource.ownerLoader && io.programSource.eligible &&
+      !io.programSource.resetDebt && !io.cpuResetActive) {
+    io.completionMemory.valid := true.B
+    io.completionMemory.bits.error := false.B
+    io.completionMemory.bits.data := io.program.response.bits
+    assert(io.completionMemory.ready,"COMPLETION_MEMORY_OVERFLOW")
   }
   // The exclusive SRAM pipeline's actual publication qualifies this retained
   // cancellation attribute. Eligibility alone never denotes a pending response.
@@ -369,10 +399,10 @@ class ClickServices(p: SocParameters, boardFactory: SocParameters => BoardProfil
       .elsewhen(req.address < (MemoryMap.boot.size * 4).U && !isWrite) {
         response.data := rom(req.address(3, 2)); response.error := false.B
       }.elsewhen(req.address >= MemoryMap.program.U && req.address < (MemoryMap.program + config.programBytes).U) {
-        when(!isWrite && programmed && (req.address - MemoryMap.program.U) < imageLength) {
+        when(programCpuOperation) {
           io.program.request.valid := true.B
           io.program.request.bits.address := req.address - MemoryMap.program.U
-          waitMemory := true.B; cpuMemoryPending := true.B
+          waitMemory := true.B
         }
       }.elsewhen(ramOperation) {
         io.ram.request.valid := true.B
@@ -414,7 +444,7 @@ class ClickServices(p: SocParameters, boardFactory: SocParameters => BoardProfil
       }
   }
 
-  io.activity := io.ramSource.draining || scalingBusy || io.i2c.busy || gpioActivity || memoryBusy || controlBusy || telemetryWork || boardWork
+  io.activity := io.programSource.draining || io.ramSource.draining || scalingBusy || io.i2c.busy || gpioActivity || memoryBusy || controlBusy || telemetryWork || boardWork
   // The normal seven-edge guard may drain while native maintenance is busy;
   // canSleep/activity still keep the gate open until that work actually drains.
   io.drainDemand := !parkedForSleep || io.i2c.busy || gpioActivity
@@ -442,11 +472,11 @@ class ClickServices(p: SocParameters, boardFactory: SocParameters => BoardProfil
   val cpuTimingTurn=io.request.valid && nativeMmio && !bootWait && !eventWait && !io.cpuResetActive &&
     (!controlOutstanding || (mmioCurrent && io.controlReply.valid))
   val mmioLaunch = io.request.valid && nativeMmio && cpuAvailable
-  controlBusy := controlOutstanding || completionPending || mmioCommitPending || resetPending || haltPending || hostFrames.io.deq.valid
+  controlBusy := controlOutstanding || io.programSource.stored.valid || mmioCommitPending || resetPending || haltPending || hostFrames.io.deq.valid
   io.controlCommand.valid := !controlOutstanding &&
-    (completionPending || mmioCommitPending || resetPending || haltPending || hostFrames.io.deq.valid || mmioLaunch)
+    (io.programSource.stored.valid || mmioCommitPending || resetPending || haltPending || hostFrames.io.deq.valid || mmioLaunch)
   io.controlCommand.bits := 0.U.asTypeOf(new ControlCommand)
-  io.controlCommand.bits.kind := Mux(completionPending, ControlKind.Stored.U,
+  io.controlCommand.bits.kind := Mux(io.programSource.stored.valid, ControlKind.Stored.U,
     Mux(mmioCommitPending, ControlKind.MmioCommit.U, Mux(resetPending, ControlKind.ResetApplication.U,
       Mux(haltPending, ControlKind.Halt.U, Mux(hostFrames.io.deq.valid, ControlKind.Host.U, ControlKind.Mmio.U)))))
   io.controlCommand.bits.frame := Mux(hostFrames.io.deq.valid, hostFrames.io.deq.bits.frame, 0.U.asTypeOf(new HostFrame))
@@ -462,7 +492,7 @@ class ClickServices(p: SocParameters, boardFactory: SocParameters => BoardProfil
     52.U -> applicationWord(appIndex), 56.U -> wakeMask, 60.U -> sleepRemaining,
     64.U -> samplePeriod, 68.U -> Cat(0.U(28.W), periodPending, sleepRemaining =/= 0.U, !io.clockRunning, p.lowPower.nonEmpty.B),
     72.U -> io.sleepEntries))
-  when(mmioCommitPending && !completionPending) {
+  when(mmioCommitPending && !io.programSource.stored.valid) {
     io.controlCommand.bits := mmioCommit
   }
   when(io.request.fire && nativeMmio && isWrite && !io.controlReply.bits.memory.error) {
@@ -479,7 +509,6 @@ class ClickServices(p: SocParameters, boardFactory: SocParameters => BoardProfil
     loaderControlPending := io.controlCommand.bits.kind === ControlKind.Host.U &&
       io.controlCommand.bits.frame.bytes(0) >= 1.U && io.controlCommand.bits.frame.bytes(0) <= 6.U
     switch(io.controlCommand.bits.kind) {
-      is(ControlKind.Stored.U) { completionPending := false.B }
       is(ControlKind.ResetApplication.U) { resetNeeded := false.B }
       is(ControlKind.MmioCommit.U) { mmioCommitPending := false.B }
       is(ControlKind.Mmio.U) { mmioCurrent := true.B }
@@ -490,7 +519,8 @@ class ClickServices(p: SocParameters, boardFactory: SocParameters => BoardProfil
   io.controlReply.ready := controlOutstanding &&
     (io.controlReply.bits.kind =/= ControlKind.Mmio.U || !mmioCurrent ||
       (!telemetryBarrier && !housekeepingBarrierBusy)) &&
-    (!io.controlReply.bits.periodUpdate || !housekeepingOrderedPending)
+    (!io.controlReply.bits.periodUpdate || !housekeepingOrderedPending) &&
+    (!io.controlReply.bits.programWrite || programLoaderReady)
   when(io.controlReply.fire) {
     val result = io.controlReply.bits
     controlOutstanding := false.B; loaderControlPending := false.B; controlState := result.state
