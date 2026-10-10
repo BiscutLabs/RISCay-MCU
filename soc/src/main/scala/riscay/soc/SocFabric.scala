@@ -16,6 +16,8 @@ object MemoryMap {
 /** Shared port schema only; each variant owns its service implementation. */
 abstract class ServiceEndpoint extends Module with InlineInstance {
   val io = IO(new Bundle {
+    val program = new SramAccessPort
+    val ram = new SramAccessPort
     val elapsedScaling = Flipped(new ElapsedScalingPort(3))
     val sampleScaling = Flipped(new SampleScalingPort)
     val controlCommand = Decoupled(new ControlCommand)

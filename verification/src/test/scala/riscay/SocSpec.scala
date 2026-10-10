@@ -42,6 +42,34 @@ class SocSpec extends AnyFunSuite {
         store(2,3,40,2), i(0x13,4,0,0,3), store(2,4,44,2), // sample 291, calibrated
         i(0x13,4,0,0,1), store(2,4,48,2), i(0x03,5,2,1,28), store(2,5,52,2),
         0x10000337L, store(6,0,0,2)) // protected code store -> access trap
+      // Native byte crossings lengthen fetches. Check architectural retirement
+      // instead of assuming this program finishes in a fixed 100 us window.
+      val protectionTrace = s"""
+reg checkProtection=1, protectedTrap=0, protectionSeen=0;
+integer protectionRetired=0;
+initial forever begin
+  ${if(click) "wait(traceEvent != protectionSeen); protectionSeen=traceEvent;" else "wait(traceEvent);"}
+  #1;
+  if(checkProtection && trace_valid && trace_pc >= 32'h10000000) begin
+    case(protectionRetired)
+      ${program.zipWithIndex.map { case(word,index) =>
+        s"$index: if(trace_pc !== ${hex(MemoryMap.program+4*index)} || trace_instruction !== ${hex(word)}) $$fatal(1,\"PROTECTION_RETIREMENT_$index\");"
+      }.mkString("\n")}
+      default: $$fatal(1,"PROTECTION_EXTRA_RETIREMENT");
+    endcase
+    if(protectionRetired == ${program.size-2} &&
+       (trace_writeRegister !== 1'b1 || trace_rd !== 4'd6 || trace_data !== 32'h10000000))
+      $$fatal(1,"PROTECTION_WRONG_BASE_REGISTER");
+    if(protectionRetired == ${program.size-1}) begin
+      if(trace_trap !== 1'b1 || trace_cause !== 4'd7 || trace_writeRegister !== 1'b0)
+        $$fatal(1,"PROTECTION_WRONG_STORE_FAULT");
+    end else if(trace_trap !== 1'b0) $$fatal(1,"PROTECTION_EARLY_TRAP");
+    protectionRetired=protectionRetired+1;
+    if(protectionRetired == ${program.size}) protectedTrap=1;
+  end
+  ${if(click) "#1;" else "wait(!traceEvent);"}
+end
+"""
       ClockedSimulation.run(top(click), name, s"""
         read_words(0,0,0);
         if(snapshot[0+:32] !== 32'h00010000 || snapshot[96+:32] !== 256 || supported !== 255) $$fatal(1,"BAD_DEVICE_ABI");
@@ -59,7 +87,11 @@ class SocSpec extends AnyFunSuite {
         if(programmed) $$fatal(1,"CORRUPT_IMAGE_VALID");
         start_bus(); write_byte(8'h6a); write_byte(2); write_word(0); stop_bus(); expect_error(1);
         ${upload(program)}
-        #100000;
+        wait(protectedTrap); wait(mode == 4); checkProtection=0;
+        if(protectionRetired !== ${program.size}) $$fatal(1,"PROTECTION_RETIREMENT_COUNT");
+        if({dut.fabric_program_macros_0.mem[3],dut.fabric_program_macros_0.mem[2],
+            dut.fabric_program_macros_0.mem[1],dut.fabric_program_macros_0.mem[0]} !== ${hex(program.head)})
+          $$fatal(1,"PROTECTED_STORE_MODIFIED_CODE");
         if(!locked || !programmed || mode != 4) $$fatal(1,"PROTECTED_STORE_DID_NOT_TRAP mode=%d",mode);
         read_words(128,0,0);
         if(snapshot[0+:32] !== 32'h00005623 || snapshot[32+:32] !== 32'h123) $$fatal(1,"RAM_LANES_OR_BOUNDARY %h",snapshot[63:0]);
@@ -86,7 +118,7 @@ class SocSpec extends AnyFunSuite {
         begin_image(4,0,0,32'h00010000); expect_error(3);
         command(4);
         if(!locked) $$fatal(1,"EXPLICIT_LOCK_FAILED");
-      """)
+      """, protectionTrace)
     }
     test(s"$name SoC: independent watchdog resets a stalled application and stopped service clock") {
       val program = Seq(0x300000b7L, i(0x13,2,0,0,-1), store(1,2,12,2), i(0x03,3,2,1,16), jal(0,-8)) // clear/wait, never kicks

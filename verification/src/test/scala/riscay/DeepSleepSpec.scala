@@ -231,7 +231,9 @@ end endtask
 reg guardPower=0;
 always @(negedge gpioOut[0]) if(guardPower) $fatal(1,"UNREQUESTED_POWER_CUT");
 """,referenceHalfPeriodNs=1000000,onChipOscillator=true,
-        chipParameters=lp,serviceStartupNs=100000,deadlineNs=1200000000)
+        // Unchanged simulator replays took 112/114 host seconds after native
+        // SRAM expansion; retain the 1.2 s simulated deadline and all assertions.
+        chipParameters=lp,serviceStartupNs=100000,deadlineNs=1200000000,processTimeoutSeconds=240)
     }
   }
   test("slow elapsed time carries fractional milliseconds and bounds sample age across service outages") {

@@ -37,8 +37,9 @@ invalidates the image. See [SRAM integration](sram-integration.md).
 
 The separate native Control implementations own image metadata, validation,
 lock, loader state and CRC/received-byte accounting. Explicit clocked bridges
-carry host/MMIO commands and SRAM completion; I2C and SRAM byte sequencing remain
-clocked. BUSY also covers an accepted mutating host command whose native result
+carry host/MMIO commands and SRAM completion. Native SRAM word sequencing
+surrounds explicit clocked per-byte macro accesses; I2C remains clocked.
+BUSY also covers an accepted mutating host command whose native result
 has not returned. Ingress remembers busy/reset context, including simultaneous
 loader admission and a new frame. A pre-reset queued START or stale START reply
 cannot substitute for an explicit restart after recovery. The clocked MODE

@@ -40,10 +40,13 @@ class ClickServices(p: SocParameters, boardFactory: SocParameters => BoardProfil
   boardReply.ready := false.B
   val program = Module(new SramBank(config.programBytes))
   val ram = Module(new SramBank(config.workingRamBytes))
-  Seq(program, ram).foreach { memory =>
-    memory.io.request.valid := false.B
-    memory.io.request.bits := 0.U.asTypeOf(new SramWordRequest)
-    memory.io.response.ready := true.B
+  Seq((program, io.program), (ram, io.ram)).foreach { case(memory, port) =>
+    memory.io.request <> port.bytes; port.completions <> memory.io.response
+  }
+  Seq(io.program, io.ram).foreach { memory =>
+    memory.request.valid := false.B
+    memory.request.bits := 0.U.asTypeOf(new SramWordRequest)
+    memory.response.ready := true.B
   }
   // Native state owns decisions; this is a coherent clock-domain snapshot.
   val controlState = RegInit(ControlState.initial)
@@ -64,7 +67,7 @@ class ClickServices(p: SocParameters, boardFactory: SocParameters => BoardProfil
   val loaderWrite = WireDefault(false.B)
   val cpuMemoryPending = RegInit(false.B)
   val controlBusy = Wire(Bool())
-  val memoryBusy = program.io.busy || ram.io.busy || loaderPending || cpuMemoryPending
+  val memoryBusy = io.program.busy || io.ram.busy || loaderPending || cpuMemoryPending
   val rom = VecInit(MemoryMap.boot.map(_.U(32.W)))
   def applicationReg[T <: Data](init: T): T = withReset(io.cpuReset.asAsyncReset) { RegInit(init) }
   val telemetryOutstanding = RegInit(false.B)
@@ -98,7 +101,7 @@ class ClickServices(p: SocParameters, boardFactory: SocParameters => BoardProfil
   val imageLength = controlState.imageLength; val entry = controlState.entry
   val received = controlState.received; val imageId = controlState.imageId
   io.mode := mode; io.programmed := programmed; io.locked := locked
-  val canProgram = !locked && !started && !io.cpuResetActive && !program.io.busy && !loaderPending && !controlBusy
+  val canProgram = !locked && !started && !io.cpuResetActive && !io.program.busy && !loaderPending && !controlBusy
 
   val now = RegInit(0.U(32.W))
   val lowerElapsed = Wire(UInt(32.W)); val upperElapsed = Wire(UInt(32.W))
@@ -273,6 +276,12 @@ class ClickServices(p: SocParameters, boardFactory: SocParameters => BoardProfil
   val isRead = req.operation === Operation.Read.U
   val isWrite = req.operation === Operation.Write.U
   val isFetch = req.operation === Operation.Fetch.U
+  // Offer the full payload independently of valid. Range/permission/admission
+  // checks below alone authorize capture; invalid-cycle bits are don't-care.
+  // This also preserves the declared 32-bit address path at the crossing.
+  io.ram.request.bits.address := req.address - MemoryMap.ram.U
+  io.ram.request.bits.write := isWrite
+  io.ram.request.bits.data := req.data; io.ram.request.bits.mask := req.mask
   val fullWord = req.address(1,0) === 0.U && req.mask === 15.U
   val bootWait = isRead && fullWord && req.address === MemoryMap.mmio.U && !started
   val waitingRead = isRead && fullWord && req.address === (MemoryMap.mmio + 16).U
@@ -292,14 +301,14 @@ class ClickServices(p: SocParameters, boardFactory: SocParameters => BoardProfil
   // Accepted stores finish through a watchdog reset, but their CPU completion
   // is discarded. POR may abort a partial word; neither reset clears SRAM bits.
   when(io.cpuResetActive) { cpuMemoryPending := false.B }
-  when(program.io.response.fire && loaderPending) {
+  when(io.program.response.fire && loaderPending) {
     completionPending := true.B
   }
-  when((program.io.response.fire && !loaderPending) || ram.io.response.fire) {
+  when((io.program.response.fire && !loaderPending) || io.ram.response.fire) {
     cpuMemoryPending := false.B
     when(cpuMemoryPending && !io.cpuResetActive) {
       responseValid := true.B; response.error := false.B
-      response.data := Mux(ram.io.response.valid, ram.io.response.bits, program.io.response.bits)
+      response.data := Mux(io.ram.response.valid, io.ram.response.bits, io.program.response.bits)
     }
   }
   when(io.request.fire) {
@@ -311,15 +320,12 @@ class ClickServices(p: SocParameters, boardFactory: SocParameters => BoardProfil
         response.data := rom(req.address(3, 2)); response.error := false.B
       }.elsewhen(req.address >= MemoryMap.program.U && req.address < (MemoryMap.program + config.programBytes).U) {
         when(!isWrite && programmed && (req.address - MemoryMap.program.U) < imageLength) {
-          program.io.request.valid := true.B
-          program.io.request.bits.address := req.address - MemoryMap.program.U
+          io.program.request.valid := true.B
+          io.program.request.bits.address := req.address - MemoryMap.program.U
           responseValid := false.B; cpuMemoryPending := true.B
         }
       }.elsewhen(req.address >= MemoryMap.ram.U && req.address < (MemoryMap.ram + config.workingRamBytes).U && !isFetch) {
-        ram.io.request.valid := true.B
-        ram.io.request.bits.address := req.address - MemoryMap.ram.U
-        ram.io.request.bits.write := isWrite
-        ram.io.request.bits.data := req.data; ram.io.request.bits.mask := req.mask
+        io.ram.request.valid := true.B
         responseValid := false.B; cpuMemoryPending := true.B
       }.elsewhen(!isFetch && req.address >= MemoryMap.mmio.U && req.address < (MemoryMap.mmio + 76).U && fullWord) {
         val offset = req.address(6, 0)
@@ -370,7 +376,7 @@ class ClickServices(p: SocParameters, boardFactory: SocParameters => BoardProfil
   io.hostFrameAccepted := hostFrames.io.enq.fire
   hostFrames.io.enq.valid := host.io.frame.valid; hostFrames.io.enq.bits.frame := host.io.frame.bits
   hostFrames.io.enq.bits.resetActive := io.cpuResetActive
-  hostFrames.io.enq.bits.programBusy := program.io.busy || loaderPending || loaderControlPending ||
+  hostFrames.io.enq.bits.programBusy := io.program.busy || loaderPending || loaderControlPending ||
     (io.controlCommand.fire && io.controlCommand.bits.kind === ControlKind.Host.U &&
       io.controlCommand.bits.frame.bytes(0) >= 1.U && io.controlCommand.bits.frame.bytes(0) <= 6.U)
   assert(!host.io.frame.valid || hostFrames.io.enq.ready, "CONTROL_HOST_MAILBOX_OVERFLOW")
@@ -390,7 +396,7 @@ class ClickServices(p: SocParameters, boardFactory: SocParameters => BoardProfil
   io.controlCommand.bits.frame := Mux(hostFrames.io.deq.valid, hostFrames.io.deq.bits.frame, 0.U.asTypeOf(new HostFrame))
   io.controlCommand.bits.cpuResetActive := io.cpuResetActive ||
     (hostFrames.io.deq.valid && (hostFrames.io.deq.bits.resetActive || hostResetDebt =/= 0.U))
-  io.controlCommand.bits.programBusy := program.io.busy ||
+  io.controlCommand.bits.programBusy := io.program.busy ||
     (hostFrames.io.deq.valid && hostFrames.io.deq.bits.programBusy)
   io.controlCommand.bits.memory := req
   io.controlCommand.bits.applicationWritable := application.keys.toSeq.map(i => appIndex === i.U).foldLeft(false.B)(_ || _)
@@ -439,10 +445,10 @@ class ClickServices(p: SocParameters, boardFactory: SocParameters => BoardProfil
     when(result.hostWake) { hostWake := true.B }
     when(result.programWrite) {
       loaderWrite := true.B
-      program.io.request.valid := true.B
-      program.io.request.bits.address := result.state.received
-      program.io.request.bits.write := true.B
-      program.io.request.bits.data := result.state.loaderWord; program.io.request.bits.mask := 15.U
+      io.program.request.valid := true.B
+      io.program.request.bits.address := result.state.received
+      io.program.request.bits.write := true.B
+      io.program.request.bits.data := result.state.loaderWord; io.program.request.bits.mask := 15.U
     }
   }
   when(io.cpuResetActive && (mode === 3.U || mode === 4.U)) { mode := Mux(programmed, 2.U, 0.U) }

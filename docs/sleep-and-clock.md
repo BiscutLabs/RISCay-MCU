@@ -68,7 +68,10 @@ to idle directly. Neither case permits an outstanding effect to disappear during
 a handoff. This is digital integration, not physical clock-gating qualification.
 
 An accepted program/working SRAM transaction keeps the service island awake
-until its byte sequence and completion finish. All three SRAM macros remain
+until its native byte sequence, word completion and all request/reply crossings
+have returned. The execution credit and all crossings are POR-only, so an
+application reset cannot cancel accepted stores or prematurely grant sleep.
+All three SRAM macros remain
 powered during retained sleep; CEN is inactive and their service clock stops.
 There is no refresh or memory power gating. See [SRAM integration](sram-integration.md).
 

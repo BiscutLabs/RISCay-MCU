@@ -2,11 +2,13 @@
 
 The four-phase and native Click SoCs implement the same RV32E execution, internal
 storage and peripheral behavior. Compressed instructions remain deferred. The
-CPU, transaction routing, Control and Telemetry state loops are asynchronous.
+CPU, transaction routing, Control, Telemetry and Supervisor state loops are asynchronous.
 Each design owns its native loader/MMIO, software GPIO/application-word, event
 and host measurement state. Ingress, snapshots, reset projections, GPIO sampling,
-timer/lease/watchdog logic, SRAM and wire endpoints remain clocked. Board policy
-and its safety sample view remain in the clocked domain pending item 5.
+timer/lease/watchdog logic, individual synchronous SRAM byte accesses and wire
+endpoints remain clocked. Separate native SRAM word sequencing passes the
+item 6 digital regressions and strict exports. Board policy and its safety sample view
+use independent POR-only native loops with clocked ingress/output projection.
 ROM/static faults complete in the native fabric. The Control integration passes
 the digital regressions and strict exports documented in the current checklist.
 See the [migration checklist and handshake contract](async-soc-migration.md). Its
@@ -31,7 +33,8 @@ See [sleep and clock integration](sleep-and-clock.md) for the exact gating scope
 
 All storage is on chip. Groundlark uses two 1 KiB GF180 SRAM macros for program
 storage and one for its 1 KiB working RAM. Each variant's controller sequences four
-byte operations per word; macro inputs launch on falling service-clock edges.
+byte operations per word through native rendezvous; macro inputs launch on falling
+service-clock edges. Native execution credit waits for final response acceptance.
 See [SRAM integration](sram-integration.md). RAM is not reset-cleared. POR/manual/brownout reset
 clears image validity; watchdog recovery preserves it. Application startup must initialize
 its data, BSS and stack before use. No simulator preload is necessary or used by

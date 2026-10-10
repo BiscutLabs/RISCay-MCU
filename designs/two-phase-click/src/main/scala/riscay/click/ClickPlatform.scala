@@ -35,6 +35,10 @@ abstract class ClickPlatform(p: SocParameters, board: SocParameters => BoardProf
   protected val workClock = Wire(Clock())
   protected val fabric = withClockAndReset(workClock, reset) { Module(new ClickServices(p, board)) }
   // Persistent native Click phases and state reset only on POR.
+  val programAccess = asyncChild("program_access")(d => new SramAccess(d))
+  val ramAccess = asyncChild("ram_access")(d => new SramAccess(d))
+  programAccess.clock := workClock; ramAccess.clock := workClock
+  programAccess.io <> fabric.io.program; ramAccess.io <> fabric.io.ram
   val control = asyncChild("control")(d => new ClickControl(p, d))
   val controlCommandBridge = asyncChild("control_command_bridge")(d => new DecoupledToClick(new ControlCommand, d))
   val controlReplyBridge = asyncChild("control_reply_bridge")(d => new ClickToDecoupled(new ControlReply, d))

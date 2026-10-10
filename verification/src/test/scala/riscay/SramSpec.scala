@@ -26,6 +26,45 @@ class ClickMemoryResetFixture(p: SocParameters) extends ClickFabricFixture(p) {
   fabric.io.cpuResetActive := cpuResetActive || observed
 }
 
+class SramCrossingFixture(p: SocParameters) extends MemoryResetFixture(p) {
+  val holdByte = IO(Input(Bool())); val heldLane = IO(Input(UInt(2.W)))
+  val holdWord = IO(Input(Bool())); val byteWaiting = IO(Output(Bool()))
+  val wordWaiting = IO(Output(Bool())); val memoryBusy = IO(Output(Bool()))
+  for(i <- 0 until 4) {
+    val hold = holdByte && heldLane === i.U
+    ramAccess.io.completions(i).valid := fabric.io.ram.completions(i).valid && !hold
+    fabric.io.ram.completions(i).ready := ramAccess.io.completions(i).ready && !hold
+  }
+  fabric.io.ram.response.valid := ramAccess.io.response.valid && !holdWord
+  ramAccess.io.response.ready := fabric.io.ram.response.ready && !holdWord
+  byteWaiting := fabric.io.ram.completions(heldLane).valid
+  val holdProgramWord = IO(Input(Bool())); val programWordWaiting = IO(Output(Bool()))
+  val sleepEligible = IO(Output(Bool())); sleepEligible := fabric.io.canSleep
+  fabric.io.program.response.valid := programAccess.io.response.valid && !holdProgramWord
+  programAccess.io.response.ready := fabric.io.program.response.ready && !holdProgramWord
+  programWordWaiting := programAccess.io.response.valid
+  wordWaiting := ramAccess.io.response.valid; memoryBusy := ramAccess.io.busy || programAccess.io.busy
+}
+class ClickSramCrossingFixture(p: SocParameters) extends ClickMemoryResetFixture(p) {
+  val holdByte = IO(Input(Bool())); val heldLane = IO(Input(UInt(2.W)))
+  val holdWord = IO(Input(Bool())); val byteWaiting = IO(Output(Bool()))
+  val wordWaiting = IO(Output(Bool())); val memoryBusy = IO(Output(Bool()))
+  for(i <- 0 until 4) {
+    val hold = holdByte && heldLane === i.U
+    ramAccess.io.completions(i).valid := fabric.io.ram.completions(i).valid && !hold
+    fabric.io.ram.completions(i).ready := ramAccess.io.completions(i).ready && !hold
+  }
+  fabric.io.ram.response.valid := ramAccess.io.response.valid && !holdWord
+  ramAccess.io.response.ready := fabric.io.ram.response.ready && !holdWord
+  byteWaiting := fabric.io.ram.completions(heldLane).valid
+  val holdProgramWord = IO(Input(Bool())); val programWordWaiting = IO(Output(Bool()))
+  val sleepEligible = IO(Output(Bool())); sleepEligible := fabric.io.canSleep
+  fabric.io.program.response.valid := programAccess.io.response.valid && !holdProgramWord
+  programAccess.io.response.ready := fabric.io.program.response.ready && !holdProgramWord
+  programWordWaiting := programAccess.io.response.valid
+  wordWaiting := ramAccess.io.response.valid; memoryBusy := ramAccess.io.busy || programAccess.io.busy
+}
+
 class SramSpec extends AnyFunSuite {
   private val p = SocParameters(Groundlark.configuration, watchdogCycles=10000000)
   private val pinTiming = Seq("program_macros_0", "program_macros_1", "ram_macros_0").zipWithIndex.map { case(name, i) =>
@@ -71,10 +110,102 @@ always @(posedge serviceClock) if(!dut.fabric_ram_macros_0.CEN && !dut.fabric_ra
     val variant = if(click) "click" else "bd"
     def fixture(p: SocParameters): SocTop = if(click) new ClickFabricFixture(p) else new FabricFixture(p)
     def resetFixture(p: SocParameters): SocTop = if(click) new ClickMemoryResetFixture(p) else new MemoryResetFixture(p)
+  test(s"$variant: actual macro lanes, held byte/final replies and clock stops preserve accepted work across watchdog and POR") {
+    ClockedSimulation.run(if(click) new ClickSramCrossingFixture(p) else new SramCrossingFixture(p),
+      "sram-native-crossings", """
+      for(m=0;m<2;m=m+1) for(phase=0;phase<9;phase=phase+1) begin
+        issue(2,32'h20000000,32'h11223344,15); answer(0,0);
+        wait(!memoryBusy); value=writes;
+        heldLane=(phase<4)?phase:(phase-4);
+        holdByte=(phase>=4 && phase<8); holdWord=(phase==8);
+        issue(2,32'h20000000,32'haabbccdd,15);
+        if(phase<4) begin
+          @(posedge serviceClock);
+          while(dut.fabric_ram_macros_0.CEN || dut.fabric_ram_macros_0.GWEN ||
+                dut.fabric_ram_macros_0.A[1:0] != phase) @(posedge serviceClock);
+          #7;
+        end else if(phase<8) begin
+          wait(byteWaiting); #7;
+        end else begin wait(wordWaiting); #7; end
+        if(!memoryBusy) $fatal(1,"SRAM_NATIVE_EARLY_IDLE");
+        if(m==0) applicationReset=1; else reset=1;
+        #2000;
+        if(response_valid) $fatal(1,"SRAM_NATIVE_STALE_CPU_RESPONSE");
+        if(m==1) begin
+          expected={dut.fabric_ram_macros_0.mem[3],dut.fabric_ram_macros_0.mem[2],
+                    dut.fabric_ram_macros_0.mem[1],dut.fabric_ram_macros_0.mem[0]};
+          b=writes;
+        end
+        holdByte=0; holdWord=0; applicationReset=0; reset=0;
+        wait(!memoryBusy); #2000;
+        if(response_valid) $fatal(1,"SRAM_NATIVE_RESET_REPLAY");
+        if(m==0) begin
+          if(writes-value != 4) $fatal(1,"SRAM_NATIVE_WATCHDOG_BYTE_COUNT");
+          expected=32'haabbccdd;
+        end else if(writes != b) $fatal(1,"SRAM_NATIVE_POR_BYTE_REPLAY");
+        issue(1,32'h20000000,0,15); answer(expected,0);
+      end
+      // A stopped macro clock cannot advance a pending byte, even while the
+      // native word pipeline remains powered and its token is retained.
+      wait(!memoryBusy); heldLane=2; holdByte=1;
+      issue(2,32'h20000000,32'h98765432,15);
+      wait(byteWaiting); @(negedge serviceClock); clockEnabled=0; value=writes;
+      #10000; if(writes != value || !memoryBusy || response_valid)
+        $fatal(1,"SRAM_CLOCK_STOP_LOST_OWNERSHIP");
+      clockEnabled=1; holdByte=0; answer(0,0);
+      issue(1,32'h20000000,0,15); answer(32'h98765432,0);
+    """, tasks, serviceHalfPeriodNs=25, maximumDelaySubtree=Some("ca_child_ram_access"))
+  }
+  test(s"$variant: late loader completion survives watchdog, POR cancels accounting, and native drain inhibits sleep") {
+    val word=0x89abcdefL
+    val crc=new CRC32; (0 until 4).foreach(b => crc.update(((word >>> (8*b)) & 255).toInt))
+    val params=p.copy(lowPower=Some(LowPowerParameters()))
+    ClockedSimulation.run(if(click) new ClickSramCrossingFixture(params) else new SramCrossingFixture(params),
+      "sram-loader-native-drain", s"""
+      for(m=0;m<2;m=m+1) begin
+        begin_image(4,0,32'h${crc.getValue.toHexString},32'h00010000);
+        holdProgramWord=1;
+        // An unsatisfied boot WAIT normally permits retained sleep.
+        @(negedge serviceClock); request_valid=1; request_bits_operation=1;
+        request_bits_address=32'h30000000; request_bits_data=0; request_bits_mask=15;
+        wait(sleeping);
+        fork
+          begin put_word(0,32'h89abcdef); end
+          begin
+            wait(programWordWaiting);
+            if(!dut.fabric_loaderPending || dut.fabric_receivedWords !== 0 || !memoryBusy)
+              $$fatal(1,"LOADER_LATE_ACCOUNTING_OR_IDLE");
+            #10000;
+            if(sleepEligible || sleeping) $$fatal(1,"LOADER_HELD_REPLY_SLEPT");
+            if(m==0) applicationReset=1; else reset=1;
+            // Release backpressure away from the sampling edge. The held-valid
+            // wait resolves on a rising edge, so a bare integer-cycle delay
+            // races parent and child ready/valid sampling in the simulator.
+            #2000; @(negedge serviceClock); #1;
+            holdProgramWord=0; applicationReset=0; reset=0;
+          end
+        join
+        wait(!memoryBusy); wait(sleeping); #10000;
+        @(negedge serviceClock); request_valid=0;
+        if(m==0) begin
+          command(3);
+          if(!programmed || dut.fabric_receivedWords !== 1) $$fatal(1,"LATE_WATCHDOG_LOADER_LOST");
+          issue(0,32'h10000000,0,15); answer(32'h89abcdef,0);
+        end else if(programmed || locked || dut.fabric_receivedWords !== 0 || dut.fabric_loaderPending)
+          $$fatal(1,"LATE_POR_LOADER_REPLAY");
+      end
+    """,tasks+"""
+always @(posedge serviceClock) if(!reset && memoryBusy && (sleepEligible || sleeping))
+  $fatal(1,"SRAM_ACTIVE_OR_RETURN_DRAIN_SLEPT");
+""",referenceHalfPeriodNs=125000,maximumDelaySubtree=Some("ca_child_program_access"))
+  }
   test(s"$variant: three physical SRAM macros cover every program/data word, byte mask, boundary and stalled response") {
     val words=(0 until 512).map(i => (0x9e3779b9L * (i+1)) & 0xffffffffL)
     val crc=new CRC32
     words.foreach(w => (0 until 4).foreach(b => crc.update(((w >>> (8*b)) & 255).toInt)))
+    // The unchanged Click simulator image takes 189 s on the development host
+    // after native expansion. Allow 300 s of host runtime; retain the simulated
+    // deadline, full-capacity traffic and every assertion.
     val dir=ClockedSimulation.run(fixture(p),"sram-capacity",s"""
       read_words(0,0,0);
       if(snapshot[96+:32] !== 2048 || snapshot[128+:32] !== 1024) $$fatal(1,"SRAM_DISCOVERY");
@@ -133,7 +264,7 @@ always @(posedge serviceClock) if(!dut.fabric_ram_macros_0.CEN && !dut.fabric_ra
       issue(1,32'h20000000,0,15); answer(expected,0);
       command(5);
       issue(1,32'h30000000,0,15); answer(32'h100007fc,0);
-    """,tasks,deadlineNs=400000000L,processTimeoutSeconds=180,serviceHalfPeriodNs=25)
+    """,tasks,deadlineNs=400000000L,processTimeoutSeconds=300,serviceHalfPeriodNs=25)
     val rtl=Files.readString(dir.resolve(if(click) "ClickFabricFixture.sv" else "FabricFixture.sv"))
     assert("gf180mcu_ocd_ip_sram__sram1024x8m8wm1\\s+fabric_".r.findAllIn(rtl).size == 3)
   }
@@ -165,7 +296,7 @@ always @(posedge serviceClock) if(!dut.fabric_ram_macros_0.CEN && !dut.fabric_ra
     }
   }
 
-  test(s"$variant: watchdog at every word phase completes accepted stores and discards responses; POR aborts without replay") {
+  test(s"$variant: early cycle-offset watchdog completes accepted stores and discards responses; POR aborts without replay") {
     ClockedSimulation.run(resetFixture(p),"sram-reset","""
       for(phase=0;phase<10;phase=phase+1) begin
         issue(2,32'h200003fc,32'h12345678+phase,15);

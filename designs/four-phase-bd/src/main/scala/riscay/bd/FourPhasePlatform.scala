@@ -34,6 +34,10 @@ abstract class FourPhasePlatform(p: SocParameters, board: SocParameters => Board
   }
   protected val workClock = Wire(Clock())
   protected val fabric = withClockAndReset(workClock, reset) { Module(new FourPhaseServices(p, board)) }
+  val programAccess = asyncChild("program_access")(d => new SramAccess(d))
+  val ramAccess = asyncChild("ram_access")(d => new SramAccess(d))
+  programAccess.clock := workClock; ramAccess.clock := workClock
+  programAccess.io <> fabric.io.program; ramAccess.io <> fabric.io.ram
   // Persistent command/state loop and both crossings are POR-only. Application
   // reset is synchronized service data, never a reset of image/lock state.
   val control = asyncChild("control")(d => new FourPhaseControl(p, d))

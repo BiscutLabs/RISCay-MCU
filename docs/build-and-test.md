@@ -1,5 +1,139 @@
 # Build and test
 
+## Asynchronous SRAM access sequencing migration
+
+Item 6 is digitally verified on 2026-10-09. Separate `FourPhaseSram`
+and `ClickSram` pipelines retain word ownership, sequence four byte rendezvous
+and assemble read data. A consumer-returned native execution credit prevents the
+next word's byte effects before response acceptance. Each design retains its own
+clocked single-byte macro boundary; CLK remains the service clock. See the
+[scope and timing contract](async-soc-migration.md#sram-access-sequencing-scope-and-contract).
+
+Fresh independent review prompted actual-lane/held-completion reset tests,
+late loader completion checks, low-power drainage observations and strict
+POR-owner inventory controls. `AsyncSramSpec` independently checks every mask,
+bank boundaries, early next requests, independent request/response return stalls
+and POR at each byte/held final response without a service clock. `SramSpec` retains
+its original full-capacity, byte-effect, reset and loader assertions, supplemented
+with maximum-delay native crossing and macro-lane tests. Delivery counters remain
+cumulative across reset; recovery checks use observed baselines.
+
+Evidence is under `build/sram-migration/`. The initial native testbench failures
+in `focused-initial.log` came from an incorrectly escaped SV system-task name.
+The same run's Click full-capacity case exceeded the 180-second host-process
+limit. Replaying that exact unchanged `sim.vvp` completed successfully in
+189.2 seconds (`click-capacity-replay.log` and its time receipt). That test now
+allows 300 host seconds; its 400 ms simulated deadline, traffic and assertions
+are unchanged. The standalone native strict check in `native-bd-strict-initial.log`
+caught optimized-away constant credit input ports. Interface retention exposed
+an inactive constant-data endpoint in both protocols (`native-*-strict-credit.log`).
+The feedback payload now carries the retained completed word's operation bit,
+which is stable before the response offer and through credit capture. Token
+presence alone gates execution. Independent review approved this lifetime;
+`native-*-strict-retired-bit.log` passes both standalone exports with the
+unchanged validator. Obsolete full-SoC probes were stopped after confirming the
+same constant-data issue; their probe artifacts remain in `*-constant-credit-probe/`.
+
+The same initial run's two Groundlark deep-sleep cases exceeded their 90-second
+host limit. The exact unchanged simulator images passed in 111.7 and 113.6 seconds
+(`bd-deep-board-replay.log`, `click-deep-board-replay.log` and time receipts).
+Their host limit is now 240 seconds; the 1.2-second simulated deadline is unchanged.
+
+`focused-review.log` passes all four native cases; the initial new integration
+fixtures failed Chisel elaboration because they referenced grandchildren. Direct
+child port wiring fixes that restriction. `crossing-review.log` passes both
+actual-macro reset/stall cases. Its late-loader cases and `loader-review.log`
+retain real `SOC_DEADLINE` failures. A transition trace and independent review
+identified a testbench race: releasing held ready exactly on a sampling edge let
+parent and child registers observe different values. Off-edge release with setup
+time passes both cases in `loader-edge-review.log`, with unchanged RTL and every
+assertion retained. These are fixture corrections, not relaxed failure expectations.
+
+The first full run retains two `PROTECTED_STORE_DID_NOT_TRAP` failures at the
+old fixed 100 us checkpoint. Replays of both unchanged RTL exports show the
+18-instruction application reaches the correct final store fault at about
+142 us after START (`bd-soc-latency-diagnostic.log`,
+`click-soc-latency-diagnostic.log`), then passes all remaining assertions.
+The strengthened test checks every retirement PC/instruction, no earlier trap,
+final cause 7 with no register write, and unchanged program bytes before checking
+MODE. The global simulation deadline is unchanged; no controller timing or
+protection requirement is waived.
+
+The generic strict-probe stimulus could not put all five SRAM return
+synchronizers in the idle state together. A diagnostic retained in
+`idle-diagnostic.log` identified inactive command and byte-completion endpoints
+in BD; its Click diagnostic exceeded its host timeout and is not a pass. Both
+obsolete generic-only probes were stopped, with their initial sources retained
+in `*-idle-diagnostic/`. Added coherent idle, loader/RAM admission and each byte
+return tag exercise only catalogued source registers. Existing campaigns,
+mapping comparisons, activity checks and the paired fallback remain intact.
+Independent negative controls prove the original inactivity, added coverage and
+rejection of bad mappings or missing/wrong-width source registers.
+
+The RAM request payload is now offered independently of valid, allowing all
+32 address bits to remain observable instead of forcing invalid offers to zero.
+The original admission/range/permission guards are unchanged, and bridges still
+capture only accepted requests. Independent review approved both changes; the
+final full regression and strict checks use this regenerated RTL.
+
+The initial production strict checks (`bd-strict.log`, `click-strict.log`) also
+caught unused/constant word ready ports being pruned from `SramAccess`; explicit
+interface retention preserves the declared ABI.
+
+The final clean full regression passes **169 verification cases across 22
+suites** and **two core physical-policy tests**, with no failure, skipped,
+canceled, pending or aborted case (`final-regression.log`). It includes the
+retired-operation credit payload, full RAM payload offers and all review fixes.
+`full-regression.log` retains the earlier fixed-checkpoint failures;
+`post-retention-focused.log`, `credit-path-native.log` and
+`credit-path-integration.log` retain the intervening successful focused runs.
+The final full run covers independent core/reference, full-capacity SRAM,
+firmware, sleep/deep-sleep, native routing and all earlier migration checks.
+Raw XML remains in `full-run-reports/`, `post-retention-reports/`,
+`post-credit-reports/` and `final-full-reports/`; `verification-summary.json`
+identifies the final report for each case. All **74 working-tree Python controls**
+pass (six belong to the preserved earlier P&R work), and all **eleven pinned
+SRAM assets** verify (`python-probe-final.log`, `sram-assets-final.log`).
+
+Both regenerated production-capacity SoCs pass strict exports with all three
+physical macros, generated CPU/POR reset ownership, native protocol checks and
+packed-equivalent vector coverage enabled. The public **34-port ABI** exactly
+matches item 5. The fresh reviewer found no remaining code/test issue after
+reviewing the fixes and boundary contracts.
+
+| Export | Endpoints | Mapping checks | Semantic SHA-256 |
+| --- | ---: | ---: | --- |
+| Four-phase BD | 1599 | 348,103,899 | `42e8ea35f0e854440904b2c7febb9d1cba47e812c4669a78d4b92aa649fa7bbb` |
+| Native Click | 1383 | 289,679,031 | `2d172571715f5745443b809da01151c26eed6b533e04d06ae1a9fd1d58a9d3e9` |
+
+Receipts are `four-phase-strict-final.log`, `click-strict-final.log`,
+`strict-summary.json` and `public-abi-verified.json` under `build/sram-migration/`.
+The exported RTL is in `four-phase-preserved-soc/` and `click-preserved-soc/`.
+Strict stimulus adds coherent idle and per-lane completion source states for
+SRAM crossings, Click startup, elapsed-time admission and a selected BD service
+response. Only catalogued registers and the metadata-validated native address
+latch output are forced; all original campaigns, comparisons, activity assertions
+and fallback remain. Independent SV controls prove activation and reject broken
+aliases or absent/wrong-width source drivers. Initial inactive diagnostics,
+host diagnostic timeouts and interrupted paired probes remain in
+`*-activity-diagnostic/`, `*-idle-diagnostic/`, `*-admission-diagnostic/` and
+`*-paired-before-service-vectors/`; none is counted as a pass.
+Full probes use a 7200-second host simulation allowance with no removed checks.
+Reproduce with fresh output directories:
+
+```powershell
+python tools/sbt.py 'verification/test' 'physical/test'
+python tools/sbt.py 'fourPhaseBd/runMain riscay.bd.EmitFourPhaseSoc build/sram-recheck/four-phase-soc' 'twoPhaseClick/runMain riscay.click.EmitClickSoc build/sram-recheck/click-soc'
+python tools/check_export.py build/sram-recheck/four-phase-soc --library P:/Personal/chisel-async --soc --vector-coverage --sleep-clock --probe-timeout 7200
+python tools/check_export.py build/sram-recheck/click-soc --library P:/Personal/chisel-async --soc --vector-coverage --sleep-clock --probe-timeout 7200
+python -m unittest discover -s tools -p 'test_*.py' -v
+python tools/sram_assets.py --verify-only
+```
+
+No physical timing or power qualification is implied. Native transforms,
+feedback, crossings and macro paths still require item 10 qualification; older
+baseline P&R results remain inapplicable.
+
 ## Asynchronous permanent supervisor migration
 
 Item 5 moves Groundlark power policy, safety samples, confirmation counters and

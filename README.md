@@ -2,7 +2,7 @@
 
 Migration items use a fresh independent agent review, fixes, affected verification,
 and a commit/push before completion. SocFabric, MMIO/loader,
-GPIO/events/telemetry, scaling/CRC and permanent supervision are digitally verified; see the [migration checklist](docs/async-soc-migration.md).
+GPIO/events/telemetry, scaling/CRC, permanent supervision and SRAM word sequencing are digitally verified; see the [migration checklist](docs/async-soc-migration.md).
 
 A tiny reusable RISC-V SoC, built in Chisel with
 [chisel-async](https://github.com/BiscutLabs/chisel-async).
@@ -34,7 +34,8 @@ both writable banks use three pinned GF180 1 KiB SRAM macros, with a shared
 fixed macro model; each variant owns its byte-sequencing controller. See
 [SRAM integration](docs/sram-integration.md) and
 [memory architecture](docs/memory-architecture.md).
-Internal SRAM indices are sized from these capacities. Native loader metadata
+Native SRAM requests retain full byte offsets until the checked macro boundary
+selects a bank and its ten-bit address. Native loader metadata
 keeps full-width byte lengths, offsets and counts. Both
 cores use a 171-bit control token and derive pending load fields from the saved
 instruction, avoiding duplicate storage.
@@ -46,8 +47,9 @@ telemetry remain readable when locked. See the
 [host status, telemetry and lock contract](docs/loader-status-and-lock.md).
 
 **Status: asynchronous SoC migration in progress.** Each design owns a separate
-SoC implementation. SocFabric, MMIO/loader, GPIO/events/telemetry, scaling/CRC
-and permanent supervision are digitally verified. Separate native pipelines now own fractional elapsed-time
+SoC implementation. SocFabric, MMIO/loader, GPIO/events/telemetry, scaling/CRC,
+permanent supervision and SRAM word sequencing are digitally verified.
+Separate native pipelines now own fractional elapsed-time
 and ADC arithmetic, with CRC byte stages in each Control feedback loop.
 Native fabrics route ROM and static access faults without a
 service clock; stateful accesses use explicit endpoint bridges. Separate native
@@ -55,8 +57,9 @@ Control modules own loader state and MMIO validation/producer selectors.
 Separate native Telemetry loops now own software GPIO/application words, pending
 flags and host sample records; both variants pass regressions and strict exports. Clocked
 ingress, snapshots, reset projections, GPIO sampling, timer/lease/watchdog logic,
-supervisor input/output and scaling request/publication boundaries,
-SRAM byte sequencing, I2C and SPI ADC remain explicit. The independent LF timebase/watchdog remains
+supervisor input/output and scaling request/publication boundaries remain explicit.
+Separate native SRAM controllers retain word ownership, sequence bytes and assemble
+reads around explicit synchronous macro boundaries. I2C and SPI ADC remain clocked. The independent LF timebase/watchdog remains
 necessary. See the [migration checklist](docs/async-soc-migration.md). A permanent
 Groundlark controller supervises power before upload and during application
 stalls. Its state, safety sample record and confirmation counters now reside
@@ -71,7 +74,7 @@ or MCU power loss clears the lock and returns Groundlark to its off state.
 **Tapeout must deliberately supply and qualify an enabled board policy**; the
 reference emitters' disabled `PowerPolicy()` never enables Pi power.
 Physical/analog, pin/package, board and Chiselator qualification remain.
-The new Fabric, Control, Telemetry, arithmetic and Supervisor controllers have
+The new Fabric, Control, Telemetry, arithmetic, Supervisor and SRAM controllers have
 no physical timing qualification.
 Earlier P&R results describe baseline `8637099` and do not qualify this migration.
 

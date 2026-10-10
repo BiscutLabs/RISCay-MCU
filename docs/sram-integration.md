@@ -1,7 +1,8 @@
 # GF180 SRAM integration
 
-Each native variant owns a separate, still-clocked `SramBank` controller under
-its `designs/` directory. Both use the same fixed physical macro, `gf180mcu_ocd_ip_sram__sram1024x8m8wm1`. Groundlark has
+Each variant owns native word sequencing and an explicit clocked byte-access
+`SramBank` boundary under its `designs/` directory. Item 6 digital verification
+and independent review pass; physical timing remains unqualified. Both use the same fixed physical macro, `gf180mcu_ocd_ip_sram__sram1024x8m8wm1`. Groundlark has
 two macros for 2 KiB program storage and one macro for 1 KiB working storage.
 The boot ROM, loader, permanent supervisor and architectural registers are
 unchanged in purpose. No external memory or new pins are required.
@@ -38,7 +39,7 @@ this revision.
 
 ## Access and arbitration
 
-`SramBank` accepts one aligned-word transaction at a time. Program addressing
+The native `FourPhaseSram`/`ClickSram` controller executes one word at a time. Program addressing
 selects macro 0 for byte offsets 0..1023 and macro 1 for 1024..2047. Working
 addresses cover 0..1023 in a separate macro. All aligned 32-bit words fit inside
 one macro. Little-endian reads return four assembled bytes. Masked stores issue
@@ -46,10 +47,10 @@ one write for each enabled lane; masked-off bytes never assert chip enable.
 Logical capacities remain build parameters, rounded up to 1 KiB physical
 instances; smaller verification profiles still use the real macro model.
 
-After the fabric validates the full byte address, each controller retains only
-its word index: nine bits for the 2 KiB program bank and eight for the 1 KiB
-working bank. Widths derive from the configured capacity, including one-word
-and non-power-of-two banks. The byte-lane counter supplies the two low bits.
+The fabric validates the full byte address before native admission. Each native
+lane transform substitutes its literal low address bits; the macro boundary
+checks the full byte offset before selecting a macro and its ten-bit address.
+One-word and non-power-of-two logical banks retain their original bounds.
 Native loader metadata retains full 32-bit byte lengths, entry offsets and received
 counts. Capacity/alignment/entry checks happen before any macro index conversion;
 the byte-based ABI and full-capacity/non-power-of-two checks remain unchanged.
@@ -59,16 +60,18 @@ existing reset/physical-write oracle; it is no longer the accounting register.
 Address, data, write-enable and chip-enable launch from falling-edge registers.
 The following rising edge accesses the macro. A subsequent rising edge captures
 the read byte, allowing a full clock period for clock-to-Q; the intervening
-falling edge disables chip enable. Four access/capture pairs form one word,
-followed by one held response. At the default 10 MHz, the bank's response becomes
-valid eight cycles after acceptance, and the fabric captures it on the next edge.
-The existing asynchronous CPU bridges add their own crossing latency.
+falling edge disables chip enable. Four ordered native lane rendezvous form one word,
+followed by one held response. Dedicated request/completion crossings surround
+each byte. Latency includes these crossings and native transforms; the former
+eight-cycle word bound no longer applies. Native execution credit returns only
+on final response acceptance. No subsequent word can issue byte effects earlier.
 
 The POR-only native Control loop receives a separate completion command after
 all bytes finish. BUSY remains asserted until that command's state update returns
 through the explicit snapshot bridge. Reset cannot lose an accepted completion,
 and an upload command captured while busy cannot become a deferred write/VERIFY.
-The SRAM controller itself still uses service-clock byte sequencing.
+Word sequencing and read assembly are native; only the individual synchronous
+macro access/capture remains on the service clock.
 
 CLK connects to the qualified service clock, not to a request pulse. At the
 fast-source 20 MHz upper bound there is nominally 25 ns for each input half-cycle
@@ -127,7 +130,9 @@ the pinned physical views and review characterization before tapeout.
 
 Directed tests cover every program/data word, both sides of the program-bank
 boundary, every byte mask, out-of-range/protected accesses, response stalls,
-physical macro write counts, and reset at each phase of reads, stores and loader
-writes. Firmware tests upload compiler-built images through I2C into both native
+physical macro write counts, and reset at tested macro-lane, held-response and
+loader-completion checkpoints. Native tests also cover byte stalls, early next
+requests and POR at each lane; old service-cycle offsets are not exhaustive
+native-phase coverage. Firmware tests upload compiler-built images through I2C into both native
 SoCs, checking startup, stack, retention, sleep and programming lock. The strict
 async export checks cover CPU contracts separately from macro physical timing.

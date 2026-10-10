@@ -53,3 +53,22 @@ class SramWordRequest extends Bundle {
   val data = UInt(32.W)
   val mask = UInt(4.W)
 }
+
+/** Shared payloads only. The two designs own their word and macro controllers. */
+class SramWork extends Bundle {
+  val request = new SramWordRequest
+  val result = UInt(32.W)
+}
+class SramByteRequest extends Bundle {
+  val address = UInt(32.W)
+  val write = Bool()
+  val data = UInt(8.W)
+  val enable = Bool()
+}
+class SramAccessPort extends Bundle {
+  val request = Decoupled(new SramWordRequest)
+  val response = Flipped(Decoupled(UInt(32.W)))
+  val busy = Input(Bool())
+  val bytes = Flipped(Vec(4, Decoupled(new SramByteRequest)))
+  val completions = Vec(4, Decoupled(UInt(8.W)))
+}

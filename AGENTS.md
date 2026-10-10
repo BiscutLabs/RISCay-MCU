@@ -17,8 +17,8 @@
   obtain a fresh independent agent review, address its findings, rerun affected
   checks, update its evidence/contracts, commit and push. Repeat this review loop
   for every item. Continue to the next item when the user has authorized it;
-  otherwise ask. Permanent supervisor is the latest digitally verified item;
-  obtain the user's next choice before advancing to SRAM access sequencing.
+  otherwise ask. Items 1–6 are digitally verified;
+  obtain the user's next choice before advancing to I2C.
   Follow `docs/soc-contract.md` for ABI/reset scope. Run AsyncFabricSpec,
   AsyncControlSpec, ControlResetSpec, AsyncTelemetrySpec, TelemetrySpec and both
   service implementations' FabricSpec/ScalingSpec plus affected regressions;
@@ -64,6 +64,15 @@
   program bank, one for 1 KiB working RAM. Share the fixed macro model; each
   variant owns its SRAM controller. Follow `docs/sram-integration.md`; run
   SramSpec, FirmwareSpec, SocSpec/FabricSpec and sleep regressions after memory/controller changes.
+  Run AsyncSramSpec and actual-lane SRAM reset/stall checks. Native execution
+  credit serializes words until response acceptance; all SRAM crossings are
+  POR-only. The clocked macro boundary performs one byte access/capture only.
+  Keep CLK on the service clock, falling-edge input launch, full-cycle Q capture
+  and busy through every crossing's return. Do not call old cycle-offset tests
+  exhaustive native phase coverage.
+  Offer the full RAM payload independently of valid; admission checks alone
+  authorize capture. Strict mapping stimuli may force catalogued source registers,
+  never derived endpoints, and must retain generic campaigns and negative controls.
   Keep macro contents uninitialized in simulation; SYNTHESIS must retain physical
   macro instances. Verify upstream asset hashes with tools/sram_assets.py.
   Validate full-width addresses and loader fields before narrowing to internal

@@ -10,7 +10,8 @@ when no next item has been chosen. Both implementations remain active throughout
 
 - Four-phase bundled-data implementation: `designs/four-phase-bd/src/main/scala/riscay/bd/`.
 - Native two-phase Click implementation: `designs/two-phase-click/src/main/scala/riscay/click/`.
-- Each owns its Fabric, Control, Telemetry, Supervisor, Services, Platform, ClockedPeripherals, ConstantScaling,
+- Each owns its Fabric, Control, Telemetry, Supervisor, SRAM sequencing, Services,
+  Platform, ClockedPeripherals, ConstantScaling,
   I2cTarget, SleepTiming and SramBank code. Copying the former service island into
   these directories establishes ownership; it does not migrate its state machines.
 - Share port schemas, parameter/ISA definitions, fixed macro models and verification
@@ -50,9 +51,12 @@ when no next item has been chosen. Both implementations remain active throughout
   watchdog isolation, with disabled-by-default production policy. Fresh review
   fixes, 161 verification cases, two core policy cases, 71 working-tree Python
   controls and both strict exports pass. Scope and timing limits are below.
-- [ ] **6. SRAM access sequencing.** Native request ownership/arbitration around the
-  fixed synchronous GF180 macros; qualify any local clock generation explicitly.
-  Preserve byte effects, accepted-store completion and uninitialized retention.
+- [x] **6. SRAM access sequencing — digitally verified, 2026-10-09.** Separate
+  native word ownership, byte sequencing and read assembly surround explicit
+  synchronous GF180 macro crossings. No local clock generator is introduced.
+  Fresh independent review, all 169 verification cases, two core policy cases,
+  74 working-tree Python controls and both strict SoC exports pass. Scope,
+  retained failure evidence and physical limits are documented below.
 - [ ] **7. I2C.** Native controller implementation with the existing wire protocol,
   address-only wake probe, startup wait and stuck/foreign-bus release behavior.
 - [ ] **8. SPI ADC.** Preserve conversion timing, invalid-first sample, cadence,
@@ -63,7 +67,7 @@ when no next item has been chosen. Both implementations remain active throughout
   decode/data paths, pulse/fork/return timing, reset and CDC bounds, then new P&R
   and extracted validation. Digital passes alone cannot check this item.
 
-Items 1–5 are digitally verified. Ask before SRAM access sequencing.
+Items 1–6 are digitally verified. Ask before starting item 7, I2C.
 Each item requires both implementations, invariant-focused
 tests and a fresh independent review before it can be checked off.
 
@@ -151,8 +155,10 @@ See [scaling/CRC evidence](build-and-test.md#asynchronous-scaling-and-crc-migrat
 Item 5 passes 161 verification cases across 21 suites, two core policy cases,
 71 working-tree Python controls and both strict exports. Its strengthened six-case
 boundary rerun also passes. See [supervisor evidence](build-and-test.md#asynchronous-permanent-supervisor-migration).
-SRAM sequencing, I2C, SPI ADC, slow-domain housekeeping and physical qualification
-remain unchecked.
+Item 6 passes 169 final verification outcomes, two core policy cases, 74 working-tree
+Python controls and both strict exports after independent review. See
+[SRAM evidence](build-and-test.md#asynchronous-sram-access-sequencing-migration).
+I2C, SPI ADC, slow-domain housekeeping and physical qualification remain unchecked.
 
 ## GPIO/events/telemetry scope and contract
 
@@ -336,3 +342,45 @@ absolute physical durations; that limitation predates this migration. RUN clears
 ACK observations through the first applied-power command. Later stable inactive,
 then stable active-low observations qualify halt. The fixed independent timebase
 and watchdog remain necessary even though native state has no service clock.
+
+
+## SRAM access sequencing scope and contract
+
+`FourPhaseSram` and `ClickSram` retain each accepted word, generate its four
+little-endian byte commands and assemble read data through independent native
+fork/join/stage pipelines. A seeded execution credit joins each word request;
+the final consumer's acknowledgment returns that credit. The final internal
+result is acknowledged only after credit capture. The credit payload carries
+that retained word's operation bit; it is stable before the response offer and
+held through feedback capture. Credit availability, not this payload's value,
+controls execution. This serializes byte effects
+through response acceptance, including an early next request and stalled replies.
+Each disabled store lane still completes a native rendezvous but never enables
+a macro. Store replies are zero; reads retain uninitialized bytes as unknown.
+Click uses native phase storage, fork, join and crossings without RTZ adapters.
+
+Each bank has explicit POR-only word ingress/reply and four byte request/reply
+crossings. The clocked `SramBank` now performs one synchronous byte launch,
+access and capture, retaining only that byte and its response-port tag. Its
+one-hot port mux is not a word scheduler: native credit and lane rendezvous
+guarantee exclusive requests. Service admission still validates addresses,
+permissions and loader/CPU eligibility, with loader priority for simultaneous
+admissible work. RAM payload bits are offered independently of valid; invalid
+cycles are don't-care and cannot authorize a bridge capture or macro effect.
+These clock-domain acceptance and status boundaries remain
+explicit. Native control owns loader accounting after the completed word.
+
+Macro CLK remains the service clock. Falling-edge launch gives input setup/hold;
+the access rising edge is followed by a separate rising capture edge, leaving a
+full cycle for Q. CEN is inactive between accesses and in retained sleep. No local
+clock generator is introduced. The four sequential crossings increase word
+latency; the former eight-service-cycle completion bound no longer applies.
+Busy covers the admitted word, final reply and every crossing return before
+another admission or sleep. Watchdog reset discards CPU replies while native
+tokens, byte accesses and loader accounting survive. POR cancels pending tokens
+without clearing or replaying already-written macro bytes.
+
+The complete native transforms and acknowledgment/credit feedback currently
+have digital simulation bounds only. Macro duty cycle, input/Q paths, native
+feedback/fork/capture paths and CDC/reset placement need physical qualification.
+The older baseline P&R results do not qualify these controllers.

@@ -293,6 +293,163 @@ def control_background(source: str, manifest: dict, scopes: dict, checks: int):
     return result.replace(completion, f"CONTRACT_PROBES_PASS:{count}"), count
 
 
+def sram_background(source: str, manifest: dict, scopes: dict, checks: int):
+    """Add coherent idle/admission and each byte-return tag to mapping stimulus.
+
+    Five return synchronizers must agree before word admission. All-low,
+    all-high and paired drivers cannot form that state. Force only catalogued
+    registers, retaining every original campaign, comparison and coverage check.
+    This mapping-only stimulus never forces a derived ready/valid or payload.
+    """
+    owners = {c["id"]: c["contract"] for c in manifest["design"].get("children", [])
+              if c["id"] in ("program_access", "ram_access")}
+    if not owners:
+        return source, checks
+    if (set(owners) != {"program_access", "ram_access"} or
+            any(not re.fullmatch(r"SramAccess(?:_[0-9]+)?", n["module"]) for n in owners.values())):
+        raise ValueError("SRAM_PROBE_OWNER_MISMATCH")
+    top = manifest["top"]
+    anchor = f"initial begin\nforce {top}.reset = 1'b1; #1;\n"
+    if source.count(anchor) != 1:
+        raise ValueError("SRAM_PROBE_SHAPE_CHANGED")
+    start = source.index(anchor) + len(anchor)
+    end = source.index("\n#1;\n", start) + len("\n#1;\n")
+    header = source[start:end]
+    coverage = list(re.finditer(r"^if \(ones_\d+ !==.*INACTIVE_ENDPOINT:.*$", source, re.M))
+    completion = f"CONTRACT_PROBES_PASS:{checks}"
+    if not coverage or source.count(completion) != 1:
+        raise ValueError("SRAM_PROBE_SHAPE_CHANGED")
+    extra, steps = [], 0
+
+    def force(path, width, value):
+        node, name = path.rsplit(".", 1)
+        if (scopes.get(node, {}).get("registers", {}).get(name) != width or
+                f"force {path} = {width}'h0;" not in header):
+            raise ValueError("SRAM_PROBE_DRIVER_MISMATCH")
+        if not 0 <= value < 1 << width:
+            raise ValueError("SRAM_PROBE_VECTOR_RANGE")
+        extra.append(f"force {path} = {width}'h{value:x};\n")
+
+    def check():
+        nonlocal steps
+        extra.append("#1; check;\n"); steps += 1
+
+    def walk(width):
+        return [0, (1 << width)-1] + [v for bit in range(width)
+            for v in (1 << bit, ((1 << width)-1) ^ (1 << bit))]
+
+    def idle():
+        extra.append(header)
+        if "gate_enabled" in scopes.get(top, {}).get("registers", {}):
+            force(top + ".gate_enabled", 1, 1)
+        for node in owners.values():
+            for group in ("returned_stages", "bytesReturned_stages", "bytesReturned_stages_1",
+                          "bytesReturned_stages_2", "bytesReturned_stages_3"):
+                for stage in (0, 1):
+                    force(node["rtl_path"] + f".{group}_{stage}", 1, 1)
+        check()
+
+    idle()
+    reply = top + ".ca_child_control_reply_bridge"
+    force(top + ".fabric_controlOutstanding", 1, 1)
+    force(reply + ".state", 2, 2)
+    force(reply + ".data_programWrite", 1, 1)
+    check()
+    for field in ("received", "loaderWord"):
+        for value in walk(32):
+            force(reply + ".data_state_" + field, 32, value); check()
+    idle()
+    request = top + ".ca_child_request_bridge"
+    force(request + ".state", 2, 2)
+    force(request + ".data_address", 32, 0x20000000)
+    for operation in (1, 2):
+        force(request + ".data_operation", 2, operation); check()
+    for field, width in (("data", 32), ("mask", 4)):
+        for value in walk(width):
+            force(request + ".data_" + field, width, value); check()
+    # Invalid addresses exercise the offered payload, never admitted effects.
+    for value in walk(32):
+        force(request + ".data_address", 32, (0x20000000 + value) & 0xffffffff); check()
+    extra.append(header)
+    for bank in ("program", "ram"):
+        force(top + f".fabric_{bank}_state", 2, 3)
+        for lane in range(4):
+            force(top + f".fabric_{bank}_tag", 2, lane)
+            for value in walk(8):
+                force(top + f".fabric_{bank}_result", 8, value); check()
+    count = checks + steps * len(coverage)
+    position = coverage[0].start()
+    result = source[:position] + "".join(extra) + source[position:]
+    return result.replace(completion, f"CONTRACT_PROBES_PASS:{count}"), count
+
+
+def service_background(source: str, manifest: dict, scopes: dict, checks: int):
+    """Exercise startup, elapsed admission and the selected service response.
+
+    Add source-state combinations missed by individual bit walks; retain all
+    generic campaigns and endpoint assertions. This is mapping stimulus only.
+    """
+    top = manifest.get("top")
+    if top not in ("FourPhaseSoc", "ClickSoc"):
+        return source, checks
+    children = {c["id"]: c["contract"] for c in manifest["design"].get("children", [])}
+    elapsed = children.get("elapsed_scaler")
+    if elapsed is None:
+        return source, checks
+    if elapsed["module"] != "ElapsedTicks":
+        raise ValueError("SERVICE_PROBE_OWNER_MISMATCH")
+    anchor = f"initial begin\nforce {top}.reset = 1'b1; #1;\n"
+    if source.count(anchor) != 1:
+        raise ValueError("SERVICE_PROBE_SHAPE_CHANGED")
+    start = source.index(anchor) + len(anchor)
+    end = source.index("\n#1;\n", start) + len("\n#1;\n")
+    header = source[start:end]
+    coverage = list(re.finditer(r"^if \(ones_\d+ !==.*INACTIVE_ENDPOINT:.*$", source, re.M))
+    completion = f"CONTRACT_PROBES_PASS:{checks}"
+    if not coverage or source.count(completion) != 1:
+        raise ValueError("SERVICE_PROBE_SHAPE_CHANGED")
+    extra, steps = [header], 0
+
+    def force(path, width, value, primitive=False):
+        node, name = path.rsplit(".", 1)
+        if ((not primitive and scopes.get(node, {}).get("registers", {}).get(name) != width) or
+                f"force {path} = {width}'h0;" not in header):
+            raise ValueError("SERVICE_PROBE_DRIVER_MISMATCH")
+        extra.append(f"force {path} = {width}'h{value:x};\n")
+
+    def check():
+        nonlocal steps
+        extra.append("#1; check;\n"); steps += 1
+
+    if top == "ClickSoc":
+        for value in (3, 0):
+            force(top + ".controlStart_stages", 2, value); check()
+    force(elapsed["rtl_path"] + ".returned_stages_0", 1, 1)
+    force(elapsed["rtl_path"] + ".returned_stages_1", 1, 1)
+    for value in (1, 0):
+        force(top + ".gate_first", 32, value)
+        force(top + ".gate_second", 32, value); check()
+    if top == "FourPhaseSoc":
+        address = next((c["contract"] for c in children.get("core", {}).get("children", [])
+                        if c["id"] == "address"), {})
+        cell = next((p for p in address.get("primitives", []) if p["id"] == "payload"), {})
+        if not any(p == {"name": "q", "width": 70, "direction": "output"}
+                   for p in cell.get("ports", [])):
+            raise ValueError("SERVICE_PROBE_DRIVER_MISMATCH")
+        extra.append(header)
+        # MemoryRequest = operation[2], address[32], data[32], mask[4].
+        # Select a RAM read using the native address latch.
+        force(cell["rtl_path"] + ".q", 70, (1 << 68) | (0x20000000 << 36) | 15, primitive=True)
+        for field, width in (("data", 32), ("error", 1)):
+            for value in [0, (1 << width)-1] + [v for bit in range(width)
+                    for v in (1 << bit, ((1 << width)-1) ^ (1 << bit))]:
+                force(top + ".ca_child_response_bridge.data_" + field, width, value); check()
+    count = checks + steps * len(coverage)
+    position = coverage[0].start()
+    result = source[:position] + "".join(extra) + source[position:]
+    return result.replace(completion, f"CONTRACT_PROBES_PASS:{count}"), count
+
+
 def generated_reset_probe(source: str, manifest: dict) -> str:
     """Retarget only the library's flat-reset assumption; fail closed on API drift."""
     top = manifest["top"]
@@ -324,6 +481,11 @@ def generated_reset_probe(source: str, manifest: dict) -> str:
     if present and present != supervisor.keys():
         raise ValueError("SOC_PERSISTENT_RESET_INVENTORY")
     persistent.update(supervisor)
+    sram = {"program_access": "SramAccess", "ram_access": "SramAccess"}
+    present = {c.get("id") for c in root["children"]} & sram.keys()
+    if present and present != sram.keys():
+        raise ValueError("SOC_PERSISTENT_RESET_INVENTORY")
+    persistent.update(sram)
     persistent.update({"elapsed_scaler": "ElapsedTicks", "sample_scaler": "SampleScaler"})
     for child in root["children"]:
         if child.get("id") in persistent and not re.fullmatch(
@@ -495,7 +657,7 @@ def validate_fabric_path(node, timing):
 
 def validate_native_click(manifest):
     """A Click export must remain native throughout its async hierarchy."""
-    if manifest["top"] not in ("ClickSoc", "ClickCore", "ClickFabric", "ClickControl", "ClickTelemetry", "ClickSupervisor", "ClickElapsed", "ClickSample"):
+    if manifest["top"] not in ("ClickSoc", "ClickCore", "ClickFabric", "ClickControl", "ClickTelemetry", "ClickSupervisor", "ClickElapsed", "ClickSample", "ClickSram"):
         return
     def nodes(node):
         yield node
@@ -601,6 +763,8 @@ def main() -> None:
         source, count = original_probe(manifest, scopes, paired)
         source, count = register_file_background(source, manifest, count)
         source, count = control_background(source, manifest, scopes, count)
+        source, count = sram_background(source, manifest, scopes, count)
+        source, count = service_background(source, manifest, scopes, count)
         if args.sleep_clock:
             source, count = sleep_clock_background(source, manifest, scopes, count)
         if args.soc:

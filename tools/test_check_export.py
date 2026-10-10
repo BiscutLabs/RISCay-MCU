@@ -3,14 +3,182 @@
 watchdog reset. The fixture uses only ordinary Verilog, independently of Chisel.
 """
 import copy
+import json
 from pathlib import Path
 import subprocess
 import tempfile
 import unittest
-from check_export import generated_reset_probe, vector_coverage_probe, probe_timeout, sleep_clock_background, register_file_background
+from check_export import generated_reset_probe, vector_coverage_probe, probe_timeout, sleep_clock_background, register_file_background, sram_background, service_background
 
 
 class ResetProbeTest(unittest.TestCase):
+    def test_service_background_exercises_joint_states_and_rejects_broken_aliases(self):
+        for top in ("FourPhaseSoc", "ClickSoc"):
+            root = {"gate_first": 32, "gate_second": 32}
+            if top == "ClickSoc": root["controlStart_stages"] = 2
+            elapsed = {"returned_stages_0": 1, "returned_stages_1": 1, "active": 1, "consumed": 32}
+            response = {"data_data": 32, "data_error": 1}
+            inventories = {top: root, top+".ca_child_elapsed_scaler": elapsed}
+            children = [{"id": "elapsed_scaler", "contract": {
+                "module": "ElapsedTicks", "rtl_path": top+".ca_child_elapsed_scaler"}}]
+            payload = top+".ca_child_core.ca_child_address.ca_primitive_payload.q"
+            if top == "FourPhaseSoc":
+                inventories[top+".ca_child_response_bridge"] = response
+                children.append({"id": "core", "contract": {"children": [{"id": "address", "contract": {
+                    "primitives": [{"id": "payload", "rtl_path": payload[:-2],
+                        "ports": [{"name": "q", "width": 70, "direction": "output"}]}]}}]}})
+            manifest = {"top": top, "design": {"children": children}}
+            scopes = {path: {"registers": regs} for path,regs in inventories.items()}
+            def declarations(regs):
+                return "\n".join(f"reg [{width-1}:0] {name};" for name,width in regs.items())
+            rtl = "module Elapsed;\n"+declarations(elapsed)+"\nendmodule\n"
+            rtl += "module Response;\n"+declarations(response)+"\nendmodule\n"
+            rtl += """module Payload; reg [69:0] q; endmodule
+module Address; Payload ca_primitive_payload(); endmodule
+module Core; Address ca_child_address(); endmodule
+"""
+            rtl += f"module {top}; reg reset;\n"+declarations(root)+"\nElapsed ca_child_elapsed_scaler();\n"
+            rtl += "wire elapsed_valid = !ca_child_elapsed_scaler.active && ca_child_elapsed_scaler.returned_stages_1 && gate_second != ca_child_elapsed_scaler.consumed;\n"
+            if top == "ClickSoc":
+                width = 2
+                rtl += "wire [1:0] expected = {&controlStart_stages, elapsed_valid};\n"
+            else:
+                width = 34
+                rtl += """Core ca_child_core(); Response ca_child_response_bridge();
+wire selected = ca_child_core.ca_child_address.ca_primitive_payload.q[69:68] == 1 &&
+  ca_child_core.ca_child_address.ca_primitive_payload.q[67:36] == 32'h20000000;
+wire [32:0] reply = selected ? {ca_child_response_bridge.data_data, ca_child_response_bridge.data_error} : 33'b0;
+wire [33:0] expected = {elapsed_valid, reply};
+"""
+            rtl += f"wire [{width-1}:0] observed = expected;\nendmodule\n"
+            header = f"force {top}.reset = 1'b0;\n" + "".join(
+                f"force {path}.{name} = {bits}'h0;\n" for path,regs in inventories.items() for name,bits in regs.items())
+            if top == "FourPhaseSoc": header += f"force {payload} = 70'h0;\n"
+            header += "#1;\n"
+            source = f"""module ContractProbe; timeunit 1ns; timeprecision 1ps;
+reg [{width-1}:0] ones_0=0, zeros_0=0;
+task check; begin
+if ({top}.observed !== {top}.expected) $fatal(1,"BINDING_MISMATCH");
+ones_0 = ones_0 | {top}.observed; zeros_0 = zeros_0 | ~{top}.observed;
+end endtask
+initial begin
+force {top}.reset = 1'b1; #1;
+{header}check;
+if (ones_0 !== {width}'h{(1<<width)-1:x} || zeros_0 !== {width}'h{(1<<width)-1:x}) $fatal(1,"INACTIVE_ENDPOINT:observed");
+$display("CONTRACT_PROBES_PASS:1"); $finish; end endmodule
+"""
+            extended, count = service_background(source,manifest,scopes,1)
+            self.assertGreater(count,1)
+            self.assertTrue(extended.startswith(source[:source.index('if (ones_0 !==')]))
+            self.assertIn(f'if ({top}.observed !== {top}.expected)',extended)
+            import re
+            allowed = {f"{path}.{name}" for path,regs in inventories.items() for name in regs} | {top+".reset",payload}
+            self.assertLessEqual(set(re.findall(r"force (\S+) =",extended)),allowed)
+            with tempfile.TemporaryDirectory(prefix="riscay-service-probe-") as folder:
+                path = Path(folder)
+                for stimulus,model,diagnostic in ((source,rtl,"INACTIVE_ENDPOINT"),(extended,rtl,"CONTRACT_PROBES_PASS"),
+                        (extended,rtl.replace("observed = expected;","observed = expected ^ 1'b1;"),"BINDING_MISMATCH")):
+                    (path/"test.sv").write_text(model+stimulus)
+                    built = subprocess.run(["iverilog","-g2012","-s",top,"-s","ContractProbe","-o","sim.vvp","test.sv"],
+                        cwd=path,capture_output=True,text=True,timeout=30)
+                    self.assertEqual(built.returncode,0,built.stderr)
+                    result = subprocess.run(["vvp","sim.vvp"],cwd=path,capture_output=True,text=True,timeout=30)
+                    self.assertEqual(result.returncode == 0,diagnostic == "CONTRACT_PROBES_PASS",result.stdout)
+                    self.assertIn(diagnostic,result.stdout)
+            for bits in (None,31):
+                bad=copy.deepcopy(scopes)
+                if bits is None: del bad[top]["registers"]["gate_second"]
+                else: bad[top]["registers"]["gate_second"]=bits
+                with self.assertRaisesRegex(ValueError,"SERVICE_PROBE_DRIVER_MISMATCH"):
+                    service_background(source,manifest,bad,1)
+            with self.assertRaisesRegex(ValueError,"SERVICE_PROBE_DRIVER_MISMATCH"):
+                service_background(source.replace(f"force {top}.gate_second = 32'h0;\n",""),manifest,scopes,1)
+            if top == "FourPhaseSoc":
+                bad=copy.deepcopy(manifest)
+                bad["design"]["children"][1]["contract"]["children"][0]["contract"]["primitives"][0]["ports"][0]["width"]=69
+                with self.assertRaisesRegex(ValueError,"SERVICE_PROBE_DRIVER_MISMATCH"):
+                    service_background(source,bad,scopes,1)
+
+    def test_sram_background_adds_joint_idle_and_all_tags_without_masking_mapping(self):
+        for top in ("FourPhaseSoc", "ClickSoc"):
+            root = {"gate_enabled": 1, "fabric_controlOutstanding": 1}
+            for bank in ("program", "ram"):
+                root.update({f"fabric_{bank}_state": 2, f"fabric_{bank}_tag": 2, f"fabric_{bank}_result": 8})
+            sync = {f"{group}_{stage}": 1 for group in ("returned_stages", "bytesReturned_stages",
+                "bytesReturned_stages_1", "bytesReturned_stages_2", "bytesReturned_stages_3") for stage in (0, 1)}
+            sync["active"] = 1
+            reply = {"state": 2, "data_programWrite": 1, "data_state_received": 32, "data_state_loaderWord": 32}
+            request = {"state": 2, "data_operation": 2, "data_address": 32, "data_data": 32, "data_mask": 4}
+            inventories = {top: root, top+".ca_child_control_reply_bridge": reply,
+                           top+".ca_child_request_bridge": request}
+            for bank in ("program", "ram"):
+                inventories[top+f".ca_child_{bank}_access"] = sync
+            scopes = {path: {"registers": regs} for path, regs in inventories.items()}
+            manifest = {"top": top, "design": {"children": [{"id": bank+"_access", "contract": {
+                "module": "SramAccess", "rtl_path": top+f".ca_child_{bank}_access"}} for bank in ("program", "ram")]}}
+            def declarations(regs):
+                return "\n".join(f"reg [{width-1}:0] {name};" for name,width in regs.items())
+            rtl = "module Access;\n"+declarations(sync)+"\nwire idle = !active && " + " && ".join(
+                name for name in sync if name.endswith("_1")) + "; endmodule\n"
+            rtl += "module Reply;\n"+declarations(reply)+"\nendmodule\n"
+            rtl += "module Request;\n"+declarations(request)+"\nendmodule\n"
+            rtl += f"module {top}; reg reset;\n"+declarations(root)+"""
+Access ca_child_program_access(); Access ca_child_ram_access();
+Reply ca_child_control_reply_bridge(); Request ca_child_request_bridge();
+wire program_valid = ca_child_program_access.idle && gate_enabled && fabric_controlOutstanding &&
+    ca_child_control_reply_bridge.state == 2 && ca_child_control_reply_bridge.data_programWrite;
+wire ram_valid = ca_child_ram_access.idle && gate_enabled && ca_child_request_bridge.state == 2 &&
+    ca_child_request_bridge.data_operation == 2 && ca_child_request_bridge.data_address == 32'h20000000;
+wire [7:0] lanes = { (4'b1 << fabric_program_tag) & {4{fabric_program_state == 3}},
+                     (4'b1 << fabric_ram_tag) & {4{fabric_ram_state == 3}} };
+wire [9:0] expected = {program_valid, ram_valid, lanes};
+wire [9:0] observed = expected;
+endmodule
+"""
+            header = f"force {top}.reset = 1'b0;\n" + "".join(
+                f"force {path}.{name} = {width}'h0;\n" for path,regs in inventories.items() for name,width in regs.items()) + "#1;\n"
+            source = f"""module ContractProbe; timeunit 1ns; timeprecision 1ps;
+reg [9:0] ones_0=0, zeros_0=0;
+task check; begin
+if ({top}.observed !== {top}.expected) $fatal(1,"BINDING_MISMATCH");
+ones_0 = ones_0 | {top}.observed; zeros_0 = zeros_0 | ~{top}.observed;
+end endtask
+initial begin
+force {top}.reset = 1'b1; #1;
+{header}check;
+if (ones_0 !== 10'h3ff || zeros_0 !== 10'h3ff) $fatal(1,"INACTIVE_ENDPOINT:observed");
+$display("CONTRACT_PROBES_PASS:1"); $finish; end endmodule
+"""
+            extended, count = sram_background(source, manifest, scopes, 1)
+            self.assertGreater(count, 1)
+            self.assertIn('if (ones_0 !==', extended)
+            self.assertIn(f'if ({top}.observed !== {top}.expected)', extended)
+            allowed = {f"{path}.{name}" for path,regs in inventories.items() for name in regs} | {top+".reset"}
+            import re
+            self.assertLessEqual(set(re.findall(r"force (\S+) =", extended)), allowed)
+            with tempfile.TemporaryDirectory(prefix="riscay-sram-probe-") as folder:
+                path = Path(folder)
+                for stimulus, model, diagnostic in ((source,rtl,"INACTIVE_ENDPOINT"),
+                        (extended,rtl,"CONTRACT_PROBES_PASS"),
+                        (extended,rtl.replace("observed = expected;", "observed = expected ^ 10'b1;"),"BINDING_MISMATCH")):
+                    (path/"test.sv").write_text(model+stimulus)
+                    built = subprocess.run(["iverilog","-g2012","-s",top,"-s","ContractProbe","-o","sim.vvp","test.sv"],
+                        cwd=path,capture_output=True,text=True,timeout=30)
+                    self.assertEqual(built.returncode,0,built.stderr)
+                    result = subprocess.run(["vvp","sim.vvp"],cwd=path,capture_output=True,text=True,timeout=30)
+                    self.assertEqual(result.returncode == 0, diagnostic == "CONTRACT_PROBES_PASS",result.stdout)
+                    self.assertIn(diagnostic,result.stdout)
+            for width in (None,2):
+                bad=copy.deepcopy(scopes)
+                registers=bad[top+".ca_child_program_access"]["registers"]
+                if width is None: del registers["returned_stages_1"]
+                else: registers["returned_stages_1"]=width
+                with self.assertRaisesRegex(ValueError,"SRAM_PROBE_DRIVER_MISMATCH"):
+                    sram_background(source,manifest,bad,1)
+            bad=copy.deepcopy(manifest);bad["design"]["children"].pop()
+            with self.assertRaisesRegex(ValueError,"SRAM_PROBE_OWNER_MISMATCH"):
+                sram_background(source,bad,scopes,1)
+
     def test_register_file_background_adds_activity_without_masking_bad_mapping(self):
         manifest = {"top": "RfTop", "design": {"module": "ArchitecturalRegisters", "primitives": [
             {"id": "x1", "rtl_path": "RfTop.data", "ports": [{"name": "q", "direction": "output", "width": 32}]}]}}
@@ -314,6 +482,57 @@ Child supervisor_command_bridge(.reset(%s)); Child supervisor_reply_bridge(.rese
         bad = copy.deepcopy(manifest); bad["design"]["children"][1]["contract"]["module"] = "Unknown"
         with self.assertRaisesRegex(ValueError, "RESET_OWNER"):
             generated_reset_probe("", bad)
+
+    def test_sram_owners_and_nested_bridges_require_por(self):
+        for top in ("FourPhaseSoc", "ClickSoc"):
+            manifest = copy.deepcopy(self.manifest)
+            manifest = json.loads(json.dumps(manifest).replace("FourPhaseSoc", top))
+            descendants = ["native", "command_bridge", "reply_bridge"] + [
+                f"byte_{kind}_{lane}" for kind in ("request", "reply") for lane in range(4)]
+            for name in ("program_access", "ram_access"):
+                manifest["design"]["children"].append({"id": name, "contract": {
+                    "rtl_path": f"{top}.{name}", "module": "SramAccess", "children": [
+                        {"id": part, "contract": {"rtl_path": f"{top}.{name}.{part}", "module": "Child", "children": []}}
+                        for part in descendants]}})
+            paths = ["core"] + [name + suffix for name in ("program_access", "ram_access")
+                                for suffix in [""] + ["." + part for part in descendants]]
+            checks = "\n".join(f'if ({top}.{p}.reset !== {top}.reset) $fatal(1, "RESET_BINDING_MISMATCH");' for p in paths)
+            probe = generated_reset_probe("module ContractProbe; task check; begin\n" + checks + f'''
+end endtask
+initial begin #1; check; {top}.watchdog=1; #1; check;
+{top}.reset=1; #1; check; $display("SRAM_RESET_PASS"); $finish; end endmodule
+''', manifest)
+            for broken in (None, *paths):
+                with tempfile.TemporaryDirectory(prefix="riscay-sram-reset-") as folder:
+                    path = Path(folder)
+                    def pin(part):
+                        correct = "systemReset" if part == "core" else "reset"
+                        return ("reset" if part == "core" else "systemReset") if broken == part else correct
+                    modules = []
+                    for name in ("program_access", "ram_access"):
+                        children = "\n".join(f'Child {part}(.reset({pin(name+"."+part)}));' for part in descendants)
+                        modules.append(f"module {name}_model(input reset,input systemReset); {children} endmodule")
+                    rtl = "module Child(input reset); endmodule\n" + "\n".join(modules) + f"""
+module {top};
+reg reset=0, watchdog=0; wire systemReset=reset|watchdog;
+Child core(.reset({pin("core")}));
+program_access_model program_access(.reset({pin("program_access")}),.systemReset(systemReset));
+ram_access_model ram_access(.reset({pin("ram_access")}),.systemReset(systemReset));
+endmodule
+"""
+                    (path / "test.sv").write_text(rtl + probe)
+                    built = subprocess.run(["iverilog", "-g2012", "-s", top, "-s", "ContractProbe", "-o", "sim.vvp", "test.sv"],
+                                           cwd=path, capture_output=True, text=True, timeout=30)
+                    self.assertEqual(built.returncode, 0, built.stderr)
+                    result = subprocess.run(["vvp", "sim.vvp"], cwd=path, capture_output=True, text=True, timeout=30)
+                    self.assertEqual(result.returncode == 0, broken is None, result.stdout)
+                    self.assertIn("SRAM_RESET_PASS" if broken is None else "RESET_BINDING_MISMATCH", result.stdout)
+            bad = copy.deepcopy(manifest); bad["design"]["children"].pop()
+            with self.assertRaisesRegex(ValueError, "RESET_INVENTORY"):
+                generated_reset_probe("", bad)
+            bad = copy.deepcopy(manifest); bad["design"]["children"][1]["contract"]["module"] = "Unknown"
+            with self.assertRaisesRegex(ValueError, "RESET_OWNER"):
+                generated_reset_probe("", bad)
 
     def test_scaling_roots_arithmetic_and_bridges_must_use_por(self):
         for name, model in (("elapsed_scaler", "ElapsedTicks"), ("sample_scaler", "SampleScaler")):
