@@ -4,8 +4,9 @@
 The library defaults to 60 seconds, which its small component probes fit. This
 adapter extends the contract probe's compilation and simulation limits. With
 --soc it checks CPU child resets against the generated system-reset endpoint and
-the named persistent Control children against POR. All endpoint/timing/coverage
-checks are retained.
+the named persistent Control children against POR. Endpoint/timing checks and
+all dynamic polarity coverage are retained. Three literal completion bridge
+input leaves have exact binding obligations instead of impossible polarity walks.
 The library checkout is an explicit development dependency.
 """
 from __future__ import annotations
@@ -18,6 +19,9 @@ import sys
 import re
 import json
 import hashlib
+from check_completion_export import (BD_COMPLETION_PATH, CLICK_COMPLETION_PATH,
+                                     validate_completion, completion_bindings)
+from check_completion_integration import completion_background, completion_constants_probe
 
 
 def sram_array_shapes(contents, scopes):
@@ -516,10 +520,16 @@ def service_background(source: str, manifest: dict, scopes: dict, checks: int):
         # MemoryRequest = operation[2], address[32], data[32], mask[4].
         # Select a RAM read using the native address latch.
         force(cell["rtl_path"] + ".q", 70, (1 << 68) | (0x20000000 << 36) | 15, primitive=True)
-        for field, width in (("data", 32), ("error", 1)):
+        completion_owner = children.get("completion", {})
+        response_owner = next((c["contract"] for c in completion_owner.get("children", []) if c["id"] == "reply"), {})
+        payload = next((p for p in response_owner.get("primitives", []) if p["id"] == "payload"), {})
+        if payload.get("parameters", {}).get("WIDTH") != "33":
+            raise ValueError("SERVICE_PROBE_DRIVER_MISMATCH")
+        # MemoryResponse packs data[32:1] above error[0]. Exercise both fields.
+        for offset, width in ((1, 32), (0, 1)):
             for value in [0, (1 << width)-1] + [v for bit in range(width)
                     for v in (1 << bit, ((1 << width)-1) ^ (1 << bit))]:
-                force(top + ".ca_child_response_bridge.data_" + field, width, value); check()
+                force(payload["rtl_path"] + ".q", 33, value << offset, primitive=True); check()
     count = checks + steps * len(coverage)
     position = coverage[0].start()
     result = source[:position] + "".join(extra) + source[position:]
@@ -747,6 +757,8 @@ def validate_fabric_inventory(manifest):
     """Required obligations cannot vanish along with their passive markers."""
     def visit(node):
         module = node["module"]
+        if re.fullmatch(r"(?:FourPhase|Click)Completion(?:_[0-9]+)?", module):
+            validate_completion(node)
         if re.fullmatch(r"I2cPublication(?:_[0-9]+)?", module):
             validate_i2c_publication(node)
         if re.fullmatch(r"(?:FourPhase|Click)Fabric(?:_[0-9]+)?", module):
@@ -808,6 +820,9 @@ def validate_fabric_path(node, timing):
     primitive, elaborated pin, endpoint mapping and endpoint activity afterwards.
     """
     logic = timing.get("logic")
+    if logic in (BD_COMPLETION_PATH, CLICK_COMPLETION_PATH):
+        validate_completion(node)
+        return
     if logic == I2C_PROJECTION_PATH:
         validate_i2c_publication(node)
         return
@@ -853,7 +868,7 @@ def validate_fabric_path(node, timing):
 
 def validate_native_click(manifest):
     """A Click export must remain native throughout its async hierarchy."""
-    if manifest["top"] not in ("ClickSoc", "ClickCore", "ClickFabric", "ClickControl", "ClickTelemetry", "ClickSupervisor", "ClickElapsed", "ClickSample", "ClickSram", "ClickI2c", "ClickSpiAdc", "ClickHousekeeping"):
+    if manifest["top"] not in ("ClickSoc", "ClickCore", "ClickFabric", "ClickControl", "ClickTelemetry", "ClickSupervisor", "ClickElapsed", "ClickSample", "ClickSram", "ClickI2c", "ClickSpiAdc", "ClickHousekeeping", "ClickCompletion"):
         return
     def nodes(node):
         yield node
@@ -920,6 +935,8 @@ def spi_program_probe(source, manifest, scopes):
 
 def fabric_path_bindings(node, timing):
     """Actual mux/storage pin comparisons added to the unchanged library probe."""
+    if timing.get("logic") in (BD_COMPLETION_PATH, CLICK_COMPLETION_PATH):
+        return completion_bindings(node)
     if timing.get("logic") == I2C_PROJECTION_PATH:
         return i2c_path_bindings(node)
     endpoints = {e["id"]: e["rtl_path"] for e in node["endpoints"]}
@@ -958,16 +975,25 @@ def fabric_checker_source(source):
         raise ValueError("MCU_FABRIC_CHECKER_SHAPE_CHANGED")
     extra = (anchor[:-1] + f', {BD_FABRIC_PATH!r}: (["reply"], "data_delay", "mux_sources", "mux_result"),'
              + f' {CLICK_FABRIC_PATH!r}: ([], "data_delay", "reply_sources", "register_data"),'
-             + f' {I2C_PROJECTION_PATH!r}: ([], "data_delay", "sources", "register_data")}}'
+             + f' {I2C_PROJECTION_PATH!r}: ([], "data_delay", "sources", "register_data"),'
+             + f' {BD_COMPLETION_PATH!r}: (["reply"], "data_delay", "result_sources", "result"),'
+             + f' {CLICK_COMPLETION_PATH!r}: ([], "data_delay", "result_sources", "register_data")}}'
              + "\n                validate_fabric_path(node, timing)")
     source = source.replace(anchor, extra)
     anchor = 'if timing["logic"] in ("exclusive-merge-input-mux", "controlled-multiplexer-input-mux"):'
     if source.count(anchor) != 1:
         raise ValueError("MCU_FABRIC_CHECKER_SHAPE_CHANGED")
-    return source.replace(anchor,
-        f'if timing["logic"] in ({BD_FABRIC_PATH!r}, {CLICK_FABRIC_PATH!r}, {I2C_PROJECTION_PATH!r}):\n'
+    source = source.replace(anchor,
+        f'if timing["logic"] in ({BD_FABRIC_PATH!r}, {CLICK_FABRIC_PATH!r}, {I2C_PROJECTION_PATH!r}, {BD_COMPLETION_PATH!r}, {CLICK_COMPLETION_PATH!r}):\n'
         '                    pairs = fabric_path_bindings(node, timing)\n'
         '                el' + anchor)
+    anchor = '    if "INACTIVE_ENDPOINT:" in simulation.stdout:'
+    if source.count(anchor) != 1:
+        raise ValueError("MCU_FABRIC_CHECKER_SHAPE_CHANGED")
+    # Preserve the first attempt even if the library starts a larger paired probe.
+    return source.replace(anchor,
+        '    (directory / "contract_first_simulation.log").write_text(simulation.stdout + simulation.stderr, encoding="utf-8")\n'
+        '    (directory / "contract_first_probe.sv").write_text(probe, encoding="utf-8")\n' + anchor)
 
 
 def main() -> None:
@@ -1018,12 +1044,15 @@ def main() -> None:
         source, count = i2c_background(source, manifest, scopes, count)
         source, count = sram_background(source, manifest, scopes, count)
         source, count = service_background(source, manifest, scopes, count)
+        source, count = completion_background(source, manifest, scopes, count)
         if args.sleep_clock:
             source, count = sleep_clock_background(source, manifest, scopes, count)
         if args.soc:
             source = generated_reset_probe(source, manifest)
         if args.vector_coverage:
             source = vector_coverage_probe(source, manifest)
+        source = completion_constants_probe(source, manifest, scopes,
+            (args.directory / (manifest["top"]+".sv")).read_text(encoding="utf-8"))
         return source, count
     module.probe_source = probe
 

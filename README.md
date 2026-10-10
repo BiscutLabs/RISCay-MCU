@@ -1,8 +1,9 @@
 # RISCay-MCU
 
 Migration items use a fresh independent agent review, fixes, affected verification,
-and a commit/push before completion. SocFabric, MMIO/loader,
-GPIO/events/telemetry, scaling/CRC, permanent supervision, SRAM word sequencing and I2C protocol state are digitally verified; see the [migration checklist](docs/async-soc-migration.md).
+and a commit/push before completion. Items 1–9 and native response assembly (10a)
+are digitally verified; see the [migration checklist](docs/async-soc-migration.md)
+for the remaining clocked state and physical qualification work.
 
 A tiny reusable RISC-V SoC, built in Chisel with
 [chisel-async](https://github.com/BiscutLabs/chisel-async).
@@ -46,7 +47,14 @@ state. Programming lock lasts until full MCU reset or power loss; status and
 telemetry remain readable when locked. See the
 [host status, telemetry and lock contract](docs/loader-status-and-lock.md).
 
-**Status: asynchronous SoC migration in progress.** Each design owns a separate
+**Status: asynchronous SoC migration in progress.** The expanded checklist now
+includes the remaining service scheduler, completion coordination, observation
+processing, host publication and unnecessary clock crossings. Earlier functional
+migration passes do not establish minimum synchronous logic; each remaining
+clocked owner must have a documented physical or interface reason before physical
+requalification.
+
+Each design owns a separate
 SoC implementation. SocFabric, MMIO/loader, GPIO/events/telemetry, scaling/CRC,
 permanent supervision, SRAM word sequencing, I2C and SPI ADC protocol state are digitally verified.
 Separate native pipelines now own fractional elapsed-time
@@ -70,6 +78,12 @@ Separate native Housekeeping loops now own time, deadline/lease/wake-mask state,
 kick authorization and low-power cadence; clocked observation ingress and LF
 heartbeat delivery remain explicit. Item 9 passes independent review, all 227
 verification cases, both core policy cases, 84 Python controls and strict exports.
+Native completion assembly replaces clocked CPU response storage and
+joins selected memory/Telemetry/Housekeeping completions natively. Production
+replies connect directly to Fabric. Substep 10a passes independent review, all
+235 verification cases, both core policy cases, 87 Python controls, actual RTL
+mutation controls and strict exports. Admission, source cancellation flags and peripheral crossings remain
+clocked and explicitly tracked for subsequent migration.
 The independent LF timebase/watchdog remains necessary. See the [migration checklist](docs/async-soc-migration.md). A permanent
 Groundlark controller supervises power before upload and during application
 stalls. Its state, safety sample record and confirmation counters now reside

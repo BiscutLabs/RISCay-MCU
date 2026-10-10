@@ -143,14 +143,20 @@ class FabricExportTest(unittest.TestCase):
     def test_extension_retains_original_checks_and_fails_on_api_drift(self):
         anchor = '\"initial-token-literal-mux\": ([], \"data\", \"mux_state\", \"out_data\")}'
         binding = 'if timing["logic"] in ("exclusive-merge-input-mux", "controlled-multiplexer-input-mux"):'
-        original = anchor + "\n" + binding + "\nrequire(marker_ok, 'MARKER')\nrequire(budget_ok, 'BUDGET')"
+        fallback = '    if "INACTIVE_ENDPOINT:" in simulation.stdout:'
+        original = anchor + "\n" + binding + "\nrequire(marker_ok, 'MARKER')\nrequire(budget_ok, 'BUDGET')\n" + fallback
         adapted = fabric_checker_source(original)
         self.assertIn("validate_fabric_path(node, timing)", adapted)
         self.assertIn("fabric_path_bindings(node, timing)", adapted)
         self.assertIn("require(marker_ok, 'MARKER')", adapted)
         self.assertIn("require(budget_ok, 'BUDGET')", adapted)
         self.assertIn("el" + binding, adapted)
-        for wrong in ("", original + anchor, original.replace(binding, "")):
+        self.assertIn(fallback, adapted)
+        self.assertIn('"contract_first_simulation.log"', adapted)
+        self.assertIn('"contract_first_probe.sv"', adapted)
+        self.assertLess(adapted.index('"contract_first_simulation.log"'), adapted.index(fallback))
+        for wrong in ("", original + anchor, original.replace(binding, ""),
+                      original.replace(fallback, ""), original+fallback):
             with self.assertRaisesRegex(ValueError, "SHAPE_CHANGED"):
                 fabric_checker_source(wrong)
 

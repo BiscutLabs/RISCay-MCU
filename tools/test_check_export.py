@@ -17,22 +17,25 @@ class ResetProbeTest(unittest.TestCase):
             root = {"gate_first": 32, "gate_second": 32}
             if top == "ClickSoc": root["controlStart_stages"] = 2
             elapsed = {"returned_stages_0": 1, "returned_stages_1": 1, "active": 1, "consumed": 32}
-            response = {"data_data": 32, "data_error": 1}
+            response = {"q": 33}
             inventories = {top: root, top+".ca_child_elapsed_scaler": elapsed}
             children = [{"id": "elapsed_scaler", "contract": {
                 "module": "ElapsedTicks", "rtl_path": top+".ca_child_elapsed_scaler"}}]
             payload = top+".ca_child_core.ca_child_address.ca_primitive_payload.q"
             if top == "FourPhaseSoc":
-                inventories[top+".ca_child_response_bridge"] = response
+                inventories[top+".ca_child_completion.ca_child_reply.ca_primitive_payload"] = response
                 children.append({"id": "core", "contract": {"children": [{"id": "address", "contract": {
                     "primitives": [{"id": "payload", "rtl_path": payload[:-2],
                         "ports": [{"name": "q", "width": 70, "direction": "output"}]}]}}]}})
+                children.append({"id": "completion", "contract": {"children": [{"id": "reply", "contract": {
+                    "primitives": [{"id": "payload", "rtl_path": top+".ca_child_completion.ca_child_reply.ca_primitive_payload",
+                                    "parameters": {"WIDTH": "33"}}]}}]}})
             manifest = {"top": top, "design": {"children": children}}
             scopes = {path: {"registers": regs} for path,regs in inventories.items()}
             def declarations(regs):
                 return "\n".join(f"reg [{width-1}:0] {name};" for name,width in regs.items())
             rtl = "module Elapsed;\n"+declarations(elapsed)+"\nendmodule\n"
-            rtl += "module Response;\n"+declarations(response)+"\nendmodule\n"
+            rtl += "module Response;\n"+declarations(response)+"\nendmodule\nmodule Reply; Response ca_primitive_payload(); endmodule\nmodule Completion; Reply ca_child_reply(); endmodule\n"
             rtl += """module Payload; reg [69:0] q; endmodule
 module Address; Payload ca_primitive_payload(); endmodule
 module Core; Address ca_child_address(); endmodule
@@ -44,10 +47,10 @@ module Core; Address ca_child_address(); endmodule
                 rtl += "wire [1:0] expected = {&controlStart_stages, elapsed_valid};\n"
             else:
                 width = 34
-                rtl += """Core ca_child_core(); Response ca_child_response_bridge();
+                rtl += """Core ca_child_core(); Completion ca_child_completion();
 wire selected = ca_child_core.ca_child_address.ca_primitive_payload.q[69:68] == 1 &&
   ca_child_core.ca_child_address.ca_primitive_payload.q[67:36] == 32'h20000000;
-wire [32:0] reply = selected ? {ca_child_response_bridge.data_data, ca_child_response_bridge.data_error} : 33'b0;
+wire [32:0] reply = selected ? ca_child_completion.ca_child_reply.ca_primitive_payload.q : 33'b0;
 wire [33:0] expected = {elapsed_valid, reply};
 """
             rtl += f"wire [{width-1}:0] observed = expected;\nendmodule\n"

@@ -8,7 +8,7 @@ import riscay._
 import riscay.soc._
 
 /** This variant owns clock, reset, wake and endpoint integration. */
-abstract class ClickPlatform(p: SocParameters, board: SocParameters => BoardProfile) extends SocTop(p) {
+abstract class ClickPlatform(p: SocParameters, board: SocParameters => BoardProfile, clockedCpuResponse: Boolean = true) extends SocTop(p) {
   val watchdog = withClockAndReset(watchdogClock, reset) { Module(new Watchdog(p.watchdogCycles, p.watchdogHoldCycles)) }
   val assertion = reset.asBool || watchdog.io.expired
   val release = withClockAndReset(serviceClock, assertion.asAsyncReset) {
@@ -34,6 +34,48 @@ abstract class ClickPlatform(p: SocParameters, board: SocParameters => BoardProf
   }
   protected val workClock = Wire(Clock())
   protected val fabric = withClockAndReset(workClock, reset) { Module(new ClickServices(p, board)) }
+  // Application presentation cancels with the CPU. The POR-owned effect owners
+  // below continue their accepted work and suppress old-lifetime completions.
+  protected val completion=asyncChild("completion")(d => new ClickCompletion(d))
+  val completionPlan=asyncChild("completion_plan_bridge")(d => new DecoupledToClick(new CompletionPlan,d))
+  val completionMemory=asyncChild("completion_memory_bridge")(d => new DecoupledToClick(new MemoryResponse,d))
+  val completionTelemetry=asyncChild("completion_telemetry_bridge")(d => new DecoupledToClick(Bool(),d))
+  val completionHousekeeping=asyncChild("completion_housekeeping_bridge")(d => new DecoupledToClick(Bool(),d))
+  Seq(completion,completionPlan,completionMemory,completionTelemetry,completionHousekeeping)
+    .foreach(_.reset:=fabric.io.cpuReset.asAsyncReset)
+  Seq(completionPlan,completionMemory,completionTelemetry,completionHousekeeping).foreach(_.clock:=workClock)
+  Seq(completionPlan,completionMemory,completionTelemetry,completionHousekeeping).foreach { bridge =>
+    dontTouch(bridge.in); dontTouch(bridge.out)
+  }
+  completionPlan.in <> fabric.io.completionPlan; completionMemory.in <> fabric.io.completionMemory
+  completionTelemetry.in <> fabric.io.completionTelemetry; completionHousekeeping.in <> fabric.io.completionHousekeeping
+  chiselasync.protocol.TwoPhase.connect(completion.plan,completionPlan.out)
+  chiselasync.protocol.TwoPhase.connect(completion.memory,completionMemory.out)
+  chiselasync.protocol.TwoPhase.connect(completion.telemetry,completionTelemetry.out)
+  chiselasync.protocol.TwoPhase.connect(completion.housekeeping,completionHousekeeping.out)
+  // A retained phase cannot be missed between service edges. Idle is a separate
+  // drainage condition, never evidence that the admitted transaction retired.
+  withClockAndReset(workClock,fabric.io.cpuReset.asAsyncReset) {
+    val first=RegNext(completion.retired,false.B); val second=RegNext(first,false.B)
+    val seen=RegNext(second,false.B)
+    fabric.io.completionRetired:=second =/= seen
+    val completionReturned=completion.response.req === completion.response.ack
+    val completionReturnedFirst=RegNext(completionReturned,false.B)
+    fabric.io.completionIdle:=RegNext(completionReturnedFirst,false.B)
+  }
+  if(clockedCpuResponse) {
+    // Verification/service-bus clients have an actual clocked consumer.
+    val bridge=asyncChild("completion_fixture_bridge")(d => new ClickToDecoupled(new MemoryResponse,d))
+    bridge.reset:=fabric.io.cpuReset.asAsyncReset; bridge.clock:=workClock
+    chiselasync.protocol.TwoPhase.connect(bridge.in,completion.response)
+    fabric.io.completionResponse <> bridge.out
+  } else {
+    // Production SoCs attach the native Fabric directly to completion.response.
+    fabric.io.completionResponse.valid:=false.B
+    fabric.io.completionResponse.bits:=0.U.asTypeOf(new MemoryResponse)
+    fabric.io.response.ready:=false.B
+  }
+
   // Persistent native Click phases and state reset only on POR.
   val host = asyncChild("i2c")(d => new I2cTarget(p.i2cAddress,p.i2cIdleCycles,d))
   host.clock := serviceClock; host.scl := scl; host.sda := sda

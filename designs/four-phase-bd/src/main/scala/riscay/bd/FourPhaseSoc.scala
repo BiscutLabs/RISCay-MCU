@@ -2,7 +2,7 @@
 package riscay.bd
 
 import chisel3._
-import chiselasync.clocked.{FourPhaseToDecoupled, DecoupledToFourPhase}
+import chiselasync.clocked.FourPhaseToDecoupled
 import chiselasync.metadata.{BundledTiming, ExportDesign}
 import chiselasync.protocol.FourPhase
 import java.nio.file.Paths
@@ -13,17 +13,16 @@ import riscay.profiles._
 class FourPhaseSoc(p: SocParameters, board: SocParameters => BoardProfile = p => new GenericBoard(p),
     timing: BundledTiming = BundledTiming.Simulation,
     executeTiming: BundledTiming = BundledTiming.simulation(dataMax=RegisterTiming.executeData))
-    extends FourPhasePlatform(p, board) {
+    extends FourPhasePlatform(p, board, clockedCpuResponse=false) {
   val core = asyncChild("core")(d => new FourPhaseCore(d, timing=timing, executeTiming=executeTiming))
   val transactions = asyncChild("transactions")(d => new FourPhaseFabric(p.config, timing, d))
   val requestBridge = asyncChild("request_bridge")(d => new FourPhaseToDecoupled(new MemoryRequest, 2, d))
-  val responseBridge = asyncChild("response_bridge")(d => new DecoupledToFourPhase(new MemoryResponse, 2, d))
-  Seq(core, transactions, requestBridge, responseBridge).foreach(_.reset := systemReset.asAsyncReset)
-  requestBridge.clock := serviceClock; responseBridge.clock := serviceClock
+  Seq(core, transactions, requestBridge).foreach(_.reset := systemReset.asAsyncReset)
+  requestBridge.clock := serviceClock
   FourPhase.connect(transactions.request, core.request); FourPhase.connect(core.response, transactions.response)
   FourPhase.connect(requestBridge.in, transactions.serviceRequest)
-  FourPhase.connect(transactions.serviceResponse, responseBridge.out)
-  fabric.io.request <> requestBridge.out; responseBridge.in <> fabric.io.response
+  FourPhase.connect(transactions.serviceResponse, completion.response)
+  fabric.io.request <> requestBridge.out
   trace := core.trace; traceEvent := core.traceEvent
 }
 object EmitFourPhaseSoc extends App {

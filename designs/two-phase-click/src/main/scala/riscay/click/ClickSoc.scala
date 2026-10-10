@@ -12,18 +12,17 @@ import riscay._
 class ClickSoc(p: SocParameters, board: SocParameters => BoardProfile = p => new GenericBoard(p),
     timing: ClickTiming = ClickTiming.Simulation,
     executeData: ModelTime = RegisterTiming.executeData)
-    extends ClickPlatform(p, board) {
+    extends ClickPlatform(p, board, clockedCpuResponse=false) {
   val core = asyncChild("core")(d => new ClickCore(d, timing=timing, executeData=executeData))
   val transactions = asyncChild("transactions")(d => new ClickFabric(p.config, timing, d))
   val requestBridge = asyncChild("request_bridge")(d => new ClickToDecoupled(new MemoryRequest, d))
-  val responseBridge = asyncChild("response_bridge")(d => new DecoupledToClick(new MemoryResponse, d))
-  Seq(core, transactions, requestBridge, responseBridge).foreach(_.reset := systemReset.asAsyncReset)
-  requestBridge.clock := serviceClock; responseBridge.clock := serviceClock
+  Seq(core, transactions, requestBridge).foreach(_.reset := systemReset.asAsyncReset)
+  requestBridge.clock := serviceClock
   core.start := !systemReset
   TwoPhase.connect(transactions.request, core.request); TwoPhase.connect(core.response, transactions.response)
   TwoPhase.connect(requestBridge.in, transactions.serviceRequest)
-  TwoPhase.connect(transactions.serviceResponse, responseBridge.out)
-  fabric.io.request <> requestBridge.out; responseBridge.in <> fabric.io.response
+  TwoPhase.connect(transactions.serviceResponse, completion.response)
+  fabric.io.request <> requestBridge.out
   trace := core.trace; traceEvent := core.traceEvent
 }
 object EmitClickSoc extends App {

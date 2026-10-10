@@ -17,8 +17,13 @@
   obtain a fresh independent agent review, address its findings, rerun affected
   checks, update its evidence/contracts, commit and push. Repeat this review loop
   for every item. Continue to the next item when the user has authorized it;
-  otherwise ask. Items 1-9 are digitally verified.
-  Obtain the user's next choice before physical requalification.
+  otherwise ask. Items 1-9 are digitally verified within their original scopes.
+  The user has authorized deeper migration under expanded items 10-16: native
+  service coordination, observation reduction, publication, direct interconnect
+  and physically justified boundary minimization. Audit every remaining clocked
+  state owner; a boundary label alone is not a reason to retain synchronous logic.
+  Keep independent watchdog/time and physical I/O obligations. Physical
+  requalification is now item 17 and follows the residual-state audit.
   Follow `docs/soc-contract.md` for ABI/reset scope. Run AsyncFabricSpec,
   AsyncControlSpec, ControlResetSpec, AsyncTelemetrySpec, TelemetrySpec and both
   service implementations' FabricSpec/ScalingSpec plus affected regressions;
@@ -30,6 +35,19 @@
   drain guard and full synchronized gate demand; grace may overlap tracked native
   maintenance. Run guard handoff and ADC discard/offset/calibration checks.
   A copied clocked module is not migrated to async.
+  Native completion presentation and all its crossings reset with the CPU;
+  persistent accepted effects retain their existing POR ownership. Preserve the
+  BD rendezvous return barrier and Click aggregate payload/phase aperture. Keep
+  fixed guard IDs recognized by AsyncTest, test immediate source reuse and
+  unselected pending tokens, and assert source readiness at completion capture.
+  Admission retirement uses a retained synchronized phase, never stale idle.
+  Run AsyncCompletionSpec/CompletionSpec and real completion wiring mutation
+  controls; preserve the full emitted port ABI even for constant error fields.
+  Strict completion stimulus may force only catalogued source registers. Preserve
+  every dynamic bit's polarity activity; the three literal bridge input leaves
+  require exact emitted bindings, schemas and per-check value assertions. Reject
+  dynamic expressions before granting a constant mask. Keep actual-RTL mutation
+  controls and first-pass probe/output evidence before checker fallback.
   Native Control state and its command/reply bridges are POR-only. Keep accepted
   MMIO commits and SRAM accounting across watchdog reset; cancel unaccepted work.
   Preserve queued host reset/busy context, including simultaneous admission.

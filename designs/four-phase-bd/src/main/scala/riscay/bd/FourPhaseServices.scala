@@ -65,7 +65,7 @@ class FourPhaseServices(p: SocParameters, boardFactory: SocParameters => BoardPr
   val loaderPending = WireDefault(controlState.loaderPending); dontTouch(loaderPending)
   val receivedWords = WireDefault(controlState.received >> 2); dontTouch(receivedWords)
   val loaderWrite = WireDefault(false.B)
-  val cpuMemoryPending = RegInit(false.B)
+  val cpuMemoryPending = withReset(io.cpuReset.asAsyncReset) { RegInit(false.B) }
   val controlBusy = Wire(Bool())
   val memoryBusy = io.program.busy || io.ram.busy || loaderPending || cpuMemoryPending
   val rom = VecInit(MemoryMap.boot.map(_.U(32.W)))
@@ -255,17 +255,40 @@ class FourPhaseServices(p: SocParameters, boardFactory: SocParameters => BoardPr
   // Native validation adds a handshake window before the peripheral commit.
   // Preserve every event raised during that window against a software clear.
   val mmioEvents = applicationReg(0.U(32.W))
-  when(controlOutstanding) { mmioEvents := mmioEvents | events }
-  when(io.controlCommand.fire && io.controlCommand.bits.kind === ControlKind.Mmio.U) { mmioEvents := events }
+  // The request may already be waiting while a previous completion drains.
+  // Events since its arrival must survive a later clear, not only events since
+  // Control dispatch. Otherwise extra return latency loses a coincident GPIO.
+  val mmioObserved = applicationReg(false.B)
+  val observingMmio = io.request.valid && io.request.bits.address >= MemoryMap.mmio.U &&
+    io.request.bits.address < (MemoryMap.mmio + 76).U && io.request.bits.operation =/= Operation.Halt.U
+  when(observingMmio) {
+    mmioEvents := Mux(mmioObserved,mmioEvents,0.U) | events
+    mmioObserved := true.B
+  }
+  when(!io.request.valid || io.request.fire) { mmioObserved := false.B }
 
   // Replacement consumes only the old deadline, including an expiry on this
   // edge. Other new events still win acknowledgement races.
   val acceptedClear = (clear | Mux(replaceDeadline, 2.U, 0.U))(5,0)
   telemetryEvents := (Mux(telemetryCommand.fire, 0.U, telemetryEvents) & ~acceptedClear) | events(5,0)
 
-  val responseValid = applicationReg(false.B); val response = Reg(new MemoryResponse)
-  io.response.valid := responseValid; io.response.bits := response
-  when(io.response.fire) { responseValid := false.B }
+  // Only an admission occupancy shadow remains clocked. Reply payload storage
+  // and the selected completion join belong to the native completion owner.
+  val cpuResponsePending = applicationReg(false.B)
+  when(io.completionRetired) { cpuResponsePending := false.B }
+  val response = WireDefault(0.U.asTypeOf(new MemoryResponse))
+  val waitMemory = WireDefault(false.B)
+  io.response <> io.completionResponse
+  io.completionPlan.valid := io.request.fire && io.request.bits.operation =/= Operation.Halt.U
+  io.completionPlan.bits.response := response
+  io.completionPlan.bits.memory := waitMemory
+  io.completionPlan.bits.telemetry := telemetryAccepted
+  io.completionPlan.bits.housekeeping := housekeepingAction.cpuCompletion
+  io.completionMemory.valid := false.B; io.completionMemory.bits := 0.U.asTypeOf(new MemoryResponse)
+  io.completionTelemetry.valid := false.B; io.completionTelemetry.bits := true.B
+  io.completionHousekeeping.valid := false.B; io.completionHousekeeping.bits := true.B
+  val completionAvailable = io.completionIdle && io.completionPlan.ready && io.completionMemory.ready &&
+    io.completionTelemetry.ready && io.completionHousekeeping.ready
   val req = io.request.bits
   val isRead = req.operation === Operation.Read.U
   val isWrite = req.operation === Operation.Write.U
@@ -282,12 +305,12 @@ class FourPhaseServices(p: SocParameters, boardFactory: SocParameters => BoardPr
   val eventWait = waitingRead && (pending & (wakeMask | "h30".U)) === 0.U
   parked := io.request.valid && eventWait
   val parkedForSleep = p.lowPower.nonEmpty.B && io.request.valid &&
-    (bootWait || (eventWait && sleepRemaining =/= 0.U)) && !responseValid && !adcBusy && !memoryBusy && !controlBusy
+    (bootWait || (eventWait && sleepRemaining =/= 0.U)) && !cpuResponsePending && !adcBusy && !memoryBusy && !controlBusy
   io.canSleep := parkedForSleep && !scalingBusy && !tick && !telemetryWork && !boardWork
   val nativeMmio = req.address >= MemoryMap.mmio.U && req.address < (MemoryMap.mmio + 76).U &&
     req.operation =/= Operation.Halt.U
   val mmioComplete = io.controlReply.fire && io.controlReply.bits.kind === ControlKind.Mmio.U && mmioCurrent
-  val cpuAvailable = !io.cpuResetActive && !resetRecovery && io.clockRunning && !responseValid && !bootWait && !eventWait &&
+  val cpuAvailable = completionAvailable && !io.cpuResetActive && !resetRecovery && io.clockRunning && !cpuResponsePending && !bootWait && !eventWait &&
     !memoryBusy && !loaderWrite && !telemetryBarrier && !housekeepingBarrierBusy
   io.request.ready := cpuAvailable && Mux(nativeMmio, mmioComplete, !controlBusy)
 
@@ -301,13 +324,15 @@ class FourPhaseServices(p: SocParameters, boardFactory: SocParameters => BoardPr
   when((io.program.response.fire && !loaderPending) || io.ram.response.fire) {
     cpuMemoryPending := false.B
     when(cpuMemoryPending && !io.cpuResetActive) {
-      responseValid := true.B; response.error := false.B
-      response.data := Mux(io.ram.response.valid, io.ram.response.bits, io.program.response.bits)
+      io.completionMemory.valid := true.B
+      io.completionMemory.bits.error := false.B
+      io.completionMemory.bits.data := Mux(io.ram.response.valid, io.ram.response.bits, io.program.response.bits)
+      assert(io.completionMemory.ready,"COMPLETION_MEMORY_OVERFLOW")
     }
   }
   when(io.request.fire) {
     when(waitingRead) { housekeepingAction.waitAccepted := true.B }
-    responseValid := req.operation =/= Operation.Halt.U
+    cpuResponsePending := req.operation =/= Operation.Halt.U
     response.data := 0.U; response.error := true.B
     when(req.operation === Operation.Halt.U) { haltPending := true.B }
       .elsewhen(req.address < (MemoryMap.boot.size * 4).U && !isWrite) {
@@ -316,11 +341,11 @@ class FourPhaseServices(p: SocParameters, boardFactory: SocParameters => BoardPr
         when(!isWrite && programmed && (req.address - MemoryMap.program.U) < imageLength) {
           io.program.request.valid := true.B
           io.program.request.bits.address := req.address - MemoryMap.program.U
-          responseValid := false.B; cpuMemoryPending := true.B
+          waitMemory := true.B; cpuMemoryPending := true.B
         }
       }.elsewhen(req.address >= MemoryMap.ram.U && req.address < (MemoryMap.ram + config.workingRamBytes).U && !isFetch) {
         io.ram.request.valid := true.B
-        responseValid := false.B; cpuMemoryPending := true.B
+        waitMemory := true.B; cpuMemoryPending := true.B
       }.elsewhen(!isFetch && req.address >= MemoryMap.mmio.U && req.address < (MemoryMap.mmio + 76).U && fullWord) {
         val offset = req.address(6, 0)
         response := io.controlReply.bits.memory
@@ -510,7 +535,7 @@ class FourPhaseServices(p: SocParameters, boardFactory: SocParameters => BoardPr
     housekeepingOrdered.adcBusy:=io.adc.busy || adcLaunchPending
     housekeepingOrderedPending:=true.B; housekeepingQueued:=0.U.asTypeOf(new HousekeepingCommand)
   }
-  when(housekeepingAction.cpuCompletion) { responseValid:=false.B; housekeepingCpuPending:=true.B }
+  when(housekeepingAction.cpuCompletion) { housekeepingCpuPending:=true.B }
   when(housekeepingPublished) {
     housekeepingOutstanding:=false.B; housekeepingState:=housekeepingReply.bits.state
     housekeepingInFlight:=0.U.asTypeOf(new HousekeepingCommand)
@@ -520,9 +545,8 @@ class FourPhaseServices(p: SocParameters, boardFactory: SocParameters => BoardPr
     }
     when(housekeepingReply.bits.cpuCompletion && housekeepingCpuPending && !io.cpuResetActive) {
       housekeepingCpuPending:=false.B
-      when(!telemetryCpuPending || (telemetryReply.fire && telemetryReply.bits.kind === TelemetryKind.Commit.U)) {
-        responseValid:=true.B
-      }
+      io.completionHousekeeping.valid:=true.B
+      assert(io.completionHousekeeping.ready,"COMPLETION_HOUSEKEEPING_OVERFLOW")
     }
   }
   when(resetEdge) { housekeepingResetNeeded:=true.B }
@@ -559,7 +583,6 @@ class FourPhaseServices(p: SocParameters, boardFactory: SocParameters => BoardPr
     telemetryCommit := 0.U.asTypeOf(new TelemetryCommand(config.measurements.size))
     telemetryCommit.kind := TelemetryKind.Commit.U; telemetryCommit.offset := req.address(6,0)
     telemetryCommit.data := req.data; telemetryCommit.appIndex := appIndex; telemetryCommit.clear := acceptedClear
-    responseValid := false.B
   }
   // CPU validation has priority over background batching. In particular a tick
   // on every service edge cannot prevent forward progress at serviceHz=1000.
@@ -591,9 +614,8 @@ class FourPhaseServices(p: SocParameters, boardFactory: SocParameters => BoardPr
       for((word,index) <- telemetryWords.zipWithIndex) { application(word) := result.state.application.get(index) }
       when(result.kind === TelemetryKind.Commit.U && telemetryCpuPending) {
         telemetryCpuPending := false.B
-        when(!housekeepingCpuPending || (housekeepingPublished && housekeepingReply.bits.cpuCompletion)) {
-          responseValid := true.B
-        }
+        io.completionTelemetry.valid := true.B
+        assert(io.completionTelemetry.ready,"COMPLETION_TELEMETRY_OVERFLOW")
       }
     }
   }

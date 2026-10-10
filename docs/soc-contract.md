@@ -25,7 +25,18 @@ two-cycle reset hold). The portable tops expose both clocks and a service-source
 enable; generated chip wrappers contain both on-die oscillator boundaries.
 Legacy builds with `lowPower=None`
 retain service-derived time and the independent watchdog input. Include the
-islands, clock source and both CPU boundary bridges in comparisons.
+islands, clock source, CPU admission and per-source completion crossings in comparisons.
+Native completion assembly connects production replies directly from the
+selected-input join to Fabric; checklist substep 10a passes digital verification,
+independent review and both strict SoC exports.
+Admission captures an immutable immediate response and completion mask. Selected
+memory/Telemetry/Housekeeping tokens may arrive independently; only their native
+join can publish the CPU reply. Application reset cancels this presentation path,
+while existing POR effect owners finish accepted persistent work. A synchronized
+retirement phase and full crossing/output drainage prevent premature reuse.
+MMIO clear protection starts when a held request arrives, including events raised
+while previous response return delays its dispatch. Existing events predating
+that arrival remain clearable. Source-ready assertions reject completion loss.
 These are digital RTL implementations, not qualified physical cells or pads.
 See [sleep and clock integration](sleep-and-clock.md) for the exact gating scope.
 

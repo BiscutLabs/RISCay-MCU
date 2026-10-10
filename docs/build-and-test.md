@@ -1,5 +1,98 @@
 # Build and test
 
+## Native completion assembly - digitally verified, 2026-10-10
+
+Expanded checklist item 10a replaces periodic-clocked CPU response retention and
+the selected Telemetry/Housekeeping completion join with separate native BD and
+Click controllers. Production replies connect directly to Fabric. Admission and
+source cancellation remain explicitly clocked pending items 10b1/10b2; accepted
+effects retain their POR ownership. See the
+[completion scope](async-soc-migration.md#native-completion-assembly-scope-10a-digitally-verified).
+
+Evidence is under `build/async-coordination-migration/`. Fresh scope and
+implementation reviews and fixes are recorded in `review-notes.md`. The review
+corrected BD source reuse/return sequencing, Click phase feedback outside the
+capture aperture, fixed guard names and incomplete strict wiring bindings.
+The existing clear/event race exposed an event lost while a previous response
+drained; observation now starts when the held MMIO request arrives. Reset fixtures
+retain their original CPU-reset injection and every accepted-effect assertion.
+
+`native-final-r2.log` passes all eight focused cases across AsyncCompletionSpec and
+CompletionSpec. They cover all selected-input masks and arrival orders, early
+inputs, immediate source reuse, unselected pending tokens, stalled responses and
+repeated partial-join/held-reply resets. Both integrated completion paths progress
+with the service clock stopped after plan launch. Min/max/random cell experiments
+preserve fixed guards and monitor the complete Click payload/phase capture pins.
+The final campaign exercises both values of the selected memory error bit and
+all six arrival permutations for every fixed mask. `final-export-focused.log`
+records the preceding successful production re-export and focused rerun.
+`full-regression-r1.log` passes all 235 verification cases across 30 suites and
+both core physical-policy cases, with no failures, aborted suites, skipped,
+canceled, ignored or pending cases. The final focused rerun includes the port
+preservation annotations; no functional RTL changed after the full run compiled.
+Fresh report timestamps/hashes are in `verification-summary.json` and `reports/`.
+`public-abi.json` confirms both public 34-port nodes exactly match item 9.
+
+`wiring-controls-reviewed-r2.log` and `wiring-controls-reviewed-r2/results.json` pass both standalone
+strict baselines, reject all 16 actual broken RTL variants and 27 contract
+mutations, and preserve the original probes and exports. The checker binds the
+complete mux, selection, feedback, control, retirement and reply output paths.
+`python-r4.log` passes 87 working-tree Python controls, including six preserved
+P&R controls. `sram-assets.log` verifies all 11 pinned assets.
+
+Strict mapping adds joint admission/publication source states for the four new
+crossings. Only catalogued source registers are forced; generic campaigns,
+mapping comparisons and every dynamic bit's two-polarity activity remain.
+The memory bridge input error is literally zero; the two effect-token bridge
+inputs are literally one. Their exact parent-instance bindings, scalar input
+schemas and packed endpoint bits are checked before three narrow activity masks
+are permitted. Every mapping step also asserts their values. Native completion
+inputs and stored bridge outputs retain full dynamic coverage, including the
+memory error bit. A dynamic expression cannot qualify as a literal merely by
+remaining constant in the simulation campaign.
+
+Earlier failures remain in `integration-first.log`, `integration-r1.log`
+(explicitly aborted after known failures), `integration-r2.log`, and both
+`*-strict-r1.log` files. Initial strict exports lost a constant memory error port;
+preservation annotations retain the full declared interface without relaxing ABI
+validation. `strict-final-attempt-status.txt` records the later interrupted strict
+attempt, which entered a large fallback without retaining its first simulation.
+The preserved original probes and diagnostic-only replays identified eight new
+inactive input endpoints per SoC; joint source states and exact literal obligations
+resolve those diagnostic gaps. Diagnostic replays are not strict passes. The
+checker now saves first-pass probe/output before fallback. `python-r3.log` retains
+the missing new fallback anchor in the synthetic checker fixture; the fixture now
+also verifies evidence retention and rejects missing/duplicated fallback anchors.
+The first actual-boundary control attempt (`boundary-controls-final.log`) exposed
+CRLF in its classification copy; normalization now applies to that copy only.
+`boundary-controls-r2.log` and its `results.json` reject all six actual constant
+rewires with the full original probe bytes unchanged, plus six dynamic-driver
+substitutions before granting any literal exemption. Both original exports are
+hash-preserved. Together with the standalone controls this rejects 22 actual RTL
+mutations, 27 contract mutations and six dynamic-binding mutations.
+
+Both final strict SoC exports pass on their first probes, without paired fallback:
+
+| Variant | Endpoints | Mapping checks | Semantic SHA-256 |
+| --- | ---: | ---: | --- |
+| Four-phase | 2,043 | 593,207,523 | `97f9bcef78974fe63fc2b2311e7b6810503247db81e9327a475c025f25ab8c19` |
+| Native Click | 1,741 | 482,474,625 | `413032531c26bc1fd0b532bd4561e7c4f0332732f89a54f354a90e1b2fa05c64` |
+
+Receipts are `four-phase-strict-reviewed-r2.log`, `click-strict-reviewed-r2.log`,
+and each `*-final-soc/resolved.json`. Both retain all three physical SRAM macro
+instances, generated application-reset checks, exact interface validation,
+clock-enabled source stimulus and packed four-state-equivalent coverage.
+`final-review.md` records the independent review closeout.
+
+Reproduce the new boundary controls after emitting and strictly validating both
+SoCs (choose a fresh output directory for each control run):
+
+```powershell
+python tools/check_completion_boundary_controls.py --bd build/async-coordination-migration/four-phase-final-soc --click build/async-coordination-migration/click-final-soc --out build/async-coordination-migration/boundary-controls-new --library P:/Personal/chisel-async
+```
+
+No physical qualification or maximal feasible asynchrony is claimed.
+
 ## Native slow-domain housekeeping - digitally verified, 2026-10-10
 
 Item 9 implements separate native BD and Click time/deadline/lease/wake-mask,
@@ -69,8 +162,8 @@ python tools/sram_assets.py
 ```
 
 All digital completion gates pass. No analog circuit or physical budget changed;
-prior P&R cannot qualify the new controllers. Item 10 requires physical
-requalification and the user's next choice.
+prior P&R cannot qualify the new controllers. Physical requalification is now
+expanded checklist item 17, following the remaining migration and residual audit.
 
 ## Native SPI ADC migration - digitally verified, 2026-10-10
 

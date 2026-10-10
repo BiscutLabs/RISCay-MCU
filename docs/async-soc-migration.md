@@ -10,7 +10,7 @@ when no next item has been chosen. Both implementations remain active throughout
 
 - Four-phase bundled-data implementation: `designs/four-phase-bd/src/main/scala/riscay/bd/`.
 - Native two-phase Click implementation: `designs/two-phase-click/src/main/scala/riscay/click/`.
-- Each owns its Fabric, Control, Telemetry, Supervisor, Housekeeping, SRAM sequencing, I2C and SPI ADC protocol,
+- Each owns its Fabric, Completion, Control, Telemetry, Supervisor, Housekeeping, SRAM sequencing, I2C and SPI ADC protocol,
   Services, Platform, ClockedPeripherals, ConstantScaling,
   I2cTarget, SleepTiming and SramBank code. Copying the former service island into
   these directories establishes ownership; it does not migrate its state machines.
@@ -73,13 +73,104 @@ when no next item has been chosen. Both implementations remain active throughout
   independent LF/watchdog, observation/freshness ingress, Gray CDC and safe gating.
   Fresh review fixes, all 227 verification cases across 28 suites, both core policy
   cases, 84 Python controls and both strict exports pass. Exact boundaries are below.
-- [ ] **10. Physical requalification.** New-controller timing contracts, mapped
-  decode/data paths, pulse/fork/return timing, reset and CDC bounds, then new P&R
-  and extracted validation. Digital passes alone cannot check this item.
+- [ ] **10. Native completion and CPU coordination.**
+  - [x] **10a. Native response storage and selected completion assembly — digitally verified, 2026-10-10.**
+    Replace clocked response retention and Telemetry/Housekeeping completion
+    joining, and connect the production response directly to native Fabric.
+    Keep current admission and per-source cancellation ownership explicit.
+    Fresh independent review fixes, all 235 verification cases, both core policy
+    cases, 87 Python controls and both strict SoC exports pass. Original probes
+    reject 22 actual RTL mutations; 27 contract and six dynamic-binding mutations
+    also fail as required. Public ports remain identical to item 9.
+  - [ ] **10b. Native transaction ownership and admission context.** Remove the
+    remaining clocked CPU occupancy/source-pending state and whole-word response
+    round trips. Preserve accepted persistent effects through watchdog reset,
+    stale-response cancellation, boot/WAIT behavior and retained sleep.
+    - [ ] **10b1. Native admission credit.** Separate BD/Click credit owners
+      must preserve endpoint acceptance and offered-request event visibility,
+      and release occupancy from retained native completion retirement. A native
+      grant with an explicit clocked-client crossing avoids moving the MMIO
+      clear-protection window. Consume the grant at the existing commit edge;
+      prevent stale credit through full return. Local replies cannot create
+      service credit; HALT consumes credit until reset. Keep an unaccepted parked
+      WAIT eligible for sleep and unused credit from retaining clock demand.
+    - [ ] **10b2. Persistent source ownership and cancellation.** Define retained
+      operation identity, publication-before-completion and recovery debt before
+      removing source-pending bits or SRAM word crossings. Repeated watchdog
+      resets cannot alias an old operation into a new CPU lifetime. POR-owned
+      effects must finish exactly once while cancelled CPU replies stay cancelled.
+- [ ] **11. Native service admission and dispatch.** Remove the clocked host
+  mailbox, command selection and dispatch ownership in separately reviewable
+  substeps. Preserve priority for accepted SRAM/MMIO completion before reset,
+  reset history of queued host frames, admission-time busy context, host/CPU
+  fairness and exactly-once effects. Connect native producers directly where
+  possible. Independent live requests require physically supported arbitration
+  or a proven event-token scheduler; the library's RTZ-backed two-phase arbiter
+  and unqualified MUTEX model cannot satisfy native Click or physical signoff.
+- [ ] **12. Native observation transport and reduction.** Remove clocked elapsed,
+  acquisition and GPIO-history reduction from Services. Preserve every required
+  observation under independent consumer stalls, saturating ages, extrema,
+  failed-acquisition history and set-wins events. Supervisor progress must remain
+  independent of CPU, Control, Telemetry and Housekeeping publication. Prove
+  bounded ingress capacity and overflow behavior against physical source rates.
+- [ ] **13. Native publication and coherent host reads.** Replace clocked state
+  replicas, bank capture/selection and output-effect coordination where feasible.
+  Define the read snapshot's atomic point and output feedback timing explicitly;
+  preserve the ABI, programming lock, freshness and current-boot ACK qualification.
+- [ ] **14. Remove intermediate service-clock round trips.** Connect the resulting
+  native controllers directly, including I2C frame/snapshot delivery and native
+  SRAM word/control paths. Remove obsolete bridges, duplicated payload storage,
+  clocked outstanding bits and gate demands. Keep only crossings with an actual
+  remaining clock domain. This is an integration item, not permission to defer
+  an obvious direct connection in an earlier item.
+- [ ] **15. Minimize timed I/O and time-source boundaries.** Audit sampled I2C/GPIO,
+  SPI playback/admission/age bookkeeping, SRAM byte launch/capture, watchdog kick
+  delivery, crash accounting, legacy timers, source wake and retained gating.
+  Migrate ordering, counters and policy that can operate on native event tokens.
+  Investigate edge-driven alternatives where pin electrical constraints permit;
+  require metastability-safe arbitration, characterized pulse/setup/hold bounds,
+  lossless capture and independent timeout behavior. Keep the pinned synchronous
+  SRAM macro contract and independent watchdog/time source unless an equally
+  qualified replacement is explicitly designed and verified. A generated local
+  clock or renamed clocked module does not establish asynchronous migration.
+- [ ] **16. Residual synchronous-state audit.** Inventory every remaining
+  periodic-clocked state owner in both elaborated production SoCs. For each,
+  record its clock, purpose, physical/ABI constraint, alternatives considered and
+  evidence for retaining it. Reopen migration items for convenience-only state.
+  Check native Click end-to-end, service-clock-stopped progress, source-rate and
+  backpressure bounds, reset isolation and all public interfaces. Do not claim
+  maximal feasible asynchrony based on source-level module names or test passes.
+- [ ] **17. Physical requalification (previously item 10).** Qualify new-controller
+  timing contracts, mapped decode/data paths, arbitration/metastability handling,
+  pulse/fork/return timing, reset and CDC bounds, then new P&R and extracted
+  validation. Feed physical failures back into the migration design; digital
+  passes alone cannot check this item or establish physical feasibility.
 
-Items 1-9 are digitally verified. Ask before item 10, physical requalification.
-Each item requires both implementations, invariant-focused
-tests and a fresh independent review before it can be checked off.
+Items 1-9 are digitally verified within their original scopes. On 2026-10-10 the
+user authorized deeper migration through the remaining feasible asynchronous
+boundaries. Items 10-16 are the expanded implementation/audit scope; earlier
+clocked-boundary descriptions below are the starting point, not exemptions.
+Complete and review each substep before progressing, retaining actual failures.
+Physical requalification follows the residual audit; old P&R evidence cannot
+qualify the revised RTL. Every item requires both independent implementations,
+invariant-focused tests and a fresh independent review before completion.
+
+## Completion criteria for the expanded migration
+
+- Remove periodic service-clock ownership of the migrated state and control;
+  document any residual clocked capture/publication and its reason.
+- Show relevant native progress with the service clock stopped, in addition to
+  end-to-end behavior with real clocked peripherals. Exercise both protocols,
+  backpressure, reset during every transaction stage and exactly-once effects.
+- Bound each independent event source and its buffering. Never turn a consumer
+  stall into lost supervision, fabricated freshness, missed timeout or an
+  unbounded combinational/request loop.
+- Describe bundled-data stability, acknowledgment/phase return, reset ownership,
+  arbitration and physical timing obligations. Do not infer physical feasibility
+  from a digital simulation delay or substitute an unqualified MUTEX circuit.
+- Run affected regressions, independent core/reference and Python controls,
+  strict SoC exports and ABI checks. Review, fix, rerun, document, commit and push
+  each completed item/substep. Preserve unrelated P&R work and original failures.
 
 ## SocFabric handshake and timing contract
 
@@ -583,3 +674,27 @@ Physical work must qualify the complete time/deadline/cadence transforms, native
 state-credit return, reset recovery/removal, all bundled-data/phase crossings,
 Gray skew, independent watchdog crossing and retained clock-gate timing. Existing
 P&R results do not qualify this migration and do not establish timing closure.
+
+## Native completion assembly scope (10a, digitally verified)
+
+Each variant has an application-reset completion controller. A held plan selects
+memory, Telemetry and Housekeeping completion inputs and retains the immediate
+response/error. Selected inputs may arrive before the plan or in any order.
+The final response joins all selected completions and holds under backpressure.
+There is no arbitration, periodic clock or four-phase adapter in the Click owner.
+Production SoCs connect this reply directly to the native Fabric. Clocked test
+clients use an explicit output bridge because those clients have a clock domain.
+
+Plan/completion capture crossings, response assembly, retirement observation and
+CPU Fabric share application reset. Existing POR-owned effects remain outside
+this domain. Source-specific pending flags suppress old completions; recovery
+and SRAM drainage prevent old operations from being assigned to a new lifetime.
+The admission occupancy shadow clears only from synchronized retained retirement,
+never a speculative idle observation. Reuse also requires crossing return and
+native output drainage. Source-ready assertions reject lost completion pulses.
+
+10a does not migrate admission, source-pending ownership, host arbitration,
+observation reduction, peripheral publication or the SRAM word crossings.
+Those are tracked in the remaining expanded items. Complete mux/selection paths,
+phase feedback, composed control drainage and clock-crossing setup/hold require
+physical qualification; current delays are digital experiment assumptions only.
