@@ -49,7 +49,16 @@ timing instance 1 rather than hard-coding the old 3..98 ms limits. Sensing remai
 mandatory. Interval changes apply between conversions on a maintenance tick and
 trigger an immediate acquisition, so repeated writes cannot starve sensing.
 Regular intervals round up to source ticks; missed acquisitions coalesce rather
-than replay. ADC conversion, CPU execution and I2C run on the fast source.
+than replay. SPI pin timing and full-frame MISO capture run on the fast source;
+native SPI controllers own conversion/priming, assembly, scaling and retirement.
+The complete waveform runs without native per-edge feedback, so a stalled native
+consumer cannot stretch SCLK. Busy covers admission, waveform, buffered capture,
+native processing, publication and crossing return; none may be gated halfway.
+Conversion age accumulates upper-bound elapsed time from admission and survives
+publication stalls and application reset. Both host and supervisor captures retain
+that age, including a coincident publication tick. The unstalled digital allowance
+is 32 half-periods plus 32 service edges and 2 us of native processing; it still
+requires physical qualification. CPU and I2C service boundaries also use the fast source.
 The disabled-by-default Groundlark policy remains disabled until qualified board
 values are supplied; this cadence is an integration configuration, not an approved
 battery policy.

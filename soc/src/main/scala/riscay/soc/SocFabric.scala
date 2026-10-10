@@ -19,14 +19,13 @@ abstract class ServiceEndpoint extends Module with InlineInstance {
     val program = new SramAccessPort
     val ram = new SramAccessPort
     val elapsedScaling = Flipped(new ElapsedScalingPort(3))
-    val sampleScaling = Flipped(new SampleScalingPort)
+    val adc = Flipped(new SpiAdcPort)
     val controlCommand = Decoupled(new ControlCommand)
     val controlReply = Flipped(Decoupled(new ControlReply))
     val request = Flipped(Decoupled(new MemoryRequest))
     val response = Decoupled(new MemoryResponse)
     val i2c = Flipped(new I2cHostPort)
     val gpioIn = Input(UInt(32.W)); val gpioOut = Output(UInt(32.W)); val gpioOe = Output(UInt(32.W))
-    val adcMiso = Input(Bool()); val adcCsN = Output(Bool()); val adcSclk = Output(Bool())
     val watchdogReason = Input(Bool()); val heartbeat = Output(Bool())
     val watchdogAck = Input(Bool())
     val mode = Output(UInt(3.W)); val programmed = Output(Bool()); val locked = Output(Bool())

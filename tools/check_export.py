@@ -563,7 +563,7 @@ def generated_reset_probe(source: str, manifest: dict) -> str:
         raise ValueError("SOC_PERSISTENT_RESET_INVENTORY")
     persistent.update(sram)
     persistent["i2c"] = "I2cTarget"
-    persistent.update({"elapsed_scaler": "ElapsedTicks", "sample_scaler": "SampleScaler"})
+    persistent.update({"elapsed_scaler": "ElapsedTicks", "sample_scaler": "SampleScaler", "spi_adc": "SpiAdc"})
     for child in root["children"]:
         if child.get("id") in persistent and not re.fullmatch(
                 re.escape(persistent[child["id"]]) + r"(?:_[0-9]+)?", child["contract"].get("module", "")):
@@ -846,7 +846,7 @@ def validate_fabric_path(node, timing):
 
 def validate_native_click(manifest):
     """A Click export must remain native throughout its async hierarchy."""
-    if manifest["top"] not in ("ClickSoc", "ClickCore", "ClickFabric", "ClickControl", "ClickTelemetry", "ClickSupervisor", "ClickElapsed", "ClickSample", "ClickSram", "ClickI2c"):
+    if manifest["top"] not in ("ClickSoc", "ClickCore", "ClickFabric", "ClickControl", "ClickTelemetry", "ClickSupervisor", "ClickElapsed", "ClickSample", "ClickSram", "ClickI2c", "ClickSpiAdc"):
         return
     def nodes(node):
         yield node
@@ -857,6 +857,58 @@ def validate_native_click(manifest):
                 any(c["protocol"] == "four-phase-bundled-v1" for c in node["channels"]) or
                 any(p["model"] == "ChiselAsyncClosingLatch_v1" for p in node["primitives"])):
             raise ValueError("MCU_CLICK_HAS_RTZ_IMPLEMENTATION")
+
+
+SPI_PROGRAM = {"initialCsN": (1, 0), "initialSclk": (1, 0),
+               "occupied": (32, 0xffffffff), "csN": (32, 0x80000000), "sclk": (32, 0x55555555)}
+
+
+def spi_program_probe(source, manifest, scopes):
+    """Check immutable native definitions and the player recipe boundary.
+
+    Register-load behavior is covered separately by actual-player mutation tests.
+    Constants are ordinary ports, not dynamic endpoints: assert their exact
+    values at every generic mapping step. No endpoint activity check is removed
+    or overridden and no program, recipe or derived endpoint is forced.
+    """
+    comparisons = []
+    def visit(node, parent=None):
+        native = re.fullmatch(r"(FourPhase|Click)SpiAdc(?:_[0-9]+)?", node["module"])
+        if re.fullmatch(r"SpiAdc(?:_[0-9]+)?", node["module"]):
+            children = {c["id"]: c["contract"] for c in node["children"]}
+            if (set(children) != {"native", "command_bridge", "reply_bridge", "wave_bridge", "capture_bridge"}
+                    or not re.fullmatch(r"(FourPhase|Click)SpiAdc(?:_[0-9]+)?", children["native"]["module"])):
+                raise ValueError("MCU_SPI_OWNER_INVENTORY")
+        if native:
+            protocol = "two-phase-bundled-v1" if native[1] == "Click" else "four-phase-bundled-v1"
+            if {c["id"]: (c["protocol"], c["role"]) for c in node["channels"]} != {
+                    "command": (protocol, "input"), "reply": (protocol, "output"),
+                    "wave": (protocol, "output"), "capture": (protocol, "input")}:
+                raise ValueError("MCU_SPI_PROTOCOL")
+            path = node["rtl_path"]
+            ports = scopes[path]["ports"]
+            if {p for p in ports if p.startswith("program_")} != {"program_"+f for f in SPI_PROGRAM}:
+                raise ValueError("MCU_SPI_PROGRAM_INVENTORY")
+            for field, (width, value) in SPI_PROGRAM.items():
+                pin = "program_"+field
+                if ports[pin] != dict(name=pin, width=width, direction="output"):
+                    raise ValueError("MCU_SPI_PROGRAM_PORT")
+                comparisons.append(f'if ({path}.{pin} !== {width}\'h{value:x}) $fatal(1,"MCU_SPI_PROGRAM_VALUE:{field}");')
+                if parent is not None and re.fullmatch(r"SpiAdc(?:_[0-9]+)?", parent["module"]):
+                    player = parent["rtl_path"]
+                    recipe = "recipe_"+field
+                    if scopes[player]["nets"].get(recipe) != width:
+                        raise ValueError("MCU_SPI_PLAYER_PIN")
+                    comparisons.append(f'if ({player}.{recipe} !== {path}.{pin}) $fatal(1,"MCU_SPI_PLAYER_BINDING:{field}");')
+        for child in node["children"]:
+            visit(child["contract"], node)
+    visit(manifest["design"])
+    if not comparisons:
+        return source
+    anchor = "task check; begin"
+    if source.count(anchor) != 1:
+        raise ValueError("MCU_SPI_PROBE_SHAPE")
+    return source.replace(anchor, anchor+"\n"+"\n".join(comparisons))
 
 
 def fabric_path_bindings(node, timing):
@@ -953,6 +1005,7 @@ def main() -> None:
 
     def probe(manifest, scopes, paired=False):
         source, count = original_probe(manifest, scopes, paired)
+        source = spi_program_probe(source, manifest, scopes)
         source, count = register_file_background(source, manifest, count)
         source, count = control_background(source, manifest, scopes, count)
         source, count = i2c_background(source, manifest, scopes, count)

@@ -8,14 +8,16 @@ See the [migration checklist](../docs/async-soc-migration.md) and
 [SoC contract](../docs/soc-contract.md).
 
 Each design owns its Services, Platform, ClockedPeripherals, ConstantScaling,
-I2cTarget, SleepTiming and SramBank, plus a native Control state loop. ROM/static
-faults are clockless. Native Control owns image/lock/accounting, host selector,
-MMIO validation and producer/index staging. Its clocked ingress, snapshots,
-reset/status projection and peripheral/MMIO effects remain in Services. SRAM
-byte sequencing, I2C, ADC, GPIO/events and timekeeping remain clocked. `ControlSchema`
-shares wire layouts and reset literals, not a state transition implementation.
-An independent LF
-reference/watchdog remains required. The full SoC is not clockless.
+I2cTarget, SleepTiming and SramBank, plus independent native Fabric, Control,
+Telemetry, Supervisor, SRAM, I2C and SPI ADC controllers. ROM/static faults are
+clockless. Native loops own loader/MMIO state, software GPIO/events and sample
+records, permanent supervision, word/byte sequencing, I2C protocol state and
+SPI conversion ownership/assembly/priming/scaling. Schemas share wire layouts
+and reset literals, not state transitions. Clocked ingress, snapshots,
+reset/status projection, GPIO sampling, individual synchronous SRAM byte
+accesses, I2C wire sampling/timeout, SPI pin timing/full-frame capture and
+cadence remain explicit boundaries. An independent LF reference/watchdog
+remains required. The full SoC is not clockless.
 
 `ChipWrapper.scala` emits oscillator/reset boundaries and their simulation views.
 See [sleep and clocks](../docs/sleep-and-clock.md) for source wake and reset scope,

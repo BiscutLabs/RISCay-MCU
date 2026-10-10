@@ -10,6 +10,11 @@ selector/producer staging without a periodic clock. Clocked ingress and snapshot
 crossings are explicit; peripheral effects and reset/status projection remain in
 Services. This directory owns its Platform,
 peripheral, scaling, sleep and SRAM controller implementations.
+Its native Telemetry, Supervisor, SRAM and I2C loops retain separate POR-owned
+state. [FourPhaseSpiAdc.scala](src/main/scala/riscay/bd/FourPhaseSpiAdc.scala)
+owns native conversion/priming, frame assembly, scaling and retirement; the
+clocked boundary plays its immutable recipe and buffers the complete frame.
+Cadence and independent LF/watchdog housekeeping remain clocked.
 Follow the [migration checklist](../../docs/async-soc-migration.md).
 See the [SoC contract](../../docs/soc-contract.md) for behavior and qualification limits.
 

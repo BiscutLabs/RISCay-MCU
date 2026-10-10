@@ -111,11 +111,13 @@ abstract class ClickPlatform(p: SocParameters, board: SocParameters => BoardProf
   }
   p.adc match {
     case Some(a) =>
-      val scaler = asyncChild("sample_scaler")(d => new SampleScaler(a.numerator, a.denominator, d))
-      scaler.clock := workClock; scaler.io <> fabric.io.sampleScaling
+      val adc=asyncChild("spi_adc")(d => new SpiAdc(a,p.lowPower.isEmpty,d))
+      adc.clock:=workClock; adc.io <> fabric.io.adc; adc.miso:=adcMiso
+      adcCsN:=adc.csN; adcSclk:=adc.sclk
     case None =>
-      fabric.io.sampleScaling.busy := false.B; fabric.io.sampleScaling.done := false.B
-      fabric.io.sampleScaling.value := 0.U
+      fabric.io.adc.busy:=false.B; fabric.io.adc.done:=false.B; fabric.io.adc.age:=0.U
+      fabric.io.adc.result:=0.U.asTypeOf(fabric.io.adc.result)
+      adcCsN:=true.B; adcSclk:=false.B
   }
   fabric.io.cpuReset := systemReset
   fabric.io.cpuResetActive := cpuResetActive
@@ -148,7 +150,6 @@ abstract class ClickPlatform(p: SocParameters, board: SocParameters => BoardProf
   }
   fabric.io.sleepEntries := sleepEntries
   fabric.io.gpioIn := gpioIn; gpioOut := fabric.io.gpioOut; gpioOe := fabric.io.gpioOe
-  fabric.io.adcMiso := adcMiso; adcCsN := fabric.io.adcCsN; adcSclk := fabric.io.adcSclk
   fabric.io.watchdogReason := watchdogReasonActive; watchdog.io.heartbeat := fabric.io.heartbeat
   fabric.io.watchdogAck := watchdog.io.acknowledge
   mode := fabric.io.mode; programmed := fabric.io.programmed; locked := fabric.io.locked

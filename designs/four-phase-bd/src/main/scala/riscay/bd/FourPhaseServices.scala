@@ -169,19 +169,17 @@ class FourPhaseServices(p: SocParameters, boardFactory: SocParameters => BoardPr
   def validPeriod(value: UInt): Bool = (p.lowPower.nonEmpty && p.adc.nonEmpty).B &&
     value >= p.minimumSampleMs.U && value <= p.maximumSampleMs.max(0).U
   when(periodUpdate.valid) { nextPeriod := periodUpdate.bits; periodPending := true.B }
-  io.adcCsN := true.B; io.adcSclk := false.B
-  io.sampleScaling.start := false.B; io.sampleScaling.raw := 0.U
+  val publishAge=Wire(Vec(config.measurements.size,UInt(32.W))); publishAge.foreach(_ := 0.U)
+  io.adc.start := false.B; io.adc.ageStep := Mux(tick,upperElapsed,0.U)
   p.adc.foreach { adcParameters =>
-    val adc = Module(new SpiAdc(adcParameters, autonomous = p.lowPower.isEmpty)); adc.io.miso := io.adcMiso
-    io.sampleScaling <> adc.io.scaling
-    adc.io.start := false.B; adcBusy := adc.io.busy
+    adcBusy := io.adc.busy
     if(p.lowPower.nonEmpty) {
       val countdown = RegInit((p.defaultSampleMs - 1).U(32.W))
       val requested = RegInit(true.B)
-      adc.io.start := requested && !adc.io.busy
-      when(adc.io.start) { requested := false.B }
+      io.adc.start := requested && !io.adc.busy
+      when(io.adc.start) { requested := false.B }
       // Discard the first conversion, then immediately acquire a usable sample.
-      when(adc.io.done && !adc.io.result.valid) { requested := true.B }
+      when(io.adc.done && !io.adc.result.valid) { requested := true.B }
       when(tick) {
         when(elapsed > countdown) { countdown := samplePeriod - 1.U; requested := true.B }
           .otherwise { countdown := countdown - elapsed }
@@ -189,15 +187,14 @@ class FourPhaseServices(p: SocParameters, boardFactory: SocParameters => BoardPr
       // Atomic reconfiguration between conversions. Acquire immediately so
       // repeated interval writes cannot postpone sensing indefinitely, then
       // rebase the next start; ordinary intervals exclude conversion time.
-      when(tick && periodPending && !adc.io.busy && !requested) {
+      when(tick && periodPending && !io.adc.busy && !requested) {
         samplePeriod := nextPeriod; countdown := nextPeriod - 1.U; periodPending := false.B
         requested := true.B
       }
       when(periodUpdate.valid) { periodPending := true.B }
-      adcBusy := adc.io.busy || requested || periodPending
+      adcBusy := io.adc.busy || requested || periodPending
     }
-    io.adcCsN := adc.io.csN; io.adcSclk := adc.io.sclk
-    publish(0) := adc.io.result
+    publish(0) := io.adc.result; publishAge(0) := io.adc.age
   }
   // POR-owned input history. No power policy or qualification counter is
   // clocked here. Min/max, validity gaps and GPIO discontinuities prevent a
@@ -233,7 +230,7 @@ class FourPhaseServices(p: SocParameters, boardFactory: SocParameters => BoardPr
       capture.valid := pub.bits.valid; capture.calibrated := pub.bits.calibrated
       capture.failed := prior.failed || !pub.bits.valid
       when(pub.bits.valid) {
-        capture.hadValid := true.B; capture.value := pub.bits.value; capture.tailAge := 0.U
+        capture.hadValid := true.B; capture.value := pub.bits.value; capture.tailAge := publishAge(0)
         capture.minimum := Mux(!prior.hadValid || pub.bits.value < prior.minimum,pub.bits.value,prior.minimum)
         capture.maximum := Mux(!prior.hadValid || pub.bits.value > prior.maximum,pub.bits.value,prior.maximum)
         when(!prior.hadValid) { capture.firstAge := ageAtPublication }
@@ -473,7 +470,7 @@ class FourPhaseServices(p: SocParameters, boardFactory: SocParameters => BoardPr
       capture.seen := true.B; capture.count := base.count + 1.U
       capture.valid := publish(i).bits.valid; capture.calibrated := publish(i).bits.calibrated
       when(publish(i).bits.valid) {
-        capture.hadValid := true.B; capture.value := publish(i).bits.value; capture.tailAge := 0.U
+        capture.hadValid := true.B; capture.value := publish(i).bits.value; capture.tailAge := publishAge(i)
       }
     }
   }

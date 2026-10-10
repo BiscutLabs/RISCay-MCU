@@ -10,7 +10,7 @@ when no next item has been chosen. Both implementations remain active throughout
 
 - Four-phase bundled-data implementation: `designs/four-phase-bd/src/main/scala/riscay/bd/`.
 - Native two-phase Click implementation: `designs/two-phase-click/src/main/scala/riscay/click/`.
-- Each owns its Fabric, Control, Telemetry, Supervisor, SRAM sequencing, I2C protocol,
+- Each owns its Fabric, Control, Telemetry, Supervisor, SRAM sequencing, I2C and SPI ADC protocol,
   Services, Platform, ClockedPeripherals, ConstantScaling,
   I2cTarget, SleepTiming and SramBank code. Copying the former service island into
   these directories establishes ownership; it does not migrate its state machines.
@@ -62,16 +62,19 @@ when no next item has been chosen. Both implementations remain active throughout
   and stuck/foreign-bus release. Fresh review fixes, 190 verification outcomes,
   two core policy cases, 80 Python controls, thirteen actual wiring mutation
   controls and both strict SoC exports pass. Scope and physical limits are below.
-- [ ] **8. SPI ADC.** Preserve conversion timing, invalid-first sample, cadence,
-  reconfiguration boundaries, freshness and supervision independent of CPU progress.
+- [x] **8. SPI ADC - digitally verified, 2026-10-10.** Separate native conversion,
+  assembly, priming and scaling loops preserve exact wire timing, cadence,
+  reconfiguration, freshness and supervision independent of CPU progress. Fresh
+  review fixes, 206 verification cases, two core policy cases, 83 Python controls,
+  22 actual RTL mutation controls and both strict SoC exports pass. Clocked wire
+  playback, full-frame capture and cadence remain explicit boundaries below.
 - [ ] **9. Slow-domain housekeeping.** Native coordination where appropriate while
   retaining the independent LF reference/watchdog, Gray CDC and safe source gating.
 - [ ] **10. Physical requalification.** New-controller timing contracts, mapped
   decode/data paths, pulse/fork/return timing, reset and CDC bounds, then new P&R
   and extracted validation. Digital passes alone cannot check this item.
 
-Items 1–7 are digitally verified.
-Ask before starting item 8, SPI ADC.
+Items 1–8 are digitally verified. Ask before item 9, slow-domain housekeeping.
 Each item requires both implementations, invariant-focused
 tests and a fresh independent review before it can be checked off.
 
@@ -165,7 +168,10 @@ Python controls and both strict exports after independent review. See
 Item 7 passes 190 verification outcomes, two core policy cases, 80 working-tree
 Python controls, thirteen actual wiring mutations and both strict exports after
 independent review. See [I2C evidence](build-and-test.md#native-i2c-migration---digitally-verified-2026-10-09).
-SPI ADC, slow-domain housekeeping and physical qualification remain unchecked.
+Item 8 passes 206 verification cases, two core policy cases, 83 working-tree
+Python controls, 22 actual RTL mutations and both strict exports after independent
+review. See [SPI ADC evidence](build-and-test.md#native-spi-adc-migration---digitally-verified-2026-10-10).
+Slow-domain housekeeping and physical qualification remain unchecked.
 
 ## GPIO/events/telemetry scope and contract
 
@@ -453,3 +459,65 @@ The focused wire campaign targets 400 kHz at 3.2 MHz and 20 MHz service clocks
 with maximum native delays, including adjacent sampled SDA changes. Physical
 SDA setup, feedback/fork timing, Gray CDC, reset recovery and output pads remain
 unqualified. Older P&R artifacts do not apply.
+
+## SPI ADC scope and contract
+
+Item 8 passes digital verification and strict export validation after fresh
+independent review. Each design has its own native conversion loop and clocked boundary
+in `FourPhaseSpiAdc.scala` or `ClickSpiAdc.scala`. Shared code contains only the
+wire schemas and parameter/budget definitions. Click stays native throughout.
+
+The native controller owns a single conversion credit, an immutable mode-0 pin
+recipe, the primed state, frame assembly, exact integer scaling, signed offset
+and retirement. Its waveform token and retained conversion context fork together;
+the capture rendezvous joins all 32 MISO observations with that context. Assembly
+selects sixteen rising-edge observations and ignores the first four, leaving the
+twelve-bit sample. The first complete frame after POR primes the converter but
+does not publish; an incomplete frame cannot prime it. The feedback credit returns
+only after the consumer accepts the reply. All four crossings and all native
+state are POR-only; application watchdog reset cannot discard or replay them.
+
+The clocked boundary admits a conversion, copies the native recipe, emits exactly
+32 half-period slots and buffers every MISO observation. It never waits for a
+native per-edge acknowledgement while CS is low. CS asserts with SCLK low; the
+first rising edge follows one complete half-period. The sixteenth falling edge
+releases CS after the final complete high phase. Clocked state contains a shift
+mask, pin vectors, divider and retained observations, not ADC field extraction,
+priming or scaling state. Native backpressure can delay admission or publication,
+but cannot stretch a half-period. Busy includes every phase through complete
+command/wave/capture/reply return. Neither another start nor retained sleep may
+interrupt that lifetime.
+
+Cadence remains explicit clocked Services work for item 9. Low-power periods remain
+start-to-start, accepted updates apply on an eligible between-conversion tick,
+first-discard retry is immediate and repeated updates cannot starve acquisition.
+Legacy mode retains its idle delay between conversions. The digital budget is
+`32 * halfPeriodCycles + 32` service edges plus 2 us of native processing, rounded
+up to milliseconds for cadence limits. The focused maximum-delay experiment uses
+20 MHz service, two-cycle half-periods and the 1..10 ns native cell envelope; it
+requires exact 100 ns phases and completion/drainage within 6.8 us. Those are
+simulation obligations, not ADC electrical or physical path qualification.
+That stress case produces 5 MHz SCLK, above the ADC121S021's specified 1..4 MHz
+electrical-performance range; see its [datasheet, section 7.5](https://www.ti.com/lit/ds/symlink/adc121s021.pdf).
+Production emitters retain 1 MHz SCLK.
+
+Age accumulates saturated upper-bound elapsed time from admission, excluding an
+elapsed interval coincident with that initial admission and including a tick
+coincident with publication. Both telemetry and supervisor ingress copy the
+result's age into their retained `tailAge`; a long-held conversion cannot become
+fresh on release. Supervisor first-age and maximum-gap history survive an old
+frame followed by a fresh frame before batch consumption. Independent LF time
+and watchdog supervision remain necessary.
+
+The strict checker asserts immutable native recipe values and native-to-recipe
+wire bindings while preserving every existing dynamic endpoint activity check.
+Separate actual exported-player mutation controls check register loads, pin
+timing and MISO capture using the unchanged wire oracle. New 33-bit capture
+storage/bridges preserve their declared ABI names against structural compiler
+deduplication with 33-bit CPU responses. These preservation annotations do not
+change the handshake or datapath. The public SoC ABI is unchanged.
+
+Physical requalification must cover the composed ownership/assembly/offset paths,
+native reset and return timing, all CDC/bundled-data crossings, clock gating,
+SCLK/CS/MISO setup/hold and board/ADC electrical limits. The old P&R artifacts
+neither qualify this controller nor establish timing closure.

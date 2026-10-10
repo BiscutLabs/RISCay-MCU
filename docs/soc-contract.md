@@ -2,12 +2,15 @@
 
 The four-phase and native Click SoCs implement the same RV32E execution, internal
 storage and peripheral behavior. Compressed instructions remain deferred. The
-CPU, transaction routing, Control, Telemetry, Supervisor and I2C protocol state
+CPU, transaction routing, Control, Telemetry, Supervisor, I2C and SPI ADC protocol state
 loops are asynchronous.
 Each design owns its native loader/MMIO, software GPIO/application-word, event
 and host measurement state. Ingress, snapshots, reset projections, GPIO sampling,
 timer/lease/watchdog logic, individual synchronous SRAM byte accesses, I2C wire
-sampling/timeout and SPI ADC sequencing remain clocked. Separate native SRAM word sequencing passes the
+sampling/timeout, SPI pin timing/full-frame capture and acquisition cadence remain
+clocked. Native SPI loops own conversion admission, frame definition, assembly,
+priming, scaling and retirement; item 8 passes digital verification and strict exports.
+Separate native SRAM word sequencing passes the
 item 6 digital regressions and strict exports. Board policy and its safety sample view
 use independent POR-only native loops with clocked ingress/output projection.
 ROM/static faults complete in the native fabric. The Control integration passes
@@ -273,11 +276,22 @@ ADC reference/supply and the existing 23/3 divider ratio. Build parameters permi
 gain/offset calibration; the default explicitly reports **uncalibrated**.
 Scaling uses three native handshake stages of four radix-2 quotient/remainder
 steps after a native input-capture stage. Each design owns its datapath. Explicit
-POR-only clocked bridges capture SPI results and publish the scaled value; busy
-extends through native computation, publication and return drainage. The first
-conversion is still discarded, and signed offset/calibration projection is unchanged.
-The unstalled digital start-through-drain allowance is 16 service edges plus
-1 us for the native pipeline under its simulation delay envelope. Cadence bounds
+POR-only clocked bridges transfer conversion commands, waveform tokens, complete
+32-observation captures and scaled replies. Independent native loops own the
+immutable mode-0 waveform definition, one conversion credit, extraction of the
+twelve significant rising-edge bits, priming, scaling, offset and retirement.
+The clocked player copies the recipe once and advances one slot per configured
+half-period without waiting for native feedback. Busy extends from admission
+through waveform, buffered capture, native computation, publication and return
+drainage. The first complete conversion after POR is discarded; watchdog reset
+preserves priming, the in-progress frame, any buffered reply and its age.
+Upper-bound elapsed age starts at admission, saturates and includes a coincident
+publication tick. Telemetry and supervisor histories retain it rather than
+resetting it on a delayed publication. Signed offset/calibration is unchanged.
+The unstalled digital start-through-drain allowance is 32 SPI half-periods,
+32 additional service edges and 2 us of native processing. The focused maximum-delay
+campaign checks 6.8 us at a 20 MHz service clock with two-cycle half-periods.
+Cadence bounds
 round the full SPI-plus-scaling allowance upward to milliseconds. This allowance
 needs physical qualification. There is no combinational divider.
 [ADC datasheet](https://www.ti.com/lit/ds/symlink/adc121s021.pdf)

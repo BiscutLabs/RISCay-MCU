@@ -10,7 +10,12 @@ join, transform and fork for loader accounting/lock, MMIO validation and
 selector/producer staging. Its POR-only toggle/clocked crossings, ingress,
 snapshots, reset/status projection and peripheral effects remain explicit in
 `ClickPlatform`/`ClickServices`. This directory owns its peripheral, scaling, sleep
-and SRAM controller implementations. Follow the
+and SRAM controller implementations. Its native Telemetry, Supervisor, SRAM and
+I2C loops retain separate POR-owned state.
+[ClickSpiAdc.scala](src/main/scala/riscay/click/ClickSpiAdc.scala) owns native
+conversion/priming, frame assembly, scaling and retirement; explicit toggle
+bridges surround a clocked immutable-recipe player and full-frame capture.
+Cadence and independent LF/watchdog housekeeping remain clocked. Follow the
 [migration checklist](../../docs/async-soc-migration.md). See the [SoC contract](../../docs/soc-contract.md).
 
 The core is [ClickCore.scala](src/main/scala/riscay/click/ClickCore.scala), with

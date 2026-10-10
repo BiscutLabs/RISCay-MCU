@@ -1,5 +1,86 @@
 # Build and test
 
+## Native SPI ADC migration - digitally verified, 2026-10-10
+
+Item 8 has independent BD and native Click conversion owners, immutable pin
+recipes, complete-frame rendezvous, native extraction/priming/scaling/offset and
+consumer-accepted retirement. Clocked admission/publication, fixed-rate pin
+playback, complete MISO capture and cadence remain explicit boundaries. See the
+[scope and timing contract](async-soc-migration.md#spi-adc-scope-and-contract).
+
+Evidence is under `build/spi-adc-migration/`. `regression-first.log` passes all
+202 verification cases across 26 suites and both physical-policy cases. After
+fresh independent review, `reviewed-regression.log` passes the 18 focused SPI
+cases, including four added independent-admission and exact age-edge cases;
+all 36 affected SoC/core/firmware/sleep cases also pass. The final current reports
+contain 206 passing verification cases across 26 suites, with no failures, errors
+or skips, plus both physical-policy cases. `verification-reviewed-summary.json`
+records the report hashes and timestamps.
+
+The focused campaigns cover clockless native request/response stalls and POR,
+all leading nibbles, alternating/walking sample bits, odd-slot noise, first-complete
+frame discard, exact gain/offset, complete watchdog episodes, buffered old frames,
+age saturation, coincident launch/publication ticks and stale-then-fresh supervisor
+history. At 20 MHz service and two-cycle half-periods, maximum native model delays
+must preserve every 100 ns half-phase and complete admission through return within
+6.8 us. These are digital stress bounds, not physical or ADC electrical signoff.
+
+`python-all.log` passes all 83 working-tree Python controls (six belong to the
+preserved earlier P&R work); `sram-assets.log` verifies all 11 pinned assets.
+`public-abi-reviewed.json` shows that both public 34-port nodes match committed
+item 7 (`c9076b1`) exactly.
+
+Final production exports are `four-phase-reviewed-soc/` and `click-reviewed-soc/`.
+Strict checks with `--soc --vector-coverage --sleep-clock --probe-timeout 7200`
+pass all endpoint activity, mapping, generated-reset, native Click and three-SRAM
+obligations:
+
+| Variant | Endpoints | Mapping checks | Semantic SHA-256 |
+| --- | ---: | ---: | --- |
+| BD | 1892 | 491630524 | `ab5cf024c1acd71fbafe2b964cb22b4ea88f9bd3eb446aed210d143e3035f03e` |
+| Click | 1625 | 404395875 | `f21be51efff38a5982a8b8a9bb2010e5a9726d2ea359b3ffb4f3e070b250dfaa` |
+
+Exact receipts are `bd-strict-reviewed.log` and `click-strict-reviewed.log`.
+
+Retained failures: `age-first.log` records two fixture API mistakes (`Option`
+indexing and `BoringUtils` argument placement), fixed before simulation. The first
+strict exports failed `PORT_ABI_RTL_MISMATCH`: compiler structural deduplication
+coalesced the new 33-bit capture payload with CPU response storage/bridges and
+renamed their declared fields; a constant calibration output was also removed.
+`initial-abi-failure.json` records the exact mismatches. Both variants now preserve
+the capture subtree/bridge ABI with no-dedup annotations and retain ADC IO. No
+mapping check or behavioral expectation was relaxed.
+
+`wiring-controls.log` retains the initial negative-control diagnostic mismatch:
+the broken initial-CS load was rejected by `SPI_FRAME_START` before the anticipated
+clock-high check. The runner now requires the observed frame-start diagnostic;
+the wire oracle is unchanged, as confirmed by independent review.
+
+The fresh review and fixes are recorded in `independent-review.md`. Exact native
+constant checks and native-to-recipe wiring checks retain the generic endpoint
+activity campaigns. `tools/check_spi_wiring_controls.py` additionally mutates real
+emitted register loads and MISO capture under the unchanged wire oracle, and real
+native constants under the unchanged strict probe. All 22 mutations compile and
+fail their required assertions; both unchanged wire baselines pass, and the
+completed strict runs supply the positive mapping controls. Original export
+hashes remain unchanged. Receipts are `wiring-controls-reviewed.log` and
+`wiring-controls-reviewed/results.json`.
+
+Reproduce with one sbt process at a time:
+
+```powershell
+python tools/sbt.py 'verification/test' 'physical/test'
+python tools/sbt.py 'fourPhaseBd/runMain riscay.bd.EmitFourPhaseSoc build/spi-recheck/four-phase-soc' 'twoPhaseClick/runMain riscay.click.EmitClickSoc build/spi-recheck/click-soc'
+python tools/check_export.py build/spi-recheck/four-phase-soc --library P:/Personal/chisel-async --soc --vector-coverage --sleep-clock --probe-timeout 7200
+python tools/check_export.py build/spi-recheck/click-soc --library P:/Personal/chisel-async --soc --vector-coverage --sleep-clock --probe-timeout 7200
+python -m unittest discover -s tools -p 'test_*.py' -v
+python tools/check_spi_wiring_controls.py --bd <bd-spi-wave-export> --click <click-spi-wave-export> --bd-strict <bd-strict-soc-export> --click-strict <click-strict-soc-export> --out <fresh-evidence-directory>
+```
+
+The wire export paths are generated under `build/soc-tests/` by `SpiAdcSpec`.
+Older P&R results do not qualify this RTL. Independent LF/watchdog housekeeping
+remains necessary, and item 9 still requires the user's next choice.
+
 ## Native I2C migration - digitally verified, 2026-10-09
 
 Item 7 uses separate BD and native Click protocol loops, an immutable eight-slot

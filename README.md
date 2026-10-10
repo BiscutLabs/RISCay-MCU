@@ -48,7 +48,7 @@ telemetry remain readable when locked. See the
 
 **Status: asynchronous SoC migration in progress.** Each design owns a separate
 SoC implementation. SocFabric, MMIO/loader, GPIO/events/telemetry, scaling/CRC,
-permanent supervision, SRAM word sequencing and I2C protocol state are digitally verified.
+permanent supervision, SRAM word sequencing, I2C and SPI ADC protocol state are digitally verified.
 Separate native pipelines now own fractional elapsed-time
 and ADC arithmetic, with CRC byte stages in each Control feedback loop.
 Native fabrics route ROM and static access faults without a
@@ -61,7 +61,12 @@ supervisor input/output and scaling request/publication boundaries remain explic
 Separate native SRAM controllers retain word ownership, sequence bytes and assemble
 reads around explicit synchronous macro boundaries. Separate native I2C controllers
 pass digital verification; wire sampling, timeout and host publication remain clocked.
-SPI ADC remains clocked. The independent LF timebase/watchdog remains
+Separate native SPI ADC controllers now define frames, own conversions, assemble
+samples, discard the first complete frame and retire scaled results. An explicit
+clocked player preserves exact pin timing and buffers every MISO observation;
+admission/publication and cadence remain clocked. Item 8 passes independent review,
+digital regressions, emitted-RTL mutation controls and both strict SoC exports.
+The independent LF timebase/watchdog remains
 necessary. See the [migration checklist](docs/async-soc-migration.md). A permanent
 Groundlark controller supervises power before upload and during application
 stalls. Its state, safety sample record and confirmation counters now reside

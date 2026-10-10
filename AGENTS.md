@@ -17,8 +17,8 @@
   obtain a fresh independent agent review, address its findings, rerun affected
   checks, update its evidence/contracts, commit and push. Repeat this review loop
   for every item. Continue to the next item when the user has authorized it;
-  otherwise ask. Items 1–7 are digitally verified;
-  obtain the user's next choice before advancing to SPI ADC.
+  otherwise ask. Items 1–8 are digitally verified. Obtain the user's next choice before
+  advancing to slow-domain housekeeping.
   Follow `docs/soc-contract.md` for ABI/reset scope. Run AsyncFabricSpec,
   AsyncControlSpec, ControlResetSpec, AsyncTelemetrySpec, TelemetrySpec and both
   service implementations' FabricSpec/ScalingSpec plus affected regressions;
@@ -54,6 +54,17 @@
   Keep Chisel verification bodies inline in ClockedSimulation: Icarus does not
   execute uninstantiated extracted assertion modules. Run overflow negative controls
   and tools/check_i2c_wiring_controls.py against both standalone publication exports.
+- SPI ADC uses separate native conversion/priming/assembly/scaling loops and a
+  fixed-rate clocked waveform player. Preserve the immutable native pin recipe,
+  all 32 observations, exact half-phases, first-complete-frame discard and busy
+  through every crossing's return. All state/crossings are POR-only. Carry elapsed
+  conversion age into both telemetry and supervisor histories; a buffered old
+  frame must not acquire age zero on publication. Run AsyncSpiAdcSpec, SpiAdcSpec,
+  AdcScalingSpec and cadence/sleep/firmware regressions. Keep strict program-port
+  constants, player bindings and all dynamic endpoint activity checks intact.
+  Run tools/check_spi_wiring_controls.py against both wire and strict SoC exports;
+  preserve the original oracles when mutating actual loads, capture and constants.
+  Cadence and independent LF/watchdog housekeeping are separate remaining scope.
 - Retained sleep and programmable sampling are in scope. Follow
   `docs/sleep-and-clock.md`; run SleepSpec, DeepSleepSpec and oscillator-model tests as well.
   Preserve the cold-boot policy, programming lock and watchdog fault coverage.

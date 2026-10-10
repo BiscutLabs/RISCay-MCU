@@ -20,11 +20,11 @@ final case class SocParameters(config: McuConfiguration, serviceHz: Int = 100000
       "sample period must accommodate conversion and leave freshness margin")
   } }
   def defaultSampleMs: Int = adc.map(a => ((a.intervalCycles.toLong * 1000 + serviceHz - 1) / serviceHz).toInt).getOrElse(0)
-  // Digital completion/drainage budget: SPI framing, <=16 frontier edges and
-  // <=1 us for the native sample pipeline under the declared simulation bounds.
+  // Digital completion/drainage budget: waveform plus <=32 boundary edges and
+  // <=2 us for native frame ownership, assembly, scaling and retirement.
   // Physical qualification must replace the native allowance with measured bounds.
   def conversionMs: Int = adc.map(a => math.ceil(
-    (32L * a.halfPeriodCycles + 16) * 1000.0 / serviceHz + 0.001).toInt).getOrElse(0)
+    (32L * a.halfPeriodCycles + 32) * 1000.0 / serviceHz + 0.002).toInt).getOrElse(0)
   def minimumSampleMs: Int = conversionMs + 2 * lowPower.map(_.quantumMs).getOrElse(1)
   def maximumSampleMs: Int = lowPower.map { lp =>
     math.floor((staleMs - math.max(0, conversionMs - 1) - 2 * lp.maximumQuantumMs) * lp.slowestHz / lp.referenceHz).toInt

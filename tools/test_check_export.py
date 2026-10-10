@@ -534,12 +534,12 @@ endmodule
             with self.assertRaisesRegex(ValueError, "RESET_OWNER"):
                 generated_reset_probe("", bad)
 
-    def test_scaling_and_i2c_roots_native_state_and_bridges_must_use_por(self):
-        for name, model in (("elapsed_scaler", "ElapsedTicks"), ("sample_scaler", "SampleScaler"), ("i2c", "I2cTarget")):
+    def test_scaling_i2c_spi_roots_native_state_and_bridges_must_use_por(self):
+        for name, model in (("elapsed_scaler", "ElapsedTicks"), ("sample_scaler", "SampleScaler"), ("i2c", "I2cTarget"), ("spi_adc", "SpiAdc")):
             manifest = copy.deepcopy(self.manifest)
             child = {"rtl_path": "FourPhaseSoc." + name, "module": model, "children": []}
             manifest["design"]["children"].append({"id": name, "contract": child})
-            descendants = ("native", "command_bridge", "reply_bridge")
+            descendants = ("native", "command_bridge", "reply_bridge", "wave_bridge", "capture_bridge")
             for part in descendants:
                 child["children"].append({"id": part, "contract": {
                     "rtl_path": "FourPhaseSoc." + name + "." + part, "module": "Child", "children": []}})
@@ -559,7 +559,8 @@ FourPhaseSoc.reset=1; #1; check; $display("SCALING_RESET_PASS"); $finish; end en
                     rtl = f'''module Child(input reset); endmodule
 module Scaler(input reset,input systemReset);
 Child native(.reset({pin("native")})); Child command_bridge(.reset({pin("command_bridge")}));
-Child reply_bridge(.reset({pin("reply_bridge")})); endmodule
+Child reply_bridge(.reset({pin("reply_bridge")}));
+Child wave_bridge(.reset({pin("wave_bridge")})); Child capture_bridge(.reset({pin("capture_bridge")})); endmodule
 module FourPhaseSoc;
 reg reset=0, watchdog=0; wire systemReset=reset|watchdog;
 Child core(.reset({pin("core")})); Scaler {name}(.reset({pin(name)}),.systemReset(systemReset)); endmodule
