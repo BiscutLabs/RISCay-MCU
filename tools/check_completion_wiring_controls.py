@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 """Mutate actual exported completion wiring while keeping strict probe unchanged."""
-import argparse, copy, hashlib, json, shutil, sys
+import argparse, copy, hashlib, json, re, shutil, sys
 from pathlib import Path
 from check_i2c_wiring_controls import hashes, run, mutate_pin
 from check_completion_export import validate_completion
@@ -41,27 +41,34 @@ def main():
             try: validate_completion(bad)
             except ValueError: results[name]['contract_mutations']+=1
             else: raise AssertionError('CONTRACT_MUTATION_ACCEPTED')
-        cases=[('baseline',None,None),('request-disconnected','request_guard','a')]
+        cases=[('baseline',None,None),('request-disconnected','request_guard','a'),
+               ('credit-payload-literal','literal',None)]
         if name=='click':
             cases += [('response-and-feedback-mux','data_delay','a'),('selected-phase-load','memory_phase','d'),
                       ('selected-phase-trigger','telemetry_phase','trigger'),('readiness-selection','request_delay','a'),
                       ('output-backpressure','runnable_nb','a'),('join-cascade','housekeeping_available_na','a'),
-                      ('acknowledgment-feedback','acknowledge_guard','a')]
+                      ('acknowledgment-feedback','acknowledge_guard','a'),
+                      ('retained-credit-ownership','response_occupied','b')]
         else:
             cases += [('rendezvous-common','rendezvous','common'),('rendezvous-selection','rendezvous','rising'),
                       ('rendezvous-return','rendezvous','falling'),('source-ack-selection','memory_ack_nb','a'),
                       ('source-ack-return','memory_ack_or','a'),('plan-return','plan_ack','falling'),
-                      ('retirement-trigger','retirement','trigger')]
+                      ('retirement-storage-release','reply','out_ack')]
+            primitives['reply']=node['children'][0]['contract']['rtl_path'].split('.')[-1]
         for label,primitive,pin in cases:
             case=out/(name+'-'+label); shutil.copytree(baseline,case); rtl=case/(top+'.sv')
-            if primitive: rtl.write_text(mutate_pin(rtl.read_text(),primitives[primitive],pin),encoding='utf-8')
+            if primitive=='literal':
+                changed,count=re.subn(r'(assign creditReturn_bits\s*=\s*)1\'h0;',r"\g<1>1'h1;",rtl.read_text())
+                assert count==1,'CREDIT_LITERAL_MUTATION_SHAPE'
+                rtl.write_text(changed,encoding='utf-8')
+            elif primitive: rtl.write_text(mutate_pin(rtl.read_text(),primitives[primitive],pin),encoding='utf-8')
             assert hashlib.sha256((case/'contract_probe.sv').read_bytes()).hexdigest()==probe_hash
             sources=[str((case/x.strip()).resolve()) for x in (case/'filelist.f').read_text().splitlines() if x.strip()]
             compiled,log=run(['iverilog','-s','ContractProbe','-g2012','-DCHISEL_ASYNC_MAPPING','-s',top,
                               '-o','contract_probe.vvp',*sources,'contract_probe.sv'],case,'compile.log',commands)
             assert compiled['exit_code']==0,log[-4000:]
             simulated,log=run(['vvp','contract_probe.vvp'],case,'simulation.log',commands)
-            expected='DATA_PATH_BINDING_MISMATCH' if primitive else required
+            expected=('ENDPOINT_MAPPING_MISMATCH' if primitive=='literal' else 'DATA_PATH_BINDING_MISMATCH') if primitive else required
             assert expected in log and (simulated['exit_code']!=0)==bool(primitive),log[-4000:]
             results[name]['cases'][label]=dict(compile=compiled,simulation=simulated,expected=expected,probe_sha256=probe_hash)
             print(name,label,'PASS',flush=True)

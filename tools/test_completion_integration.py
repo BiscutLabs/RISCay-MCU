@@ -95,6 +95,9 @@ class CompletionIntegrationTest(unittest.TestCase):
                                     "fabric_mmioCurrent","fabric_cpuMemoryPending","fabric_telemetryOutstanding",
                                     "fabric_telemetryCpuPending","fabric_housekeepingOutstanding","fabric_housekeepingCpuPending")}}
             regs[top+".ca_child_request_bridge"] = dict(state=2,data_mask=4,data_operation=2,data_address=32)
+            if top == "ClickSoc":
+                regs[top]["ca_child_admission_start_stages"] = 2
+            regs[top+".ca_child_admission_grant_bridge"] = dict(state=2)
             regs[top+".ca_child_control_reply_bridge"] = dict(state=2,data_kind=3,data_memory_data=32,data_memory_error=1)
             for bank in ("program","ram"):
                 regs[top+f".ca_child_{bank}_access"]={f"{group}_{stage}":1 for group in (
@@ -111,6 +114,9 @@ class CompletionIntegrationTest(unittest.TestCase):
             self.assertGreater(count,130)
             self.assertTrue(augmented.startswith(original[:original.index(coverage)]))
             self.assertIn(coverage,augmented)
+            if top == "ClickSoc":
+                for value in range(4):
+                    self.assertIn(f"force {top}.ca_child_admission_start_stages = 2'h{value:x};\n#1; check;",augmented)
             allowed={path+'.'+n for path,rs in regs.items() for n in rs}|{top+'.reset'}
             self.assertLessEqual(set(re.findall(r"force (\S+) =",augmented)),allowed)
             for path,rs in regs.items():

@@ -12,8 +12,8 @@ def validate_completion(node):
     click = node["module"].startswith("Click")
     protocol = "two-phase-bundled-v1" if click else "four-phase-bundled-v1"
     if ({c["id"]: (c["protocol"], c["role"]) for c in node["channels"]} !=
-            {n: (protocol, "output" if n == "response" else "input")
-             for n in ("plan", "memory", "telemetry", "housekeeping", "response")}):
+            {n: (protocol, "output" if n in ("response", "creditReturn") else "input")
+             for n in ("plan", "memory", "telemetry", "housekeeping", "response", "creditReturn")}):
         raise ValueError("COMPLETION_PROTOCOL")
     timing = {t["id"]: t for t in node["timing"]}
     expected = {"completion_mux", "capture_aperture"} if click else {"completion_mux"}
@@ -25,7 +25,7 @@ def validate_completion(node):
     if any(timing["completion_mux"].get(k) != v for k, v in path.items()):
         raise ValueError("COMPLETION_PATH_IDENTITY")
     widths = {"plan_data": 36, "memory_data": 33, "telemetry_data": 1, "housekeeping_data": 1,
-              "response_data": 33, "retired": 1, "result_sources": 76 if click else 69,
+              "response_data": 33, "creditReturn_data": 1, "result_sources": 76 if click else 69,
               "register_data" if click else "result": 37 if click else 33}
     if click:
         widths.update(captured=37, capture_event=1)
@@ -72,7 +72,6 @@ def validate_completion(node):
         for name in ("memory_ack", "telemetry_ack", "housekeeping_ack"):
             and_gate(name)
         asym("rendezvous", 1, 3, 3); asym("plan_ack", 1, 0, 3)
-        cell("retirement", "PhaseRegister", DELAY_FS=1000000, RESET_VALUE=0)
     # Timing-marker primitives are checked separately by the unchanged library.
     markers = {"completion_mux_marker", "capture_aperture_marker"} if click else {"completion_mux_marker"}
     if (len(cells) != len(node["primitives"]) or set(cells) != set(expected_cells) | markers or
@@ -92,7 +91,6 @@ def completion_bindings(node):
                  (e["register_data"]+"[32:0]", c["payload"]+".d"),
                  (e["register_data"]+"[33]", c["plan_phase"]+".d"),
                  (e["capture_event"], c["payload"]+".trigger"),
-                 (e["retired"], e["response_acknowledge"]),
                  (e["response_data"], c["payload"]+".q"),
                  (e["response_request"], c["output_guard"]+".q"),
                  (c["plan_phase"]+".q", c["output_guard"]+".a")]
@@ -111,15 +109,13 @@ def completion_bindings(node):
         pairs = [(e["result"], child_endpoints["in_data"]), (e["result"], data+".a"),
                  (c["rendezvous"]+".q", child_endpoints["in_request"]),
                  (e["plan_acknowledge"], c["plan_ack"]+".q"),
-                 (c["plan_ack"]+".common", child_endpoints["in_acknowledge"]),
-                 (c["retirement"]+".trigger", e["response_acknowledge"]),
-                 (c["retirement"]+".q", e["retired"])]
+                 (c["plan_ack"]+".common", child_endpoints["in_acknowledge"])]
         for name in ("memory", "telemetry", "housekeeping"):
             pairs += [(e[name+"_acknowledge"], c[name+"_ack"]+".q")]
         pairs += [(c["plan_ack"]+".falling", "{"+",".join(e[n+"_acknowledge"] for n in ("memory","telemetry","housekeeping"))+"}")]
         pairs += [(e["response_data"], child_endpoints["out_data"]),
                   (e["response_request"], child_endpoints["out_request"]),
-                  (e["response_acknowledge"], child_endpoints["out_acknowledge"])]
+                  (e["creditReturn_acknowledge"], child_endpoints["out_acknowledge"])]
         prefixes = ("memory_ack", "telemetry_ack", "housekeeping_ack")
     # Compare full selection and feedback equations, not just downstream aliases.
     cat = lambda xs: "{"+",".join(xs)+"}"
@@ -136,7 +132,7 @@ def completion_bindings(node):
                   (c["plan_pending"]+".a", c["request_guard"]+".q"),
                   (c["plan_pending"]+".b", c["plan_phase"]+".q"),
                   (c["response_occupied"]+".a", c["plan_phase"]+".q"),
-                  (c["response_occupied"]+".b", e["response_acknowledge"]),
+                  (c["response_occupied"]+".b", e["creditReturn_acknowledge"]),
                   (c["runnable_na"]+".a", c["plan_pending"]+".q"),
                   (c["runnable_nb"]+".a", "!"+c["response_occupied"]+".q"),
                   (e["capture_event"], c["housekeeping_available"]+".q")]
@@ -162,4 +158,5 @@ def completion_bindings(node):
         pairs += [(c[prefix+"_na"]+".q", c[prefix+"_or"]+".a"),
                   (c[prefix+"_nb"]+".q", c[prefix+"_or"]+".b"),
                   (c[prefix+"_or"]+".q", c[prefix]+".a")]
-    return pairs
+    return pairs + [(e["creditReturn_request"], e["response_acknowledge"]),
+                    (e["creditReturn_data"], "1'b0")]

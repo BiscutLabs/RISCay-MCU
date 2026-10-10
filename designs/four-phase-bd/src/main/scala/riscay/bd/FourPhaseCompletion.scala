@@ -6,8 +6,7 @@ import chisel3.util._
 import chiselasync.bundled.FourPhaseStage
 import chiselasync.core.{AsyncModule,ResetDomain}
 import chiselasync.metadata.{BundledTiming,ModelTime}
-import chiselasync.primitives.{AsymmetricCElement,ControlGate,GateOperation,PhaseRegister}
-import chiselasync.protocol.FourPhase
+import chiselasync.primitives.{AsymmetricCElement,ControlGate,GateOperation}
 import riscay._
 import riscay.soc._
 
@@ -21,10 +20,10 @@ class FourPhaseCompletion(domain: ResetDomain) extends AsyncModule(domain) {
   val telemetry=fourPhaseInput("telemetry",Bool())
   val housekeeping=fourPhaseInput("housekeeping",Bool())
   val response=fourPhaseOutput("response",new MemoryResponse)
-  val retired=IO(Output(Bool()))
+  val creditReturn=fourPhaseOutput("creditReturn",Bool())
   // Keep the full declared channel ABI even when a particular endpoint always
   // publishes error=false or an effect token has no architectural payload.
-  Seq(plan,memory,telemetry,housekeeping,response).foreach(dontTouch(_))
+  Seq(plan,memory,telemetry,housekeeping,response,creditReturn).foreach(dontTouch(_))
   private val timing=BundledTiming.Simulation
   private val cell=ModelTime.ps(1000)
   private val resetRef=contract.endpoint("reset",reset)
@@ -67,12 +66,11 @@ class FourPhaseCompletion(domain: ResetDomain) extends AsyncModule(domain) {
   contract.primitive("plan_ack",complete,Map("COMMON"->BigInt(1),"RISING"->BigInt(0),"FALLING"->BigInt(3),
     "DELAY_FS"->BigInt(cell.fs),"RESET_VALUE"->BigInt(0),"COMMON_INVERT"->BigInt(0),
     "RISING_INVERT"->BigInt(0),"FALLING_INVERT"->BigInt(0)),resetRef,"plan payload release waits for every source acknowledgment return")
-  FourPhase.connect(response,reply.out)
-  private val retirement=Module(new PhaseRegister(cell)); retirement.reset:=reset; retirement.trigger:=response.ack
-  retired:=retirement.q
-  contract.primitive("retirement",retirement,Map("DELAY_FS"->BigInt(cell.fs),"RESET_VALUE"->BigInt(0)),resetRef,
-    "consumer acknowledgment toggles a persistent retirement observation; synchronize before clocked admission")
-  contract.endpoint("retired",retired)
+  response.req:=reply.out.req; response.bits:=reply.out.bits
+  creditReturn.req:=response.ack; creditReturn.bits:=false.B
+  // Retirement must be retained by the native credit owner before releasing
+  // response storage. Its empty input slot permits clock-stopped completion.
+  reply.out.ack:=creditReturn.ack
   contract.endpoint("result_sources",Cat(plan.bits.asUInt,memory.bits.asUInt))
   contract.endpoint("result",result)
   contract.dataPathTiming("completion_mux","result_sources","result",timing,

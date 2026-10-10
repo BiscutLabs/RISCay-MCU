@@ -22,6 +22,7 @@ import hashlib
 from check_completion_export import (BD_COMPLETION_PATH, CLICK_COMPLETION_PATH,
                                      validate_completion, completion_bindings)
 from check_completion_integration import completion_background, completion_constants_probe
+from check_admission_export import validate_admission, literal_nets, admission_probe
 
 
 def sram_array_shapes(contents, scopes):
@@ -757,6 +758,8 @@ def validate_fabric_inventory(manifest):
     """Required obligations cannot vanish along with their passive markers."""
     def visit(node):
         module = node["module"]
+        if re.fullmatch(r"(?:FourPhase|Click)Admission(?:_[0-9]+)?", module):
+            validate_admission(node)
         if re.fullmatch(r"(?:FourPhase|Click)Completion(?:_[0-9]+)?", module):
             validate_completion(node)
         if re.fullmatch(r"I2cPublication(?:_[0-9]+)?", module):
@@ -868,7 +871,7 @@ def validate_fabric_path(node, timing):
 
 def validate_native_click(manifest):
     """A Click export must remain native throughout its async hierarchy."""
-    if manifest["top"] not in ("ClickSoc", "ClickCore", "ClickFabric", "ClickControl", "ClickTelemetry", "ClickSupervisor", "ClickElapsed", "ClickSample", "ClickSram", "ClickI2c", "ClickSpiAdc", "ClickHousekeeping", "ClickCompletion"):
+    if manifest["top"] not in ("ClickSoc", "ClickCore", "ClickFabric", "ClickControl", "ClickTelemetry", "ClickSupervisor", "ClickElapsed", "ClickSample", "ClickSram", "ClickI2c", "ClickSpiAdc", "ClickHousekeeping", "ClickCompletion", "ClickAdmission"):
         return
     def nodes(node):
         yield node
@@ -1028,7 +1031,7 @@ def main() -> None:
     original_probe = module.probe_source
     original_memories = module.validate_memories
     original_vvp = module.read_vvp
-    module.read_vvp = lambda contents: sram_array_shapes(contents, original_vvp(contents))
+    module.read_vvp = lambda contents: literal_nets(contents, sram_array_shapes(contents, original_vvp(contents)))
     verified_sram = set()
     def memories(directory, node, scopes):
         macros = sram_scopes(directory, node, scopes)
@@ -1053,6 +1056,7 @@ def main() -> None:
             source = vector_coverage_probe(source, manifest)
         source = completion_constants_probe(source, manifest, scopes,
             (args.directory / (manifest["top"]+".sv")).read_text(encoding="utf-8"))
+        source = admission_probe(source, manifest, scopes)
         return source, count
     module.probe_source = probe
 

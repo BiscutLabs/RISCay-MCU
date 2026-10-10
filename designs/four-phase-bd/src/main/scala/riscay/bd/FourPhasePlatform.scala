@@ -53,12 +53,17 @@ abstract class FourPhasePlatform(p: SocParameters, board: SocParameters => Board
   chiselasync.protocol.FourPhase.connect(completion.memory,completionMemory.out)
   chiselasync.protocol.FourPhase.connect(completion.telemetry,completionTelemetry.out)
   chiselasync.protocol.FourPhase.connect(completion.housekeeping,completionHousekeeping.out)
-  // A retained phase cannot be missed between service edges. Idle is a separate
-  // drainage condition, never evidence that the admitted transaction retired.
+  protected val admission=asyncChild("admission")(d => new FourPhaseAdmission(d))
+  val admissionGrant=asyncChild("admission_grant_bridge")(d => new chiselasync.clocked.FourPhaseToDecoupled(Bool(),2,d))
+  Seq(admission,admissionGrant).foreach(_.reset:=fabric.io.cpuReset.asAsyncReset)
+  admissionGrant.clock:=workClock
+  chiselasync.protocol.FourPhase.connect(admission.returned,completion.creditReturn)
+  admission.responseIdle:= !completion.response.req && !completion.response.ack
+  chiselasync.protocol.FourPhase.connect(admissionGrant.in,admission.grant)
+  fabric.io.admissionGrant <> admissionGrant.out
+  dontTouch(admissionGrant.in); dontTouch(admissionGrant.out)
+  // Idle only confirms drainage. The native grant owns admission credit.
   withClockAndReset(workClock,fabric.io.cpuReset.asAsyncReset) {
-    val first=RegNext(completion.retired,false.B); val second=RegNext(first,false.B)
-    val seen=RegNext(second,false.B)
-    fabric.io.completionRetired:=second =/= seen
     val completionReturned = !completion.response.req && !completion.response.ack
     val completionReturnedFirst=RegNext(completionReturned,false.B)
     fabric.io.completionIdle:=RegNext(completionReturnedFirst,false.B)

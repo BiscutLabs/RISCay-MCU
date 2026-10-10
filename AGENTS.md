@@ -17,7 +17,7 @@
   obtain a fresh independent agent review, address its findings, rerun affected
   checks, update its evidence/contracts, commit and push. Repeat this review loop
   for every item. Continue to the next item when the user has authorized it;
-  otherwise ask. Items 1-9 are digitally verified within their original scopes.
+  otherwise ask. Items 1-9, 10a and 10b1 are digitally verified within their scopes.
   The user has authorized deeper migration under expanded items 10-16: native
   service coordination, observation reduction, publication, direct interconnect
   and physically justified boundary minimization. Audit every remaining clocked
@@ -40,7 +40,12 @@
   BD rendezvous return barrier and Click aggregate payload/phase aperture. Keep
   fixed guard IDs recognized by AsyncTest, test immediate source reuse and
   unselected pending tokens, and assert source readiness at completion capture.
-  Admission retirement uses a retained synchronized phase, never stale idle.
+  Admission retirement is retained by each native credit owner; idle never creates
+  credit. Consume the single seeded grant at request commit, preserve HALT until
+  application reset, and keep offered MMIO requests visible during credit stalls.
+  BD recycling waits for full response RTZ. Click input/output parity and startup
+  belong to the application lifetime. Run AsyncAdmissionSpec/AdmissionSpec and
+  actual admission-gate, credit-consumption and return-barrier mutation controls.
   Run AsyncCompletionSpec/CompletionSpec and real completion wiring mutation
   controls; preserve the full emitted port ABI even for constant error fields.
   Strict completion stimulus may force only catalogued source registers. Preserve
@@ -48,6 +53,11 @@
   require exact emitted bindings, schemas and per-check value assertions. Reject
   dynamic expressions before granting a constant mask. Keep actual-RTL mutation
   controls and first-pass probe/output evidence before checker fallback.
+  Credit-return payloads are literal zero: validate the exact single elaborated
+  scalar driver and assert its value at every check before masking impossible
+  polarity. Limit this to Completion's output and its two connected ingress
+  aliases; stored grant payloads and all other dynamic bits retain activity checks.
+  Require native Admission and the variant-specific grant bridge in SoC exports.
   Native Control state and its command/reply bridges are POR-only. Keep accepted
   MMIO commits and SRAM accounting across watchdog reset; cancel unaccepted work.
   Preserve queued host reset/busy context, including simultaneous admission.

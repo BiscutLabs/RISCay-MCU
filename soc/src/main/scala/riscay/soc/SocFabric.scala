@@ -29,7 +29,7 @@ abstract class ServiceEndpoint extends Module with InlineInstance {
     val completionTelemetry = Decoupled(Bool())
     val completionHousekeeping = Decoupled(Bool())
     val completionResponse = Flipped(Decoupled(new MemoryResponse))
-    val completionRetired = Input(Bool())
+    val admissionGrant = Flipped(Decoupled(Bool()))
     val completionIdle = Input(Bool())
     val i2c = Flipped(new I2cHostPort)
     val gpioIn = Input(UInt(32.W)); val gpioOut = Output(UInt(32.W)); val gpioOe = Output(UInt(32.W))

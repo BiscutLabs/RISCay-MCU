@@ -1,8 +1,9 @@
 # RISCay-MCU
 
 Migration items use a fresh independent agent review, fixes, affected verification,
-and a commit/push before completion. Items 1–9 and native response assembly (10a)
-are digitally verified; see the [migration checklist](docs/async-soc-migration.md)
+and a commit/push before completion. Items 1–9, native response assembly (10a)
+and native admission credit (10b1) are digitally verified; see the
+[migration checklist](docs/async-soc-migration.md)
 for the remaining clocked state and physical qualification work.
 
 A tiny reusable RISC-V SoC, built in Chisel with
@@ -82,7 +83,10 @@ Native completion assembly replaces clocked CPU response storage and
 joins selected memory/Telemetry/Housekeeping completions natively. Production
 replies connect directly to Fabric. Substep 10a passes independent review, all
 235 verification cases, both core policy cases, 87 Python controls, actual RTL
-mutation controls and strict exports. Admission, source cancellation flags and peripheral crossings remain
+mutation controls and strict exports. Native admission credit (10b1) passes fresh
+review, all 253 verification cases, both core policy cases, 90 working-tree
+Python controls and strict exports. Its clocked-client crossing remains explicit.
+Source cancellation flags and peripheral crossings remain
 clocked and explicitly tracked for subsequent migration.
 The independent LF timebase/watchdog remains necessary. See the [migration checklist](docs/async-soc-migration.md). A permanent
 Groundlark controller supervises power before upload and during application

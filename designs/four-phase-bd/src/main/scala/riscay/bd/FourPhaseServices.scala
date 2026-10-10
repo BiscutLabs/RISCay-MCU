@@ -272,10 +272,9 @@ class FourPhaseServices(p: SocParameters, boardFactory: SocParameters => BoardPr
   val acceptedClear = (clear | Mux(replaceDeadline, 2.U, 0.U))(5,0)
   telemetryEvents := (Mux(telemetryCommand.fire, 0.U, telemetryEvents) & ~acceptedClear) | events(5,0)
 
-  // Only an admission occupancy shadow remains clocked. Reply payload storage
-  // and the selected completion join belong to the native completion owner.
-  val cpuResponsePending = applicationReg(false.B)
-  when(io.completionRetired) { cpuResponsePending := false.B }
+  // Native credit gates admission at the original commit edge. Keep the held
+  // request visible above while waiting, including its MMIO event-clear window.
+  io.admissionGrant.ready := io.request.fire
   val response = WireDefault(0.U.asTypeOf(new MemoryResponse))
   val waitMemory = WireDefault(false.B)
   io.response <> io.completionResponse
@@ -305,12 +304,12 @@ class FourPhaseServices(p: SocParameters, boardFactory: SocParameters => BoardPr
   val eventWait = waitingRead && (pending & (wakeMask | "h30".U)) === 0.U
   parked := io.request.valid && eventWait
   val parkedForSleep = p.lowPower.nonEmpty.B && io.request.valid &&
-    (bootWait || (eventWait && sleepRemaining =/= 0.U)) && !cpuResponsePending && !adcBusy && !memoryBusy && !controlBusy
+    (bootWait || (eventWait && sleepRemaining =/= 0.U)) && io.admissionGrant.valid && !adcBusy && !memoryBusy && !controlBusy
   io.canSleep := parkedForSleep && !scalingBusy && !tick && !telemetryWork && !boardWork
   val nativeMmio = req.address >= MemoryMap.mmio.U && req.address < (MemoryMap.mmio + 76).U &&
     req.operation =/= Operation.Halt.U
   val mmioComplete = io.controlReply.fire && io.controlReply.bits.kind === ControlKind.Mmio.U && mmioCurrent
-  val cpuAvailable = completionAvailable && !io.cpuResetActive && !resetRecovery && io.clockRunning && !cpuResponsePending && !bootWait && !eventWait &&
+  val cpuAvailable = completionAvailable && !io.cpuResetActive && !resetRecovery && io.clockRunning && io.admissionGrant.valid && !bootWait && !eventWait &&
     !memoryBusy && !loaderWrite && !telemetryBarrier && !housekeepingBarrierBusy
   io.request.ready := cpuAvailable && Mux(nativeMmio, mmioComplete, !controlBusy)
 
@@ -332,7 +331,6 @@ class FourPhaseServices(p: SocParameters, boardFactory: SocParameters => BoardPr
   }
   when(io.request.fire) {
     when(waitingRead) { housekeepingAction.waitAccepted := true.B }
-    cpuResponsePending := req.operation =/= Operation.Halt.U
     response.data := 0.U; response.error := true.B
     when(req.operation === Operation.Halt.U) { haltPending := true.B }
       .elsewhen(req.address < (MemoryMap.boot.size * 4).U && !isWrite) {

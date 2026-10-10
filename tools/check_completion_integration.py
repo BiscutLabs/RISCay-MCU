@@ -124,6 +124,14 @@ def completion_background(source, manifest, scopes, checks):
         return [0, (1 << width)-1] + [v for bit in range(width)
             for v in (1 << bit, ((1 << width)-1) ^ (1 << bit))]
 
+    if top == "ClickSoc":
+        # Generic one-hot/one-cold walks of a two-bit register never produce
+        # 11. Exercise the real reset-release source, including its AND-reduced
+        # startup state; never force Admission.start or relax its coverage.
+        extra.append(header)
+        for value in (0, 1, 2, 3):
+            force(top+".ca_child_admission_start_stages", 2, value); check()
+
     request = top+".ca_child_request_bridge"
     control = top+".ca_child_control_reply_bridge"
 
@@ -131,6 +139,7 @@ def completion_background(source, manifest, scopes, checks):
         extra.append(header)
         force(top+".gate_enabled", 1, 1)
         force(top+".fabric_io_completionIdle_REG", 1, 1)
+        force(top+".ca_child_admission_grant_bridge.state", 2, 2)
         for bank in ("program", "ram"):
             for group in ("returned_stages", "bytesReturned_stages", "bytesReturned_stages_1",
                           "bytesReturned_stages_2", "bytesReturned_stages_3"):

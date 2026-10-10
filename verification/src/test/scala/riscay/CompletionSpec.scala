@@ -11,6 +11,7 @@ class BdCompletionFixture(p: SocParameters) extends riscay.bd.FourPhasePlatform(
   val request=IO(Flipped(Decoupled(new MemoryRequest)))
   val cpuResponse=fourPhaseOutput("cpu_response",new MemoryResponse)
   val planPhase=IO(Output(Bool())); planPhase:=completionPlan.out.req
+  val grantAck=IO(Output(Bool())); grantAck:=admission.grant.ack
   fabric.io.request <> request; FourPhase.connect(cpuResponse,completion.response)
   trace:=0.U.asTypeOf(new Retirement); traceEvent:=false.B
   contract.clockedChannel("request",request,serviceClock,new Channel(new MemoryRequest,resetDomain),"input")
@@ -19,6 +20,7 @@ class ClickCompletionFixture(p: SocParameters) extends riscay.click.ClickPlatfor
   val request=IO(Flipped(Decoupled(new MemoryRequest)))
   val cpuResponse=twoPhaseOutput("cpu_response",new MemoryResponse)
   val planPhase=IO(Output(Bool())); planPhase:=completionPlan.out.req
+  val grantAck=IO(Output(Bool())); grantAck:=admission.grant.ack
   fabric.io.request <> request; TwoPhase.connect(cpuResponse,completion.response)
   trace:=0.U.asTypeOf(new Retirement); traceEvent:=false.B
   contract.clockedChannel("request",request,serviceClock,new Channel(new MemoryRequest,resetDomain),"input")
@@ -38,6 +40,7 @@ class CompletionSpec extends AnyFunSuite {
             @(posedge serviceClock); while(!request_ready) @(posedge serviceClock);
             #1; request_valid=0;
             wait(planPhase == $phase); #0.001; clockEnabled=0;
+            ${if(click) "" else "if(!grantAck) $fatal(1,\"GRANT_RETURN_ALREADY_FINISHED\");"}
             if(cpuResponse_req == $phase) $$fatal(1,"COMPLETION_CLOCK_STOP_TOO_LATE");
             wait(cpuResponse_req == $phase); #500;
             if(!cpuResponse_bits_error || cpuResponse_bits_data != 0) $$fatal(1,"COMPLETION_CLOCKLESS_DATA");

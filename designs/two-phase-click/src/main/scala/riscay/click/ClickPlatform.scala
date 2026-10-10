@@ -53,12 +53,19 @@ abstract class ClickPlatform(p: SocParameters, board: SocParameters => BoardProf
   chiselasync.protocol.TwoPhase.connect(completion.memory,completionMemory.out)
   chiselasync.protocol.TwoPhase.connect(completion.telemetry,completionTelemetry.out)
   chiselasync.protocol.TwoPhase.connect(completion.housekeeping,completionHousekeeping.out)
-  // A retained phase cannot be missed between service edges. Idle is a separate
-  // drainage condition, never evidence that the admitted transaction retired.
+  protected val admission=asyncChild("admission")(d => new ClickAdmission(d))
+  val admissionGrant=asyncChild("admission_grant_bridge")(d => new ClickToDecoupled(Bool(),d))
+  Seq(admission,admissionGrant).foreach(_.reset:=fabric.io.cpuReset.asAsyncReset)
+  admissionGrant.clock:=workClock
+  admission.start:=withClockAndReset(workClock,fabric.io.cpuReset.asAsyncReset) {
+    val stages=RegInit(0.U(2.W)); stages:=Cat(stages(0),true.B); stages.andR
+  }
+  chiselasync.protocol.TwoPhase.connect(admission.returned,completion.creditReturn)
+  chiselasync.protocol.TwoPhase.connect(admissionGrant.in,admission.grant)
+  fabric.io.admissionGrant <> admissionGrant.out
+  dontTouch(admissionGrant.in); dontTouch(admissionGrant.out)
+  // Idle only confirms drainage. The native grant owns admission credit.
   withClockAndReset(workClock,fabric.io.cpuReset.asAsyncReset) {
-    val first=RegNext(completion.retired,false.B); val second=RegNext(first,false.B)
-    val seen=RegNext(second,false.B)
-    fabric.io.completionRetired:=second =/= seen
     val completionReturned=completion.response.req === completion.response.ack
     val completionReturnedFirst=RegNext(completionReturned,false.B)
     fabric.io.completionIdle:=RegNext(completionReturnedFirst,false.B)

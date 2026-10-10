@@ -10,7 +10,7 @@ when no next item has been chosen. Both implementations remain active throughout
 
 - Four-phase bundled-data implementation: `designs/four-phase-bd/src/main/scala/riscay/bd/`.
 - Native two-phase Click implementation: `designs/two-phase-click/src/main/scala/riscay/click/`.
-- Each owns its Fabric, Completion, Control, Telemetry, Supervisor, Housekeeping, SRAM sequencing, I2C and SPI ADC protocol,
+- Each owns its Fabric, Completion, Admission, Control, Telemetry, Supervisor, Housekeeping, SRAM sequencing, I2C and SPI ADC protocol,
   Services, Platform, ClockedPeripherals, ConstantScaling,
   I2cTarget, SleepTiming and SramBank code. Copying the former service island into
   these directories establishes ownership; it does not migrate its state machines.
@@ -86,7 +86,7 @@ when no next item has been chosen. Both implementations remain active throughout
     remaining clocked CPU occupancy/source-pending state and whole-word response
     round trips. Preserve accepted persistent effects through watchdog reset,
     stale-response cancellation, boot/WAIT behavior and retained sleep.
-    - [ ] **10b1. Native admission credit.** Separate BD/Click credit owners
+    - [x] **10b1. Native admission credit — digitally verified, 2026-10-10.** Separate BD/Click credit owners
       must preserve endpoint acceptance and offered-request event visibility,
       and release occupancy from retained native completion retirement. A native
       grant with an explicit clocked-client crossing avoids moving the MMIO
@@ -94,11 +94,44 @@ when no next item has been chosen. Both implementations remain active throughout
       prevent stale credit through full return. Local replies cannot create
       service credit; HALT consumes credit until reset. Keep an unaccepted parked
       WAIT eligible for sleep and unused credit from retaining clock demand.
+      Separate `FourPhaseAdmission`/`ClickAdmission` implementations pass fresh
+      independent review, all 253 verification cases, both core policy cases,
+      90 working-tree Python controls and both strict SoC exports. The unchanged
+      oracles reject 32 actual RTL mutations, 55 contract mutations and six
+      dynamic-binding substitutions. Evidence: `build/async-admission-migration/`.
     - [ ] **10b2. Persistent source ownership and cancellation.** Define retained
       operation identity, publication-before-completion and recovery debt before
       removing source-pending bits or SRAM word crossings. Repeated watchdog
       resets cannot alias an old operation into a new CPU lifetime. POR-owned
       effects must finish exactly once while cancelled CPU replies stay cancelled.
+      - [ ] **10b2a. RAM source slot and cancellation fence.** Allocate ownership
+        no later than CPU acceptance; cancel reply eligibility without resetting
+        accepted POR effects. Include queued commands in the reuse fence. Preserve
+        the existing whole-word publication crossing for this first substep.
+        Reserve the native slot before permitting clocked CPU acceptance. A
+        separate accepted/cancelled receipt settles an uncommitted reservation;
+        a committed reservation retains the slot through publication and full
+        return. Record every raw reset pulse asynchronously, including a second
+        pulse during recovery, and drain queued reservations before releasing
+        reset debt. Keep the release sequencer under that same asynchronous reset.
+        Do not arm eligibility on late arrival of the existing word command.
+        A Decoupled `fire` level is not a commit clock; an unqualified generated
+        strobe cannot replace this reservation protocol. Clocked drain projection
+        and `SramAccess.active` remain explicit boundaries in this substep.
+      - [ ] **10b2b. Program-memory CPU/loader ownership.** Preserve exactly-once
+        `Stored` accounting and loader priority through cancellation and recovery.
+      - [ ] **10b2c. Publication receipts and recovery debt.** Move Telemetry and
+        Housekeeping CPU eligibility only with their publication acknowledgments;
+        repeated resets cannot let an old recovery clear newly incurred debt.
+      - [ ] **10b2d. Remove whole-word response round trips.** Use the verified
+        ownership/isolation contract to connect native completion paths directly
+        and remove superseded pending flags and crossings.
+      Use exclusive retained slots until every older command, publication,
+      cancellation and handshake has drained. A wrapping lifetime bit alone is
+      insufficient. Test short reset pulses between work-clock edges, repeated
+      watchdog episodes with an old reply held, accepted byte-lane effects and
+      both native return protocols. Do not join a POR-owned Click sender directly
+      to an independently reset application receiver without isolation/recovery.
 - [ ] **11. Native service admission and dispatch.** Remove the clocked host
   mailbox, command selection and dispatch ownership in separately reviewable
   substeps. Preserve priority for accepted SRAM/MMIO completion before reset,
@@ -689,7 +722,7 @@ Plan/completion capture crossings, response assembly, retirement observation and
 CPU Fabric share application reset. Existing POR-owned effects remain outside
 this domain. Source-specific pending flags suppress old completions; recovery
 and SRAM drainage prevent old operations from being assigned to a new lifetime.
-The admission occupancy shadow clears only from synchronized retained retirement,
+At the 10a checkpoint, the admission occupancy shadow clears only from synchronized retained retirement,
 never a speculative idle observation. Reuse also requires crossing return and
 native output drainage. Source-ready assertions reject lost completion pulses.
 
@@ -698,3 +731,32 @@ observation reduction, peripheral publication or the SRAM word crossings.
 Those are tracked in the remaining expanded items. Complete mux/selection paths,
 phase feedback, composed control drainage and clock-crossing setup/hold require
 physical qualification; current delays are digital experiment assumptions only.
+
+## Native admission credit scope (10b1, digitally verified)
+
+Each variant now owns one seeded native admission credit and an empty native
+retirement slot. Services consumes a grant at the existing request commit edge;
+native response acceptance returns it. Clocked CPU occupancy and retirement-edge
+tracking are removed. HALT consumes the only credit without returning a reply;
+application reset aborts old presentation/credit and creates exactly one new seed.
+Accepted persistent effects retain their existing POR ownership and source-specific
+cancellation flags. Those flags and publication crossings remain for 10b2.
+
+BD captures retirement into the empty slot before allowing response storage to
+return. A C-element barrier admits recycling only after both response request and
+acknowledgment are low, then holds the offer through its complete return. This
+decouples response retirement from the earlier grant's clocked return handshake.
+Click uses an empty native Click buffer followed by a seeded phase-decoupled
+buffer; input and output parity remain independent. Its Completion occupancy
+compares against retained retirement acceptance. Click has no RTZ adapter.
+
+The explicit native-to-clocked grant bridge, two-flop completion-drain observation,
+and Click reset-start synchronization remain boundary logic. Idle never creates
+credit. Parked boot/WAIT requests may authorize sleep only while a grant is
+available; an unused grant alone creates no clock demand. The offered MMIO
+request remains visible while waiting for credit, preserving events raised after
+a clear request arrives but before its later dispatch. No software ABI changes.
+
+The native buffers, BD return barrier, Click reset-start and phase-feedback paths,
+and their crossing setup/hold assumptions require physical qualification. Current
+digital delay bounds do not establish routed timing closure or minimum area/power.

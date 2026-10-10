@@ -60,7 +60,14 @@ class AsyncCompletionSpec extends AnyFunSuite {
   }
   private def run(click: Boolean,seeds: Seq[Long],directory: java.nio.file.Path)
       (body: AsyncTest.Context => String): Unit = {
-    AsyncTest.run(top(click),seeds,directory) { c => timingChecks(directory,c.seed,click)+body(c) }
+    AsyncTest.run(top(click),seeds,directory) { c => timingChecks(directory,c.seed,click)+s"""
+      // Explicit native retirement consumer for this standalone join fixture.
+      // Integrated admission tests independently stall and reset its real owner.
+      fork begin forever begin
+        wait(creditReturn_req != creditReturn_ack); #3000000;
+        creditReturn_ack=creditReturn_req;
+      end end join_none
+      """+body(c) }
   }
   private val names=Seq("memory","telemetry","housekeeping")
   private def campaign(click: Boolean,masks: Seq[Int]): String = {
@@ -105,6 +112,33 @@ class AsyncCompletionSpec extends AnyFunSuite {
   }
   for(click <- Seq(false,true)) {
     val name=if(click) "click" else "bd"
+    test(s"$name native completion: retained retirement backpressure prevents response overwrite") {
+      val directory=fresh(name+"-credit-stall")
+      AsyncTest.run(top(click),1L to 24L,directory) { c => timingChecks(directory,c.seed,click)+s"""
+        plan_bits_response_data=32'h12345678; plan_req=1;
+        wait(plan_ack); #2; ${if(click) "" else "plan_req=0; wait(!plan_ack); #2;"}
+        wait(response_req); #300000000; response_ack=1;
+        wait(creditReturn_req);
+        plan_bits_response_data=32'h87654321; #100000000;
+        plan_req=${if(click) 0 else 1};
+        repeat(8) begin #100000000;
+          if(!response_req || response_bits_data !== 32'h12345678 || creditReturn_ack)
+            $$fatal(1,"COMPLETION_IGNORED_CREDIT_BACKPRESSURE");
+          if(plan_ack !== ${if(click) 1 else 0}) $$fatal(1,"COMPLETION_PLAN_REACCEPTED_EARLY");
+        end
+        creditReturn_ack=1;
+        ${if(click) "" else "wait(!response_req); #100000000; response_ack=0; wait(!creditReturn_req); #2; creditReturn_ack=0;"}
+        wait(response_req == ${if(click) 0 else 1}); #300000000;
+        if(response_bits_data !== 32'h87654321) $$fatal(1,"COMPLETION_RETIRED_NEXT_DATA");
+        wait(plan_ack == ${if(click) 0 else 1}); #2;
+        ${if(click) "" else "plan_req=0; wait(!plan_ack); #2;"}
+        response_ack=${if(click) 0 else 1};
+        wait(creditReturn_req == ${if(click) 0 else 1}); #2; creditReturn_ack=${if(click) 0 else 1};
+        ${if(click) "#100000000;" else "wait(!response_req); #2; response_ack=0; wait(!creditReturn_req); #2; creditReturn_ack=0;"}
+        #1000000000;
+        if(delivered_response != 2 || delivered_creditReturn != 2) $$fatal(1,"COMPLETION_CREDIT_COUNT");
+      """ }
+    }
     test(s"$name native completion: all selected-input masks, independent order, early completions and response stalls") {
       val masks=(0 until 6).flatMap(_ => 0 until 8)
       run(click,1L to 24L,fresh(name+"-join")) { _ =>
@@ -170,7 +204,7 @@ class AsyncCompletionSpec extends AnyFunSuite {
             "telemetry_req=1; housekeeping_req=1; wait(response_req); #300000000;"}
           reset=1; plan_req=0; memory_req=0; telemetry_req=0; housekeeping_req=0; response_ack=0;
           #1000000000; reset=0; #1000000000;
-          if(plan_ack || memory_ack || telemetry_ack || housekeeping_ack || response_req || retired)
+          if(plan_ack || memory_ack || telemetry_ack || housekeeping_ack || response_req || creditReturn_req)
             $$fatal(1,"COMPLETION_RESET_REPLAY");
         """ }.mkString("\n")
         episodes+campaign(click,Seq(0,6,1,7,0))

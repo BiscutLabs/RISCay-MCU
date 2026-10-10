@@ -1,11 +1,87 @@
 # Build and test
 
+## Native admission credit - digitally verified, 2026-10-10
+
+Expanded substep 10b1 replaces Services' clocked CPU occupancy and synchronized
+retirement tracking with separate native BD and Click credit owners. One seeded
+grant is consumed at the existing CPU commit edge and recycled from retained
+native response acceptance. HALT holds that credit until application reset.
+Source-specific cancellation and the explicit clocked grant client remain;
+accepted POR effects and the public ABI are unchanged. See the
+[admission contract](async-soc-migration.md#native-admission-credit-scope-10b1-digitally-verified).
+
+Evidence is under `build/async-admission-migration/`. The full final run in
+`full-regression-first.log` passes all **253 verification cases across 32 suites**
+and both core physical-policy cases, with no failures, errors, skipped, canceled,
+ignored or pending cases. It includes both cores against independent references,
+real serial loader/firmware workloads, SRAM retention and production-ratio
+Groundlark watchdog/deep-sleep regressions. Fresh report hashes and counts are in
+`verification-summary.json` and `reports/`. `python-startup-final.log` passes all
+90 working-tree Python controls (six belong to preserved P&R work), and
+`sram-assets.log` validates all 11 pinned macro assets. `public-abi.json` confirms
+the exact same 34 public ports in each variant as 10a.
+
+Six AsyncAdmissionSpec cases cover native one-credit conservation, stalled
+grants, reset, HALT-like credit retention, both Click parities and BD response
+RTZ. Ten AdmissionSpec integration cases cover real HALT, repeated resets,
+offered MMIO clear/event preservation, WAIT lease/wake behavior, boot sleep and
+grant stalls. Two added AsyncCompletionSpec cases hold retirement acceptance
+while offering a following plan. CompletionSpec proves retirement progresses
+with the service clock stopped, including an old BD grant ACK still high.
+
+Fresh reviews and fixes are recorded in `review-notes.md`. Review drove the
+integration cases, mandatory production owner identities, exact native channel
+schemas and strict bridge bindings. `admission-controls-r5/results.json` rejects
+seven actual RTL mutations and 26 contract mutations; the RTL results explicitly
+distinguish behavioral oracles from strict wiring oracles. The completion controls
+in `completion-controls-r2/` reject 19 RTL mutations and 29 contract mutations.
+`boundary-controls/` rejects six actual constant rewires with unchanged full
+probes and six dynamic-driver substitutions during literal classification.
+All original oracle/export hashes are preserved. Total: 32 rejected RTL
+mutations, 55 contract mutations and six dynamic-binding substitutions.
+
+Strict validation proves the three new literal credit-return leaves are exact
+single-driver scalar zero aliases and checks their values at every step before
+masking impossible one-polarity activity. Every dynamic bit retains its original
+activity obligations. Joint grant states and Click startup values are driven
+only at catalogued source registers; no derived endpoint is forced.
+
+Both final strict SoC attempts pass their first probes without paired fallback:
+
+| Variant | Endpoints | Mapping checks | Semantic SHA-256 |
+| --- | ---: | ---: | --- |
+| Four-phase | 2,106 | 611,988,858 | `1246ca7ee0e7b01d7f8de98d9b78bec5e28c3fd0b307263645cf4c2830d7bccf` |
+| Native Click | 1,778 | 493,105,186 | `86dd11cc30c16b735d2cda20f0ff1151bfd49815267558495b1e22492b80dc6c` |
+
+Receipts are `bd-strict-r3.log`, `click-strict-r4.log` and both `*-soc/resolved.json`.
+`final-policy-recheck.json` validates the final owner/schema/literal policy and
+requires an identical successful probe. `qualification-evidence.json` binds the
+final reports, probes, emitted-source hashes, ABI and control evidence.
+
+Earlier failures are retained: `admission-integration-first.log` caught a new
+test's incorrect assumption that AsyncTest counters reset; `focused-r2.log`
+records a boot fixture kept busy by its accelerated timebase and same-delta
+stimulus crossing a delayed native monitor. The focused fixtures now use
+cumulative counters, a stopped timebase for admission-only sleep checks and
+explicit monitor-settling intervals. Existing running-timebase regressions and
+all effect/reset assertions remain unchanged. The behavior-only consumption
+bypass survived its initial campaign; it is now rejected by the unchanged strict
+wiring oracle and is reported as a mapping control, not behavioral coverage.
+The initial strict checks rejected incomplete layout and alias parsing. Click's
+first simulation in `click-strict-r3-failed/` exposed missing startup stimulus:
+the generic two-bit one-hot/one-cold walk never reaches 11. The added complete
+source-register walk resolves that gap without changing RTL or coverage checks.
+
+Physical qualification remains open. Digital passes do not qualify native
+capture/return/reset timing, crossing setup/hold, routed closure or minimum power.
+
 ## Native completion assembly - digitally verified, 2026-10-10
 
 Expanded checklist item 10a replaces periodic-clocked CPU response retention and
 the selected Telemetry/Housekeeping completion join with separate native BD and
-Click controllers. Production replies connect directly to Fabric. Admission and
-source cancellation remain explicitly clocked pending items 10b1/10b2; accepted
+Click controllers. Production replies connect directly to Fabric. At the 10a
+checkpoint, admission and source cancellation remained explicitly clocked
+pending items 10b1/10b2; accepted
 effects retain their POR ownership. See the
 [completion scope](async-soc-migration.md#native-completion-assembly-scope-10a-digitally-verified).
 

@@ -19,10 +19,10 @@ class ClickCompletion(domain: ResetDomain) extends AsyncModule(domain) {
   val telemetry=twoPhaseInput("telemetry",Bool())
   val housekeeping=twoPhaseInput("housekeeping",Bool())
   val response=twoPhaseOutput("response",new MemoryResponse)
-  val retired=IO(Output(Bool()))
+  val creditReturn=twoPhaseOutput("creditReturn",Bool())
   // Keep the full declared channel ABI even when a particular endpoint always
   // publishes error=false or an effect token has no architectural payload.
-  Seq(plan,memory,telemetry,housekeeping,response).foreach(dontTouch(_))
+  Seq(plan,memory,telemetry,housekeeping,response,creditReturn).foreach(dontTouch(_))
   private val timing=ClickTiming.Simulation
   private val cell=timing.controls.fire.model
   private val resetRef=contract.endpoint("reset",reset)
@@ -59,7 +59,7 @@ class ClickCompletion(domain: ResetDomain) extends AsyncModule(domain) {
   private val housekeepingPhase=phase("housekeeping_phase")
   private val delayed=gate("request_guard",GateOperation.Buffer,plan.req.asUInt,delay=timing.requestDelay).asBool
   private val pending=xor("plan_pending",delayed,accepted.q.asBool)
-  private val occupied=xor("response_occupied",accepted.q.asBool,response.ack)
+  private val occupied=xor("response_occupied",accepted.q.asBool,creditReturn.ack)
   private val sources=Seq(("memory",memory.req,plan.bits.memory,memoryPhase),
     ("telemetry",telemetry.req,plan.bits.telemetry,telemetryPhase),
     ("housekeeping",housekeeping.req,plan.bits.housekeeping,housekeepingPhase))
@@ -94,8 +94,8 @@ class ClickCompletion(domain: ResetDomain) extends AsyncModule(domain) {
   plan.ack:=acknowledgments(0); memory.ack:=acknowledgments(1)
   telemetry.ack:=acknowledgments(2); housekeeping.ack:=acknowledgments(3)
   response.req:=gate("output_guard",GateOperation.Buffer,accepted.q,delay=guard).asBool
-  response.bits:=payload.q.asTypeOf(new MemoryResponse); retired:=response.ack
-  contract.endpoint("retired",retired)
+  response.bits:=payload.q.asTypeOf(new MemoryResponse)
+  creditReturn.req:=response.ack; creditReturn.bits:=false.B
   private val resultSources=WireDefault(UInt(76.W),Cat(plan.bits.asUInt,memory.bits.asUInt,
     plan.req,memory.req,telemetry.req,housekeeping.req,memoryPhase.q,telemetryPhase.q,housekeepingPhase.q))
   contract.endpoint("result_sources",resultSources)

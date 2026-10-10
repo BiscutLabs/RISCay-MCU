@@ -79,6 +79,13 @@ bridge's synchronized request return. Click acceptance returns its reply bridge
 to idle directly. Neither case permits an outstanding effect to disappear during
 a handoff. This is digital integration, not physical clock-gating qualification.
 
+CPU admission uses one native credit. Boot WAIT or a leased event WAIT is
+eligible for sleep only while that grant is available; a held prior response
+cannot authorize sleep. An unused grant creates no clock demand. BD recycling
+waits for full response request/acknowledgment return, and both variants retain
+retirement without a service edge. The clocked-client grant crossing and
+synchronized completion-drain observation remain explicit boundaries.
+
 An accepted program/working SRAM transaction keeps the service island awake
 until its native byte sequence, word completion and all request/reply crossings
 have returned. The execution credit and all crossings are POR-only, so an
