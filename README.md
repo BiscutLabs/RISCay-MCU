@@ -56,7 +56,7 @@ service clock; stateful accesses use explicit endpoint bridges. Separate native
 Control modules own loader state and MMIO validation/producer selectors.
 Separate native Telemetry loops now own software GPIO/application words, pending
 flags and host sample records; both variants pass regressions and strict exports. Clocked
-ingress, snapshots, reset projections, GPIO sampling, timer/lease/watchdog logic,
+ingress, snapshots, reset projections, GPIO sampling, independent LF/watchdog logic,
 supervisor input/output and scaling request/publication boundaries remain explicit.
 Separate native SRAM controllers retain word ownership, sequence bytes and assemble
 reads around explicit synchronous macro boundaries. Separate native I2C controllers
@@ -64,10 +64,13 @@ pass digital verification; wire sampling, timeout and host publication remain cl
 Separate native SPI ADC controllers now define frames, own conversions, assemble
 samples, discard the first complete frame and retire scaled results. An explicit
 clocked player preserves exact pin timing and buffers every MISO observation;
-admission/publication and cadence remain clocked. Item 8 passes independent review,
+admission/publication remain clocked. Item 8 passes independent review,
 digital regressions, emitted-RTL mutation controls and both strict SoC exports.
-The independent LF timebase/watchdog remains
-necessary. See the [migration checklist](docs/async-soc-migration.md). A permanent
+Separate native Housekeeping loops now own time, deadline/lease/wake-mask state,
+kick authorization and low-power cadence; clocked observation ingress and LF
+heartbeat delivery remain explicit. Item 9 passes independent review, all 227
+verification cases, both core policy cases, 84 Python controls and strict exports.
+The independent LF timebase/watchdog remains necessary. See the [migration checklist](docs/async-soc-migration.md). A permanent
 Groundlark controller supervises power before upload and during application
 stalls. Its state, safety sample record and confirmation counters now reside
 in independent native loops, with dedicated POR-only command/reply bridges. Its default policy is disabled until qualified battery settings are

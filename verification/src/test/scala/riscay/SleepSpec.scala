@@ -138,7 +138,7 @@ end endtask
     intercept[IllegalArgumentException](p.copy(staleMs=10))
     intercept[IllegalArgumentException](p.copy(adc=Some(AdcParameters(intervalCycles=1000))))
   }
-  test("sleep entry/GPIO race, response stalls, and elapsed time after a short service interruption") {
+  for(click <- Seq(false,true)) test(s"${if(click) "click" else "bd"}: sleep entry/GPIO race, response stalls, and elapsed time after a short service interruption") {
     val params = p.copy(adc=None,watchdogCycles=10000)
     val tasks = """
 task transaction(input [1:0] op, input [31:0] addr, input [31:0] data);
@@ -155,7 +155,7 @@ always @(posedge serviceClock) if(!systemReset && commit_valid) commits=commits+
 reg [31:0] savedResponse, beforeTime;
 integer beforeCommits;
 """
-    ClockedSimulation.run(new FabricFixture(params),"sleep-races","""
+    ClockedSimulation.run(if(click) new ClickFabricFixture(params) else new FabricFixture(params),"sleep-races","""
       transaction(2,32'h30000038,4); // GPIO wake only; millisecond ticks masked.
       transaction(2,32'h3000003c,1000);
       transaction(2,32'h3000000c,32'hffffffff);

@@ -2,13 +2,16 @@
 
 The four-phase and native Click SoCs implement the same RV32E execution, internal
 storage and peripheral behavior. Compressed instructions remain deferred. The
-CPU, transaction routing, Control, Telemetry, Supervisor, I2C and SPI ADC protocol state
+CPU, transaction routing, Control, Telemetry, Supervisor, Housekeeping, I2C and SPI ADC protocol state
 loops are asynchronous.
 Each design owns its native loader/MMIO, software GPIO/application-word, event
 and host measurement state. Ingress, snapshots, reset projections, GPIO sampling,
-timer/lease/watchdog logic, individual synchronous SRAM byte accesses, I2C wire
-sampling/timeout, SPI pin timing/full-frame capture and acquisition cadence remain
-clocked. Native SPI loops own conversion admission, frame definition, assembly,
+independent LF/watchdog and heartbeat delivery, individual synchronous SRAM byte
+accesses, I2C wire sampling/timeout and SPI pin timing/full-frame capture remain
+clocked. Native Housekeeping owns NOW/board time, deadline/lease/wake-mask state,
+watchdog kick authorization and low-power acquisition cadence. Elapsed ingress
+still feeds observation/freshness history independently of housekeeping stalls;
+only final housekeeping publication advances consumedGray. Native SPI loops own conversion admission, frame definition, assembly,
 priming, scaling and retirement; item 8 passes digital verification and strict exports.
 Separate native SRAM word sequencing passes the
 item 6 digital regressions and strict exports. Board policy and its safety sample view

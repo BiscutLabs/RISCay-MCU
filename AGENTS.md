@@ -17,8 +17,8 @@
   obtain a fresh independent agent review, address its findings, rerun affected
   checks, update its evidence/contracts, commit and push. Repeat this review loop
   for every item. Continue to the next item when the user has authorized it;
-  otherwise ask. Items 1–8 are digitally verified. Obtain the user's next choice before
-  advancing to slow-domain housekeeping.
+  otherwise ask. Items 1-9 are digitally verified.
+  Obtain the user's next choice before physical requalification.
   Follow `docs/soc-contract.md` for ABI/reset scope. Run AsyncFabricSpec,
   AsyncControlSpec, ControlResetSpec, AsyncTelemetrySpec, TelemetrySpec and both
   service implementations' FabricSpec/ScalingSpec plus affected regressions;
@@ -64,7 +64,20 @@
   constants, player bindings and all dynamic endpoint activity checks intact.
   Run tools/check_spi_wiring_controls.py against both wire and strict SoC exports;
   preserve the original oracles when mutating actual loads, capture and constants.
-  Cadence and independent LF/watchdog housekeeping are separate remaining scope.
+  Low-power cadence now belongs to each native Housekeeping loop. Preserve the
+  independent clocked LF/watchdog, Gray/ACK synchronization and safe source gating.
+- Native Housekeeping and both crossings are POR-only. Preserve ordered timer,
+  lease, wake-mask and period commits through stalled publication. Join deadline
+  completion with Telemetry exactly once; allow CPU progress during continuous
+  legacy ticks. Only final Housekeeping publication advances consumedGray.
+  Keep observation/freshness ingress and permanent supervision independent of
+  Housekeeping stalls. Include retained elapsed time in board-time projection.
+  Recognize oversized/wrapping elapsed batches without reviving old application
+  state after watchdog reset. Keep heartbeat phase/ACK coalescing in its explicit
+  LF crossing; pending ACK delivery must not create timer work or hold the gate.
+  Run AsyncHousekeepingSpec, HousekeepingSpec, both Fabric/Supervisor/ScalingSleep
+  implementations and full sleep/firmware regressions. Drive testbench stall
+  controls away from active clock edges; preserve every reset/effect assertion.
 - Retained sleep and programmable sampling are in scope. Follow
   `docs/sleep-and-clock.md`; run SleepSpec, DeepSleepSpec and oscillator-model tests as well.
   Preserve the cold-boot policy, programming lock and watchdog fault coverage.

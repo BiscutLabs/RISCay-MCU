@@ -142,7 +142,7 @@ class ElapsedTicks(micros: Seq[Int], domain: ResetDomain) extends ClockedBridge(
     when(commandBridge.in.fire) { active := true.B }
     replyBridge.out.ready := active
     when(replyBridge.out.fire) { active := false.B; consumed := replyBridge.out.bits.state.consumed }
-    io.consumed := consumed; io.valid := replyBridge.out.fire
+    io.consumed := consumed; io.publicationTarget := replyBridge.out.bits.state.consumed; io.valid := replyBridge.out.fire
     // Observation credit requires the live target to still match this reply.
     // Arithmetic for a once-single tick is retained even if newer ticks queued.
     io.single := io.valid && replyBridge.out.bits.single && replyBridge.out.bits.state.consumed === io.target

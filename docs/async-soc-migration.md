@@ -10,7 +10,7 @@ when no next item has been chosen. Both implementations remain active throughout
 
 - Four-phase bundled-data implementation: `designs/four-phase-bd/src/main/scala/riscay/bd/`.
 - Native two-phase Click implementation: `designs/two-phase-click/src/main/scala/riscay/click/`.
-- Each owns its Fabric, Control, Telemetry, Supervisor, SRAM sequencing, I2C and SPI ADC protocol,
+- Each owns its Fabric, Control, Telemetry, Supervisor, Housekeeping, SRAM sequencing, I2C and SPI ADC protocol,
   Services, Platform, ClockedPeripherals, ConstantScaling,
   I2cTarget, SleepTiming and SramBank code. Copying the former service island into
   these directories establishes ownership; it does not migrate its state machines.
@@ -67,14 +67,17 @@ when no next item has been chosen. Both implementations remain active throughout
   reconfiguration, freshness and supervision independent of CPU progress. Fresh
   review fixes, 206 verification cases, two core policy cases, 83 Python controls,
   22 actual RTL mutation controls and both strict SoC exports pass. Clocked wire
-  playback, full-frame capture and cadence remain explicit boundaries below.
-- [ ] **9. Slow-domain housekeeping.** Native coordination where appropriate while
-  retaining the independent LF reference/watchdog, Gray CDC and safe source gating.
+  playback and full-frame capture remain explicit boundaries below; item 9 owns cadence.
+- [x] **9. Slow-domain housekeeping - digitally verified, 2026-10-10.** Separate
+  native time/deadline/lease/wake-mask, kick policy and low-power cadence loops retain
+  independent LF/watchdog, observation/freshness ingress, Gray CDC and safe gating.
+  Fresh review fixes, all 227 verification cases across 28 suites, both core policy
+  cases, 84 Python controls and both strict exports pass. Exact boundaries are below.
 - [ ] **10. Physical requalification.** New-controller timing contracts, mapped
   decode/data paths, pulse/fork/return timing, reset and CDC bounds, then new P&R
   and extracted validation. Digital passes alone cannot check this item.
 
-Items 1–8 are digitally verified. Ask before item 9, slow-domain housekeeping.
+Items 1-9 are digitally verified. Ask before item 10, physical requalification.
 Each item requires both implementations, invariant-focused
 tests and a fresh independent review before it can be checked off.
 
@@ -171,7 +174,10 @@ independent review. See [I2C evidence](build-and-test.md#native-i2c-migration---
 Item 8 passes 206 verification cases, two core policy cases, 83 working-tree
 Python controls, 22 actual RTL mutations and both strict exports after independent
 review. See [SPI ADC evidence](build-and-test.md#native-spi-adc-migration---digitally-verified-2026-10-10).
-Slow-domain housekeeping and physical qualification remain unchecked.
+Item 9 passes 227 verification cases, two core policy cases, 84 Python controls
+and both strict exports after independent review. See
+[Housekeeping evidence](build-and-test.md#native-slow-domain-housekeeping---digitally-verified-2026-10-10).
+Physical qualification remains unchecked.
 
 ## GPIO/events/telemetry scope and contract
 
@@ -208,9 +214,10 @@ native completion before replying. Buffered work and recovery inhibit sleep.
 Item 5 replaces the permanent supervisor's clocked safety sample view with a
 separate native record. Safety and host records consume the same acquisition
 publication stream through independent retained ingress; supervisor freshness
-and power decisions do not wait for native telemetry backpressure. GPIO synchronizers, NOW/deadline/mask/lease/watchdog timing, ADC
-sequencing, I2C snapshots and peripheral ingress remain explicitly clocked under
-their later items. This migration does not qualify new physical timing: native
+and power decisions do not wait for native telemetry backpressure. Later items
+move SPI conversion state and low-power time/deadline/mask/lease/cadence policy
+into their own native loops. GPIO synchronizers, LF/watchdog, I2C snapshots,
+SPI wire timing and peripheral ingress remain explicit clocked boundaries. This migration does not qualify new physical timing: native
 transform data paths, compacted ingress crossings, reset recovery, forks and
 capture pulses still require item 10 characterization.
 
@@ -278,14 +285,16 @@ Interfaces and payload schemas alone are shared. Click stays native throughout.
 The explicit wrappers capture requests and publish replies; no service clock
 advances the arithmetic. All stages, fractions and both crossings are POR-only.
 
-Consumed time advances only on service publication, with NOW/age/lease effects.
-New targets queue behind outstanding work. Busy covers arithmetic and bridge
+The scaler publishes ordered elapsed observations to independent aging/history
+ingress and native Housekeeping. Final Housekeeping publication advances
+consumedGray with NOW/lease effects. New targets queue behind outstanding work. Busy covers arithmetic and bridge
 return drainage, including updates that produce zero whole milliseconds. A
 one-tick arithmetic result grants observation credit only if its target still
 matches the synchronized live count. This prevents stale supervisor confirmation
-after delayed publication. SPI framing, first-conversion discard, cadence and
-signed offset/calibration projection remain clocked, as do timer consumers and
-the independent LF timebase/watchdog. Their later checklist items are unchanged.
+after delayed publication. Item 8 moves SPI framing, first-conversion discard and
+signed offset into native conversion loops; item 9 moves low-power cadence and
+timer consumers into native Housekeeping. Independent LF/watchdog, pin timing,
+legacy idle delay and ingress/publication remain clocked boundaries.
 
 Four native CRC byte stages precompute a candidate in each Control feedback
 branch. The internal token pairs architectural state with pendingCrc; the public
@@ -325,8 +334,9 @@ simulation budgets; physical data, pulse, fork, CDC and reset timing is unqualif
 Each supervisor has dedicated POR-only command/reply bridges. The service island
 retains GPIO synchronization, generic acquisition/time history and coherent output
 projection, but no power-policy qualification counters or shadow safety sample
-bank. ADC acquisition, elapsed request/publication boundaries, LF/watchdog and
-board NOW remain clocked under their later items. Application reset neither aborts accepted
+bank. ADC pin timing/capture, elapsed request/publication boundaries and LF/watchdog
+remain clocked. Housekeeping owns native board NOW; its service projection includes
+pending lower time so supervisor progress does not depend on Housekeeping stalls. Application reset neither aborts accepted
 supervisor commands nor resets native state, input history or applied GPIO outputs.
 Control or Telemetry stalls cannot block this independent loop. Pending input,
 outstanding work and bridge return drainage inhibit service-clock shutdown.
@@ -488,7 +498,7 @@ but cannot stretch a half-period. Busy includes every phase through complete
 command/wave/capture/reply return. Neither another start nor retained sleep may
 interrupt that lifetime.
 
-Cadence remains explicit clocked Services work for item 9. Low-power periods remain
+Item 9 moves low-power cadence into separate native Housekeeping loops. Periods remain
 start-to-start, accepted updates apply on an eligible between-conversion tick,
 first-discard retry is immediate and repeated updates cannot starve acquisition.
 Legacy mode retains its idle delay between conversions. The digital budget is
@@ -521,3 +531,55 @@ Physical requalification must cover the composed ownership/assembly/offset paths
 native reset and return timing, all CDC/bundled-data crossings, clock gating,
 SCLK/CS/MISO setup/hold and board/ADC electrical limits. The old P&R artifacts
 neither qualify this controller nor establish timing closure.
+
+## Housekeeping scope and timing contract
+
+Separate `FourPhaseHousekeeping` and `ClickHousekeeping` state loops own nominal
+NOW, lower-bound board time, consumed-target publication, application deadlines,
+sleep lease and wake mask, kick authorization, and low-power ADC cadence. State
+credit returns only after the publication consumer accepts the reply. Click
+uses native phase storage and feedback throughout. Shared code defines schemas
+and reset literals only. Digital model timing still requires physical qualification.
+
+The service boundary accumulates immutable elapsed observations and orders them
+with accepted CPU/host updates. It retains modulo nominal/lower time, a nominal
+overflow indication and saturated upper age. An accepted write freezes all older
+queued time; later observations cannot overtake it. Deadline replacement clears
+only the old event and evaluates the new deadline against post-elapsed time.
+An old deadline also expires when a large batch crosses its unsigned distance,
+including complete nominal wrap; deadline offsets remain below 2^31 ms. Lease
+expiry and cadence recognize nominal overflow even when the accumulated low word
+is zero. No complete LF source-counter wrap can be reconstructed after an outage.
+
+Elapsed-scaler publication feeds measurement aging, GPIO observation history and
+permanent supervision independently of housekeeping stalls. The board-time view
+includes retained queued, ordered and in-flight lower time. Observation credit
+still comes only from a fresh single-source-tick scaler publication; delayed
+housekeeping replies do not manufacture observations. Only final housekeeping
+state publication advances consumedGray. Queued work, native replies and bridge
+return drainage retain the work clock, with the existing seven-edge ordinary
+drain guard and synchronized demand unchanged.
+
+CPU admission gets a bounded turn between background updates even when legacy
+service-derived ticks occur every service edge. Deadline writes join housekeeping
+and telemetry completion before issuing one CPU response. Published period state
+and dispatched/ordered updates all contribute to host period-pending status.
+Cadence coalesces missed acquisitions, retries the initial discarded frame and
+applies the old pending interval before recording a coincident new update.
+
+Native housekeeping and both crossings are POR-only. Application reset immediately
+resets visible application projections (lease/deadline to zero and wake mask to
+15), cancels the CPU completion,
+and retains reset notification until native recovery publishes. Older replies
+cannot restore application state. Time, pending elapsed history and acquisition
+cadence persist. The LF counter, watchdog, two-flop Gray/ACK synchronization,
+clock gate, source wake, input sampling and ingress/publication registers remain
+explicit clocked boundaries. Native policy emits authorized watchdog kicks;
+the POR heartbeat phase and application-reset pending bit coalesce delivery at
+the LF crossing. Waiting for its ACK neither creates a housekeeping transaction
+nor independently holds the gate. Legacy SPI idle-delay timing remains clocked.
+
+Physical work must qualify the complete time/deadline/cadence transforms, native
+state-credit return, reset recovery/removal, all bundled-data/phase crossings,
+Gray skew, independent watchdog crossing and retained clock-gate timing. Existing
+P&R results do not qualify this migration and do not establish timing closure.

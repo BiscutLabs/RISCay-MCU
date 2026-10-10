@@ -55,6 +55,25 @@ abstract class FourPhasePlatform(p: SocParameters, board: SocParameters => Board
   fabric.io.controlReply <> controlReplyBridge.out
   // Preserve the registered bridge ABI even when this profile ignores state fields.
   dontTouch(controlReplyBridge.out)
+  val housekeeping=asyncChild("housekeeping")(d => new FourPhaseHousekeeping(p,d))
+  val housekeepingCommandBridge=asyncChild("housekeeping_command_bridge")(d =>
+    new chiselasync.clocked.DecoupledToFourPhase(new HousekeepingCommand, 2, d))
+  val housekeepingReplyBridge=asyncChild("housekeeping_reply_bridge")(d =>
+    new chiselasync.clocked.FourPhaseToDecoupled(new HousekeepingReply, 2, d))
+  housekeepingCommandBridge.clock:=workClock; housekeepingReplyBridge.clock:=workClock
+  chiselasync.protocol.FourPhase.connect(housekeeping.command,housekeepingCommandBridge.out)
+  chiselasync.protocol.FourPhase.connect(housekeepingReplyBridge.in,housekeeping.reply)
+  housekeepingCommandBridge.in <> fabric.housekeepingCommand
+  fabric.housekeepingReply <> housekeepingReplyBridge.out
+  dontTouch(housekeepingReplyBridge.out)
+  val housekeepingReturning=withClockAndReset(workClock,reset) {
+    val pending=RegInit(false.B)
+    when(housekeepingReplyBridge.out.fire) { pending:=true.B }
+      .elsewhen(!housekeepingReplyBridge.in.ack) { pending:=false.B }
+    pending
+  }
+  fabric.io.housekeepingDraining:= !housekeepingCommandBridge.in.ready ||
+    (housekeepingReturning && housekeepingReplyBridge.in.ack)
   val telemetry = asyncChild("telemetry")(d => new FourPhaseTelemetry(p, fabric.telemetryWords, d))
   val telemetryCommandBridge = asyncChild("telemetry_command_bridge")(d =>
     new chiselasync.clocked.DecoupledToFourPhase(new TelemetryCommand(p.config.measurements.size), 2, d))
@@ -116,7 +135,7 @@ abstract class FourPhasePlatform(p: SocParameters, board: SocParameters => Board
         Seq(lp.tickMicros, lp.minimumTickMicros, lp.maximumTickMicros), d))
       scaler.clock := workClock; scaler.io <> fabric.io.elapsedScaling
     case None =>
-      fabric.io.elapsedScaling.consumed := 0.U; fabric.io.elapsedScaling.valid := false.B
+      fabric.io.elapsedScaling.publicationTarget := 0.U; fabric.io.elapsedScaling.consumed := 0.U; fabric.io.elapsedScaling.valid := false.B
       fabric.io.elapsedScaling.single := false.B; fabric.io.elapsedScaling.busy := false.B
       fabric.io.elapsedScaling.elapsed := 0.U.asTypeOf(fabric.io.elapsedScaling.elapsed)
   }

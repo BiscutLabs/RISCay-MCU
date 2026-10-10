@@ -32,6 +32,8 @@ class BdSupervisorFixture(p: SocParameters) extends riscay.bd.FourPhaseSoc(p,x =
   controlReplyBridge.out.ready := fabric.io.controlReply.ready && !pauseOthers
   fabric.telemetryReply.valid := telemetryReplyBridge.out.valid && !pauseOthers
   telemetryReplyBridge.out.ready := fabric.telemetryReply.ready && !pauseOthers
+  fabric.housekeepingReply.valid := housekeepingReplyBridge.out.valid && !pauseOthers
+  housekeepingReplyBridge.out.ready := fabric.housekeepingReply.ready && !pauseOthers
   watchdog.io.heartbeat := Mux(stopHeartbeat,false.B,fabric.io.heartbeat)
 }
 
@@ -60,6 +62,8 @@ class ClickSupervisorFixture(p: SocParameters) extends riscay.click.ClickSoc(p,x
   controlReplyBridge.out.ready := fabric.io.controlReply.ready && !pauseOthers
   fabric.telemetryReply.valid := telemetryReplyBridge.out.valid && !pauseOthers
   telemetryReplyBridge.out.ready := fabric.telemetryReply.ready && !pauseOthers
+  fabric.housekeepingReply.valid := housekeepingReplyBridge.out.valid && !pauseOthers
+  housekeepingReplyBridge.out.ready := fabric.housekeepingReply.ready && !pauseOthers
   watchdog.io.heartbeat := Mux(stopHeartbeat,false.B,fabric.io.heartbeat)
 }
 

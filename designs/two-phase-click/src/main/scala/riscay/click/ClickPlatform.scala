@@ -56,6 +56,19 @@ abstract class ClickPlatform(p: SocParameters, board: SocParameters => BoardProf
   fabric.io.controlReply <> controlReplyBridge.out
   // Preserve the registered bridge ABI even when this profile ignores state fields.
   dontTouch(controlReplyBridge.out)
+  val housekeeping=asyncChild("housekeeping")(d => new ClickHousekeeping(p,d))
+  val housekeepingCommandBridge=asyncChild("housekeeping_command_bridge")(d =>
+    new DecoupledToClick(new HousekeepingCommand, d))
+  val housekeepingReplyBridge=asyncChild("housekeeping_reply_bridge")(d =>
+    new ClickToDecoupled(new HousekeepingReply, d))
+  housekeepingCommandBridge.clock:=workClock; housekeepingReplyBridge.clock:=workClock
+  chiselasync.protocol.TwoPhase.connect(housekeeping.command,housekeepingCommandBridge.out)
+  chiselasync.protocol.TwoPhase.connect(housekeepingReplyBridge.in,housekeeping.reply)
+  housekeepingCommandBridge.in <> fabric.housekeepingCommand
+  fabric.housekeepingReply <> housekeepingReplyBridge.out
+  dontTouch(housekeepingReplyBridge.out)
+  housekeeping.start:=controlStart
+  fabric.io.housekeepingDraining:= !housekeepingCommandBridge.in.ready
   val telemetry = asyncChild("telemetry")(d => new ClickTelemetry(p, fabric.telemetryWords, d))
   val telemetryCommandBridge = asyncChild("telemetry_command_bridge")(d =>
     new DecoupledToClick(new TelemetryCommand(p.config.measurements.size), d))
@@ -105,7 +118,7 @@ abstract class ClickPlatform(p: SocParameters, board: SocParameters => BoardProf
         Seq(lp.tickMicros, lp.minimumTickMicros, lp.maximumTickMicros), d))
       scaler.clock := workClock; scaler.io <> fabric.io.elapsedScaling
     case None =>
-      fabric.io.elapsedScaling.consumed := 0.U; fabric.io.elapsedScaling.valid := false.B
+      fabric.io.elapsedScaling.publicationTarget := 0.U; fabric.io.elapsedScaling.consumed := 0.U; fabric.io.elapsedScaling.valid := false.B
       fabric.io.elapsedScaling.single := false.B; fabric.io.elapsedScaling.busy := false.B
       fabric.io.elapsedScaling.elapsed := 0.U.asTypeOf(fabric.io.elapsedScaling.elapsed)
   }

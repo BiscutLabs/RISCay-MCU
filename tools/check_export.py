@@ -220,7 +220,7 @@ def control_background(source: str, manifest: dict, scopes: dict, checks: int):
     state = payload("left_storage" if click else "left", 337)
     command = payload("right_storage" if click else "right", 379)
     request = top + ".ca_child_request_bridge.data_address"
-    now = top + ".fabric_now"
+    now = top + ".fabric_housekeepingState_now"
     for path, width in ((request, 32), (now, 32)):
         node, name = path.rsplit(".", 1)
         if scopes.get(node, {}).get("registers", {}).get(name) != width:
@@ -557,6 +557,13 @@ def generated_reset_probe(source: str, manifest: dict) -> str:
     if present and present != supervisor.keys():
         raise ValueError("SOC_PERSISTENT_RESET_INVENTORY")
     persistent.update(supervisor)
+    housekeeping = {"housekeeping": "ClickHousekeeping" if top == "ClickSoc" else "FourPhaseHousekeeping",
+                    "housekeeping_command_bridge": "DecoupledToClick" if top == "ClickSoc" else "DecoupledToFourPhase",
+                    "housekeeping_reply_bridge": "ClickToDecoupled" if top == "ClickSoc" else "FourPhaseToDecoupled"}
+    present = {c.get("id") for c in root["children"]} & housekeeping.keys()
+    if present and present != housekeeping.keys():
+        raise ValueError("SOC_PERSISTENT_RESET_INVENTORY")
+    persistent.update(housekeeping)
     sram = {"program_access": "SramAccess", "ram_access": "SramAccess"}
     present = {c.get("id") for c in root["children"]} & sram.keys()
     if present and present != sram.keys():
@@ -846,7 +853,7 @@ def validate_fabric_path(node, timing):
 
 def validate_native_click(manifest):
     """A Click export must remain native throughout its async hierarchy."""
-    if manifest["top"] not in ("ClickSoc", "ClickCore", "ClickFabric", "ClickControl", "ClickTelemetry", "ClickSupervisor", "ClickElapsed", "ClickSample", "ClickSram", "ClickI2c", "ClickSpiAdc"):
+    if manifest["top"] not in ("ClickSoc", "ClickCore", "ClickFabric", "ClickControl", "ClickTelemetry", "ClickSupervisor", "ClickElapsed", "ClickSample", "ClickSram", "ClickI2c", "ClickSpiAdc", "ClickHousekeeping"):
         return
     def nodes(node):
         yield node

@@ -16,8 +16,11 @@ decodes it and captures a target for its own native elapsed-time engine. A
 POR-owned state token subtracts the previously processed target modulo 2^32.
 Four native handshake stages consume eight radix-2 bits each, retaining exact
 fractional milliseconds between updates. No multiplier or divider is instantiated.
-A clocked reply boundary publishes one coalesced update and advances consumedGray
-on that same edge; native internal completion alone cannot acknowledge LF work.
+A clocked scaler boundary publishes one coalesced elapsed observation. Independent
+measurement/supervisor ingress consumes it immediately; the separate native
+Housekeeping loop orders it with timer/cadence writes. Only the final housekeeping
+publication advances consumedGray; native internal completion and the earlier
+scaler publication cannot acknowledge LF work.
 Target changes during arithmetic, publication stalls and return drainage enter
 later transactions. Pending work and bridge drainage inhibit retained sleep.
 One-tick replies grant observation credit only while their target still matches
@@ -68,7 +71,7 @@ battery policy.
 The work gate retains its two-flop demand synchronization and falling-edge
 update. Ordinary CPU/control, ADC/SRAM, host/GPIO and reset activity reload the
 existing seven-edge grace interval. That interval may expire while explicitly
-tracked elapsed/telemetry maintenance is active; full demand still holds the
+tracked elapsed/housekeeping/telemetry maintenance is active; full demand still holds the
 gate open until publication and bridge drainage finish. This avoids extending
 an already safe maintenance interval by another unconditional seven edges.
 BD telemetry ACK return is a clocked bridge output, already qualified by the
@@ -225,11 +228,12 @@ The analog monitor's approximately 2.22 uA nominal always-on current and measure
 
 Each design now owns its Platform, SleepTiming, Services and clocked peripheral
 implementation, with separate native Fabric, Control, Telemetry, Supervisor,
-scaling, SRAM sequencing and I2C protocol logic. Native Control owns loader/MMIO
+scaling, SRAM sequencing, housekeeping, I2C and SPI ADC protocol logic. Native Control owns loader/MMIO
 state and selector/producer staging. Native Telemetry
 owns software GPIO/application words, pending flags and host sample records.
-Clocked event capture, deadline/lease/watchdog timing, peripheral ingress and
-snapshots remain. Every pending command, reply, accepted commit, buffered
+Native Housekeeping owns time/deadline/lease/wake-mask state, kick authorization
+and low-power cadence. Clocked event capture, independent LF/watchdog timing,
+heartbeat phase/ACK delivery, peripheral ingress and snapshots remain. Every pending command, reply, accepted commit, buffered
 observation or SRAM accounting token keeps the work clock awake.
 Application reset covers CPU, native fabric and both CPU endpoint bridges
 together. The Control and Telemetry loops and their crossings are POR-only;

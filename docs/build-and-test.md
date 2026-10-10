@@ -1,11 +1,84 @@
 # Build and test
 
+## Native slow-domain housekeeping - digitally verified, 2026-10-10
+
+Item 9 implements separate native BD and Click time/deadline/lease/wake-mask,
+watchdog kick authorization and low-power cadence loops. Clocked elapsed ingress
+feeds measurement/supervisor histories independently. The LF reference/watchdog,
+Gray/ACK crossings, heartbeat delivery and safe clock/source gating remain
+clocked. See the [scope and timing contract](async-soc-migration.md#housekeeping-scope-and-timing-contract).
+
+Evidence is under `build/housekeeping-migration/`. The fresh scope and implementation
+reviews, findings and fixes are in `independent-review.md`. Focused tests cover
+clockless native stalls, ordered writes, large elapsed intervals and wrap,
+replacement, POR at three handshake phases, cadence/discard/update races, joined
+CPU completions, continuous-tick CPU progress, sample aging under held publication,
+period-pending host reads and whole watchdog-reset recovery. SupervisorSpec now
+also stalls Housekeeping while checking independent power policy and repeated
+application resets. SleepSpec's clear/event race runs on both implementations.
+
+`full-regression.log` passes all **227 verification cases across 28 suites**,
+including both core/reference implementations, plus both physical-policy cases.
+There are no failed, aborted, canceled, ignored or pending cases. Fresh XML hashes
+and timestamps are in `verification-summary.json` and copied reports in `reports/`.
+The obsolete report for the removed FreshLogicReviewSpec is retained separately
+and is not counted as a current suite. `reset-race-fixed.log` also passes all 18
+focused HousekeepingSpec/SupervisorSpec cases.
+`python-final.log` passes all 84 working-tree Python controls (six are preserved
+P&R controls), and `sram-assets.log` verifies all 11 assets. The added generated
+reset controls exercise both Housekeeping owners, descendants and crossings.
+`public-abi.json` confirms both public 34-port nodes exactly match item 8.
+
+The fresh production exports `four-phase-soc/` and `click-soc/` both pass strict
+`--soc --vector-coverage --sleep-clock` validation, including unchanged generic
+endpoint activity, generated reset ownership, native Click and three-SRAM checks.
+Exact receipts are `bd-strict-current.log` and `click-strict-current.log`.
+
+| Variant | Endpoints | Mapping checks | Semantic SHA-256 |
+| --- | ---: | ---: | --- |
+| BD | 1990 | 575633370 | `ceec74b75ae1c7ada0c98f4ad1837049e22134dff6b917e010bf021b3b046294` |
+| Click | 1696 | 467965408 | `661a2932f8fcf5d699ae84bb6d1b511071bea6775633f024c9ea925ddb248a53` |
+
+Retained failures are part of the evidence. `first-integration.log` records the
+initial Click bridge namespace compile failure. `integration-second.log` and
+`review-integration.log` retain sleep-window failures; empty ACK-retry transactions
+were removed from native policy and the unchanged thresholds pass in
+`crossing-reviewed.log`. `focused-first.log` records invalid fixture parameter
+combinations and continuous-tick CPU starvation before the reviewed admission fix.
+`focused-second.log` and `focused-final.log` retain the watchdog fixture timeout.
+Detailed copied-RTL traces in `bd-reset-trace-current/` exposed active-edge stimulus
+races; falling-edge pause changes preserve every reset/effect assertion and pass.
+The original failed exports/logs remain intact.
+
+`bd-strict.log` and `click-strict.log` retain the initial
+`CONTROL_PROBE_DRIVER_MISMATCH`: the NOW register moved into the Housekeeping
+projection. The strict stimulus now binds its actual 32-bit source register,
+`fabric_housekeepingState_now`. The independent reviewer checked both emitted
+register declarations and MMIO muxes. Walking vectors, comparison/coverage checks
+and broken-binding controls are unchanged; `control-binding-tests.log` passes.
+
+Reproduce with one sbt process at a time:
+
+```powershell
+python tools/sbt.py 'verification/test' 'physical/test'
+python tools/sbt.py 'fourPhaseBd/runMain riscay.bd.EmitFourPhaseSoc build/housekeeping-recheck/four-phase-soc' 'twoPhaseClick/runMain riscay.click.EmitClickSoc build/housekeeping-recheck/click-soc'
+python tools/check_export.py build/housekeeping-recheck/four-phase-soc --library P:/Personal/chisel-async --soc --vector-coverage --sleep-clock --probe-timeout 7200
+python tools/check_export.py build/housekeeping-recheck/click-soc --library P:/Personal/chisel-async --soc --vector-coverage --sleep-clock --probe-timeout 7200
+python -m unittest discover -s tools -p 'test_*.py' -v
+python tools/sram_assets.py
+```
+
+All digital completion gates pass. No analog circuit or physical budget changed;
+prior P&R cannot qualify the new controllers. Item 10 requires physical
+requalification and the user's next choice.
+
 ## Native SPI ADC migration - digitally verified, 2026-10-10
 
 Item 8 has independent BD and native Click conversion owners, immutable pin
 recipes, complete-frame rendezvous, native extraction/priming/scaling/offset and
 consumer-accepted retirement. Clocked admission/publication, fixed-rate pin
-playback, complete MISO capture and cadence remain explicit boundaries. See the
+playback and complete MISO capture remain explicit boundaries; item 9 subsequently
+migrates low-power cadence. See the
 [scope and timing contract](async-soc-migration.md#spi-adc-scope-and-contract).
 
 Evidence is under `build/spi-adc-migration/`. `regression-first.log` passes all
@@ -79,7 +152,7 @@ python tools/check_spi_wiring_controls.py --bd <bd-spi-wave-export> --click <cli
 
 The wire export paths are generated under `build/soc-tests/` by `SpiAdcSpec`.
 Older P&R results do not qualify this RTL. Independent LF/watchdog housekeeping
-remains necessary, and item 9 still requires the user's next choice.
+remains necessary. Item 9 results are recorded above.
 
 ## Native I2C migration - digitally verified, 2026-10-09
 

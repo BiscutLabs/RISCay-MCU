@@ -483,6 +483,57 @@ Child supervisor_command_bridge(.reset(%s)); Child supervisor_reply_bridge(.rese
         with self.assertRaisesRegex(ValueError, "RESET_OWNER"):
             generated_reset_probe("", bad)
 
+    def test_persistent_housekeeping_and_descendants_must_use_por(self):
+        for top, model_name, command_model, reply_model in (
+            ("FourPhaseSoc", "FourPhaseHousekeeping", "DecoupledToFourPhase", "FourPhaseToDecoupled"),
+            ("ClickSoc", "ClickHousekeeping", "DecoupledToClick", "ClickToDecoupled"),
+        ):
+            manifest = copy.deepcopy(self.manifest)
+            names = {"housekeeping": "FourPhaseHousekeeping", "housekeeping_command_bridge": "DecoupledToFourPhase",
+                     "housekeeping_reply_bridge": "FourPhaseToDecoupled"}
+            for name, model in names.items():
+                manifest["design"]["children"].append({"id": name, "contract": {
+                    "rtl_path": "FourPhaseSoc." + name, "module": model, "children": []}})
+            manifest["design"]["children"][1]["contract"]["children"] = [{"id": "storage", "contract": {
+                "rtl_path": "FourPhaseSoc.housekeeping.storage", "module": "Storage", "children": []}}]
+            paths = ["core", "housekeeping", "housekeeping.storage", "housekeeping_command_bridge", "housekeeping_reply_bridge"]
+            checks = "\n".join(f'if (FourPhaseSoc.{p}.reset !== FourPhaseSoc.reset) $fatal(1, "RESET_BINDING_MISMATCH");' for p in paths)
+            manifest = json.loads(json.dumps(manifest).replace("FourPhaseSoc", top).replace("FourPhaseHousekeeping", model_name).replace("DecoupledToFourPhase", command_model).replace("FourPhaseToDecoupled", reply_model))
+            checks = checks.replace("FourPhaseSoc", top)
+            probe = generated_reset_probe('module ContractProbe; task check; begin\n' + checks + '''
+    end endtask
+    initial begin #1; check; FourPhaseSoc.watchdog=1; #1; check;
+    FourPhaseSoc.reset=1; #1; check; $display("MIXED_RESET_PASS"); $finish; end endmodule
+    '''.replace("FourPhaseSoc", top), manifest)
+            for broken in (None, "core", "housekeeping", "storage", "housekeeping_command_bridge", "housekeeping_reply_bridge"):
+                with tempfile.TemporaryDirectory(prefix="riscay-persistent-reset-") as folder:
+                    path = Path(folder)
+                    def pin(name):
+                        correct = "systemReset" if name == "core" else "reset"
+                        return ("reset" if name == "core" else "systemReset") if broken == name else correct
+                    rtl = '''module Child(input reset); endmodule
+    module Housekeeping(input reset, input systemReset);
+    Child storage(.reset(%s)); endmodule
+    module FourPhaseSoc;
+    reg reset=0, watchdog=0; wire systemReset=reset|watchdog;
+    Child core(.reset(%s));
+    Housekeeping housekeeping(.reset(%s),.systemReset(systemReset));
+    Child housekeeping_command_bridge(.reset(%s)); Child housekeeping_reply_bridge(.reset(%s)); endmodule
+    ''' % (pin("storage"), pin("core"), pin("housekeeping"), pin("housekeeping_command_bridge"), pin("housekeeping_reply_bridge"))
+                    (path / "test.sv").write_text(rtl.replace("FourPhaseSoc", top) + probe)
+                    built = subprocess.run(["iverilog", "-g2012", "-s", top, "-s", "ContractProbe", "-o", "sim.vvp", "test.sv"],
+                                           cwd=path, capture_output=True, text=True, timeout=30)
+                    self.assertEqual(built.returncode, 0, built.stderr)
+                    result = subprocess.run(["vvp", "sim.vvp"], cwd=path, capture_output=True, text=True, timeout=30)
+                    self.assertEqual(result.returncode == 0, broken is None, result.stdout)
+                    self.assertIn("MIXED_RESET_PASS" if broken is None else "RESET_BINDING_MISMATCH", result.stdout)
+            bad = copy.deepcopy(manifest); bad["design"]["children"].pop()
+            with self.assertRaisesRegex(ValueError, "RESET_INVENTORY"):
+                generated_reset_probe("", bad)
+            bad = copy.deepcopy(manifest); bad["design"]["children"][1]["contract"]["module"] = "Unknown"
+            with self.assertRaisesRegex(ValueError, "RESET_OWNER"):
+                generated_reset_probe("", bad)
+
     def test_sram_owners_and_nested_bridges_require_por(self):
         for top in ("FourPhaseSoc", "ClickSoc"):
             manifest = copy.deepcopy(self.manifest)

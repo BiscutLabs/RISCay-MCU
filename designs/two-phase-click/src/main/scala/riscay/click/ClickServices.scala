@@ -103,46 +103,61 @@ class ClickServices(p: SocParameters, boardFactory: SocParameters => BoardProfil
   io.mode := mode; io.programmed := programmed; io.locked := locked
   val canProgram = !locked && !started && !io.cpuResetActive && !io.program.busy && !loaderPending && !controlBusy
 
-  val now = RegInit(0.U(32.W))
-  val lowerElapsed = Wire(UInt(32.W)); val upperElapsed = Wire(UInt(32.W))
-  val observationMs = Wire(UInt(32.W))
-  io.elapsedScaling.target := Cat((0 until 32).reverse.map(i => io.timeGray(31, i).xorR))
-  val scalingBusy = io.elapsedScaling.busy
-  val elapsed = if(p.lowPower.nonEmpty) {
-    io.consumedGray := io.elapsedScaling.consumed ^ (io.elapsedScaling.consumed >> 1)
-    lowerElapsed := io.elapsedScaling.elapsed(1); upperElapsed := io.elapsedScaling.elapsed(2)
-    observationMs := Mux(io.elapsedScaling.single, lowerElapsed, 0.U)
-    io.elapsedScaling.elapsed(0)
+  val housekeepingCommand = IO(Decoupled(new HousekeepingCommand))
+  val housekeepingReply = IO(Flipped(Decoupled(new HousekeepingReply)))
+  val housekeepingState = RegInit(HousekeepingState.initial(p))
+  val housekeepingOutstanding = RegInit(false.B)
+  val housekeepingInFlight = RegInit(0.U.asTypeOf(new HousekeepingCommand))
+  val housekeepingBarrierBusy = Wire(Bool())
+  val housekeepingOrdered = Reg(new HousekeepingCommand)
+  val housekeepingOrderedPending = RegInit(false.B)
+  val housekeepingQueued = RegInit(0.U.asTypeOf(new HousekeepingCommand))
+  val housekeepingResetNeeded = RegInit(true.B)
+  val housekeepingRecovery = applicationReg(true.B)
+  val housekeepingCpuPending = applicationReg(false.B)
+  val housekeepingWork = Wire(Bool())
+  val housekeepingAction = WireDefault(0.U.asTypeOf(new HousekeepingCommand))
+  val now = housekeepingState.now; io.now := now
+  // This projection includes retained ingress that the native owner has not
+  // published yet. Sampling history must progress independently of that owner.
+  val boardNow = housekeepingState.boardNow + housekeepingQueued.elapsed(1) +
+    Mux(housekeepingOrderedPending,housekeepingOrdered.elapsed(1),0.U) + housekeepingInFlight.elapsed(1)
+  val wakeMask = Mux(housekeepingRecovery,15.U,housekeepingState.wakeMask)
+  val sleepRemaining = Mux(housekeepingRecovery,0.U,housekeepingState.lease)
+  val deadline = Mux(housekeepingRecovery,0.U,housekeepingState.deadline)
+  val parked = WireDefault(false.B)
+  val heartbeat = RegInit(false.B); io.heartbeat := heartbeat
+  val kickPending = applicationReg(false.B)
+  val ack0 = RegNext(io.watchdogAck,false.B); val ack = RegNext(ack0,false.B)
+  val adcLaunchPending = RegInit(false.B)
+  io.elapsedScaling.target := Cat((0 until 32).reverse.map(i => io.timeGray(31,i).xorR))
+  val rawElapsed = Wire(Vec(3,UInt(32.W)))
+  val rawTimeValid = Wire(Bool()); val rawTarget = Wire(UInt(32.W)); val rawSingle = Wire(Bool())
+  if(p.lowPower.nonEmpty) {
+    rawElapsed := io.elapsedScaling.elapsed; rawTimeValid := io.elapsedScaling.valid
+    rawTarget := io.elapsedScaling.publicationTarget; rawSingle := io.elapsedScaling.single
+    io.consumedGray := housekeepingState.consumed ^ (housekeepingState.consumed >> 1)
   } else {
     val divider = RegInit(0.U(log2Ceil(p.serviceHz / 1000).max(1).W))
     val pulse = divider === (p.serviceHz / 1000 - 1).U
-    divider := Mux(pulse, 0.U, divider + 1.U)
-    val amount = Mux(pulse, 1.U(32.W), 0.U(32.W))
-    lowerElapsed := amount; upperElapsed := amount; observationMs := amount
-    io.consumedGray := 0.U
-    amount
+    divider := Mux(pulse,0.U,divider+1.U)
+    rawElapsed.foreach(_ := Mux(pulse,1.U,0.U))
+    rawTimeValid := pulse; rawTarget := 0.U; rawSingle := pulse; io.consumedGray := 0.U
   }
+  // Measurement/GPIO observation ingress remains independent of housekeeping.
+  // Final housekeeping publication alone acknowledges LF work via consumedGray.
+  val housekeepingPublished = housekeepingReply.fire
+  val kick=housekeepingPublished && housekeepingReply.bits.kick &&
+    (!housekeepingRecovery || housekeepingReply.bits.resetApplication)
+  when(kick || kickPending) {
+    when(ack === heartbeat) { heartbeat:= !heartbeat; kickPending:=false.B }
+      .otherwise { kickPending:=true.B }
+  }
+  val elapsed = rawElapsed(0); val lowerElapsed = rawElapsed(1); val upperElapsed = rawElapsed(2)
+  val observationMs = Mux(rawSingle,lowerElapsed,0.U)
   val tick = elapsed =/= 0.U
-  // Coalesce delayed maintenance, never replay past GPIO observations as if
-  // they had been sampled repeatedly. Wall time/ages still advance fully.
-  when(tick) { now := now + elapsed }; io.now := now
-  val boardNow = RegInit(0.U(32.W)); boardNow := boardNow + lowerElapsed
-  val wakeMask = applicationReg(15.U(32.W))
-  val sleepRemaining = applicationReg(0.U(32.W))
-  when(tick && sleepRemaining =/= 0.U) {
-    sleepRemaining := Mux(elapsed >= sleepRemaining, 0.U, sleepRemaining - elapsed)
-  }
-  val leaseExpired = tick && sleepRemaining =/= 0.U && elapsed >= sleepRemaining
-  val parked = WireDefault(false.B)
-  val heartbeat = RegInit(false.B); io.heartbeat := heartbeat
-  val ack0 = RegNext(io.watchdogAck, false.B); val ack = RegNext(ack0, false.B)
-  val kick = WireDefault(false.B)
-  val kickPending = applicationReg(false.B)
-  val kickRequested = (tick && (!started || (parked && sleepRemaining =/= 0.U))) || kick
-  when(kickRequested || kickPending) {
-    when(ack === heartbeat) { heartbeat := !heartbeat; kickPending := false.B }
-      .otherwise { kickPending := true.B }
-  }
+  val leaseExpired = housekeepingPublished && !housekeepingRecovery && housekeepingReply.bits.leaseExpired
+  val scalingBusy = io.elapsedScaling.busy || housekeepingWork || rawTimeValid
   val gpio = withClock(io.frontClock) {
     val first = RegNext(io.gpioIn, 0.U); RegNext(first, 0.U)
   }
@@ -163,36 +178,20 @@ class ClickServices(p: SocParameters, boardFactory: SocParameters => BoardProfil
   publish.foreach { x => x.valid := false.B; x.bits := 0.U.asTypeOf(new Acquisition) }
   val sampleIndex = controlState.sampleIndex; val sampleValue = controlState.sampleValue
   val periodUpdate = Wire(Valid(UInt(32.W))); periodUpdate.valid := false.B; periodUpdate.bits := 0.U
-  val samplePeriod = RegInit(p.defaultSampleMs.U(32.W))
-  val nextPeriod = RegInit(p.defaultSampleMs.U(32.W)); val periodPending = RegInit(false.B)
+  val samplePeriod = housekeepingState.period
+  val periodPending = housekeepingState.periodPending ||
+    (housekeepingOrderedPending && housekeepingOrdered.periodUpdate) || housekeepingInFlight.periodUpdate
   val adcBusy = WireDefault(false.B)
   def validPeriod(value: UInt): Bool = (p.lowPower.nonEmpty && p.adc.nonEmpty).B &&
     value >= p.minimumSampleMs.U && value <= p.maximumSampleMs.max(0).U
-  when(periodUpdate.valid) { nextPeriod := periodUpdate.bits; periodPending := true.B }
   val publishAge=Wire(Vec(config.measurements.size,UInt(32.W))); publishAge.foreach(_ := 0.U)
   io.adc.start := false.B; io.adc.ageStep := Mux(tick,upperElapsed,0.U)
   p.adc.foreach { adcParameters =>
     adcBusy := io.adc.busy
     if(p.lowPower.nonEmpty) {
-      val countdown = RegInit((p.defaultSampleMs - 1).U(32.W))
-      val requested = RegInit(true.B)
-      io.adc.start := requested && !io.adc.busy
-      when(io.adc.start) { requested := false.B }
-      // Discard the first conversion, then immediately acquire a usable sample.
-      when(io.adc.done && !io.adc.result.valid) { requested := true.B }
-      when(tick) {
-        when(elapsed > countdown) { countdown := samplePeriod - 1.U; requested := true.B }
-          .otherwise { countdown := countdown - elapsed }
-      }
-      // Atomic reconfiguration between conversions. Acquire immediately so
-      // repeated interval writes cannot postpone sensing indefinitely, then
-      // rebase the next start; ordinary intervals exclude conversion time.
-      when(tick && periodPending && !io.adc.busy && !requested) {
-        samplePeriod := nextPeriod; countdown := nextPeriod - 1.U; periodPending := false.B
-        requested := true.B
-      }
-      when(periodUpdate.valid) { periodPending := true.B }
-      adcBusy := io.adc.busy || requested || periodPending
+      io.adc.start := adcLaunchPending && !io.adc.busy
+      when(io.adc.start) { adcLaunchPending := false.B }
+      adcBusy := io.adc.busy || adcLaunchPending || housekeepingState.requested || periodPending
     }
     publish(0) := io.adc.result; publishAge(0) := io.adc.age
   }
@@ -242,7 +241,6 @@ class ClickServices(p: SocParameters, boardFactory: SocParameters => BoardProfil
   io.gpioOut := ((output & ~board.mask.U(32.W)) | (boardResult.outputs & board.mask.U(32.W))) & gpioMask
   io.gpioOe := ((enable & ~board.mask.U(32.W)) | (board.enables.U(32.W) & board.mask.U(32.W))) & gpioMask
 
-  val deadline = applicationReg(0.U(32.W)); val armed = applicationReg(false.B)
   val pendingState = applicationReg(0.U(6.W))
   // Captured sets are irrevocable and visible while awaiting native commit.
   // A CPU clear/replacement is serialized against in-flight native work.
@@ -250,7 +248,7 @@ class ClickServices(p: SocParameters, boardFactory: SocParameters => BoardProfil
   val clear = WireDefault(0.U(32.W))
   val replaceDeadline = WireDefault(false.B)
   val hostWake = WireDefault(false.B)
-  val due = armed && !replaceDeadline && (now - deadline).asSInt >= 0.S
+  val due = housekeepingPublished && !housekeepingRecovery && !replaceDeadline && housekeepingReply.bits.due
   val acquisition = if(config.measurements.isEmpty) false.B else publish.map(_.valid).reduce(_ || _)
   val gpioActivity = ((gpio ^ gpioPrevious) & gpioMask).orR
   val events = Cat(0.U(26.W), hostWake, leaseExpired, acquisition, gpioActivity, due, tick)
@@ -264,7 +262,6 @@ class ClickServices(p: SocParameters, boardFactory: SocParameters => BoardProfil
   // edge. Other new events still win acknowledgement races.
   val acceptedClear = (clear | Mux(replaceDeadline, 2.U, 0.U))(5,0)
   telemetryEvents := (Mux(telemetryCommand.fire, 0.U, telemetryEvents) & ~acceptedClear) | events(5,0)
-  when(due) { armed := false.B }
 
   val responseValid = applicationReg(false.B); val response = Reg(new MemoryResponse)
   io.response.valid := responseValid; io.response.bits := response
@@ -291,7 +288,7 @@ class ClickServices(p: SocParameters, boardFactory: SocParameters => BoardProfil
     req.operation =/= Operation.Halt.U
   val mmioComplete = io.controlReply.fire && io.controlReply.bits.kind === ControlKind.Mmio.U && mmioCurrent
   val cpuAvailable = !io.cpuResetActive && !resetRecovery && io.clockRunning && !responseValid && !bootWait && !eventWait &&
-    !memoryBusy && !loaderWrite && !telemetryBarrier
+    !memoryBusy && !loaderWrite && !telemetryBarrier && !housekeepingBarrierBusy
   io.request.ready := cpuAvailable && Mux(nativeMmio, mmioComplete, !controlBusy)
 
   io.commit.valid := io.request.fire; io.commit.bits := req
@@ -309,7 +306,7 @@ class ClickServices(p: SocParameters, boardFactory: SocParameters => BoardProfil
     }
   }
   when(io.request.fire) {
-    when(waitingRead) { sleepRemaining := 0.U }
+    when(waitingRead) { housekeepingAction.waitAccepted := true.B }
     responseValid := req.operation =/= Operation.Halt.U
     response.data := 0.U; response.error := true.B
     when(req.operation === Operation.Halt.U) { haltPending := true.B }
@@ -329,11 +326,11 @@ class ClickServices(p: SocParameters, boardFactory: SocParameters => BoardProfil
         response := io.controlReply.bits.memory
         when(isWrite && !io.controlReply.bits.memory.error) {
           switch(offset) {
-            is(8.U) { deadline := req.data; armed := true.B; replaceDeadline := true.B; response.error := false.B }
+            is(8.U) { housekeepingAction.write := true.B; replaceDeadline := true.B; response.error := false.B }
             is(12.U) { clear := req.data & ~mmioEvents; response.error := false.B }
             is(24.U) { response.error := false.B }
             is(28.U) { response.error := false.B }
-            is(32.U) { when(req.data === "h57444f47".U) { kick := true.B; response.error := false.B } }
+            is(32.U) { when(req.data === "h57444f47".U) { housekeepingAction.write := true.B; response.error := false.B } }
             is(36.U) { when(req.data < config.measurements.size.U) { response.error := false.B } }
             is(40.U) { response.error := false.B }
             is(44.U) {
@@ -349,10 +346,10 @@ class ClickServices(p: SocParameters, boardFactory: SocParameters => BoardProfil
             is(52.U) { for((word, value) <- application.toSeq.sortBy(_._1)) {
               when(appIndex === word.U) { response.error := false.B }
             } }
-            is(56.U) { when((req.data & "hffffffc0".U) === 0.U) { wakeMask := req.data; response.error := false.B } }
+            is(56.U) { when((req.data & "hffffffc0".U) === 0.U) { housekeepingAction.write := true.B; response.error := false.B } }
             is(60.U) {
               when(p.lowPower.nonEmpty.B && req.data <= p.lowPower.map(_.maximumSleepMs).getOrElse(0).U) {
-                sleepRemaining := req.data; response.error := false.B
+                housekeepingAction.write := true.B; response.error := false.B
               }
             }
             is(64.U) { when(validPeriod(req.data)) { periodUpdate.valid := true.B; periodUpdate.bits := req.data; response.error := false.B } }
@@ -384,6 +381,10 @@ class ClickServices(p: SocParameters, boardFactory: SocParameters => BoardProfil
   val hostResetDebt = RegInit(0.U(2.W))
   when(hostFrames.io.deq.fire && hostResetDebt =/= 0.U) { hostResetDebt := hostResetDebt - 1.U }
   when(resetEdge) { hostResetDebt := hostFrames.io.count - hostFrames.io.deq.fire.asUInt }
+  // Reserve a bounded CPU admission turn before starting more background work.
+  // A stalled Control computation still permits independent timer maintenance.
+  val cpuTimingTurn=io.request.valid && nativeMmio && !bootWait && !eventWait && !io.cpuResetActive &&
+    (!controlOutstanding || (mmioCurrent && io.controlReply.valid))
   val mmioLaunch = io.request.valid && nativeMmio && cpuAvailable
   controlBusy := controlOutstanding || completionPending || mmioCommitPending || resetPending || haltPending || hostFrames.io.deq.valid
   io.controlCommand.valid := !controlOutstanding &&
@@ -431,7 +432,9 @@ class ClickServices(p: SocParameters, boardFactory: SocParameters => BoardProfil
   }
   // A reply belongs to the single outstanding command, including reset recovery.
   io.controlReply.ready := controlOutstanding &&
-    (io.controlReply.bits.kind =/= ControlKind.Mmio.U || !mmioCurrent || !telemetryBarrier)
+    (io.controlReply.bits.kind =/= ControlKind.Mmio.U || !mmioCurrent ||
+      (!telemetryBarrier && !housekeepingBarrierBusy)) &&
+    (!io.controlReply.bits.periodUpdate || !housekeepingOrderedPending)
   when(io.controlReply.fire) {
     val result = io.controlReply.bits
     controlOutstanding := false.B; loaderControlPending := false.B; controlState := result.state
@@ -455,6 +458,78 @@ class ClickServices(p: SocParameters, boardFactory: SocParameters => BoardProfil
     resetNeeded := !(io.controlCommand.fire && io.controlCommand.bits.kind === ControlKind.ResetApplication.U)
     resetRecovery := true.B
   }
+
+  // Freeze observations at every accepted write/WAIT boundary. Later elapsed
+  // intervals collect in a separate slot and cannot move ahead of that action.
+  housekeepingAction.offset := req.address(6,0); housekeepingAction.data := req.data
+  housekeepingAction.periodUpdate := periodUpdate.valid; housekeepingAction.period := periodUpdate.bits
+  housekeepingAction.cpuCompletion := io.request.fire &&
+    (housekeepingAction.write || housekeepingAction.waitAccepted || periodUpdate.valid)
+  val housekeepingBarrier = housekeepingAction.write || housekeepingAction.waitAccepted || periodUpdate.valid
+  val housekeepingQueuedWork = housekeepingQueued.timeValid || housekeepingQueued.discard
+  val housekeepingReset = housekeepingResetNeeded || housekeepingRecovery
+  val housekeepingRetry = housekeepingState.requested && !io.adc.busy && !adcLaunchPending
+  val queueBase=housekeepingQueued
+  val queueNext=WireDefault(queueBase)
+  val nominalSum=queueBase.elapsed(0) +& rawElapsed(0)
+  queueNext.elapsed(0):=nominalSum(31,0)
+  queueNext.elapsedOverflow:=queueBase.elapsedOverflow || nominalSum(32)
+  queueNext.elapsed(1):=queueBase.elapsed(1)+rawElapsed(1)
+  queueNext.elapsed(2):=saturatingAdd(queueBase.elapsed(2),rawElapsed(2))
+  when(rawTimeValid) {
+    queueNext.timeValid:=true.B; queueNext.target:=rawTarget
+    queueNext.single:=rawSingle && !queueBase.timeValid
+  }
+  queueNext.discard:=queueBase.discard || (io.adc.done && !io.adc.result.valid)
+  housekeepingCommand.valid := !housekeepingOutstanding && !housekeepingBarrier &&
+    (housekeepingOrderedPending || housekeepingReset ||
+      ((housekeepingQueuedWork || rawTimeValid || queueNext.discard || housekeepingRetry) && !cpuTimingTurn && !mmioLaunch &&
+        !(mmioCurrent && io.controlReply.valid) && !io.request.fire))
+  housekeepingCommand.bits := queueNext
+  housekeepingCommand.bits.resetApplication := housekeepingReset || io.cpuResetActive
+  housekeepingCommand.bits.started := started; housekeepingCommand.bits.parked := parked
+  housekeepingCommand.bits.adcBusy := io.adc.busy || adcLaunchPending
+  when(housekeepingOrderedPending) { housekeepingCommand.bits := housekeepingOrdered }
+  housekeepingReply.ready := housekeepingOutstanding
+  housekeepingQueued:=queueNext
+  when(housekeepingCommand.fire) {
+    housekeepingOutstanding:=true.B; housekeepingInFlight:=housekeepingCommand.bits
+    when(housekeepingOrderedPending) { housekeepingOrderedPending:=false.B }
+      .otherwise { housekeepingResetNeeded:=false.B; housekeepingQueued:=0.U.asTypeOf(new HousekeepingCommand) }
+  }
+  when(housekeepingBarrier) {
+    assert(!housekeepingOrderedPending,"HOUSEKEEPING_ORDERED_OVERFLOW")
+    housekeepingOrdered:=queueNext
+    housekeepingOrdered.write:=housekeepingAction.write
+    housekeepingOrdered.offset:=housekeepingAction.offset; housekeepingOrdered.data:=housekeepingAction.data
+    housekeepingOrdered.waitAccepted:=housekeepingAction.waitAccepted
+    housekeepingOrdered.periodUpdate:=periodUpdate.valid; housekeepingOrdered.period:=periodUpdate.bits
+    housekeepingOrdered.cpuCompletion:=housekeepingAction.cpuCompletion
+    housekeepingOrdered.resetApplication:=io.cpuResetActive
+    housekeepingOrdered.started:=started; housekeepingOrdered.parked:=parked
+    housekeepingOrdered.adcBusy:=io.adc.busy || adcLaunchPending
+    housekeepingOrderedPending:=true.B; housekeepingQueued:=0.U.asTypeOf(new HousekeepingCommand)
+  }
+  when(housekeepingAction.cpuCompletion) { responseValid:=false.B; housekeepingCpuPending:=true.B }
+  when(housekeepingPublished) {
+    housekeepingOutstanding:=false.B; housekeepingState:=housekeepingReply.bits.state
+    housekeepingInFlight:=0.U.asTypeOf(new HousekeepingCommand)
+    when(housekeepingReply.bits.startAdc) { adcLaunchPending:=true.B }
+    when(housekeepingReply.bits.resetApplication && !housekeepingResetNeeded && !io.cpuResetActive) {
+      housekeepingRecovery:=false.B
+    }
+    when(housekeepingReply.bits.cpuCompletion && housekeepingCpuPending && !io.cpuResetActive) {
+      housekeepingCpuPending:=false.B
+      when(!telemetryCpuPending || (telemetryReply.fire && telemetryReply.bits.kind === TelemetryKind.Commit.U)) {
+        responseValid:=true.B
+      }
+    }
+  }
+  when(resetEdge) { housekeepingResetNeeded:=true.B }
+  housekeepingBarrierBusy:=housekeepingOutstanding || housekeepingOrderedPending || housekeepingReset ||
+    housekeepingCpuPending || io.housekeepingDraining
+  housekeepingWork:=housekeepingOutstanding || housekeepingOrderedPending || housekeepingReset ||
+    housekeepingQueuedWork || housekeepingRetry || housekeepingCpuPending || io.housekeepingDraining
 
   // POR ingress compacts every publication and elapsed interval independently
   // of native backpressure. The separate native supervisor receives the same
@@ -490,7 +565,7 @@ class ClickServices(p: SocParameters, boardFactory: SocParameters => BoardProfil
   // on every service edge cannot prevent forward progress at serviceHz=1000.
   telemetryCommand.valid := !telemetryOutstanding && !io.cpuResetActive &&
     (telemetryResetNeeded || telemetryCommitPending ||
-      (observationPending && !mmioCurrent && !mmioLaunch && !io.request.fire))
+      (observationPending && !cpuTimingTurn && !mmioCurrent && !mmioLaunch && !io.request.fire))
   telemetryCommand.bits := 0.U.asTypeOf(new TelemetryCommand(config.measurements.size))
   when(telemetryCommitPending) { telemetryCommand.bits := telemetryCommit }
   when(telemetryResetNeeded) { telemetryCommand.bits.kind := TelemetryKind.ResetApplication.U }
@@ -515,7 +590,10 @@ class ClickServices(p: SocParameters, boardFactory: SocParameters => BoardProfil
       output := result.state.output; enable := result.state.enable; pendingState := result.state.pending
       for((word,index) <- telemetryWords.zipWithIndex) { application(word) := result.state.application.get(index) }
       when(result.kind === TelemetryKind.Commit.U && telemetryCpuPending) {
-        telemetryCpuPending := false.B; responseValid := true.B
+        telemetryCpuPending := false.B
+        when(!housekeepingCpuPending || (housekeepingPublished && housekeepingReply.bits.cpuCompletion)) {
+          responseValid := true.B
+        }
       }
     }
   }

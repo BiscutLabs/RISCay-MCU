@@ -22,9 +22,9 @@ class ControlBackgroundTest(unittest.TestCase):
             manifest = {"top": top, "design": {"children": [{"id": "control", "contract": {
                 "module": "ClickControl" if click else "FourPhaseControl",
                 "children": [{"id": "join", "contract": {"children": children}}]}}]}}
-            scopes = {top: {"registers": {"fabric_now": 32}},
+            scopes = {top: {"registers": {"fabric_housekeepingState_now": 32}},
                       top + ".ca_child_request_bridge": {"registers": {"data_address": 32}}}
-            registers = [("reset", 1), ("fabric_now", 32), ("fabric_hostFrames_count", 2),
+            registers = [("reset", 1), ("fabric_housekeepingState_now", 32), ("fabric_hostFrames_count", 2),
                          ("fabric_mmioCommitPending", 1), ("fabric_mmioCommit_applicationWritable", 1),
                          ("fabric_hostFrames_first_frame_length", 6),
                          ("fabric_hostFrames_first_frame_overflow", 1)] + [
@@ -52,7 +52,7 @@ force {top}.reset = 1'b1; #1;
             self.assertTrue(augmented.startswith(prelude + header + "#1; check;\n"))
             self.assertIn(coverage, augmented)
             self.assertEqual(control_background(original, {"design": {}}, {}, 1), (original, 1))
-            bad = copy.deepcopy(scopes); bad[top]["registers"]["fabric_now"] = 31
+            bad = copy.deepcopy(scopes); bad[top]["registers"]["fabric_housekeepingState_now"] = 31
             with self.assertRaisesRegex(ValueError, "CONTROL_PROBE_DRIVER_MISMATCH"):
                 control_background(original, manifest, bad, 1)
             with self.assertRaisesRegex(ValueError, "CONTROL_PROBE_SHAPE_CHANGED"):
@@ -78,7 +78,7 @@ wire host=c[378:376]==0;
 wire [31:0] candidate={{c[144:137],c[136:129],c[128:121],c[120:113]}};
 wire period=host && c[375:370]==5 && c[112:105]==7;
 wire [98:0] expected={{
-  ca_child_request_bridge.data_address==4 ? fabric_now : 32'b0,
+  ca_child_request_bridge.data_address==4 ? fabric_housekeepingState_now : 32'b0,
   host && c[375:370]==9 && c[112:105]==2 && s[336:334]==1,
   host && c[375:370]==1 && c[112:105]==8,
   period && candidate==1000,

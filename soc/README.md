@@ -9,14 +9,15 @@ See the [migration checklist](../docs/async-soc-migration.md) and
 
 Each design owns its Services, Platform, ClockedPeripherals, ConstantScaling,
 I2cTarget, SleepTiming and SramBank, plus independent native Fabric, Control,
-Telemetry, Supervisor, SRAM, I2C and SPI ADC controllers. ROM/static faults are
+Telemetry, Supervisor, Housekeeping, SRAM, I2C and SPI ADC controllers. ROM/static faults are
 clockless. Native loops own loader/MMIO state, software GPIO/events and sample
 records, permanent supervision, word/byte sequencing, I2C protocol state and
-SPI conversion ownership/assembly/priming/scaling. Schemas share wire layouts
+SPI conversion ownership/assembly/priming/scaling, time/deadline/lease/wake-mask
+policy, watchdog kick authorization and low-power cadence. Schemas share wire layouts
 and reset literals, not state transitions. Clocked ingress, snapshots,
 reset/status projection, GPIO sampling, individual synchronous SRAM byte
 accesses, I2C wire sampling/timeout, SPI pin timing/full-frame capture and
-cadence remain explicit boundaries. An independent LF reference/watchdog
+legacy SPI idle delay remain explicit boundaries. An independent LF reference/watchdog
 remains required. The full SoC is not clockless.
 
 `ChipWrapper.scala` emits oscillator/reset boundaries and their simulation views.
