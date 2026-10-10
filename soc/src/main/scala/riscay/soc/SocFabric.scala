@@ -18,6 +18,7 @@ abstract class ServiceEndpoint extends Module with InlineInstance {
   val io = IO(new Bundle {
     val program = new SramAccessPort
     val ram = new SramAccessPort
+    val ramSource = new RamSourceBoundaryPort
     val elapsedScaling = Flipped(new ElapsedScalingPort(3))
     val adc = Flipped(new SpiAdcPort)
     val controlCommand = Decoupled(new ControlCommand)

@@ -13,6 +13,10 @@ class ClickSoc(p: SocParameters, board: SocParameters => BoardProfile = p => new
     timing: ClickTiming = ClickTiming.Simulation,
     executeData: ModelTime = RegisterTiming.executeData)
     extends ClickPlatform(p, board, clockedCpuResponse=false) {
+  require((Seq(executeData.fs + timing.requestDelay.fs,timing.requestDelay.fs,
+    timing.acknowledgeDelay.fs,timing.outputDelay.fs) ++ timing.cells.values.map(_.max.fs))
+      .forall(_ <= ApplicationResetContract.nativeSettleFs),
+    "custom execute timing exceeds application reset-settlement budget")
   val core = asyncChild("core")(d => new ClickCore(d, timing=timing, executeData=executeData))
   val transactions = asyncChild("transactions")(d => new ClickFabric(p.config, timing, d))
   val requestBridge = asyncChild("request_bridge")(d => new ClickToDecoupled(new MemoryRequest, d))

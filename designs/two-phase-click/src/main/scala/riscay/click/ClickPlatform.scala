@@ -10,11 +10,15 @@ import riscay.soc._
 /** This variant owns clock, reset, wake and endpoint integration. */
 abstract class ClickPlatform(p: SocParameters, board: SocParameters => BoardProfile, clockedCpuResponse: Boolean = true) extends SocTop(p) {
   val watchdog = withClockAndReset(watchdogClock, reset) { Module(new Watchdog(p.watchdogCycles, p.watchdogHoldCycles)) }
-  val assertion = reset.asBool || watchdog.io.expired
-  val release = withClockAndReset(serviceClock, assertion.asAsyncReset) {
-    val stages = RegInit(3.U(2.W)); stages := Cat(stages(0), false.B); stages
+  // Every pulse restarts the release history on the ungated service clock.
+  // Eight edges hold at least 350 ns at the 20 MHz ceiling, beyond the
+  // 250 ns application-island reset-settlement budget. Assertion is immediate.
+  protected val applicationResetRequest = WireDefault(reset.asBool || watchdog.io.expired)
+  val release = withClockAndReset(serviceClock, applicationResetRequest.asAsyncReset) {
+    val n=ApplicationResetContract.releaseEdges
+    val stages = RegInit(((BigInt(1)<<n)-1).U(n.W)); stages := Cat(stages(n-2,0), false.B); stages
   }
-  systemReset := assertion || release.orR
+  systemReset := applicationResetRequest || release.orR
   resetReason := watchdog.io.reason
   // Reset pins assert immediately. POR-only logic consumes a conventional
   // two-flop copy instead; both assertion and release cross before use as data.
@@ -91,6 +95,41 @@ abstract class ClickPlatform(p: SocParameters, board: SocParameters => BoardProf
   val ramAccess = asyncChild("ram_access")(d => new SramAccess(d))
   programAccess.clock := workClock; ramAccess.clock := workClock
   programAccess.io <> fabric.io.program; ramAccess.io <> fabric.io.ram
+  // POR identity/effects survive application reset. Only CPU reply eligibility
+  // resets immediately; retained reset debt cancels queued uncommitted grants.
+  val ramSource=asyncChild("ram_source")(d => new ClickRamSource(d))
+  val ramReserve=asyncChild("ram_reserve_bridge")(d => new DecoupledToClick(Bool(),d))
+  val ramGrant=asyncChild("ram_grant_bridge")(d => new ClickToDecoupled(Bool(),d))
+  val ramDecision=asyncChild("ram_decision_bridge")(d => new DecoupledToClick(Bool(),d))
+  val ramPublication=asyncChild("ram_publication_bridge")(d => new DecoupledToClick(Bool(),d))
+  Seq(ramReserve,ramDecision,ramPublication).foreach { b =>
+    b.clock:=workClock; dontTouch(b.in); dontTouch(b.out)
+  }
+  ramGrant.clock:=workClock; dontTouch(ramGrant.in); dontTouch(ramGrant.out)
+  chiselasync.protocol.TwoPhase.connect(ramSource.reserve,ramReserve.out)
+  chiselasync.protocol.TwoPhase.connect(ramGrant.in,ramSource.grant)
+  chiselasync.protocol.TwoPhase.connect(ramSource.decision,ramDecision.out)
+  chiselasync.protocol.TwoPhase.connect(ramSource.publication,ramPublication.out)
+  ramReserve.in <> fabric.io.ramSource.reserve; fabric.io.ramSource.grant <> ramGrant.out
+  ramDecision.in <> fabric.io.ramSource.decision; ramPublication.in <> fabric.io.ramSource.publication
+  ramSource.applicationReset:=fabric.io.cpuReset.asAsyncReset
+  ramSource.wordDrained:= !ramAccess.io.busy // Excludes its own receipt bridges.
+  fabric.io.ramSource.eligible:=ramSource.eligible
+  val ramOwnerIdle=withClockAndReset(workClock,reset) {
+    val first=RegNext(ramSource.idle,false.B); RegNext(first,false.B)
+  }
+  val ramSourceEmpty=ramOwnerIdle && !ramAccess.io.busy && ramReserve.in.ready &&
+    ramDecision.in.ready && ramPublication.in.ready && !ramGrant.out.valid
+  val ramResetDebt=withClockAndReset(workClock,fabric.io.cpuReset.asAsyncReset) {
+    val debt=RegInit(true.B)
+    // Restart the release history on EVERY raw pulse, even between clock edges.
+    val previousSafe=RegInit(false.B)
+    previousSafe:=ramSourceEmpty && !fabric.io.cpuResetActive
+    when(previousSafe && ramSourceEmpty && !fabric.io.cpuResetActive) { debt:=false.B }
+    debt
+  }
+  fabric.io.ramSource.resetDebt:=ramResetDebt
+  fabric.io.ramSource.draining:=ramResetDebt || !ramSourceEmpty
   val control = asyncChild("control")(d => new ClickControl(p, d))
   val controlCommandBridge = asyncChild("control_command_bridge")(d => new DecoupledToClick(new ControlCommand, d))
   val controlReplyBridge = asyncChild("control_reply_bridge")(d => new ClickToDecoupled(new ControlReply, d))

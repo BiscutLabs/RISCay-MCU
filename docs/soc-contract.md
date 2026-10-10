@@ -41,6 +41,25 @@ service credit. See the checklist for qualification status.
 MMIO clear protection starts when a held request arrives, including events raised
 while previous response return delays its dispatch. Existing events predating
 that arrival remain clearable. Source-ready assertions reject completion loss.
+RAM source cancellation now uses a native exclusive reservation (10b2a;
+digitally verified). Grant, CPU/word acceptance and a commit receipt agree;
+actual word publication qualifies CPU completion, and cancellation cannot undo
+accepted SRAM effects. All source phases and receipt crossings are POR-only.
+The application resets only eligibility and reset-debt release history. Program
+pending state and the existing SRAM word crossings remain explicit boundaries.
+
+Application reset asserts immediately and releases after eight ungated service
+edges. With a maximum service clock of 20 MHz, the minimum hold is 350 ns; the
+current native application island has a 250 ns digital reset-settlement budget.
+Every additional raw pulse restarts that hold, including pulses between service
+edges while reset is already asserted. Completion, Admission, their crossings,
+core and Fabric share the qualified reset; persistent service owners do not.
+The third-edge MODE assertion observation remains unchanged. Custom timing
+policies must fit the full reset budget, with emitted-policy checks as a backstop.
+Every application primitive receives the qualified reset directly. The 250 ns
+budget therefore bounds parallel reset-assertion settlement of each output;
+normal logic-path delay sums have separate bundled-data and control obligations.
+
 These are digital RTL implementations, not qualified physical cells or pads.
 See [sleep and clock integration](sleep-and-clock.md) for the exact gating scope.
 

@@ -72,3 +72,16 @@ class SramAccessPort extends Bundle {
   val bytes = Flipped(Vec(4, Decoupled(new SramByteRequest)))
   val completions = Vec(4, Decoupled(UInt(8.W)))
 }
+
+/** Shared boundary schema only. The design-specific native owner holds one RAM
+  * reservation through commit/publication or cancellation and complete drainage.
+  */
+class RamSourceBoundaryPort extends Bundle {
+  val reserve = Decoupled(Bool()) // Operation write bit.
+  val grant = Flipped(Decoupled(Bool()))
+  val decision = Decoupled(Bool()) // True iff the CPU and RAM accepted together.
+  val publication = Decoupled(Bool()) // Actual response bit zero.
+  val eligible = Input(Bool())
+  val resetDebt = Input(Bool())
+  val draining = Input(Bool())
+}

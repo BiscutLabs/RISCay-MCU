@@ -56,7 +56,7 @@ def validate_completion(node):
             cell(name, "EventRegister", WIDTH=33 if name == "payload" else 1, DELAY_FS=1000000, RESET_VALUE=0)
         for name in ("plan_pending", "response_occupied"):
             cell(name, "Xor", DELAY_FS=1000000)
-        gate("request_guard", delay=11000000)
+        gate("request_guard", delay=210200001)
         for name in ("memory", "telemetry", "housekeeping"):
             and_gate(name+"_available")
         gate("request_delay", width=3, delay=11000000)

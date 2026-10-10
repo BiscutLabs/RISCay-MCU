@@ -65,6 +65,7 @@ class ClickServices(p: SocParameters, boardFactory: SocParameters => BoardProfil
   val loaderPending = WireDefault(controlState.loaderPending); dontTouch(loaderPending)
   val receivedWords = WireDefault(controlState.received >> 2); dontTouch(receivedWords)
   val loaderWrite = WireDefault(false.B)
+  // Program-fetch ownership remains clocked until checklist 10b2b; RAM uses its native source.
   val cpuMemoryPending = withReset(io.cpuReset.asAsyncReset) { RegInit(false.B) }
   val controlBusy = Wire(Bool())
   val memoryBusy = io.program.busy || io.ram.busy || loaderPending || cpuMemoryPending
@@ -299,19 +300,43 @@ class ClickServices(p: SocParameters, boardFactory: SocParameters => BoardProfil
   io.ram.request.bits.write := isWrite
   io.ram.request.bits.data := req.data; io.ram.request.bits.mask := req.mask
   val fullWord = req.address(1,0) === 0.U && req.mask === 15.U
+  val ramOperation = req.address >= MemoryMap.ram.U &&
+    req.address < (MemoryMap.ram + config.workingRamBytes).U && (isRead || isWrite)
+  io.ramSource.reserve.valid := io.request.valid && ramOperation && !io.cpuResetActive &&
+    !resetRecovery && !io.ramSource.resetDebt
+  io.ramSource.reserve.bits := isWrite
+  val ramCommit = io.request.fire && ramOperation
+  io.ramSource.grant.ready := io.ramSource.decision.ready && (ramCommit || io.ramSource.resetDebt)
+  io.ramSource.decision.valid := io.ramSource.grant.fire
+  io.ramSource.decision.bits := ramCommit
+  io.ram.response.ready := io.ramSource.publication.ready
+  io.ramSource.publication.valid := io.ram.response.valid
+  io.ramSource.publication.bits := io.ram.response.bits(0)
+  when(ramCommit) {
+    assert(io.ramSource.grant.fire && io.ramSource.decision.fire && io.ram.request.fire,
+      "RAM_SOURCE_COMMIT_NOT_ATOMIC")
+    assert(io.ramSource.eligible && io.ramSource.grant.bits === isWrite,"RAM_SOURCE_GRANT_IDENTITY")
+  }
+  assert(io.ram.request.fire === ramCommit,"RAM_SOURCE_UNRESERVED_WORD")
+  when(io.ramSource.decision.fire && !io.ramSource.decision.bits) {
+    assert(io.ramSource.resetDebt && !io.ram.request.fire && !ramCommit,"RAM_SOURCE_CANCELLED_EFFECT")
+  }
   val bootWait = isRead && fullWord && req.address === MemoryMap.mmio.U && !started
   val waitingRead = isRead && fullWord && req.address === (MemoryMap.mmio + 16).U
   val eventWait = waitingRead && (pending & (wakeMask | "h30".U)) === 0.U
   parked := io.request.valid && eventWait
   val parkedForSleep = p.lowPower.nonEmpty.B && io.request.valid &&
     (bootWait || (eventWait && sleepRemaining =/= 0.U)) && io.admissionGrant.valid && !adcBusy && !memoryBusy && !controlBusy
-  io.canSleep := parkedForSleep && !scalingBusy && !tick && !telemetryWork && !boardWork
+  io.canSleep := parkedForSleep && !io.ramSource.draining && !scalingBusy && !tick && !telemetryWork && !boardWork
   val nativeMmio = req.address >= MemoryMap.mmio.U && req.address < (MemoryMap.mmio + 76).U &&
     req.operation =/= Operation.Halt.U
   val mmioComplete = io.controlReply.fire && io.controlReply.bits.kind === ControlKind.Mmio.U && mmioCurrent
   val cpuAvailable = completionAvailable && !io.cpuResetActive && !resetRecovery && io.clockRunning && io.admissionGrant.valid && !bootWait && !eventWait &&
     !memoryBusy && !loaderWrite && !telemetryBarrier && !housekeepingBarrierBusy
-  io.request.ready := cpuAvailable && Mux(nativeMmio, mmioComplete, !controlBusy)
+  val ramAdmission = io.ramSource.grant.valid && io.ramSource.decision.ready &&
+    !io.ramSource.resetDebt && io.ram.request.ready
+  io.request.ready := cpuAvailable && Mux(nativeMmio, mmioComplete, !controlBusy) &&
+    (!ramOperation || ramAdmission)
 
   io.commit.valid := io.request.fire; io.commit.bits := req
   // Accepted stores finish through a watchdog reset, but their CPU completion
@@ -320,14 +345,22 @@ class ClickServices(p: SocParameters, boardFactory: SocParameters => BoardProfil
   when(io.program.response.fire && loaderPending) {
     completionPending := true.B
   }
-  when((io.program.response.fire && !loaderPending) || io.ram.response.fire) {
+  when(io.program.response.fire && !loaderPending) {
     cpuMemoryPending := false.B
     when(cpuMemoryPending && !io.cpuResetActive) {
       io.completionMemory.valid := true.B
       io.completionMemory.bits.error := false.B
-      io.completionMemory.bits.data := Mux(io.ram.response.valid, io.ram.response.bits, io.program.response.bits)
+      io.completionMemory.bits.data := io.program.response.bits
       assert(io.completionMemory.ready,"COMPLETION_MEMORY_OVERFLOW")
     }
+  }
+  // The exclusive SRAM pipeline's actual publication qualifies this retained
+  // cancellation attribute. Eligibility alone never denotes a pending response.
+  when(io.ram.response.fire && io.ramSource.eligible && !io.ramSource.resetDebt && !io.cpuResetActive) {
+    io.completionMemory.valid := true.B
+    io.completionMemory.bits.error := false.B
+    io.completionMemory.bits.data := io.ram.response.bits
+    assert(io.completionMemory.ready,"COMPLETION_MEMORY_OVERFLOW")
   }
   when(io.request.fire) {
     when(waitingRead) { housekeepingAction.waitAccepted := true.B }
@@ -341,9 +374,9 @@ class ClickServices(p: SocParameters, boardFactory: SocParameters => BoardProfil
           io.program.request.bits.address := req.address - MemoryMap.program.U
           waitMemory := true.B; cpuMemoryPending := true.B
         }
-      }.elsewhen(req.address >= MemoryMap.ram.U && req.address < (MemoryMap.ram + config.workingRamBytes).U && !isFetch) {
+      }.elsewhen(ramOperation) {
         io.ram.request.valid := true.B
-        waitMemory := true.B; cpuMemoryPending := true.B
+        waitMemory := true.B
       }.elsewhen(!isFetch && req.address >= MemoryMap.mmio.U && req.address < (MemoryMap.mmio + 76).U && fullWord) {
         val offset = req.address(6, 0)
         response := io.controlReply.bits.memory
@@ -381,7 +414,7 @@ class ClickServices(p: SocParameters, boardFactory: SocParameters => BoardProfil
       }
   }
 
-  io.activity := scalingBusy || io.i2c.busy || gpioActivity || memoryBusy || controlBusy || telemetryWork || boardWork
+  io.activity := io.ramSource.draining || scalingBusy || io.i2c.busy || gpioActivity || memoryBusy || controlBusy || telemetryWork || boardWork
   // The normal seven-edge guard may drain while native maintenance is busy;
   // canSleep/activity still keep the gate open until that work actually drains.
   io.drainDemand := !parkedForSleep || io.i2c.busy || gpioActivity

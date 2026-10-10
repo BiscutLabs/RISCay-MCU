@@ -10,6 +10,7 @@ def main():
     parser=argparse.ArgumentParser()
     parser.add_argument('--bd',type=Path,required=True); parser.add_argument('--click',type=Path,required=True)
     parser.add_argument('--out',type=Path,required=True); parser.add_argument('--library',type=Path,required=True)
+    parser.add_argument('--click-selection',type=Path,help='AsyncCompletionSpec selected-absent fixture with directed skew cases')
     args=parser.parse_args(); repo=Path(__file__).resolve().parents[1]; out=args.out.resolve()
     inputs=[('bd',args.bd.resolve()),('click',args.click.resolve())]
     if any(out.is_relative_to(source) for _,source in inputs): parser.error('output must be separate from input exports')
@@ -74,6 +75,39 @@ def main():
             print(name,label,'PASS',flush=True)
         assert hashes(source)==before,'ORIGINAL_EXPORT_MODIFIED'
         results[name]['original_preserved']=True
+        (out/'results.json').write_text(json.dumps(results,indent=2)+'\n')
+        (out/'commands.json').write_text(json.dumps(commands,indent=2)+'\n')
+    if args.click_selection:
+        source=args.click_selection.resolve()
+        if out.is_relative_to(source):raise ValueError('SELECTION_CONTROLS_OVERLAP_SOURCE')
+        before=hashes(source)
+        node=json.loads((source/'export/contract.json').read_text())['manifest']['design']
+        validate_completion(node)
+        instance=next(p['rtl_path'].split('.')[-1] for p in node['primitives'] if p['id']=='request_guard')
+        for selected in ('memory','telemetry'):
+            oracle_source=source/('selected-skew-'+selected)/'testbench.sv'
+            oracle=hashlib.sha256(oracle_source.read_bytes()).hexdigest()
+            for mutated in (False,True):
+                label='selection-'+selected+('-short-guard' if mutated else '-baseline')
+                case=out/label;shutil.copytree(source/'export',case)
+                shutil.copy2(oracle_source,case/'testbench.sv');rtl=case/'ClickCompletion.sv'
+                if mutated:
+                    pattern=r'(ChiselAsyncControlGate_v1\s+#\(\s*\.DELAY_FS\()210200001(\),(?:\s*\.\w+\([^)]*\),?)+\s*\)\s+'+re.escape(instance)+r'\s*\()'
+                    changed,count=re.subn(pattern,lambda m:m[1]+'11000000'+m[2],rtl.read_text())
+                    assert count==1,'SELECTION_GUARD_MUTATION_SHAPE'
+                    rtl.write_text(changed,encoding='utf-8')
+                files=[str((case/x.strip()).resolve()) for x in (case/'filelist.f').read_text().splitlines() if x.strip()]
+                compiled,log=run(['iverilog','-g2012','-s','Testbench','-o','control.vvp',*files,'testbench.sv'],case,'compile.log',commands)
+                assert compiled['exit_code']==0,log[-4000:]
+                simulated,log=run(['vvp','control.vvp'],case,'simulation.log',commands)
+                expected='COMPLETION_SELECTED_SOURCE_ABSENT' if mutated else 'CA_TEST_PASS'
+                assert expected in log and (simulated['exit_code']!=0)==mutated,log[-4000:]
+                assert hashlib.sha256((case/'testbench.sv').read_bytes()).hexdigest()==oracle
+                results['click']['cases'][label]=dict(compile=compiled,simulation=simulated,
+                    expected=expected,oracle_sha256=oracle,oracle_kind='native-selected-source-skew')
+                print('click',label,'PASS',flush=True)
+        assert hashes(source)==before,'ORIGINAL_SELECTION_ORACLE_MODIFIED'
+        results['click']['selection_original_preserved']=True
         (out/'results.json').write_text(json.dumps(results,indent=2)+'\n')
         (out/'commands.json').write_text(json.dumps(commands,indent=2)+'\n')
     print('ALL_COMPLETION_WIRING_CONTROLS_PASS',flush=True)

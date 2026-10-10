@@ -17,7 +17,7 @@
   obtain a fresh independent agent review, address its findings, rerun affected
   checks, update its evidence/contracts, commit and push. Repeat this review loop
   for every item. Continue to the next item when the user has authorized it;
-  otherwise ask. Items 1-9, 10a and 10b1 are digitally verified within their scopes.
+  otherwise ask. Items 1-9, 10a, 10b1 and 10b2a are digitally verified within their scopes.
   The user has authorized deeper migration under expanded items 10-16: native
   service coordination, observation reduction, publication, direct interconnect
   and physically justified boundary minimization. Audit every remaining clocked
@@ -40,15 +40,28 @@
   BD rendezvous return barrier and Click aggregate payload/phase aperture. Keep
   fixed guard IDs recognized by AsyncTest, test immediate source reuse and
   unselected pending tokens, and assert source readiness at completion capture.
+  Qualify selection before native phase admission; a delayed readiness vector
+  alone does not prevent old-selector/new-request hazards. Keep absent-selected-
+  source tests and directed minimum/maximum gate skew, with unchanged oracles.
   Admission retirement is retained by each native credit owner; idle never creates
   credit. Consume the single seeded grant at request commit, preserve HALT until
   application reset, and keep offered MMIO requests visible during credit stalls.
   BD recycling waits for full response RTZ. Click input/output parity and startup
   belong to the application lifetime. Run AsyncAdmissionSpec/AdmissionSpec and
   actual admission-gate, credit-consumption and return-barrier mutation controls.
+  Native RAM source ownership reserves before CPU acceptance. Commit/grant/word
+  capture must agree; cancel old queued grants without issuing memory effects.
+  Eligibility alone is not a response-valid signal. Release reset debt only
+  after owner/receipt/word/byte drainage; wordDrained must exclude receipt bridges.
+  Keep source phases/effects POR-only and run AsyncRamSourceSpec/RamSourceSpec.
+  Application reset asserts immediately and releases after eight ungated service
+  edges (>=350 ns at the 20 MHz ceiling), restarting on every raw pulse. Audit
+  all custom timing bounds against the 250 ns digital reset-settlement budget.
+  Inject reset-test pulses before this qualifier; never lengthen failing pulses.
   Run AsyncCompletionSpec/CompletionSpec and real completion wiring mutation
   controls; preserve the full emitted port ABI even for constant error fields.
-  Strict completion stimulus may force only catalogued source registers. Preserve
+  Strict completion stimulus may force only catalogued source registers or the
+  exactly validated RAM eligibility EventRegister output. Preserve
   every dynamic bit's polarity activity; the three literal bridge input leaves
   require exact emitted bindings, schemas and per-check value assertions. Reject
   dynamic expressions before granting a constant mask. Keep actual-RTL mutation

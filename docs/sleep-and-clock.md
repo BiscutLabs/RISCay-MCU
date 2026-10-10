@@ -166,6 +166,16 @@ multiple busy requests into one pending kick).
 
 LF failure still stops both timer and watchdog. Detecting LF failure would require
 another independent reference or external supervisor; that is not claimed here.
+Application reset release now waits for eight edges of the ungated service clock.
+At its 20 MHz maximum this provides at least 350 ns of continuous hold, exceeding
+the 250 ns digital native-island reset-settlement budget. Raw assertion remains
+asynchronous. A new raw pulse resets the complete release history even while the
+qualified output is already high; stopped clocks cannot release reset. Completion,
+Admission, core, Fabric and their application crossings restart together. This
+prevents an old delayed Click phase from becoming a phantom response after a
+short pulse. The two-edge LF watchdog hold is separate and unchanged. Reset-tree
+skew, minimum pulse width and recovery/removal still need physical qualification.
+
 Watchdog reset asserts CPU/bridge resets and requests fast-source restart. The
 reset-pin path remains asynchronous. Mode/admission/loader logic and `forceRun`
 use a POR-only two-flop service-clock copy on assertion as well as release.

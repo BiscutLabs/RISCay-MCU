@@ -10,7 +10,7 @@ when no next item has been chosen. Both implementations remain active throughout
 
 - Four-phase bundled-data implementation: `designs/four-phase-bd/src/main/scala/riscay/bd/`.
 - Native two-phase Click implementation: `designs/two-phase-click/src/main/scala/riscay/click/`.
-- Each owns its Fabric, Completion, Admission, Control, Telemetry, Supervisor, Housekeeping, SRAM sequencing, I2C and SPI ADC protocol,
+- Each owns its Fabric, Completion, Admission, RAM source, Control, Telemetry, Supervisor, Housekeeping, SRAM sequencing, I2C and SPI ADC protocol,
   Services, Platform, ClockedPeripherals, ConstantScaling,
   I2cTarget, SleepTiming and SramBank code. Copying the former service island into
   these directories establishes ownership; it does not migrate its state machines.
@@ -104,7 +104,7 @@ when no next item has been chosen. Both implementations remain active throughout
       removing source-pending bits or SRAM word crossings. Repeated watchdog
       resets cannot alias an old operation into a new CPU lifetime. POR-owned
       effects must finish exactly once while cancelled CPU replies stay cancelled.
-      - [ ] **10b2a. RAM source slot and cancellation fence.** Allocate ownership
+      - [x] **10b2a. RAM source slot and cancellation fence - digitally verified, 2026-10-10.** Allocate ownership
         no later than CPU acceptance; cancel reply eligibility without resetting
         accepted POR effects. Include queued commands in the reuse fence. Preserve
         the existing whole-word publication crossing for this first substep.
@@ -118,8 +118,34 @@ when no next item has been chosen. Both implementations remain active throughout
         A Decoupled `fire` level is not a commit clock; an unqualified generated
         strobe cannot replace this reservation protocol. Clocked drain projection
         and `SramAccess.active` remain explicit boundaries in this substep.
+        The implementation has separate native owners and four POR crossings.
+        Focused short-pulse tests exposed Click completion-phase replay during
+        reset release; the application island now shares an eight-edge qualifier
+        on the ungated service clock. At the 20 MHz ceiling this holds at least
+        350 ns against the 250 ns digital reset-settlement envelope. Fresh review
+        fixes, all 276 verification cases, both core policy cases, 96 Python
+        controls and both strict exports pass. Unchanged oracles reject 55 actual
+        RTL mutations, 191 metadata mutations and six dynamic-binding changes.
+        Coverage includes the full timing policy, emitted reset distribution,
+        early publication/return, repeated pulses and actual macro write counts.
+        Evidence: `build/async-ram-source-migration/qualification-evidence.json`.
       - [ ] **10b2b. Program-memory CPU/loader ownership.** Preserve exactly-once
         `Stored` accounting and loader priority through cancellation and recovery.
+        Reserve a native slot tagged CPU read or loader write before word
+        acceptance. If higher-priority Control work arrives before CPU commit,
+        cancel the uncommitted reservation and retry without consuming admission.
+        Retain loader obligations through application reset and backpressure a
+        loader reply until grant/word/commit acceptance agree. Replace clocked
+        CPU-pending and `Stored`-pending ownership; keep `ControlState.loaderPending`,
+        which already belongs to the native accounting token. Retain `Stored`
+        delivery until its Control command is accepted and the full return drains.
+        Click needs independent `Stored` phase history across CPU-only operations.
+        Only committed loader slots wait for Stored; CPU commits/cancellations
+        bypass that phase. Loader reservation, grant, publication and accounting
+        must progress through application reset debt. Accept actual word
+        publication before waiting for word drainage; retain admission-time busy
+        history through the Stored command/reply gap. Cover independent phase
+        histories and directed selector skew with newly derived timing bounds.
       - [ ] **10b2c. Publication receipts and recovery debt.** Move Telemetry and
         Housekeeping CPU eligibility only with their publication acknowledgments;
         repeated resets cannot let an old recovery clear newly incurred debt.
@@ -140,6 +166,14 @@ when no next item has been chosen. Both implementations remain active throughout
   possible. Independent live requests require physically supported arbitration
   or a proven event-token scheduler; the library's RTZ-backed two-phase arbiter
   and unqualified MUTEX model cannot satisfy native Click or physical signoff.
+  - [ ] **11a. Host admission storage.** Replace mailbox/reset-debt storage while
+    preserving each frame's admission-time reset/busy context and overflow proof.
+  - [ ] **11b. Dispatch ownership.** Move Control outstanding, reset, HALT and
+    MMIO-commit scheduling into native retained tokens; preserve completion-first
+    priority and the offered-request event-clear window.
+  - [ ] **11c. Independent-request arbitration.** Implement and qualify the
+    required arbitration or event scheduler, including simultaneous arrivals,
+    bounded CPU/background fairness and permanent-supervisor independence.
 - [ ] **12. Native observation transport and reduction.** Remove clocked elapsed,
   acquisition and GPIO-history reduction from Services. Preserve every required
   observation under independent consumer stalls, saturating ages, extrema,
@@ -158,7 +192,7 @@ when no next item has been chosen. Both implementations remain active throughout
   an obvious direct connection in an earlier item.
 - [ ] **15. Minimize timed I/O and time-source boundaries.** Audit sampled I2C/GPIO,
   SPI playback/admission/age bookkeeping, SRAM byte launch/capture, watchdog kick
-  delivery, crash accounting, legacy timers, source wake and retained gating.
+  delivery, application reset release, crash accounting, legacy timers, source wake and retained gating.
   Migrate ordering, counters and policy that can operate on native event tokens.
   Investigate edge-driven alternatives where pin electrical constraints permit;
   require metastability-safe arbitration, characterized pulse/setup/hold bounds,
@@ -173,11 +207,30 @@ when no next item has been chosen. Both implementations remain active throughout
   Check native Click end-to-end, service-clock-stopped progress, source-rate and
   backpressure bounds, reset isolation and all public interfaces. Do not claim
   maximal feasible asynchrony based on source-level module names or test passes.
+  Start from the emitted inventory below, resolve every local clock alias to its
+  real domain, and split flattened top-level state into individual owners before
+  assigning a physical justification. Native-to-clocked bridges are removal
+  candidates whenever their clocked consumer is migrated; their presence alone
+  does not justify retaining a service clock.
+  - [ ] Resolve the complete emitted register/event-control inventory to clocks
+    and reset domains; account for flattened and generated state as well as children.
+  - [ ] Classify each retained owner with its specific constraint, rejected
+    alternatives and evidence; reopen any convenience-only boundary.
+  - [ ] Recheck clock-stopped progress, maximum source rates, saturation/overflow,
+    reset and end-to-end native Click after the final boundary removals.
 - [ ] **17. Physical requalification (previously item 10).** Qualify new-controller
   timing contracts, mapped decode/data paths, arbitration/metastability handling,
   pulse/fork/return timing, reset and CDC bounds, then new P&R and extracted
   validation. Feed physical failures back into the migration design; digital
   passes alone cannot check this item or establish physical feasibility.
+  - [ ] Characterize complete new data/control transforms, selection guards,
+    feedback, arbitration and reset paths at all required pinned corners.
+  - [ ] Bind mapped cells and constraints to the final emitted ownership graph;
+    preserve async cells, macros, supplies and clock/reset domain boundaries.
+  - [ ] Rerun placement/routing, extracted async-path validation and clocked STA;
+    resolve violations or reopen the affected migration decision.
+  - [ ] Reconcile the residual-state audit with physical results before making
+    any maximal-asynchrony or timing-closure claim.
 
 Items 1-9 are digitally verified within their original scopes. On 2026-10-10 the
 user authorized deeper migration through the remaining feasible asynchronous
@@ -187,6 +240,31 @@ Complete and review each substep before progressing, retaining actual failures.
 Physical requalification follows the residual audit; old P&R evidence cannot
 qualify the revised RTL. Every item requires both independent implementations,
 invariant-focused tests and a fresh independent review before completion.
+
+## Preliminary residual-state inventory
+
+The 10b2a production exports still contain substantial clocked state. An emitted
+candidate inventory is retained in
+`build/async-ram-source-migration/residual-register-candidates.json` with each
+register's width and local event control. It excludes fixed async primitive state,
+probe state and SRAM arrays. These are elaborated declarations, not mapped flop
+counts, area, power or proof that any remaining boundary is physically necessary.
+The later RAM/Completion guard fixes change only native primitives, not this inventory.
+
+| Candidate group | BD registers / bits | Click registers / bits | Follow-up |
+| --- | ---: | ---: | --- |
+| Flattened SoC/Services state | 294 / 3,275 | 293 / 3,276 | Split ownership across items 10-16 |
+| I2C sampling, capture and projection | 101 / 941 | 101 / 941 | Items 13-15 |
+| SPI waveform/capture boundary | 18 / 175 | 18 / 175 | Items 12-15 |
+| Two SRAM access wrappers | 26 / 26 | 26 / 26 | Items 10b2d, 14-15 |
+| Elapsed ingress wrapper | 6 / 37 | 6 / 37 | Items 12, 14-15 |
+| 46 explicit clocked bridge instances | 582 / 4,133 | 582 / 4,133 | Remove as their clocked clients migrate |
+| Total candidates in 52 emitted owners | 1,027 / 8,587 | 1,026 / 8,588 | Item 16 must account for every owner |
+
+An owner is retained only with a specific physical or interface obligation and
+supporting evidence. Independent time/watchdog operation and the pinned synchronous
+SRAM macro interface remain requirements; policy and bookkeeping around them
+remain migration candidates. This inventory does not close item 16.
 
 ## Completion criteria for the expanded migration
 
@@ -388,7 +466,7 @@ also have independent clockless `AsyncControlSpec` oracles for both protocols.
 
 These are digital controllers. The complete command/decode/CRC transforms use
 declared simulation budgets; newly mapped paths, state feedback forks, pulse
-distribution, CDC/reset and physical implementation require item 10 qualification.
+distribution, CDC/reset and physical implementation require item 17 qualification.
 
 ### Fresh SocFabric review
 

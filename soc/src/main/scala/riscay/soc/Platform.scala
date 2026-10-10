@@ -6,11 +6,21 @@ import chisel3.util._
 import chisel3.util.experimental.InlineInstance
 import riscay._
 
+/** Digital reset-distribution envelope. The source must never exceed 20 MHz.
+  * Physical recovery/removal and reset-tree delay still require qualification.
+  */
+object ApplicationResetContract {
+  val maximumServiceHz = 20000000
+  val releaseEdges = 8
+  val nativeSettleFs = 250000000L
+  require((releaseEdges-1)*1000000000000000L/maximumServiceHz > nativeSettleFs)
+}
+
 final case class SocParameters(config: McuConfiguration, serviceHz: Int = 10000000,
     i2cAddress: Int = 0x35, staleMs: Int = 100, watchdogCycles: Int = 32768,
     watchdogHoldCycles: Int = 8, adc: Option[AdcParameters] = None,
     lowPower: Option[LowPowerParameters] = None, i2cIdleCycles: Int = 262144) {
-  require(serviceHz >= 1000 && serviceHz % 1000 == 0)
+  require(serviceHz >= 1000 && serviceHz <= ApplicationResetContract.maximumServiceHz && serviceHz % 1000 == 0)
   require(i2cAddress >= 8 && i2cAddress < 120)
   require(i2cIdleCycles >= 256)
   require(staleMs > 0 && watchdogCycles > watchdogHoldCycles + 4 && watchdogHoldCycles >= 2)

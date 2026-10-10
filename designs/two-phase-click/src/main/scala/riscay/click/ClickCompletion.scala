@@ -57,7 +57,11 @@ class ClickCompletion(domain: ResetDomain) extends AsyncModule(domain) {
   private val memoryPhase=phase("memory_phase")
   private val telemetryPhase=phase("telemetry_phase")
   private val housekeepingPhase=phase("housekeeping_phase")
-  private val delayed=gate("request_guard",GateOperation.Buffer,plan.req.asUInt,delay=timing.requestDelay).asBool
+  // A new plan may select a previously absent source. Qualify its phase only
+  // after selection has propagated through the entire readiness chain (data max
+  // + requestDelay + nine fire maxima + skew/hold <= 111.2 ns). The 210.2 ns
+  // guard covers this; delaying before XOR leaves accepted-phase feedback prompt.
+  private val delayed=gate("request_guard",GateOperation.Buffer,plan.req.asUInt,delay=guard).asBool
   private val pending=xor("plan_pending",delayed,accepted.q.asBool)
   private val occupied=xor("response_occupied",accepted.q.asBool,creditReturn.ack)
   private val sources=Seq(("memory",memory.req,plan.bits.memory,memoryPhase),

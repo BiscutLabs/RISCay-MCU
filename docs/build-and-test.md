@@ -1,5 +1,86 @@
 # Build and test
 
+## Native RAM source ownership - digitally verified, 2026-10-10
+
+Substep 10b2a adds separate native BD and Click reservations before CPU RAM
+acceptance. Grant, commit receipt and word acceptance agree; cancellation drains
+queued grants without issuing a word. Actual publication retires accepted effects,
+while application reset removes CPU reply eligibility. Four explicit POR crossings,
+clocked drain projection and the existing SRAM word round trip remain for later
+substeps. Program-memory ownership is still tracked separately in 10b2b.
+
+Evidence is under `build/async-ram-source-migration/`. `python-r4.log` passes all
+96 working-tree Python controls, including six preserved P&R controls, and
+`sram-assets.log` validates all 11 pinned assets. `public-abi.json` confirms the
+same 34 public ports per variant as 10b1. `full-regression-r3.log` passes all
+276 verification cases across 34 suites and both core timing-policy cases, with
+no failures, errors, skipped, canceled, ignored or pending cases. Fresh XML
+receipts and hashes are in `verification-summary.json` and `final-reports/`.
+
+The final focused run (`selection-guards-r2.log`) passes all 33 RAM/Completion
+cases, including directed single-gate minimum/maximum skew. Fresh independent
+review has no remaining finding. Both strict exports pass. Final emit comparison
+confirms identical manifests and functional RTL against those exact receipts;
+`qualification-evidence.json` collects source, probe, report and checker hashes.
+
+The new fixtures independently count CPU acceptance, word acceptance, real SRAM
+byte writes and publication. They cover queued reservations, grant/decision
+stalls, every held byte lane, publication debt, repeated sub-cycle reset pulses
+and earliest native return/reuse. Publication-only tests hold the selected receipt
+back after every other retirement condition is satisfied. Eligibility by itself
+is never a valid-response signal.
+
+The original `boundary-first.log` and `debug-publication/simulation.log` retain
+a Click phantom-completion failure after a short reset. The old two-edge release
+could expose a delayed previous completion phase. Both application islands now
+assert reset asynchronously and hold it for eight ungated service edges, restarting
+on every raw pulse. At the 20 MHz ceiling, the minimum 350 ns hold exceeds the
+250 ns digital settlement budget. The original short pulses and result/count
+oracles are unchanged. Accepted SRAM effects and source phases stay POR-owned.
+
+Fresh independent review findings and fixes are recorded in `review-notes.md`.
+The emitted reset audit checks the actual release logic, every application-owned
+child and its nested timing bounds. The reset-binding probe and budget audit use
+one complete ownership classification. Custom BD/Click timing policies must fit
+the budget. RAM eligibility has one narrowly validated POR-or-application reset
+exception; all other source state retains the normal POR checks.
+
+Both production exports pass their first strict probes without paired fallback.
+`guard-export-comparison.json` verifies identical BD RTL and metadata against the
+latest emitter. The Click receipt below includes both selection-guard fixes.
+
+| Variant | Endpoints | Mapping checks | Semantic SHA-256 |
+| --- | ---: | ---: | --- |
+| Four-phase | 2,167 | 630,755,191 | `f9debaf7815e9d2c7886aad3bbc03e9eb6efe0d7bdca4f61e372f58562f158ff` |
+| Native Click | 1,845 | 513,103,725 | `ad48fffd345fdf05de86fc2a660efa182de216f3ecc515161942f4bbf36c034c` |
+
+BD receipts are `bd-strict-r2.log` and `four-phase-soc/resolved.json`.
+Click receipts are `click-strict-r4.log` and `click-soc-r4/resolved.json`.
+All three SRAM macros and every dynamic endpoint's activity
+obligations remain. The strict RAM publication stimulus may force only the
+catalogued, exactly validated eligibility EventRegister output. It never forces
+a derived response endpoint. Final policy revalidation preserves the successful
+probe obligations and hashes.
+
+The RAM, admission, completion and full-SoC boundary controls reject all 55 actual
+RTL mutations, 191 metadata mutations and six dynamic-binding changes using
+their original oracles. Earlier compile, alias, monitor-order and strict-stimulus
+failures remain in the evidence directory. The native fixture's ACK reaction is
+2 fs after observation so it cannot race the existing 1 fs monitor snapshot;
+all timing/payload assertions remain active. These are digital results, with
+physical reset, capture/return, CDC and routed timing qualification still open.
+
+The publication-only test exposed a Click RAM selector race in
+`final-focused-emit.log`; `debug-publication-required/simulation.log` preserves
+the trace. The new 221.200001 ns pre-comparator decision guard settles selection
+before retirement admission. Review also reproduced the same class of race in
+Click Completion with one randomized selection gate at 10 ns and the other
+randomized control cells at 1 ns, with fixed guards unchanged.
+Its existing input phase guard is now 210.200001 ns. Both feedback paths bypass
+these input guards. The unchanged absent-source oracles reject actual guard
+mutations. Earlier random sweeps alone missed the Completion race. Superseded
+`full-regression-r2.log` and `click-strict-r3.log` were interrupted and are not passes.
+
 ## Native admission credit - digitally verified, 2026-10-10
 
 Expanded substep 10b1 replaces Services' clocked CPU occupancy and synchronized

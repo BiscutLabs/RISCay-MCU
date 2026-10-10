@@ -2,7 +2,7 @@
 
 Migration items use a fresh independent agent review, fixes, affected verification,
 and a commit/push before completion. Items 1–9, native response assembly (10a)
-and native admission credit (10b1) are digitally verified; see the
+native admission credit (10b1) and RAM ownership/cancellation (10b2a) are digitally verified; see the
 [migration checklist](docs/async-soc-migration.md)
 for the remaining clocked state and physical qualification work.
 
@@ -86,8 +86,10 @@ replies connect directly to Fabric. Substep 10a passes independent review, all
 mutation controls and strict exports. Native admission credit (10b1) passes fresh
 review, all 253 verification cases, both core policy cases, 90 working-tree
 Python controls and strict exports. Its clocked-client crossing remains explicit.
-Source cancellation flags and peripheral crossings remain
-clocked and explicitly tracked for subsequent migration.
+Native RAM source ownership/cancellation (10b2a) passes fresh review, all 276
+verification cases, both core policy cases, 96 Python controls, mutation controls
+and strict exports. Program-memory and other source flags, publication
+crossings and reset/drain projections remain tracked for subsequent migration.
 The independent LF timebase/watchdog remains necessary. See the [migration checklist](docs/async-soc-migration.md). A permanent
 Groundlark controller supervises power before upload and during application
 stalls. Its state, safety sample record and confirmation counters now reside

@@ -23,6 +23,8 @@ from check_completion_export import (BD_COMPLETION_PATH, CLICK_COMPLETION_PATH,
                                      validate_completion, completion_bindings)
 from check_completion_integration import completion_background, completion_constants_probe
 from check_admission_export import validate_admission, literal_nets, admission_probe
+from check_application_reset import validate_application_reset, persistent_reset_children
+from check_ram_source_export import ARM_PATH, RETIRE_PATH, validate_ram_source, ram_source_bindings, ram_source_probe
 
 
 def sram_array_shapes(contents, scopes):
@@ -548,44 +550,7 @@ def generated_reset_probe(source: str, manifest: dict) -> str:
         raise ValueError("SOC_RESET_ENDPOINT_MISMATCH")
     reset = endpoints[0]["rtl_path"]
 
-    persistent = {"control": "ClickControl" if top == "ClickSoc" else "FourPhaseControl",
-                  "control_command_bridge": "DecoupledToClick" if top == "ClickSoc" else "DecoupledToFourPhase",
-                  "control_reply_bridge": "ClickToDecoupled" if top == "ClickSoc" else "FourPhaseToDecoupled"}
-    present = {c.get("id") for c in root["children"]} & persistent.keys()
-    if present and present != persistent.keys():
-        raise ValueError("SOC_PERSISTENT_RESET_INVENTORY")
-    telemetry = {"telemetry": "ClickTelemetry" if top == "ClickSoc" else "FourPhaseTelemetry",
-                 "telemetry_command_bridge": "DecoupledToClick" if top == "ClickSoc" else "DecoupledToFourPhase",
-                 "telemetry_reply_bridge": "ClickToDecoupled" if top == "ClickSoc" else "FourPhaseToDecoupled"}
-    present = {c.get("id") for c in root["children"]} & telemetry.keys()
-    if present and present != telemetry.keys():
-        raise ValueError("SOC_PERSISTENT_RESET_INVENTORY")
-    persistent.update(telemetry)
-    supervisor = {"supervisor": "ClickSupervisor" if top == "ClickSoc" else "FourPhaseSupervisor",
-                  "supervisor_command_bridge": "DecoupledToClick" if top == "ClickSoc" else "DecoupledToFourPhase",
-                  "supervisor_reply_bridge": "ClickToDecoupled" if top == "ClickSoc" else "FourPhaseToDecoupled"}
-    present = {c.get("id") for c in root["children"]} & supervisor.keys()
-    if present and present != supervisor.keys():
-        raise ValueError("SOC_PERSISTENT_RESET_INVENTORY")
-    persistent.update(supervisor)
-    housekeeping = {"housekeeping": "ClickHousekeeping" if top == "ClickSoc" else "FourPhaseHousekeeping",
-                    "housekeeping_command_bridge": "DecoupledToClick" if top == "ClickSoc" else "DecoupledToFourPhase",
-                    "housekeeping_reply_bridge": "ClickToDecoupled" if top == "ClickSoc" else "FourPhaseToDecoupled"}
-    present = {c.get("id") for c in root["children"]} & housekeeping.keys()
-    if present and present != housekeeping.keys():
-        raise ValueError("SOC_PERSISTENT_RESET_INVENTORY")
-    persistent.update(housekeeping)
-    sram = {"program_access": "SramAccess", "ram_access": "SramAccess"}
-    present = {c.get("id") for c in root["children"]} & sram.keys()
-    if present and present != sram.keys():
-        raise ValueError("SOC_PERSISTENT_RESET_INVENTORY")
-    persistent.update(sram)
-    persistent["i2c"] = "I2cTarget"
-    persistent.update({"elapsed_scaler": "ElapsedTicks", "sample_scaler": "SampleScaler", "spi_adc": "SpiAdc"})
-    for child in root["children"]:
-        if child.get("id") in persistent and not re.fullmatch(
-                re.escape(persistent[child["id"]]) + r"(?:_[0-9]+)?", child["contract"].get("module", "")):
-            raise ValueError("SOC_PERSISTENT_RESET_OWNER")
+    persistent = persistent_reset_children(manifest)
 
     def children(node, persistent_domain=False):
         for child in node["children"]:
@@ -758,6 +723,8 @@ def validate_fabric_inventory(manifest):
     """Required obligations cannot vanish along with their passive markers."""
     def visit(node):
         module = node["module"]
+        if re.fullmatch(r"(?:FourPhase|Click)RamSource(?:_[0-9]+)?", module):
+            validate_ram_source(node)
         if re.fullmatch(r"(?:FourPhase|Click)Admission(?:_[0-9]+)?", module):
             validate_admission(node)
         if re.fullmatch(r"(?:FourPhase|Click)Completion(?:_[0-9]+)?", module):
@@ -823,6 +790,9 @@ def validate_fabric_path(node, timing):
     primitive, elaborated pin, endpoint mapping and endpoint activity afterwards.
     """
     logic = timing.get("logic")
+    if logic in (ARM_PATH, RETIRE_PATH):
+        validate_ram_source(node)
+        return
     if logic in (BD_COMPLETION_PATH, CLICK_COMPLETION_PATH):
         validate_completion(node)
         return
@@ -871,7 +841,7 @@ def validate_fabric_path(node, timing):
 
 def validate_native_click(manifest):
     """A Click export must remain native throughout its async hierarchy."""
-    if manifest["top"] not in ("ClickSoc", "ClickCore", "ClickFabric", "ClickControl", "ClickTelemetry", "ClickSupervisor", "ClickElapsed", "ClickSample", "ClickSram", "ClickI2c", "ClickSpiAdc", "ClickHousekeeping", "ClickCompletion", "ClickAdmission"):
+    if manifest["top"] not in ("ClickSoc", "ClickCore", "ClickFabric", "ClickControl", "ClickTelemetry", "ClickSupervisor", "ClickElapsed", "ClickSample", "ClickSram", "ClickI2c", "ClickSpiAdc", "ClickHousekeeping", "ClickCompletion", "ClickAdmission", "ClickRamSource"):
         return
     def nodes(node):
         yield node
@@ -938,6 +908,8 @@ def spi_program_probe(source, manifest, scopes):
 
 def fabric_path_bindings(node, timing):
     """Actual mux/storage pin comparisons added to the unchanged library probe."""
+    if timing.get("logic") in (ARM_PATH, RETIRE_PATH):
+        return ram_source_bindings(node)
     if timing.get("logic") in (BD_COMPLETION_PATH, CLICK_COMPLETION_PATH):
         return completion_bindings(node)
     if timing.get("logic") == I2C_PROJECTION_PATH:
@@ -980,14 +952,16 @@ def fabric_checker_source(source):
              + f' {CLICK_FABRIC_PATH!r}: ([], "data_delay", "reply_sources", "register_data"),'
              + f' {I2C_PROJECTION_PATH!r}: ([], "data_delay", "sources", "register_data"),'
              + f' {BD_COMPLETION_PATH!r}: (["reply"], "data_delay", "result_sources", "result"),'
-             + f' {CLICK_COMPLETION_PATH!r}: ([], "data_delay", "result_sources", "register_data")}}'
+             + f' {CLICK_COMPLETION_PATH!r}: ([], "data_delay", "result_sources", "register_data"),'
+             + f' {ARM_PATH!r}: ([], "arm_data_delay", "reserved", "arm_data"),'
+             + f' {RETIRE_PATH!r}: ([], "data_delay", "retire_sources", "register_data")}}'
              + "\n                validate_fabric_path(node, timing)")
     source = source.replace(anchor, extra)
     anchor = 'if timing["logic"] in ("exclusive-merge-input-mux", "controlled-multiplexer-input-mux"):'
     if source.count(anchor) != 1:
         raise ValueError("MCU_FABRIC_CHECKER_SHAPE_CHANGED")
     source = source.replace(anchor,
-        f'if timing["logic"] in ({BD_FABRIC_PATH!r}, {CLICK_FABRIC_PATH!r}, {I2C_PROJECTION_PATH!r}, {BD_COMPLETION_PATH!r}, {CLICK_COMPLETION_PATH!r}):\n'
+        f'if timing["logic"] in ({BD_FABRIC_PATH!r}, {CLICK_FABRIC_PATH!r}, {I2C_PROJECTION_PATH!r}, {BD_COMPLETION_PATH!r}, {CLICK_COMPLETION_PATH!r}, {ARM_PATH!r}, {RETIRE_PATH!r}):\n'
         '                    pairs = fabric_path_bindings(node, timing)\n'
         '                el' + anchor)
     anchor = '    if "INACTIVE_ENDPOINT:" in simulation.stdout:'
@@ -1040,6 +1014,8 @@ def main() -> None:
     module.validate_memories = memories
 
     def probe(manifest, scopes, paired=False):
+        top_rtl=(args.directory / (manifest["top"]+".sv")).read_text(encoding="utf-8")
+        validate_application_reset(manifest,scopes,top_rtl)
         source, count = original_probe(manifest, scopes, paired)
         source = spi_program_probe(source, manifest, scopes)
         source, count = register_file_background(source, manifest, count)
@@ -1057,6 +1033,7 @@ def main() -> None:
         source = completion_constants_probe(source, manifest, scopes,
             (args.directory / (manifest["top"]+".sv")).read_text(encoding="utf-8"))
         source = admission_probe(source, manifest, scopes)
+        source = ram_source_probe(source, manifest, scopes)
         return source, count
     module.probe_source = probe
 

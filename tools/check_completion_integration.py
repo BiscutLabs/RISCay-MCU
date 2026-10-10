@@ -107,9 +107,11 @@ def completion_background(source, manifest, scopes, checks):
         raise ValueError("COMPLETION_BACKGROUND_SHAPE")
     extra, steps = [], 0
 
-    def force(path, width, value):
+    def force(path, width, value, primitive=False):
         node, field = path.rsplit(".", 1)
-        if (scopes.get(node, {}).get("registers", {}).get(field) != width or
+        source_valid = (scopes.get(node, {}).get("ports", {}).get(field) == dict(name=field,width=width,direction="output")) if primitive else (
+            scopes.get(node, {}).get("registers", {}).get(field) == width)
+        if (not source_valid or
                 f"force {path} = {width}'h0;" not in header):
             raise ValueError("COMPLETION_BACKGROUND_DRIVER")
         if not 0 <= value < 1 << width:
@@ -149,6 +151,8 @@ def completion_background(source, manifest, scopes, checks):
         force(request+".data_mask", 4, 15)
         force(request+".data_operation", 2, operation)
         force(request+".data_address", 32, address)
+        if address == 0x20000000:
+            force(top+".ca_child_ram_grant_bridge.state", 2, 2)
         if mmio:
             force(top+".fabric_controlOutstanding", 1, 1)
             force(top+".fabric_mmioCurrent", 1, 1)
@@ -163,7 +167,12 @@ def completion_background(source, manifest, scopes, checks):
     plan(1, 0x20000000)
     plan(2, 0x30000008, True)
     extra.append(header)
-    force(top+".fabric_cpuMemoryPending", 1, 1)
+    # RAM completion eligibility now belongs to its native reservation owner.
+    owner=next(c["contract"] for c in manifest["design"]["children"] if c["id"]=="ram_source")
+    cell=next(p for p in owner["primitives"] if p["id"]=="eligibility")
+    if cell["model"]!="ChiselAsyncEventRegister_v1" or cell["parameters"].get("WIDTH")!="1":
+        raise ValueError("COMPLETION_RAM_ELIGIBILITY_OWNER")
+    force(cell["rtl_path"]+".q", 1, 1, primitive=True)
     force(top+".ca_child_ram_access.active", 1, 1)
     memory = top+".ca_child_ram_access.ca_child_reply_bridge"
     force(memory+".state", 2, 2)

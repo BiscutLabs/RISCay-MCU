@@ -10,20 +10,12 @@ import java.util.zip.CRC32
 
 class MemoryResetFixture(p: SocParameters) extends FabricFixture(p) {
   val applicationReset = IO(Input(Bool()))
-  val observed = withClockAndReset(serviceClock, reset) {
-    val first = RegNext(applicationReset, false.B); RegNext(first, false.B)
-  }
-  fabric.io.cpuReset := systemReset || applicationReset
-  fabric.io.cpuResetActive := cpuResetActive || observed
+  applicationResetRequest := reset.asBool || watchdog.io.expired || applicationReset
 }
 
 class ClickMemoryResetFixture(p: SocParameters) extends ClickFabricFixture(p) {
   val applicationReset = IO(Input(Bool()))
-  val observed = withClockAndReset(serviceClock, reset) {
-    val first = RegNext(applicationReset, false.B); RegNext(first, false.B)
-  }
-  fabric.io.cpuReset := systemReset || applicationReset
-  fabric.io.cpuResetActive := cpuResetActive || observed
+  applicationResetRequest := reset.asBool || watchdog.io.expired || applicationReset
 }
 
 class SramCrossingFixture(p: SocParameters) extends MemoryResetFixture(p) {

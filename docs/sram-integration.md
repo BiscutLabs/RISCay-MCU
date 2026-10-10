@@ -37,6 +37,36 @@ area: controller cells, routing channels, supply straps and placement margins
 must be included. The historical flip-flop estimates are not estimates for
 this revision.
 
+## Native RAM source reservation (10b2a; digitally verified)
+
+Each variant now reserves a POR-owned native slot before a CPU RAM request can
+commit. The grant carries the held write bit. CPU acceptance, grant consumption,
+word-command acceptance and the committed-decision receipt occur on the same
+service edge. A queued or held grant from an old application lifetime is consumed
+as cancellation; it cannot issue a word. A committed slot waits for the actual
+whole-word publication receipt and complete word/byte/receipt drainage before
+reuse. BD waits for return to zero; Click retains independent native parities.
+Click qualifies the decision phase before its phase comparator, allowing the
+cancel/commit selection cone to settle before retirement is enabled. Its
+221.200001 ns digital guard exceeds the conservative 111.2 ns selection bound;
+retirement feedback bypasses that input guard and settles within 121.2 ns before
+the outward acknowledgment permits reuse. A publication-only skew test exposed
+the original race; its unchanged oracle also rejects a guard-bypass RTL mutation.
+
+Only reply eligibility resets with the application; POR phase identity and accepted
+memory effects persist. Eligibility is a retained cancellation attribute, not a
+response-valid signal: CPU completion requires an actual SRAM response publication
+and cleared reset debt. Every reset pulse restarts the coordinated application
+reset hold. Debt and its release history reset asynchronously, and fresh admission
+waits for the owner, all four source bridges and the existing SRAM paths to drain.
+The word-drained input excludes the new receipt bridges, avoiding a circular wait.
+
+RAM no longer uses Services' `cpuMemoryPending`; that register still owns program
+reads until 10b2b. Four ownership crossings, synchronized idle/debt qualification,
+`SramAccess.active`, word crossings and the synchronous macro boundary remain.
+Later checklist items remove those round trips under this ownership contract.
+No reset, bundled-path, CDC or physical macro timing closure is claimed.
+
 ## Access and arbitration
 
 The native `FourPhaseSram`/`ClickSram` controller executes one word at a time. Program addressing

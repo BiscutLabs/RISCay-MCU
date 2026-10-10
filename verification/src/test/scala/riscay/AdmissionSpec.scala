@@ -11,9 +11,7 @@ class BdAdmissionFixture(p: SocParameters) extends BdCompletionFixture(p) {
   val sleepEligible=IO(Output(Bool())); sleepEligible:=fabric.io.canSleep
   fabric.io.admissionGrant.valid:=admissionGrant.out.valid && !pauseGrant
   admissionGrant.out.ready:=fabric.io.admissionGrant.ready && !pauseGrant
-  val observed=withClockAndReset(serviceClock,reset) { val a=RegNext(applicationReset,false.B); RegNext(a,false.B) }
-  fabric.io.cpuReset:=systemReset || applicationReset
-  fabric.io.cpuResetActive:=cpuResetActive || observed
+  applicationResetRequest := reset.asBool || watchdog.io.expired || applicationReset
 }
 class ClickAdmissionFixture(p: SocParameters) extends ClickCompletionFixture(p) {
   val pauseGrant=IO(Input(Bool())); val applicationReset=IO(Input(Bool()))
@@ -21,9 +19,7 @@ class ClickAdmissionFixture(p: SocParameters) extends ClickCompletionFixture(p) 
   val sleepEligible=IO(Output(Bool())); sleepEligible:=fabric.io.canSleep
   fabric.io.admissionGrant.valid:=admissionGrant.out.valid && !pauseGrant
   admissionGrant.out.ready:=fabric.io.admissionGrant.ready && !pauseGrant
-  val observed=withClockAndReset(serviceClock,reset) { val a=RegNext(applicationReset,false.B); RegNext(a,false.B) }
-  fabric.io.cpuReset:=systemReset || applicationReset
-  fabric.io.cpuResetActive:=cpuResetActive || observed
+  applicationResetRequest := reset.asBool || watchdog.io.expired || applicationReset
 }
 
 /** Count actual service admissions independently of native credit phases. */

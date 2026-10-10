@@ -5,6 +5,7 @@ import chiselasync.core.{AsyncModule,ResetDomain}
 import chiselasync.testing.AsyncTest
 import java.nio.file.{Files,Paths}
 import org.scalatest.funsuite.AnyFunSuite
+import scala.jdk.CollectionConverters._
 
 /** Independent mask/data oracle, with no periodic clock in the fixture. */
 class AsyncCompletionSpec extends AnyFunSuite {
@@ -19,7 +20,7 @@ class AsyncCompletionSpec extends AnyFunSuite {
     val node=ujson.read(Files.readString(directory.resolve("export/contract.json")))("manifest")("design")
     val cells=node("primitives").arr.map(p => p("id").str -> p).toMap
     val overrides=ujson.read(Files.readString(directory.resolve(s"seed-$seed/delays.json")))("cells_fs").obj
-    val fixed=if(click) Seq("request_guard"->11000000L,"request_delay"->11000000L,
+    val fixed=if(click) Seq("request_guard"->210200001L,"request_delay"->11000000L,
       "acknowledge_guard"->210200001L,"output_guard"->210200001L) else Seq("request_guard"->11000000L)
     fixed.foreach { case(id,expected) =>
       require(cells(id)("parameters")("DELAY_FS").str.toLong == expected,"COMPLETION_FIXED_GUARD_VALUE")
@@ -70,6 +71,38 @@ class AsyncCompletionSpec extends AnyFunSuite {
       """+body(c) }
   }
   private val names=Seq("memory","telemetry","housekeeping")
+  private def selectedSourceSkew(directory: java.nio.file.Path): Unit = {
+    // Reuse the unchanged seed-1 stimulus and every monitor. Only one primitive
+    // moves from the minimum to maximum of the existing 1..10 ns cell envelope.
+    val base=directory.toAbsolutePath
+    val node=ujson.read(Files.readString(base.resolve("export/contract.json")))("manifest")("design")
+    val original=Files.readString(base.resolve("seed-1/testbench.sv"))
+    val sources=Files.readAllLines(base.resolve("export/filelist.f")).asScala.filter(_.trim.nonEmpty)
+      .map(s => base.resolve("export").resolve(s.trim).normalize.toString).toSeq
+    for(name <- names) {
+      val primitive=node("primitives").arr.find(_("id").str == name+"_available_nb").get
+      val path="dut."+primitive("rtl_path").str.split('.').drop(1).mkString(".")
+      val old=s"defparam $path.DELAY_FS=1000000;"
+      val replacement=s"defparam $path.DELAY_FS=10000000;"
+      require(original.sliding(old.length).count(_ == old)==1,"COMPLETION_SKEW_OVERRIDE_SHAPE")
+      val out=Files.createDirectory(base.resolve("selected-skew-"+name))
+      Files.writeString(out.resolve("testbench.sv"),original.replace(old,replacement))
+      Files.writeString(out.resolve("delays.json"),ujson.write(ujson.Obj("base_seed"->1,
+        "primitive"->path,"delay_fs"->10000000,"other_delays_and_oracle_unchanged"->true),indent=2))
+      def command(args: Seq[String],log: String): Unit = {
+        val process=new ProcessBuilder(args:_*).directory(out.toFile).redirectErrorStream(true)
+          .redirectOutput(out.resolve(log).toFile).start()
+        if(!process.waitFor(90,java.util.concurrent.TimeUnit.SECONDS)) {
+          process.destroyForcibly(); fail("COMPLETION_SKEW_TIMEOUT: "+out)
+        }
+        require(process.exitValue()==0,s"COMPLETION_SKEW_FAILED: $out/$log\n"+Files.readString(out.resolve(log)))
+      }
+      val simulator=chiselasync.testing.Simulator()
+      command(Seq(simulator.iverilog,"-g2012","-s","Testbench","-o","sim.vvp")++sources++Seq("testbench.sv"),"compile.log")
+      command(Seq(simulator.vvp,"sim.vvp"),"simulation.log")
+      require(Files.readString(out.resolve("simulation.log")).contains("CA_TEST_PASS"),"COMPLETION_SKEW_NO_PASS")
+    }
+  }
   private def campaign(click: Boolean,masks: Seq[Int]): String = {
     val phases=Array.fill(3)(0)
     masks.zipWithIndex.map { case(mask,n) =>
@@ -112,6 +145,60 @@ class AsyncCompletionSpec extends AnyFunSuite {
   }
   for(click <- Seq(false,true)) {
     val name=if(click) "click" else "bd"
+    test(s"$name native completion: a newly selected absent source cannot retire despite available payload") {
+      val directory=fresh(name+"-selected-absent")
+      run(click,1L to 24L,directory) { _ =>
+        var operation=0
+        val phases=Array.fill(3)(0)
+        def transaction(selected: Option[Int]): String = {
+          operation+=1
+          val p=if(click) operation%2 else 1
+          val old=if(click) 1-p else 0
+          val source=selected.map { i =>
+            phases(i)=if(click) 1-phases(i) else 1
+            val s=names(i); val phase=phases(i)
+            s"""repeat(100) begin #10000000;
+              if(plan_ack !== $old || response_req !== $old || ${s}_ack !== ${if(click) 1-phase else 0})
+                $$fatal(1,"COMPLETION_SELECTED_SOURCE_ABSENT");
+            end
+            ${s}_req=$phase;
+            """
+          }.getOrElse("")
+          val returnSource=selected.map { i =>
+            val s=names(i);val phase=phases(i)
+            s"wait(${s}_ack == $phase); #2; "+(if(click) "" else s"${s}_req=0; wait(!${s}_ack);")
+          }.getOrElse("")
+          val expected=if(selected.contains(0)) "12345678" else "87654321"
+          s"""
+            plan_bits_memory=${if(selected.contains(0)) 1 else 0};
+            plan_bits_telemetry=${if(selected.contains(1)) 1 else 0};
+            plan_bits_housekeeping=${if(selected.contains(2)) 1 else 0};
+            plan_bits_response_data=32'h87654321; memory_bits_data=32'h12345678;
+            plan_bits_response_error=0; memory_bits_error=0;
+            telemetry_bits=1; housekeeping_bits=1;
+            #2; plan_req=$p;
+            $source
+            fork
+              begin wait(plan_ack == $p); #2; ${if(click) "" else "plan_req=0; wait(!plan_ack);"} end
+              begin $returnSource end
+              begin wait(response_req == $p); #2;
+                if(response_bits_data !== 32'h$expected || response_bits_error)
+                  $$fatal(1,"COMPLETION_SELECTED_SOURCE_RESULT");
+                response_ack=$p;
+                ${if(click) "#2;" else "wait(!response_req); #2; response_ack=0;"}
+              end
+            join
+            #500000000;
+          """
+        }
+        val body=(0 until 12).map { n =>
+          // Extra local plans vary both plan parity and each selected-source parity.
+          (0 to n%2).map(_ => transaction(None)).mkString+transaction(Some(n%3))
+        }.mkString
+        body+s"if(delivered_response != $operation) $$fatal(1,\"COMPLETION_SELECTED_SOURCE_COUNT\");"
+      }
+      if(click) selectedSourceSkew(directory)
+    }
     test(s"$name native completion: retained retirement backpressure prevents response overwrite") {
       val directory=fresh(name+"-credit-stall")
       AsyncTest.run(top(click),1L to 24L,directory) { c => timingChecks(directory,c.seed,click)+s"""
