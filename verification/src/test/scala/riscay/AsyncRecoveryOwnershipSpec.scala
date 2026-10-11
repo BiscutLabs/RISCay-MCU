@@ -25,6 +25,15 @@ class AsyncRecoveryOwnershipSpec extends AnyFunSuite {
     "reserve_req=0; decision_req=0;"+(if(commit) "wait(!drain_req); #2; drain_ack=0;" else "")+
       "wait(!reserve_ack && !decision_ack); #2;"
 
+  // The new contract retains debt through the final receipt and native return.
+  // This responder models an available client; separate tests stall every phase.
+  private def run(click: Boolean,directory: java.nio.file.Path)(body: AsyncTest.Context => String) =
+    AsyncTest.run(top(click),1L to 24L,directory) { context =>
+      val receipt=if(click) "forever begin wait(finalRequest != finalAcknowledge); #1000000; finalAcknowledge=finalRequest; end"
+        else "forever begin wait(finalRequest); #1000000; finalAcknowledge=1; wait(!finalRequest); #1000000; finalAcknowledge=0; end"
+      s"fork begin $receipt end begin ${body(context)} end join_any disable fork;"
+    }
+
   private def selectedSkew(directory: java.nio.file.Path,click: Boolean): Unit = {
     val base=directory.toAbsolutePath
     val node=ujson.read(Files.readString(base.resolve("export/contract.json")))("manifest")("design")
@@ -72,7 +81,7 @@ class AsyncRecoveryOwnershipSpec extends AnyFunSuite {
     val name=if(click) "click" else "bd"
     test(s"$name recovery owner: CPU, cancellation, stale and fresh publications have separate debt effects") {
       val directory=fresh(name+"-roles")
-      AsyncTest.run(top(click),1L to 24L,directory) { _ =>
+      run(click,directory) { _ =>
         var receipts=0; var publications=0; var debt=1
         "if(!recoveryDebt) $fatal(1,\"RECOVERY_POR_DEBT\");\n"+(0 until 32).map { n =>
           val kind=n%8; val recovery=kind!=0 && kind!=4
@@ -113,10 +122,12 @@ class AsyncRecoveryOwnershipSpec extends AnyFunSuite {
               drain_ack=$receipt;
             """ else ""}
             #1000000000;
-            if(reserve_ack !== $phase || decision_ack !== $phase || recoveryDebt !== $after)
+            if(reserve_ack !== $phase || decision_ack !== $phase || recoveryDebt !== ${if(click) after else before})
               $$fatal(1,"RECOVERY_RETIREMENT_DEBT expected=%0d actual=%0d",$after,recoveryDebt);
-            ${if(resetAfter) revoke else ""}
             ${sourceReturn(click,commit)}
+            #1000000000;
+            if(recoveryDebt !== $after) $$fatal(1,"RECOVERY_FINAL_RETURN_DEBT");
+            ${if(resetAfter) revoke else ""}
             #1000000000;
             if(!idle || recoveryDebt !== $debt) $$fatal(1,"RECOVERY_RETURN_DEBT");
             if(delivered_reserve != ${n+1} || delivered_decision != ${n+1} ||
@@ -128,7 +139,7 @@ class AsyncRecoveryOwnershipSpec extends AnyFunSuite {
       selectedSkew(directory,click)
     }
     test(s"$name recovery owner: live recovery cannot clear without publication and all return obligations") {
-      AsyncTest.run(top(click),1L to 24L,fresh(name+"-required")) { _ =>
+      run(click,fresh(name+"-required")) { _ =>
         """
           reserve_bits_recovery=1; reserve_bits_tag=1; reserve_req=1;
           wait(grant_req); #2; grant_ack=1;
@@ -138,9 +149,10 @@ class AsyncRecoveryOwnershipSpec extends AnyFunSuite {
           if(!recoveryDebt || reserve_ack || decision_ack || idle)
             $fatal(1,"RECOVERY_CLEARED_WITHOUT_PUBLICATION");
           publication_bits=1; publication_req=1; wait(publication_ack); #2;
-        """+publicationReturn(click)+"""
+        """+publicationReturn(click)+s"""
           #1000000000;
-          if(recoveryDebt || !reserve_ack || !decision_ack) $fatal(1,"RECOVERY_FRESH_RETIREMENT");
+          if(recoveryDebt !== ${if(click) 0 else 1} || !reserve_ack || !decision_ack)
+            $$fatal(1,"RECOVERY_FRESH_RETIREMENT");
         """+sourceReturn(click,true)+"""
           #1000000000;
           if(!idle || recoveryDebt || delivered_reserve != 1 || delivered_publication != 1 || delivered_drain != 1)
@@ -158,7 +170,7 @@ class AsyncRecoveryOwnershipSpec extends AnyFunSuite {
             $$fatal(1,"RECOVERY_CLEARED_BEFORE_GRANT_RETURN");
           grant_ack=0;
           #1000000000;
-          if(recoveryDebt || reserve_ack !== ${if(click) 0 else 1} || decision_ack !== ${if(click) 0 else 1})
+          if(recoveryDebt !== ${if(click) 0 else 1} || reserve_ack !== ${if(click) 0 else 1} || decision_ack !== ${if(click) 0 else 1})
             $$fatal(1,"RECOVERY_GRANT_RETURN_BOUND");
           ${sourceReturn(click,true)}
           #1000000000;
@@ -169,12 +181,13 @@ class AsyncRecoveryOwnershipSpec extends AnyFunSuite {
     }
     test(s"$name recovery owner: reset before, during and after debt capture cannot be cleared by an old slot") {
       val directory=fresh(name+"-capture-reset")
-      AsyncTest.run(top(click),1L to 24L,directory) { _ =>
+      run(click,directory) { _ =>
         val node=ujson.read(Files.readString(directory.resolve("export/contract.json")))("manifest")("design")
-        def pin(id: String,field: String) = "dut."+node("primitives").arr.find(_("id").str==id).get
-          .apply("rtl_path").str.split('.').drop(1).mkString(".")+"."+field
-        val clearDelay=pin("recovery_clear","DELAY_FS")
-        val before=if(click) "negedge "+pin("recovery_clear_or","q") else "posedge "+pin("retirement","q")
+        val proof=node("children").arr.find(_("id").str=="recovery_return").get.apply("contract")
+        def pin(id: String,field: String,child: Boolean=false) = "dut."+(if(child) proof else node)("primitives").arr
+          .find(_("id").str==id).get.apply("rtl_path").str.split('.').drop(1).mkString(".")+"."+field
+        val clearDelay=pin("clear","DELAY_FS",true)
+        val before="negedge "+pin("clear_or","q",true)
         val broad=(0 until 64).map { n =>
           val phase=if(click) (n+1)%2 else 1
           s"""
@@ -199,10 +212,11 @@ class AsyncRecoveryOwnershipSpec extends AnyFunSuite {
         // particular random skew. Observe the actual upstream transition and
         // the selected model delay to place reset 100 ps before/after capture.
         // No internal signal is driven; all role, debt and count oracles remain.
-        broad+(64 until 66).map { n =>
+        broad+(64 until 67).map { n =>
           val phase=if(click) (n+1)%2 else 1
-          val placement=if(n==64) s"@($before); #($clearDelay-100000);" else
-            s"@(posedge ${pin("debt_storage","trigger")}); #100000;"
+          val placement=if(n==64) s"@($before); #($clearDelay-100000);"
+            else if(n==65) s"@(posedge ${pin("debt_storage","trigger")}); #100000;"
+            else s"wait(!recoveryDebt); #100000;"
           s"""
             reserve_bits_recovery=1; reserve_bits_tag=${n%2}; reserve_req=$phase;
             wait(grant_req == $phase); #2; grant_ack=$phase; ${grantReturn(click)}
@@ -212,12 +226,16 @@ class AsyncRecoveryOwnershipSpec extends AnyFunSuite {
             wait(drain_req == $phase); #2;
             fork
               begin $placement $revoke end
-              begin #2; drain_ack=$phase; end
+              begin
+                #2; drain_ack=$phase;
+                wait(reserve_ack == $phase && decision_ack == $phase); #2;
+                ${sourceReturn(click,true)}
+              end
             join
             #1000000000;
-            if(!recoveryDebt || eligible || reserve_ack !== $phase || decision_ack !== $phase)
+            if(!recoveryDebt || eligible || reserve_ack !== ${if(click) phase else 0} ||
+                decision_ack !== ${if(click) phase else 0})
               $$fatal(1,"RECOVERY_DIRECTED_RESET_CAPTURE_STALE_CLEAR");
-            ${sourceReturn(click,true)}
             #1000000000;
             if(!idle || !recoveryDebt || delivered_reserve != ${n+1} ||
                 delivered_publication != ${n+1} || delivered_drain != ${n+1})
@@ -229,7 +247,7 @@ class AsyncRecoveryOwnershipSpec extends AnyFunSuite {
     }
     test(s"$name recovery owner: minimum-delay retirement and immediate reuse preserve clear pulses") {
       val directory=fresh(name+"-fast")
-      AsyncTest.run(top(click),1L to 24L,directory) { _ =>
+      run(click,directory) { _ =>
         (0 until 32).map { n =>
           val phase=if(click) (n+1)%2 else 1
           s"""
@@ -242,9 +260,10 @@ class AsyncRecoveryOwnershipSpec extends AnyFunSuite {
             wait(publication_ack == $phase); #2; ${publicationReturn(click)}
             wait(drain_req == $phase); #2; drain_ack=$phase;
             wait(reserve_ack == $phase && decision_ack == $phase); #2;
-            if(recoveryDebt) $$fatal(1,"RECOVERY_FAST_CLEAR_MISSING");
+            if(!recoveryDebt) $$fatal(1,"RECOVERY_FAST_EARLY_CLEAR");
             ${sourceReturn(click,true)}
             wait(idle); #2;
+            if(recoveryDebt) $$fatal(1,"RECOVERY_FAST_CLEAR_MISSING");
             if(delivered_reserve != ${n+1} || delivered_publication != ${n+1} || delivered_drain != ${n+1})
               $$fatal(1,"RECOVERY_FAST_COUNTS");
           """

@@ -1,12 +1,14 @@
 # SPDX-License-Identifier: Apache-2.0
 """Actual custom EventRegister pin monitors for validated 100 ps envelopes."""
 
-def capture_monitors(node,captures,prefix):
+def capture_monitors(node,captures,prefix,origins=None):
     cells={p['id']:p for p in node['primitives']}
     output=[]
     for name,fire in captures.items():
         path='dut.'+cells[name]['rtl_path'].split('.',1)[1]
-        origin='dut.'+cells[fire]['rtl_path'].split('.',1)[1]+'.q'
+        origin=(origins or {}).get(name)
+        if origin is None:origin=cells[fire]['rtl_path']+'.q'
+        origin='dut.'+origin.split('.',1)[1]
         output.append(f'''
 time pc_{name}_rise=0, pc_{name}_fall=0, pc_{name}_data=0, pc_{name}_fire=0;
 reg pc_{name}_rose=0, pc_{name}_fell=0, pc_{name}_changed=0;

@@ -21,7 +21,7 @@ class PublicationSourceBoundaryPort extends Bundle {
   val ownerRecovery=Input(Bool())
   val recoveryDebt=Input(Bool()) // Native sticky debt, asserted by every application reset.
   val occupied=Input(Bool()) // Actual owner/crossings, excluding reset debt.
-  val returnFence=Input(Bool()) // Explicit clocked full-return fence, pending item 10b2c2b.
+  val returnFence=Input(Bool()) // Native debt/cleanup fence; clocked client receipt remains until direct interconnect.
   val draining=Input(Bool())
   val quiet=Output(Bool()) // Old dispatch/command/reply/publication fully drained.
 }

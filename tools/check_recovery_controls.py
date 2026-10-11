@@ -105,8 +105,16 @@ def main():
             return pin(text,node,'retirement','rising','{'+','.join(values)+'}')
         for key in ('roles','required','capture_reset','fast'):simulate(variant+'-'+key+'-baseline',s[key],True)
         for role in ('role','eligible'):
+            def bypass(text,node,role=role):
+                changed=selected(text,node,role)
+                # Final return independently rechecks eligibility. Bypass both
+                # actual eligibility uses to retain the original stale-clear
+                # fault model; removing only the first is contained by the new
+                # second check. Strict bindings still check each pin separately.
+                if role=='eligible':changed=replace_pin(changed,'ca_child_recovery_return','eligible',"1'b1")
+                return changed,('RECOVERY_RETIREMENT_DEBT','RECOVERY_CLEARED_BEFORE_DRAIN','RECOVERY_FINAL_RETURN_DEBT')
             simulate(variant+'-clear-'+role+'-bypass',s['roles'],True,
-                lambda t,n,role=role:(selected(t,n,role),('RECOVERY_RETIREMENT_DEBT','RECOVERY_CLEARED_BEFORE_DRAIN')))
+                bypass)
         def no_publication(text,node):
             changed=retirement(text,node,'publication')
             if not click:changed=selected(changed,node,'publication')
@@ -115,7 +123,7 @@ def main():
         simulate(variant+'-drain-proof-bypass',s['roles'],True,
             lambda t,n:(retirement(t,n,'drain'),('RECOVERY_CLEARED_BEFORE_DRAIN',)))
         simulate(variant+'-debt-reset-bypass',s['capture_reset'],True,
-            lambda t,n:(pin(t,n,'debt_storage','reset','reset'),('RECOVERY_RESET_CAPTURE_STALE_CLEAR',)))
+            lambda t,n:(pin(t,n,'debt_storage','reset','reset'),('RECOVERY_RESET_CAPTURE_STALE_CLEAR','RECOVERY_DIRECTED_RESET_CAPTURE_STALE_CLEAR')))
         simulate(variant+'-eligibility-reset-bypass',s['roles'],True,
             lambda t,n:(pin(t,n,'eligibility','reset','reset'),('RECOVERY_RETIREMENT_DEBT','RECOVERY_CLEARED_BEFORE_DRAIN')))
         simulate(variant+'-debt-does-not-clear',s['fast'],True,
@@ -133,9 +141,9 @@ def main():
                     ('RECOVERY_OLD_REPLY_BOUND','TELEMETRY_RECOVERY_ATTRIBUTION','HOUSEKEEPING_RECOVERY_ATTRIBUTION')))
             def fence(text,node,owner=owner):
                 # The safe proof must not clear during pre-recovery quiet.
-                pattern=r'(wire\s+'+owner+r'ReturnFence_safe\s*=)(.*?);'
+                pattern=r'(assign\s+'+owner+r'ReturnFence\s*=)(.*?);'
                 match=re.search(pattern,text,re.S);assert match,'RECOVERY_FENCE_SAFE_SHAPE'
-                old='& ~_ca_child_'+owner+'_source_recoveryDebt';assert match[2].count(old)==1
+                old='| _ca_child_'+owner+'_source_recoveryDebt';assert match[2].count(old)==1
                 return text[:match.start(2)]+match[2].replace(old,'')+text[match.end(2):],('RECOVERY_MISSING_FULL_RETURN_FENCE',)
             simulate(variant+'-'+owner+'-early-fence-release',s['return_reset'],False,fence)
             simulate(variant+'-'+owner+'-stale-eligibility',s['stale0'],False,

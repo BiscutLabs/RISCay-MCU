@@ -11,8 +11,11 @@ accesses, I2C wire sampling/timeout and SPI pin timing/full-frame capture remain
 clocked. Native Housekeeping owns NOW/board time, deadline/lease/wake-mask state,
 watchdog kick authorization and low-power acquisition cadence. Elapsed ingress
 still feeds observation/freshness history independently of housekeeping stalls;
-only final housekeeping publication advances consumedGray. Native SPI loops own conversion admission, frame definition, assembly,
-priming, scaling and retirement; item 8 passes digital verification and strict exports.
+only final housekeeping publication advances consumedGray. Native SPI loops own
+conversion credit, frame definition, assembly, priming, scaling and retirement;
+item 8 passes digital verification and strict exports. Their surrounding clocked
+boundary still owns launch/admission, active/pending state and age accumulation,
+as well as pin timing and capture; these remain candidates under item 15c.
 Separate native SRAM word sequencing passes the
 item 6 digital regressions and strict exports. Board policy and its safety sample view
 use independent POR-only native loops with clocked ingress/output projection.
@@ -81,7 +84,8 @@ Fresh recovery ownership (10b2c2a, digitally verified) extends each reservation
 with an immutable CPU/recovery role. Native sticky debt starts asserted and is
 asynchronously restored by qualified application reset. Only a committed recovery
 with actual attributed publication, completed drain acknowledgment and still-live
-eligibility may clear it. A reset revokes freshness without resetting POR phases
+eligibility may supply the retained fresh proof. Debt release additionally waits
+for original and final return as described below. A reset revokes freshness without resetting POR phases
 or cancelling accepted persistent effects. Recovery admission bypasses its own
 debt and return fence after older work drains; CPU admission does not.
 
@@ -94,12 +98,31 @@ application reset permits unowned Housekeeping maintenance, including watchdog
 kicks, while fresh recovery reservations wait for reset release. Only actual
 Housekeeping publication advances consumedGray.
 
-Five POR crossings per source, clocked staging/dispatch, full-return fences and
-state/output projections remain explicit for later steps. The full-return fence
-requires two fresh safe observations of owner/client/crossing drainage and cleared
-native recovery debt. An empty owner before recovery does not satisfy that proof.
-Item 10b2c2b must replace this fence with retained native full-return ownership;
-current native retirement occurs before complete outward protocol return.
+Substep 10b2c2b is digitally verified; physical qualification remains open. A separate native
+proof owner retains successful recovery identity across the reopened BD payload
+latch or a changed next Click input. Only after the original slot returns may
+it offer a control-only final receipt. The temporary clocked consumer checks raw
+reserve/decision/publication bridge readiness, empty grant/drain outputs and old
+client quiet. This proof excludes owner idle, gated reserve readiness, recovery
+debt and its own receipt state, preventing a circular wait.
+
+BD debt clear requires the final REQ and ACK to return low after actual acceptance.
+Click uses independent admitted/target/issued/completed phases; actual REQ/ACK must
+match the retained target and the issue event must drain. Both retain cleanup for
+200 ns before allowing a next admission. The modeled clear path is at most 30 ns
+and debt Q at most 10 ns; Click phase data paths are 10 ns, event guards 11 ns and
+custom apertures 100 ps. These are digital bounds awaiting physical qualification.
+New ingress is gated at clocked acceptance without truncating an active native
+request. A queued slot may be admitted while application reset is high, but cannot
+regain eligibility merely when reset falls. Old transport must drain and cancel.
+
+The application fence is qualified reset OR native debt OR native proof returning.
+The four old clocked fence/previous-safe registers per variant are removed. Five
+original POR crossings per source, clocked staging/dispatch and projections remain.
+Two temporary final receipts add ten clocked bits (two request synchronizers,
+one ACK and two reset-release synchronizers each), a net six-bit increase until
+the clocked clients and receipts are removed in item 14. No new payload constant
+exception or four-phase conversion is introduced.
 
 Application reset asserts immediately and releases after eight ungated service
 edges. With a maximum service clock of 20 MHz, the minimum hold is 350 ns; the

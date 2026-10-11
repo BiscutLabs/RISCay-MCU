@@ -17,13 +17,16 @@
   obtain a fresh independent agent review, address its findings, rerun affected
   checks, update its evidence/contracts, commit and push. Repeat this review loop
   for every item. Continue to the next item when the user has authorized it;
-  otherwise ask. Items 1-9, 10a, 10b1, 10b2a, 10b2b, 10b2c1 and 10b2c2a are digitally verified within their scopes.
+  otherwise ask. Items 1-9, 10a, 10b1, 10b2a, 10b2b, 10b2c1, 10b2c2a and 10b2c2b are digitally verified within their scopes.
   The user has authorized deeper migration under expanded items 10-16: native
   service coordination, observation reduction, publication, direct interconnect
   and physically justified boundary minimization. Audit every remaining clocked
   state owner; a boundary label alone is not a reason to retain synchronous logic.
   Keep independent watchdog/time and physical I/O obligations. Physical
   requalification is now item 17 and follows the residual-state audit.
+  Audit generated chip reset-hold state separately and cover supported parameter/
+  profile configurations; the Groundlark low-power emitter is not a whole-chip
+  or configuration-complete inventory. Preserve continuous-good reset hold.
   Follow `docs/soc-contract.md` for ABI/reset scope. Run AsyncFabricSpec,
   AsyncControlSpec, ControlResetSpec, AsyncTelemetrySpec, TelemetrySpec and both
   service implementations' FabricSpec/ScalingSpec plus affected regressions;
@@ -85,8 +88,18 @@
   require actual-pin capture, pulse, distribution and reset-overlap evidence.
   Recovery reservations carry an immutable role through grant, command, reply
   and drain. Housekeeping resetApplication alone is not recovery identity.
-  Native recovery debt clears only from fresh attributed publication retirement;
-  CPU reuse still requires the retained clocked full-return fence until 10b2c2b.
+  Native recovery debt clears only after fresh attributed publication and full
+  original/final return. Substep 10b2c2b is digitally verified. Retain proof
+  identity independently of the next payload, and exclude early native admission.
+  The temporary final receipt checks raw original crossings/client quiet; never
+  include owner idle, gated reserve readiness, debt or itself in its quiet proof.
+  Qualified reset immediately masks the application; POR proof transport drains
+  independently. Keep the 200 ns cleanup guard and recognized fixed guard IDs.
+  A slot armed during application reset stays ineligible after deassertion.
+  Run AsyncRecoveryReturnSpec/RecoveryReturnSpec, all custom capture-pin controls
+  and actual proof/admission/receipt mutations, preserving the original oracles.
+  Count the net six temporary clocked bits per variant and remove these receipts
+  with their clocked clients in item 14; this is not minimum synchronous state.
   Run AsyncRecoveryOwnershipSpec/RecoveryOwnershipSpec, actual debt-pin capture
   controls and isolated owner mutations after recovery changes. Include
   pre-recovery quiet with reserve ingress stalled, stale recovery replies,

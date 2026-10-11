@@ -1,5 +1,48 @@
 # Build and test
 
+## Native final recovery return — digitally verified 2026-10-11
+
+Substep 10b2c2b replaces the four clocked fence/previous-safe bits per variant
+with native retained proof and input exclusion. Two temporary clocked client
+receipts add ten bits, for a net six-bit increase pending item 14. Each receipt
+contains only two request synchronizers, POR ACK ownership and two reset-release
+synchronizers. Native Click remains two-phase throughout its proof controller.
+
+Evidence is under `build/async-recovery-return-migration/`. All 365 verification
+cases across 43 suites pass: the interrupted run completed 352 cases/40 suites;
+its serial continuation completed the remaining 13 cases/three suites. This is
+aggregate completed-suite evidence, not a completed single full-run invocation.
+Frozen reports retain testcase inventories, timestamps, Java commands and hashes.
+Both physical-policy cases, 143 Python controls, 11 pinned SRAM assets, unchanged
+34-port ABIs and both strict SoC exports pass. Final focused reruns pass 63 and
+31 cases; expanding the last observation aliases reproduces the earlier emitted
+RTL exactly apart from comments/whitespace. Controls reject 181 actual RTL
+mutations (147 simulated mutants and 34 static receipt RTL checks) and 1,845
+metadata mutations, plus six dynamic constant substitutions. Capture checks
+pass 508 positive replays and every prior 27/54 reset-overlap fixture. No physical
+qualification is implied. New `AsyncRecoveryReturnSpec` and `RecoveryReturnSpec` cover withheld
+old/final returns, changed next payloads, receipt reset, cleanup reset, independent
+source release and offered CPU work. The cleanup oracle observes the actual arm
+edge: POR admission during reset must remain ineligible after reset deassertion.
+The 350 ns qualified pulse and 7 ns raw-reset tests are unchanged.
+
+`check_recovery_return_export.py` closes helper inventories, four Click data and
+capture contracts, proof/admission bindings and complete temporary receipt RTL.
+`check_recovery_return_capture_controls.py` checks every new Click phase register
+and both parent debt pins under every seed and directed gate skew, with setup,
+hold, high/low pulse and independent distribution references. The earlier six
+Click publication registers and debt reset-overlap campaigns remain required.
+`check_recovery_return_controls.py` mutates actual proof, capacity, phase history
+and receipt wiring, and rejects receipt writer/initializer/ACK corruptions.
+`check_recovery_return_mapping_controls.py` also checks both owners' actual
+ready/valid gates, final quiet binding and return fence against the unchanged
+strict probe. Resolve deduplicated receipts through their actual VVP model;
+protocol ownership and complete emitted RTL checks remain closed. Full SoC strict
+commands use `--soc --vector-coverage --sleep-clock --probe-timeout 7200`; the larger
+wall-time budget does not alter simulated timing or coverage. Retain first probes
+and failures before any recheck. No compile failure, deadline or physical claim
+counts as a passing control.
+
 ## Fresh recovery ownership — digitally verified, 2026-10-10
 
 Substep 10b2c2a adds immutable CPU/recovery roles and native sticky debt to the

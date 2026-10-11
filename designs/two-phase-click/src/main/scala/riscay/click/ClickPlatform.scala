@@ -211,8 +211,8 @@ abstract class ClickPlatform(p: SocParameters, board: SocParameters => BoardProf
   // The outstanding command covers reply wait; native guard drainage is clockless.
   fabric.io.telemetryDraining := !telemetryCommandBridge.in.ready
 
-  // Native identity and sticky recovery debt own reset attribution. This explicit
-  // clocked full-return fence remains until 10b2c2b; recovery ignores the fence.
+  // Native proof ownership clears debt after original slot and final receipt
+  // return. The temporary receipt only observes the remaining clocked client.
   val telemetrySource=asyncChild("telemetry_source")(d => new ClickPublicationSource(d))
   val telemetryReserve=asyncChild("telemetry_reserve_bridge")(d => new DecoupledToClick(new PublicationReservation,d))
   val telemetryGrant=asyncChild("telemetry_grant_bridge")(d => new ClickToDecoupled(new PublicationReservation,d))
@@ -228,7 +228,13 @@ abstract class ClickPlatform(p: SocParameters, board: SocParameters => BoardProf
   chiselasync.protocol.TwoPhase.connect(telemetrySource.decision,telemetryDecision.out)
   chiselasync.protocol.TwoPhase.connect(telemetrySource.publication,telemetryPublication.out)
   chiselasync.protocol.TwoPhase.connect(telemetryDrain.in,telemetrySource.drain)
-  telemetryReserve.in <> fabric.io.telemetrySource.reserve
+  // Gate only new clocked ingress. Never truncate a bridge's active native request.
+  val telemetryReserveAvailable=Wire(Bool())
+  telemetryReserve.in.bits:=fabric.io.telemetrySource.reserve.bits
+  telemetryReserve.in.valid:=fabric.io.telemetrySource.reserve.valid && telemetryReserveAvailable
+  fabric.io.telemetrySource.reserve.ready:=telemetryReserve.in.ready && telemetryReserveAvailable
+  dontTouch(fabric.io.telemetrySource.reserve.ready)
+  dontTouch(fabric.io.telemetrySource.reserve.valid)
   fabric.io.telemetrySource.grant <> telemetryGrant.out
   telemetryDecision.in <> fabric.io.telemetrySource.decision
   telemetryPublication.in <> fabric.io.telemetrySource.publication
@@ -240,22 +246,27 @@ abstract class ClickPlatform(p: SocParameters, board: SocParameters => BoardProf
   val telemetryOwnerIdle=withClockAndReset(workClock,reset) {
     val first=RegNext(telemetrySource.idle,false.B); RegNext(first,false.B)
   }
+  telemetryReserveAvailable:=telemetryOwnerIdle
   val telemetrySourceEmpty=telemetryOwnerIdle && telemetryReserve.in.ready &&
     telemetryDecision.in.ready && telemetryPublication.in.ready && !telemetryGrant.out.valid && !telemetryDrain.out.valid
-  val telemetryReturnFence=withClockAndReset(workClock,fabric.io.cpuReset.asAsyncReset) {
-    val debt=RegInit(true.B); val previousSafe=RegInit(false.B)
-    val safe=telemetrySourceEmpty && fabric.io.telemetrySource.quiet &&
-      !telemetrySource.recoveryDebt && !fabric.io.cpuResetActive
-    previousSafe:=safe
-    when(previousSafe && safe) { debt:=false.B }
-    debt
-  }
+  val telemetryFinalReturn=asyncChild("telemetry_final_return")(d => new ClickReturnReceipt(d))
+  telemetryFinalReturn.clock:=workClock
+  telemetryFinalReturn.request:=telemetrySource.finalRequest
+  telemetrySource.finalAcknowledge:=telemetryFinalReturn.acknowledge
+  // The native offer already proves original owner return. Using ownerIdle,
+  // gated reserve.ready, debt or this receipt here would create a circular wait.
+  telemetryFinalReturn.quiet:=telemetryReserve.in.ready && telemetryDecision.in.ready &&
+    telemetryPublication.in.ready && !telemetryGrant.out.valid && !telemetryDrain.out.valid &&
+    fabric.io.telemetrySource.quiet
+  // Conservative application-lifetime masking asserts immediately; native debt
+  // retains it after reset release. No periodic-clocked recovery policy state.
+  val telemetryReturnFence=fabric.io.cpuReset || telemetrySource.recoveryDebt || telemetrySource.recoveryReturning
   fabric.io.telemetrySource.occupied:= !telemetrySourceEmpty
   fabric.io.telemetrySource.returnFence:=telemetryReturnFence
   fabric.io.telemetrySource.draining:=telemetryReturnFence || telemetrySource.recoveryDebt || !telemetrySourceEmpty
 
-  // Native identity and sticky recovery debt own reset attribution. This explicit
-  // clocked full-return fence remains until 10b2c2b; recovery ignores the fence.
+  // Native proof ownership clears debt after original slot and final receipt
+  // return. The temporary receipt only observes the remaining clocked client.
   val housekeepingSource=asyncChild("housekeeping_source")(d => new ClickPublicationSource(d))
   val housekeepingReserve=asyncChild("housekeeping_reserve_bridge")(d => new DecoupledToClick(new PublicationReservation,d))
   val housekeepingGrant=asyncChild("housekeeping_grant_bridge")(d => new ClickToDecoupled(new PublicationReservation,d))
@@ -271,7 +282,13 @@ abstract class ClickPlatform(p: SocParameters, board: SocParameters => BoardProf
   chiselasync.protocol.TwoPhase.connect(housekeepingSource.decision,housekeepingDecision.out)
   chiselasync.protocol.TwoPhase.connect(housekeepingSource.publication,housekeepingPublication.out)
   chiselasync.protocol.TwoPhase.connect(housekeepingDrain.in,housekeepingSource.drain)
-  housekeepingReserve.in <> fabric.io.housekeepingSource.reserve
+  // Gate only new clocked ingress. Never truncate a bridge's active native request.
+  val housekeepingReserveAvailable=Wire(Bool())
+  housekeepingReserve.in.bits:=fabric.io.housekeepingSource.reserve.bits
+  housekeepingReserve.in.valid:=fabric.io.housekeepingSource.reserve.valid && housekeepingReserveAvailable
+  fabric.io.housekeepingSource.reserve.ready:=housekeepingReserve.in.ready && housekeepingReserveAvailable
+  dontTouch(fabric.io.housekeepingSource.reserve.ready)
+  dontTouch(fabric.io.housekeepingSource.reserve.valid)
   fabric.io.housekeepingSource.grant <> housekeepingGrant.out
   housekeepingDecision.in <> fabric.io.housekeepingSource.decision
   housekeepingPublication.in <> fabric.io.housekeepingSource.publication
@@ -283,16 +300,21 @@ abstract class ClickPlatform(p: SocParameters, board: SocParameters => BoardProf
   val housekeepingOwnerIdle=withClockAndReset(workClock,reset) {
     val first=RegNext(housekeepingSource.idle,false.B); RegNext(first,false.B)
   }
+  housekeepingReserveAvailable:=housekeepingOwnerIdle
   val housekeepingSourceEmpty=housekeepingOwnerIdle && housekeepingReserve.in.ready &&
     housekeepingDecision.in.ready && housekeepingPublication.in.ready && !housekeepingGrant.out.valid && !housekeepingDrain.out.valid
-  val housekeepingReturnFence=withClockAndReset(workClock,fabric.io.cpuReset.asAsyncReset) {
-    val debt=RegInit(true.B); val previousSafe=RegInit(false.B)
-    val safe=housekeepingSourceEmpty && fabric.io.housekeepingSource.quiet &&
-      !housekeepingSource.recoveryDebt && !fabric.io.cpuResetActive
-    previousSafe:=safe
-    when(previousSafe && safe) { debt:=false.B }
-    debt
-  }
+  val housekeepingFinalReturn=asyncChild("housekeeping_final_return")(d => new ClickReturnReceipt(d))
+  housekeepingFinalReturn.clock:=workClock
+  housekeepingFinalReturn.request:=housekeepingSource.finalRequest
+  housekeepingSource.finalAcknowledge:=housekeepingFinalReturn.acknowledge
+  // The native offer already proves original owner return. Using ownerIdle,
+  // gated reserve.ready, debt or this receipt here would create a circular wait.
+  housekeepingFinalReturn.quiet:=housekeepingReserve.in.ready && housekeepingDecision.in.ready &&
+    housekeepingPublication.in.ready && !housekeepingGrant.out.valid && !housekeepingDrain.out.valid &&
+    fabric.io.housekeepingSource.quiet
+  // Conservative application-lifetime masking asserts immediately; native debt
+  // retains it after reset release. No periodic-clocked recovery policy state.
+  val housekeepingReturnFence=fabric.io.cpuReset || housekeepingSource.recoveryDebt || housekeepingSource.recoveryReturning
   fabric.io.housekeepingSource.occupied:= !housekeepingSourceEmpty
   fabric.io.housekeepingSource.returnFence:=housekeepingReturnFence
   fabric.io.housekeepingSource.draining:=housekeepingReturnFence || housekeepingSource.recoveryDebt || !housekeepingSourceEmpty

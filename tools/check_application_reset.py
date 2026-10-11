@@ -95,6 +95,7 @@ def persistent_reset_children(manifest):
     persistent.update(program_source)
     for owner in ("telemetry","housekeeping"):
         publication={owner+"_source":"ClickPublicationSource" if top=="ClickSoc" else "FourPhasePublicationSource"}
+        publication[owner+"_final_return"]="ClickReturnReceipt" if top=="ClickSoc" else "FourPhaseReturnReceipt"
         publication.update({owner+"_"+n+"_bridge":"DecoupledToClick" if top=="ClickSoc" else "DecoupledToFourPhase"
                             for n in ("reserve","decision","publication")})
         publication.update({owner+"_"+n+"_bridge":"ClickToDecoupled" if top=="ClickSoc" else "FourPhaseToDecoupled"

@@ -19,6 +19,8 @@ class ClickPublicationSource(domain: ResetDomain) extends AsyncModule(domain) {
   val applicationReset=IO(Input(AsyncReset()))
   val eligible=IO(Output(Bool())); val idle=IO(Output(Bool()))
   val ownerRecovery=IO(Output(Bool())); val recoveryDebt=IO(Output(Bool()))
+  val finalRequest=IO(Output(Bool())); val finalAcknowledge=IO(Input(Bool()))
+  val recoveryReturning=IO(Output(Bool()))
   Seq(reserve,grant,decision,publication,drain).foreach(dontTouch(_))
   private val timing=ClickTiming.Simulation
   private val cell=timing.controls.fire.model
@@ -52,8 +54,12 @@ class ClickPublicationSource(domain: ResetDomain) extends AsyncModule(domain) {
     val g=Module(new XorGate(cell)); g.reset:=reset; g.a:=a; g.b:=b
     contract.primitive(id,g,Map("DELAY_FS"->BigInt(cell.fs)),resetRef,"native source phase comparator"); g.q
   }
+  private val returnControl=asyncChild("recovery_return")(d => new ClickRecoveryReturn(d))
+  returnControl.requested:=reserve.req; returnControl.eligible:=eligible
+  finalRequest:=returnControl.finalRequest; returnControl.finalAcknowledge:=finalAcknowledge
+  recoveryReturning:= !returnControl.quiet
   private val reservation=asyncChild("reservation")(d => new ClickBuffer(new PublicationReservation,timing,d))
-  reservation.in.req:=reserve.req; reservation.in.bits:=reserve.bits
+  reservation.in.req:=returnControl.admitted; reservation.in.bits:=reserve.bits
   private val reserved=WireDefault(reservation.in.ack); dontTouch(reserved)
   private val published=phase("publication_phase")
   private val issued=phase("drain_phase")
@@ -120,23 +126,28 @@ class ClickPublicationSource(domain: ResetDomain) extends AsyncModule(domain) {
   private val recoveryClear=WireDefault(and("recovery_clear",capture,recoverySelected))
   dontTouch(recoverySelected); dontTouch(recoveryClear)
   private val debt=Module(new EventRegister(1,timing.payload.model,1)); debt.reset:=eligibilityReset
-  debt.trigger:=recoveryClear; debt.d:=0.U; recoveryDebt:=debt.q.asBool
+  returnControl.fresh:=recoveryClear
+  debt.trigger:=returnControl.clear; debt.d:=0.U; recoveryDebt:=debt.q.asBool
   contract.primitive("debt_storage",debt,Map("WIDTH"->BigInt(1),"DELAY_FS"->BigInt(timing.payload.model.fs),
     "RESET_VALUE"->BigInt(1)),eligibilityResetRef,
-    "reset-dominant recovery debt; only fresh committed publication retirement clears it")
+    "reset-dominant recovery debt; only fresh attributed final return clears it")
   private val captured=WireDefault(UInt(2.W),Cat(decided.q,retired.q))
   private val acknowledged=buffer("acknowledge_guard",Cat(published.q,captured),width=3,delay=guard)
   reserve.ack:=acknowledged(0); decision.ack:=acknowledged(1); publication.ack:=acknowledged(2)
-  idle:=reserve.req === reserve.ack && reservation.in.ack === reserve.ack &&
+  private val originalReturned=WireDefault(returnControl.admitted === reserve.ack && reservation.in.ack === reserve.ack &&
     decision.req === decision.ack && publication.req === publication.ack &&
     grant.req === grant.ack && drain.req === drain.ack &&
-    !capture && !armEvent && !publicationFire && !drainFire && !recoveryClear
+    !capture && !armEvent && !publicationFire && !drainFire && !recoveryClear)
+  dontTouch(originalReturned); returnControl.originalReturned:=originalReturned
+  idle:=originalReturned && reserve.req === reserve.ack && returnControl.quiet && !returnControl.admitting
 
   // Balanced capture trees have at most three 3-cell AND levels. Including a
   // phase cell, comparator and 11 ns guard gives <=121.2 ns feedback settlement;
   // the 241.200001 ns outward/decision guards exceed that digital envelope.
   // Recheck selector and capture pulse bounds with independent min/max skew.
   // No physical timing closure is implied by these simulation values.
+  contract.endpoint("final_request",finalRequest); contract.endpoint("final_acknowledge",finalAcknowledge)
+  contract.endpoint("recovery_returning",recoveryReturning); contract.endpoint("original_returned",originalReturned)
   contract.endpoint("application_reset",applicationReset)
   contract.endpoint("eligible",eligible); contract.endpoint("idle",idle); contract.endpoint("reserved",reserved)
   contract.endpoint("owner_recovery",ownerRecovery); contract.endpoint("recovery_debt",recoveryDebt)

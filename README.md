@@ -71,10 +71,11 @@ supervisor input/output and scaling request/publication boundaries remain explic
 Separate native SRAM controllers retain word ownership, sequence bytes and assemble
 reads around explicit synchronous macro boundaries. Separate native I2C controllers
 pass digital verification; wire sampling, timeout and host publication remain clocked.
-Separate native SPI ADC controllers now define frames, own conversions, assemble
+Separate native SPI ADC controllers now define frames, own conversion credit, assemble
 samples, discard the first complete frame and retire scaled results. An explicit
 clocked player preserves exact pin timing and buffers every MISO observation;
-admission/publication remain clocked. Item 8 passes independent review,
+launch/admission, active/pending state, age accumulation and publication remain
+clocked. Item 8 passes independent review,
 digital regressions, emitted-RTL mutation controls and both strict SoC exports.
 Separate native Housekeeping loops now own time, deadline/lease/wake-mask state,
 kick authorization and low-power cadence; clocked observation ingress and LF
@@ -97,10 +98,15 @@ flags (10b2c1, digitally verified). Fresh review fixes, all 334 verification cas
 both core policy cases, 113 Python controls, 49 actual RTL mutation controls and
 both strict SoC exports pass. Their five POR crossings per source, clocked
 client staging and reset/drain projections remain tracked for subsequent migration.
-Fresh recovery ownership (10b2c2a) is digitally verified: native CPU/recovery roles
-and sticky debt replace clocked recovery attribution. All 352 verification cases,
-two core policy cases, 137 Python controls, 91 actual RTL mutation controls and
-both strict exports pass. The clocked full-return fence remains for 10b2c2b.
+Native recovery ownership and full-return debt release (10b2c2a/b) are digitally
+verified. All 365 verification cases across 43 suites pass, with two physical-policy
+cases, 143 Python controls, 181 actual RTL mutation controls and both strict SoC
+exports. The interrupted regression and its completed-suite continuation are
+recorded separately. Final focused rechecks pass 63 cases and then 31 cases after
+the last observation-only aliases. Temporary clocked client receipts add six net
+bits per variant; their removal remains tracked with their clocked clients.
+Passing digital checks does not establish physical timing or minimum synchronous
+state. Substep 10b2d next removes the RAM/program whole-word response round trips.
 The independent LF timebase/watchdog remains necessary. See the [migration checklist](docs/async-soc-migration.md). A permanent
 Groundlark controller supervises power before upload and during application
 stalls. Its state, safety sample record and confirmation counters now reside

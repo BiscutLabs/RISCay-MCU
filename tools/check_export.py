@@ -27,7 +27,10 @@ from check_application_reset import validate_application_reset, persistent_reset
 from check_ram_source_export import ARM_PATH, RETIRE_PATH, validate_ram_source, ram_source_bindings, ram_source_probe
 from check_program_source_export import PROGRAM_PATHS, validate_program_source, program_source_bindings, program_source_probe, validate_program_receipts
 from check_publication_source_export import PATHS as PUBLICATION_PATH_TABLE, validate_publication_source, publication_source_bindings, publication_source_probe, publication_recovery_background
+from check_recovery_return_export import (PATHS as RECOVERY_RETURN_PATH_TABLE,validate_recovery_return,
+    recovery_return_bindings,validate_return_receipts)
 PUBLICATION_PATHS=tuple(p[1] for p in PUBLICATION_PATH_TABLE)
+RECOVERY_RETURN_PATHS=tuple(p[1] for p in RECOVERY_RETURN_PATH_TABLE)
 
 
 def sram_array_shapes(contents, scopes):
@@ -741,6 +744,8 @@ def validate_fabric_inventory(manifest):
     """Required obligations cannot vanish along with their passive markers."""
     def visit(node):
         module = node["module"]
+        if re.fullmatch(r"(?:FourPhase|Click)RecoveryReturn(?:_[0-9]+)?", module):
+            validate_recovery_return(node)
         if re.fullmatch(r"(?:FourPhase|Click)PublicationSource(?:_[0-9]+)?", module):
             validate_publication_source(node)
         if re.fullmatch(r"(?:FourPhase|Click)ProgramSource(?:_[0-9]+)?", module):
@@ -812,6 +817,9 @@ def validate_fabric_path(node, timing):
     primitive, elaborated pin, endpoint mapping and endpoint activity afterwards.
     """
     logic = timing.get("logic")
+    if logic in RECOVERY_RETURN_PATHS:
+        validate_recovery_return(node)
+        return
     if logic in PUBLICATION_PATHS:
         validate_publication_source(node)
         return
@@ -936,6 +944,8 @@ def spi_program_probe(source, manifest, scopes):
 
 def fabric_path_bindings(node, timing):
     """Actual mux/storage pin comparisons added to the unchanged library probe."""
+    if timing.get("logic") in RECOVERY_RETURN_PATHS:
+        return recovery_return_bindings(node)
     if timing.get("logic") in PUBLICATION_PATHS:
         return publication_source_bindings(node)
     if timing.get("logic") in PROGRAM_PATHS:
@@ -990,14 +1000,14 @@ def fabric_checker_source(source):
              + f' {PROGRAM_PATHS[0]!r}: ([], "arm_data_delay", "arm_sources", "arm_data"),'
              + f' {PROGRAM_PATHS[1]!r}: ([], "data_delay", "retire_sources", "register_data"),'
              + f' {PROGRAM_PATHS[2]!r}: ([], "stored_data_delay", "stored_target", "stored_phase_data"),'
-             + ','.join(f'{logic!r}: ([], {delay!r}, {src!r}, {sink!r})' for _,logic,src,sink,delay in PUBLICATION_PATH_TABLE)+'}'
+             + ','.join(f'{logic!r}: ([], {delay!r}, {src!r}, {sink!r})' for _,logic,src,sink,delay in PUBLICATION_PATH_TABLE+RECOVERY_RETURN_PATH_TABLE)+'}'
              + "\n                validate_fabric_path(node, timing)")
     source = source.replace(anchor, extra)
     anchor = 'if timing["logic"] in ("exclusive-merge-input-mux", "controlled-multiplexer-input-mux"):'
     if source.count(anchor) != 1:
         raise ValueError("MCU_FABRIC_CHECKER_SHAPE_CHANGED")
     source = source.replace(anchor,
-        f'if timing["logic"] in ({BD_FABRIC_PATH!r}, {CLICK_FABRIC_PATH!r}, {I2C_PROJECTION_PATH!r}, {BD_COMPLETION_PATH!r}, {CLICK_COMPLETION_PATH!r}, {ARM_PATH!r}, {RETIRE_PATH!r}, {PROGRAM_PATHS[0]!r}, {PROGRAM_PATHS[1]!r}, {PROGRAM_PATHS[2]!r},'+','.join(map(repr,PUBLICATION_PATHS))+'):\n'
+        f'if timing["logic"] in ({BD_FABRIC_PATH!r}, {CLICK_FABRIC_PATH!r}, {I2C_PROJECTION_PATH!r}, {BD_COMPLETION_PATH!r}, {CLICK_COMPLETION_PATH!r}, {ARM_PATH!r}, {RETIRE_PATH!r}, {PROGRAM_PATHS[0]!r}, {PROGRAM_PATHS[1]!r}, {PROGRAM_PATHS[2]!r},'+','.join(map(repr,PUBLICATION_PATHS+RECOVERY_RETURN_PATHS))+'):\n'
         '                    pairs = fabric_path_bindings(node, timing)\n'
         '                el' + anchor)
     anchor = '    if "INACTIVE_ENDPOINT:" in simulation.stdout:'
@@ -1053,6 +1063,7 @@ def main() -> None:
         top_rtl=(args.directory / (manifest["top"]+".sv")).read_text(encoding="utf-8")
         validate_application_reset(manifest,scopes,top_rtl)
         validate_program_receipts(manifest,args.directory)
+        validate_return_receipts(manifest,args.directory,scopes)
         source, count = original_probe(manifest, scopes, paired)
         source = spi_program_probe(source, manifest, scopes)
         source, count = register_file_background(source, manifest, count)

@@ -241,29 +241,99 @@ when no next item has been chosen. Both implementations remain active throughout
             probes, surviving mutants and all fixes/rechecks remain recorded in
             `build/async-recovery-ownership-migration/qualification-evidence.json`
             and `failures-and-rechecks.md`. No physical qualification is implied.
-          - [ ] **10b2c2b. Native full-return debt release.** Replace clocked
+          - [x] **10b2c2b. Native full-return debt release — digitally verified, 2026-10-11.** Replace clocked
             debt/previous-safe sequencing only after a native retained proof
             joins fresh recovery publication with complete owner and crossing
             return. If a temporary quiescence receipt is needed at the clocked
             client boundary, count it and schedule its later removal. Never
             use an unqualified combinational strobe or a bare idle observation
             to clear debt. A reset invalidates every older clear obligation.
-            - [ ] Retain successful recovery identity independently of the
+            - [x] Retain successful recovery identity independently of the
               reopened BD payload latch and independent Click proof phases.
-            - [ ] Certify original native return before offering a final receipt;
+            - [x] Certify original native return before offering a final receipt;
               its consumer checks original bridge/engine drainage without
               waiting on the new receipt or its own owner-idle feedback.
-            - [ ] Enforce native capacity against an early next request/phase.
+            - [x] Enforce native capacity against an early next request/phase.
               Gate new clocked reserve acceptance without truncating the active
               bridge request; an unaccepted next input cannot block old return.
-            - [ ] Test repeated reset, offered next payload changes, all original
+            - [x] Test repeated reset, offered next payload changes, all original
               return stalls, final receipt stalls and proof cleanup. Qualify
               every new capture/feedback path and reject real proof bypasses.
-            - [ ] Count temporary receipt synchronizers/ACK storage separately
+            - [x] Count temporary receipt synchronizers/ACK storage separately
               from removed policy state, and schedule their removal in item 14.
+            Separate `FourPhaseRecoveryReturn`/`ClickRecoveryReturn` controllers
+            now retain proof identity, exclude early next admission and release
+            debt after original and final return. BD waits for full final RTZ;
+            Click uses four independent POR phase registers and no RTZ adapter.
+            A 200 ns digital cleanup guard preserves clear pulse/capture before
+            reuse. Qualified application reset immediately masks the application
+            and revokes eligibility without resetting the POR proof transport.
+            Each temporary control-only `ReturnReceipt` contains two request
+            synchronizers, an ACK register and two POR-release synchronizers.
+            Two receipts add ten clocked bits per variant while four old fence/
+            previous-safe bits are removed: **net six additional temporary
+            clocked bits**. This transfers policy ownership; it does not finish
+            boundary removal. Evidence and retained failures are under
+            `build/async-recovery-return-migration/`. Physical qualification and
+            the remaining clocked client/bridge removal are still outstanding.
+            Qualification covers 365 cases in 43 suites across the retained
+            interrupted invocation and its completed-suite continuation, two
+            physical-policy cases, 143 Python controls, 11 pinned SRAM assets,
+            unchanged 34-port ABIs and both strict SoC exports. Final focused
+            reruns pass 63 and 31 cases. Controls reject 181 actual RTL mutations
+            (147 simulated mutants and 34 static receipt RTL checks),
+            1,845 metadata mutations and six dynamic constant substitutions;
+            actual-pin campaigns pass 508 positive replays and all 27/54 prior
+            reset-overlap fixtures. Fresh independent reviews and fixes are in
+            `build/async-recovery-return-migration/qualification-evidence.json`
+            and `review-notes.md`; actual failures and interruptions are retained.
       - [ ] **10b2d. Remove whole-word response round trips.** Use the verified
         ownership/isolation contract to connect native completion paths directly
         and remove superseded pending flags and crossings.
+        - [ ] **10b2d1. Working-RAM native return and presentation isolation.**
+          Capture the native word and retained slot identity in POR-owned storage;
+          acknowledge SRAM independently of publication retirement. Connect its
+          payload to a separately selected native Completion input. Application
+          reset cancels presentation, not captured memory effects or receive
+          phase history. Click needs independent POR receive and application
+          transmit phases, with explicit cancellation/return before reuse.
+          Do not directly connect SRAM response to source publication: publication
+          ACK currently waits for wordDrained, which waits for response return.
+          Exclude the retained publication token from the word-drain proof it
+          releases. A temporary control-only capture receipt may replace the
+          wide reply crossing; count it and retain its item-14 removal obligation.
+          Existing SramAccess active/return synchronizers and RAM debt/previous-
+          safe policy remain explicit until their own native proof is verified.
+          Source occupancy cannot substitute for memoryBusy: it would block the
+          reservation's own commit. Distinguish original effect/receipt drainage
+          from complete return-owner occupancy; the latter cannot feed the
+          publication proof that releases it. Capture per-word reset-sticky
+          permission before exposing branches, and retain terminal proof so
+          asynchronous reset cannot shorten a POR capture event. BD branches
+          require independent request return; Click requires independent receive,
+          issue and application phases. Test clock-stopped payload progress, byte/
+          publication/presentation stalls, reset throughout capture and return,
+          exact macro effects, custom capture pins and actual isolation mutations.
+          Represent the mixed-lifetime application output as an explicit reset
+          boundary with a closed protocol/reset schema and production bindings;
+          the library's single-domain channel metadata cannot express it. Keep
+          POR monitors active and add a complete application-reset monitor.
+          Click's saved application target resets with permission/output phase;
+          POR issue identity must never sample an asynchronously reset phase.
+        - [ ] **10b2d2. Program/loader native return and Stored attribution.**
+          Reuse only interface/verification contracts; each design owns its
+          implementation. Preserve retained loader/CPU role and separate selected
+          program/RAM Completion inputs with immutable plan selection. Loader
+          effects must issue exactly one Stored token and never CPU completion.
+          Stored ACK remains Control command acceptance; preserve the subsequent
+          busy/reply gap, independent Click Stored history and BD complete return.
+          Test alternating banks/roles/cancellations, earliest real I2C status,
+          repeated reset with held old replies, and exact received/CRC/write counts.
+          Remove the old wide memory ingress only after both banks qualify;
+          preserve the Completion return barrier and complete capture aperture.
+        Both steps require closed strict-export bindings, independent references,
+        unchanged external ABI, fresh review and updated crossing/state counts.
+        Wrappers are temporary implementation choices, not physical necessities.
       Use exclusive retained slots until every older command, publication,
       cancellation and handshake has drained. A wrapping lifetime bit alone is
       insufficient. Test short reset pulses between work-clock edges, repeated
@@ -362,6 +432,9 @@ when no next item has been chosen. Both implementations remain active throughout
     source enable and safe clock stop/start. Native replacements must preserve
     asynchronous assertion, bounded release, no lost wake and the independent
     watchdog. Count physical reset/synchronizer/gating state explicitly.
+    Include the generated chip wrapper's `resetHold`: its default 100,000-cycle
+    hold uses three register declarations / 20 bits outside the portable SoC root.
+    Preserve the continuous-good >=5 ms requirement while evaluating alternatives.
 - [ ] **16. Residual synchronous-state audit.** Inventory every remaining
   periodic-clocked state owner in both elaborated production SoCs. For each,
   record its clock, purpose, physical/ABI constraint, alternatives considered and
@@ -376,6 +449,13 @@ when no next item has been chosen. Both implementations remain active throughout
   does not justify retaining a service clock.
   - [ ] Resolve the complete emitted register/event-control inventory to clocks
     and reset domains; account for flattened and generated state as well as children.
+  - [ ] Maintain a separate chip-boundary ledger for reset hold and oscillator/
+    supply boundaries; exclude behavioral model and verification-only state from
+    production counts. Reconcile this ledger with both portable SoC inventories.
+  - [ ] Cover supported configurations explicitly: reference Groundlark low-power
+    emitters, legacy service-derived time, autonomous ADC cadence, ADC-disabled
+    builds and generic application-word projections. Record conditional owners
+    or justified exclusions; one reference emitter cannot cover the reusable SoC.
   - [ ] Classify each retained owner with its specific constraint, rejected
     alternatives and evidence; reopen any convenience-only boundary.
   - [ ] Recheck clock-stopped progress, maximum source rates, saturation/overflow,
@@ -405,29 +485,34 @@ invariant-focused tests and a fresh independent review before completion.
 
 ## Preliminary residual-state inventory
 
-The current 10b2c2a production exports still contain substantial clocked state.
+The current 10b2c2b Groundlark, ADC-enabled, source-stopping low-power portable
+SoC exports still contain substantial clocked state.
 The candidate inventory is retained in
-`build/async-recovery-ownership-migration/residual-register-candidates.json` with
+`build/async-recovery-return-migration/residual-register-candidates.json` with
 each register's width and local event control. It excludes fixed async primitive
 state, probe state and SRAM arrays. These are elaborated declarations, not mapped
 flop counts, area, power or proof that a boundary is physically necessary.
+The table excludes the generated chip wrapper, including its 20-bit default
+reset hold. It also excludes state elaborated only in other supported
+configurations, such as the legacy service-time divider, autonomous ADC interval
+counter and generic application-word projections. Items 15e and 16 require the
+separate chip ledger and configuration matrix before whole-chip conclusions.
 
-Compared with 10b2c1, native recovery ownership removes four clocked recovery
-flags but adds retained role bits to existing command, reply and source crossings.
-The net candidate inventory increases by six declarations / six bits per variant.
-No extra crossing is introduced in this substep. Compared with the older 10b2b
-inventory, publication ownership adds ten temporary clocked-client crossings;
+Compared with 10b2c2a, native full-return proof removes four clocked fence/previous-
+safe bits but introduces two temporary five-bit control receipts. The net
+candidate inventory increases by six declarations / six bits per variant. These
+receipts join the ten temporary client crossings added by publication ownership;
 the direct-connection items must remove crossings as their clients migrate.
 
 | Candidate group | BD registers / bits | Click registers / bits | Follow-up |
 | --- | ---: | ---: | --- |
-| Flattened SoC/Services state | 298 / 3,279 | 297 / 3,280 | Split ownership across items 10-16 |
+| Flattened SoC/Services state | 294 / 3,275 | 293 / 3,276 | Split ownership across items 10-16 |
 | I2C sampling, capture and projection | 101 / 941 | 101 / 941 | Items 13-15 |
 | SPI waveform/capture boundary | 18 / 175 | 18 / 175 | Items 12-15 |
 | Two SRAM access wrappers | 26 / 26 | 26 / 26 | Items 10b2d, 14-15 |
 | Elapsed ingress wrapper | 6 / 37 | 6 / 37 | Items 12, 14-15 |
-| 61 explicit clocked bridge instances | 695 / 4,260 | 695 / 4,260 | Remove as their clocked clients migrate |
-| Total candidates in 67 emitted owners | 1,144 / 8,718 | 1,143 / 8,719 | Item 16 must account for every owner |
+| 63 explicit clocked bridge instances | 705 / 4,270 | 705 / 4,270 | Remove as their clocked clients migrate |
+| Total candidates in 69 emitted owners | 1,150 / 8,724 | 1,149 / 8,725 | Item 16 must account for every owner |
 
 An owner is retained only with a specific physical or interface obligation and
 supporting evidence. Independent time/watchdog operation and the pinned synchronous

@@ -10,9 +10,27 @@ class BdRecoveryOwnershipFixture(p: SocParameters) extends BdPublicationSourceFi
 
   val holdReserve=IO(Input(UInt(2.W)))
   for((bridge,i) <- Seq(telemetryReserve,housekeepingReserve).zipWithIndex) {
-    bridge.in.valid:=sources(i).reserve.valid && !holdReserve(i)
-    sources(i).reserve.ready:=bridge.in.ready && !holdReserve(i)
+    val available=Seq(telemetryReserveAvailable,housekeepingReserveAvailable)(i)
+    bridge.in.valid:=sources(i).reserve.valid && available && !holdReserve(i)
+    sources(i).reserve.ready:=bridge.in.ready && available && !holdReserve(i)
   }
+
+  val holdFinal=IO(Input(UInt(2.W))); val holdFinalReturn=IO(Input(UInt(2.W)))
+  val finalReturns=Seq(telemetryFinalReturn,housekeepingFinalReturn)
+  for((receipt,i) <- finalReturns.zipWithIndex) {
+    receipt.quiet:=Seq(telemetryReserve,housekeepingReserve)(i).in.ready &&
+      Seq(telemetryDecision,housekeepingDecision)(i).in.ready &&
+      Seq(telemetryPublication,housekeepingPublication)(i).in.ready &&
+      !grants(i).out.valid && !drains(i).out.valid && sources(i).quiet && !holdFinal(i)
+    // Test-only hold applied while the actual request is already high. It
+    // prolongs the old ACK return without inventing a new receipt transaction.
+    receipt.request:=Seq(telemetrySource,housekeepingSource)(i).finalRequest || holdFinalReturn(i)
+  }
+  val finalRequest=IO(Output(UInt(2.W)))
+  finalRequest:=Cat(Seq(housekeepingSource.finalRequest,telemetrySource.finalRequest))
+  val finalAcknowledge=IO(Output(UInt(2.W)))
+  finalAcknowledge:=Cat(finalReturns.reverse.map(_.acknowledge))
+  val finalPending=IO(Output(UInt(2.W))); finalPending:=finalRequest ^ finalAcknowledge
 
   val nativeDebt=IO(Output(UInt(2.W))); nativeDebt:=Cat(sources.reverse.map(_.recoveryDebt))
   val returnFence=IO(Output(UInt(2.W))); returnFence:=Cat(sources.reverse.map(_.returnFence))
@@ -55,9 +73,24 @@ class ClickRecoveryOwnershipFixture(p: SocParameters) extends ClickPublicationSo
 
   val holdReserve=IO(Input(UInt(2.W)))
   for((bridge,i) <- Seq(telemetryReserve,housekeepingReserve).zipWithIndex) {
-    bridge.in.valid:=sources(i).reserve.valid && !holdReserve(i)
-    sources(i).reserve.ready:=bridge.in.ready && !holdReserve(i)
+    val available=Seq(telemetryReserveAvailable,housekeepingReserveAvailable)(i)
+    bridge.in.valid:=sources(i).reserve.valid && available && !holdReserve(i)
+    sources(i).reserve.ready:=bridge.in.ready && available && !holdReserve(i)
   }
+
+  val holdFinal=IO(Input(UInt(2.W))); val holdFinalReturn=IO(Input(UInt(2.W)))
+  val finalReturns=Seq(telemetryFinalReturn,housekeepingFinalReturn)
+  for((receipt,i) <- finalReturns.zipWithIndex) {
+    receipt.quiet:=Seq(telemetryReserve,housekeepingReserve)(i).in.ready &&
+      Seq(telemetryDecision,housekeepingDecision)(i).in.ready &&
+      Seq(telemetryPublication,housekeepingPublication)(i).in.ready &&
+      !grants(i).out.valid && !drains(i).out.valid && sources(i).quiet && !holdFinal(i)
+  }
+  val finalRequest=IO(Output(UInt(2.W)))
+  finalRequest:=Cat(Seq(housekeepingSource.finalRequest,telemetrySource.finalRequest))
+  val finalAcknowledge=IO(Output(UInt(2.W)))
+  finalAcknowledge:=Cat(finalReturns.reverse.map(_.acknowledge))
+  val finalPending=IO(Output(UInt(2.W))); finalPending:=finalRequest ^ finalAcknowledge
 
   val nativeDebt=IO(Output(UInt(2.W))); nativeDebt:=Cat(sources.reverse.map(_.recoveryDebt))
   val returnFence=IO(Output(UInt(2.W))); returnFence:=Cat(sources.reverse.map(_.returnFence))

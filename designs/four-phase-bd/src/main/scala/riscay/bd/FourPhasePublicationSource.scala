@@ -19,6 +19,8 @@ class FourPhasePublicationSource(domain: ResetDomain) extends AsyncModule(domain
   val applicationReset=IO(Input(AsyncReset()))
   val eligible=IO(Output(Bool())); val idle=IO(Output(Bool()))
   val ownerRecovery=IO(Output(Bool())); val recoveryDebt=IO(Output(Bool()))
+  val finalRequest=IO(Output(Bool())); val finalAcknowledge=IO(Input(Bool()))
+  val recoveryReturning=IO(Output(Bool()))
   Seq(reserve,grant,decision,publication,drain).foreach(dontTouch(_))
   private val timing=BundledTiming.Simulation
   private val cell=ModelTime.ps(1000)
@@ -42,8 +44,12 @@ class FourPhasePublicationSource(domain: ResetDomain) extends AsyncModule(domain
       "POR receipt identity; full return before source reuse")
     g
   }
+  private val returnControl=asyncChild("recovery_return")(d => new FourPhaseRecoveryReturn(d))
+  returnControl.requested:=reserve.req; returnControl.eligible:=eligible
+  finalRequest:=returnControl.finalRequest; returnControl.finalAcknowledge:=finalAcknowledge
+  recoveryReturning:= !returnControl.quiet
   private val reservation=asyncChild("reservation")(d => new LongHoldBuffer(new PublicationReservation,timing,d))
-  reservation.in.req:=reserve.req; reservation.in.bits:=reserve.bits
+  reservation.in.req:=returnControl.admitted; reservation.in.bits:=reserve.bits
   private val reserved=WireDefault(reservation.in.ack); dontTouch(reserved)
   private val live=Module(new EventRegister(1,cell)); live.reset:=eligibilityReset
   live.trigger:=reservation.in.ack; live.d:=1.U; eligible:=live.q.asBool
@@ -65,17 +71,17 @@ class FourPhasePublicationSource(domain: ResetDomain) extends AsyncModule(domain
   receipt.rising:=Cat(reservation.in.ack,!seen.q)
   receipt.falling:=0.U
   publication.ack:=receipt.q
-  seen.common:=reserve.req.asUInt; seen.rising:=receipt.q.asUInt; seen.falling:=0.U
+  seen.common:=returnControl.admitted.asUInt; seen.rising:=receipt.q.asUInt; seen.falling:=0.U
 
   // Hold the offer through reservation return. An early drain ACK cannot vanish
   // while grant return or another retirement prerequisite is still outstanding.
   private val issued=state("drain_issue",3,0)
-  issued.common:=reserve.req.asUInt
+  issued.common:=returnControl.admitted.asUInt
   issued.rising:=Cat(reservation.in.ack,decisionReady,decision.bits)
   issued.falling:=0.U
   drain.req:=issued.q; drain.bits:=reservation.out.bits
   private val retirement=state("retirement",6,2)
-  retirement.common:=reserve.req.asUInt
+  retirement.common:=returnControl.admitted.asUInt
   retirement.rising:=Cat(reservation.in.ack,decisionReady,
     !decision.bits || (issued.q && drain.ack),
     !decision.bits || seen.q || !eligible,
@@ -91,27 +97,32 @@ class FourPhasePublicationSource(domain: ResetDomain) extends AsyncModule(domain
   recoveryClear.rising:=Cat(ownerRecovery,issued.q,seen.q,eligible)
   recoveryClear.falling:=0.U
   private val debt=Module(new EventRegister(1,cell,1)); debt.reset:=eligibilityReset
-  debt.trigger:=recoveryClear.q; debt.d:=0.U; recoveryDebt:=debt.q.asBool
+  returnControl.fresh:=recoveryClear.q
+  debt.trigger:=returnControl.clear; debt.d:=0.U; recoveryDebt:=debt.q.asBool
   contract.primitive("debt_storage",debt,Map("WIDTH"->BigInt(1),"DELAY_FS"->BigInt(cell.fs),
     "RESET_VALUE"->BigInt(1)),eligibilityResetRef,
-    "reset-dominant recovery debt; only fresh committed publication retirement clears it")
+    "reset-dominant recovery debt; only fresh attributed final return clears it")
   private val returned=state("reservation_return",0,8)
   returned.common:=retirement.q.asUInt; returned.rising:=1.U
   returned.falling:=Cat(decision.ack,publication.req,publication.ack,
     reservation.in.ack,seen.q,drain.req,drain.ack,recoveryClear.q)
   reserve.ack:=gate("acknowledge_guard",GateOperation.Buffer,returned.q,delay=guard)
-  idle:= !reserve.req && !reserve.ack && !decision.req && !decision.ack &&
+  private val originalReturned=WireDefault(!returnControl.admitted && !reserve.ack && !decision.req && !decision.ack &&
     !publication.req && !publication.ack && !grant.req && !grant.ack &&
-    !reservation.in.ack && !seen.q && !drain.req && !drain.ack && !recoveryClear.q
+    !reservation.in.ack && !seen.q && !drain.req && !drain.ack && !recoveryClear.q)
+  dontTouch(originalReturned); returnControl.originalReturned:=originalReturned
+  idle:=originalReturned && !reserve.req && returnControl.quiet
+  contract.endpoint("final_request",finalRequest); contract.endpoint("final_acknowledge",finalAcknowledge)
+  contract.endpoint("recovery_returning",recoveryReturning); contract.endpoint("original_returned",originalReturned)
   contract.endpoint("application_reset",applicationReset)
   contract.endpoint("eligible",eligible); contract.endpoint("idle",idle)
   contract.endpoint("reserved",reserved)
   contract.endpoint("owner_recovery",ownerRecovery); contract.endpoint("recovery_debt",recoveryDebt)
   val recoveryEvent=WireDefault(recoveryClear.q); dontTouch(recoveryEvent)
   contract.endpoint("recovery_event",recoveryEvent)
-  // Clear capture has constant D=0. Its C-element pulse is held through the
-  // >=200 ns outward guard, versus <=10 ns clear and register cell delays.
-  // The qualified application reset holds >=350 ns, beyond clear settlement;
-  // a reset after capture reasserts debt without changing the POR receipt.
+  // Debt captures constant D=0 only after the retained proof's final RTZ.
+  // The child holds cleanup for 200 ns; its <=30 ns clear path and <=10 ns
+  // debt Q delay settle first. Qualified reset holds >=350 ns and revokes
+  // eligibility independently of this POR transport, including its old tail.
   contract.capacity(1)
 }

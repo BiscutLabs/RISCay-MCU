@@ -27,6 +27,7 @@ class PublicationSourceExportTests(unittest.TestCase):
             prefix='Click' if click else 'FourPhase'
             for owner in ('telemetry','housekeeping'):
                 expected={owner+'_source':prefix+'PublicationSource'}
+                expected[owner+'_final_return']=prefix+'ReturnReceipt'
                 for name in CHANNELS:
                     expected[owner+'_'+name+'_bridge']=(prefix+'ToDecoupled' if name in ('grant','drain') else 'DecoupledTo'+prefix)
                 children=[dict(id=n,contract=dict(module=m)) for n,m in expected.items()]

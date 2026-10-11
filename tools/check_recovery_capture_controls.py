@@ -13,7 +13,7 @@ from check_i2c_wiring_controls import hashes,run
 from check_publication_source_export import validate_publication_source
 
 CAMPAIGNS=('roles','required','capture_reset','fast')
-CAPTURES={'debt_storage':'recovery_clear'}
+CAPTURES={'debt_storage':None}
 
 
 def source_oracles(sources):
@@ -34,7 +34,9 @@ def monitors(node):
     expected={'eligibility','debt_storage'}
     if click:expected.update(('armed_phase','publication_phase','drain_phase','retired_phase','decision_phase'))
     if actual!=expected:raise ValueError('RECOVERY_CAPTURE_INVENTORY')
-    return capture_monitors(node,CAPTURES,'RECOVERY_CAPTURE')
+    proof=next(c['contract'] for c in node['children'] if c['id']=='recovery_return')
+    clear=next(p['rtl_path'] for p in proof['primitives'] if p['id']=='clear')
+    return capture_monitors(node,CAPTURES,'RECOVERY_CAPTURE',{'debt_storage':clear+'.q'})
 
 
 def reset_overlap(node):

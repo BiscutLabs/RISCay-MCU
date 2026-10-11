@@ -1,6 +1,8 @@
 # SPDX-License-Identifier: Apache-2.0
 """Closed digital policy for native exclusive service publication receipts."""
 import re
+from check_recovery_return_export import (validate_recovery_return,recovery_return_bindings,
+    validate_return_receipt,return_receipt_bindings)
 
 CHANNELS=('reserve','grant','decision','publication','drain')
 IDENTITY_CHANNELS=('reserve','grant','drain')
@@ -81,6 +83,16 @@ def publication_recovery_background(source,manifest,scopes,checks):
             force(cells['debt_storage']['rtl_path']+'.q',1,(bits>>2)&1,'ChiselAsyncEventRegister_v1')
             force(payload['rtl_path']+'.q',2,((bits>>3)&1)<<1,payload['model'])
             extra.append('#1; check;\n');steps+=1
+        # New ingress is gated by synchronized native owner-idle. Recovery also
+        # requires debt and empty original crossings, so a queued grant is the
+        # wrong background for exercising that valid input. Use only the actual
+        # idle register and closed debt EventRegister, never the derived valid.
+        for debt in (0,1):
+            for idle in (0,1):
+                extra.append(header)
+                force(top+f'.{name}OwnerIdle',1,idle)
+                force(cells['debt_storage']['rtl_path']+'.q',1,debt,'ChiselAsyncEventRegister_v1')
+                extra.append('#1; check;\n');steps+=1
     count=checks+steps*len(coverage);position=coverage[0].start()
     result=source[:position]+''.join(extra)+source[position:]
     return result.replace(marker,f'CONTRACT_PROBES_PASS:{count}'),count
@@ -97,18 +109,21 @@ def validate_publication_source(node):
         any(c['layout']!=channel_layout(node['module'],c['id'],c['id'] in IDENTITY_CHANNELS)
             for c in node['channels'])):
         raise ValueError('PUBLICATION_SOURCE_SCHEMA')
-    if (len(node['children'])!=1 or node['children'][0]['id']!='reservation' or
-        not re.fullmatch(('ClickBuffer' if click else 'LongHoldBuffer')+r'(?:_[0-9]+)?',node['children'][0]['contract']['module']) or
-        node['children'][0]['contract']['capacity']!=1):
+    children={c['id']:c['contract'] for c in node['children']}
+    if len(node['children'])!=2 or set(children)!={'reservation','recovery_return'}:
         raise ValueError('PUBLICATION_SOURCE_STORAGE')
-    storage=node['children'][0]['contract']
+    if (not re.fullmatch(('ClickBuffer' if click else 'LongHoldBuffer')+r'(?:_[0-9]+)?',children['reservation']['module']) or
+        children['reservation']['capacity']!=1 or validate_recovery_return(children['recovery_return'])!=click):
+        raise ValueError('PUBLICATION_SOURCE_STORAGE')
+    storage=children['reservation']
     if (len(storage['channels'])!=2 or {c['id'] for c in storage['channels']}!={'in','out'} or
         any(c['layout']!=channel_layout(storage['module'],c['id'],True) for c in storage['channels'])):
         raise ValueError('PUBLICATION_SOURCE_STORAGE_SCHEMA')
     widths={n+'_'+f:1 for n in CHANNELS for f in ('request','data','acknowledge')}
     widths.update({n+'_data':2 for n in IDENTITY_CHANNELS})
     widths.update({n:1 for n in ('reset','eligibility_reset','application_reset','eligible','idle','reserved',
-                               'owner_recovery','recovery_debt','recovery_event')})
+                               'owner_recovery','recovery_debt','recovery_event','final_request',
+                               'final_acknowledge','recovery_returning','original_returned')})
     if click:
         widths.update(recovery_select=1,arm_sources=3,arm_data=3,arm_event=1,armed=3,
             publication_phase_data=1,publication_event=1,publication_captured=1,
@@ -188,19 +203,24 @@ def validate_publication_source(node):
 def publication_source_bindings(node):
     click=validate_publication_source(node)
     e={x['id']:x['rtl_path'] for x in node['endpoints']};c={x['id']:x['rtl_path'] for x in node['primitives']}
-    r={x['id']:x['rtl_path'] for x in node['children'][0]['contract']['endpoints']}
+    children={x['id']:x['contract'] for x in node['children']}
+    r={x['id']:x['rtl_path'] for x in children['reservation']['endpoints']}
+    proof={x['id']:x['rtl_path'] for x in children['recovery_return']['endpoints']}
     cat=lambda xs:'{'+','.join(xs)+'}'
     q=lambda n:c[n]+'.q'
     pairs=[(e['eligibility_reset'],f"({e['reset']} | {e['application_reset']})"),
         (c['eligibility']+'.reset',e['eligibility_reset']),(c['eligibility']+'.d',"1'b1"),
         (c['debt_storage']+'.reset',e['eligibility_reset']),(c['debt_storage']+'.d',"1'b0"),
-        (c['debt_storage']+'.trigger',e['recovery_event']),(e['recovery_debt'],q('debt_storage')),
+        (c['debt_storage']+'.trigger',proof['clear_event']),(e['recovery_debt'],q('debt_storage')),
         (e['owner_recovery'],r['out_data']+'[1]'),
         (e['eligible'],q('eligibility')),(e['reserved'],r['in_acknowledge']),
-        (e['reserve_request'],r['in_request']),(e['reserve_data'],r['in_data']),
+        (proof['admitted'],r['in_request']),(e['reserve_request'],proof['requested']),(e['reserve_data'],r['in_data']),
         (e['grant_data'],r['out_data']),(e['drain_data'],r['out_data']),
         (e['grant_acknowledge'],r['out_acknowledge']),(e['grant_request'],q('output_guard')),
-        (r['out_request'],c['output_guard']+'.a'),(e['publication_request'],c['request_delay']+'.a')]
+        (r['out_request'],c['output_guard']+'.a'),(e['publication_request'],c['request_delay']+'.a'),
+        (e['eligible'],proof['eligible']),(e['recovery_event'],proof['fresh']),
+        (e['final_request'],proof['final_request']),(e['final_acknowledge'],proof['final_acknowledge']),
+        (e['original_returned'],proof['original_returned']),(e['recovery_returning'],'!'+proof['quiet'])]
     def gate_inputs(n,a,b):
         pairs.extend([(a,c[n+'_na']+'.a'),(b,c[n+'_nb']+'.a'),
             (q(n+'_na'),c[n+'_or']+'.a'),(q(n+'_nb'),c[n+'_or']+'.b'),(q(n+'_or'),c[n]+'.a')])
@@ -257,18 +277,20 @@ def publication_source_bindings(node):
         gate_inputs('recovery_selected',e['owner_recovery'],q('recovery_live'))
         gate_inputs('recovery_clear',e['capture_event'],e['recovery_select'])
         pairs.extend([(e['recovery_select'],q('recovery_selected')),(e['recovery_event'],q('recovery_clear'))])
-        idle=' && '.join(f"({e[n+'_request']} == {e[n+'_acknowledge']})" for n in CHANNELS)
-        idle+=f" && ({e['reserved']} == {e['reserve_acknowledge']}) && !{e['capture_event']} && !{e['arm_event']} && !{e['publication_event']} && !{e['drain_event']} && !{e['recovery_event']}"
+        original=f"({proof['admitted']} == {e['reserve_acknowledge']}) && ({e['reserved']} == {e['reserve_acknowledge']}) && "
+        original+=' && '.join(f"({e[n+'_request']} == {e[n+'_acknowledge']})" for n in CHANNELS if n!='reserve')
+        original+=f" && !{e['capture_event']} && !{e['arm_event']} && !{e['publication_event']} && !{e['drain_event']} && !{e['recovery_event']}"
+        idle=f"{e['original_returned']} && ({e['reserve_request']} == {e['reserve_acknowledge']}) && {proof['quiet']} && !{proof['admitting']}"
     else:
         pairs.extend([(e['reserved'],c['eligibility']+'.trigger'),(e['decision_request'],c['request_guard']+'.a'),
             (q('request_delay'),c['receipt_accept']+'.common'),
             (cat([e['reserved'],'!'+q('receipt_seen')]),c['receipt_accept']+'.rising'),
             ("1'b0",c['receipt_accept']+'.falling'),(e['publication_acknowledge'],q('receipt_accept')),
-            (e['reserve_request'],c['receipt_seen']+'.common'),(q('receipt_accept'),c['receipt_seen']+'.rising'),
-            ("1'b0",c['receipt_seen']+'.falling'),(e['reserve_request'],c['drain_issue']+'.common'),
+            (proof['admitted'],c['receipt_seen']+'.common'),(q('receipt_accept'),c['receipt_seen']+'.rising'),
+            ("1'b0",c['receipt_seen']+'.falling'),(proof['admitted'],c['drain_issue']+'.common'),
             (cat([e['reserved'],q('request_guard'),e['decision_data']]),c['drain_issue']+'.rising'),
             ("1'b0",c['drain_issue']+'.falling'),(e['drain_request'],q('drain_issue')),
-            (e['reserve_request'],c['retirement']+'.common'),
+            (proof['admitted'],c['retirement']+'.common'),
             (cat([e['reserved'],q('request_guard'),f"(!{e['decision_data']} || ({q('drain_issue')} && {e['drain_acknowledge']}))",
                 f"(!{e['decision_data']} || {q('receipt_seen')} || !{e['eligible']})",
                 f"(!{e['publication_request']} && !{e['publication_acknowledge']})",
@@ -282,9 +304,11 @@ def publication_source_bindings(node):
             (cat([e['owner_recovery'],q('drain_issue'),q('receipt_seen'),e['eligible']]),c['recovery_clear']+'.rising'),
             ("1'b0",c['recovery_clear']+'.falling'),(q('recovery_clear'),e['recovery_event']),
             (q('reservation_return'),c['acknowledge_guard']+'.a'),(e['reserve_acknowledge'],q('acknowledge_guard'))])
-        idle=' && '.join('!'+e[n+'_'+f] for n in CHANNELS for f in ('request','acknowledge'))
-        idle+=f" && !{e['reserved']} && !{q('receipt_seen')} && !{e['recovery_event']}"
-    pairs.append((e['idle'],'('+idle+')'))
+        original=' && '.join('!'+(proof['admitted'] if n=='reserve' and f=='request' else e[n+'_'+f])
+            for n in CHANNELS for f in ('request','acknowledge'))
+        original+=f" && !{e['reserved']} && !{q('receipt_seen')} && !{e['recovery_event']}"
+        idle=f"{e['original_returned']} && !{e['reserve_request']} && {proof['quiet']}"
+    pairs.extend([(e['original_returned'],'('+original+')'),(e['idle'],'('+idle+')')])
     return pairs
 
 
@@ -292,6 +316,10 @@ def publication_source_probe(source,manifest,scopes):
     pairs=[]
     def visit(node):
         nonlocal source
+        if re.fullmatch(r'(?:FourPhase|Click)RecoveryReturn(?:_[0-9]+)?',node['module']):
+            pairs.extend(recovery_return_bindings(node))
+        if re.fullmatch(r'(?:FourPhase|Click)ReturnReceipt(?:_[0-9]+)?',node['module']):
+            pairs.extend(return_receipt_bindings(node,scopes))
         if re.fullmatch(r'(?:FourPhase|Click)PublicationSource(?:_[0-9]+)?',node['module']):
             pairs.extend(publication_source_bindings(node))
             e={x['id']:x['rtl_path'] for x in node['endpoints']}
@@ -309,11 +337,23 @@ def publication_source_probe(source,manifest,scopes):
         click=top=='ClickSoc';prefix='Click' if click else 'FourPhase'
         consumer_clock=next(x['rtl_path'] for x in children['control_command_bridge']['endpoints'] if x['id']=='in_clock')
         for owner in ('telemetry','housekeeping'):
-            names={owner+'_source'}|{owner+'_'+n+'_bridge' for n in CHANNELS}
+            names={owner+'_source',owner+'_final_return'}|{owner+'_'+n+'_bridge' for n in CHANNELS}
             if not names<=children.keys():raise ValueError('PUBLICATION_SOURCE_SOC_INVENTORY')
             node=children[owner+'_source']
             if not re.fullmatch(prefix+r'PublicationSource(?:_[0-9]+)?',node['module']):raise ValueError('PUBLICATION_SOURCE_SOC_OWNER')
             e={x['id']:x['rtl_path'] for x in node['endpoints']}
+            receipt=children[owner+'_final_return']
+            if validate_return_receipt(receipt)!=click:raise ValueError('PUBLICATION_SOURCE_RECEIPT_OWNER')
+            final={x['id']:x['rtl_path'] for x in receipt['endpoints']}
+            pairs.extend([(e['final_request'],final['request']),(e['final_acknowledge'],final['acknowledge']),
+                (final['clock'],consumer_clock)])
+            endpoints={n:{x['id']:x['rtl_path'] for x in children[owner+'_'+n+'_bridge']['endpoints']} for n in CHANNELS}
+            raw_quiet=' && '.join([endpoints[n]['in_ready'] for n in ('reserve','decision','publication')]+
+                ['!'+endpoints[n]['out_valid'] for n in ('grant','drain')]+[top+'.fabric_io_'+owner+'Source_quiet'])
+            pairs.extend([(final['quiet'],'('+raw_quiet+')'),
+                (top+'.'+owner+'ReturnFence',f"({top}.systemReset || {e['recovery_debt']} || {e['recovery_returning']})"),
+                (endpoints['reserve']['in_valid'],f"({top}.fabric_io_{owner}Source_reserve_valid && {top}.{owner}OwnerIdle)"),
+                (top+f'.fabric_io_{owner}Source_reserve_ready',f"({endpoints['reserve']['in_ready']} && {top}.{owner}OwnerIdle)")])
             for name in CHANNELS:
                 bridge=children[owner+'_'+name+'_bridge'];output=name in ('grant','drain')
                 model=('ClickToDecoupled' if click else 'FourPhaseToDecoupled') if output else ('DecoupledToClick' if click else 'DecoupledToFourPhase')

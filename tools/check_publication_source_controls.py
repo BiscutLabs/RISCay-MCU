@@ -80,10 +80,11 @@ def main():
                     bad=copy.deepcopy(node);bad['timing'][i][field]='1';bad_nodes.append(bad)
         for i in range(len(node['endpoints'])):
             bad=copy.deepcopy(node);bad['endpoints'][i]['width']+=1;bad_nodes.append(bad)
-        bad=copy.deepcopy(node);bad['children'][0]['contract']['module']='FourPhaseAdapter';bad_nodes.append(bad)
-        for i,channel in enumerate(node['children'][0]['contract']['channels']):
+        reservation=next(i for i,c in enumerate(node['children']) if c['id']=='reservation')
+        bad=copy.deepcopy(node);bad['children'][reservation]['contract']['module']='FourPhaseAdapter';bad_nodes.append(bad)
+        for i,channel in enumerate(node['children'][reservation]['contract']['channels']):
             for j in range(len(channel['layout'])):
-                bad=copy.deepcopy(node);bad['children'][0]['contract']['channels'][i]['layout'].pop(j);bad_nodes.append(bad)
+                bad=copy.deepcopy(node);bad['children'][reservation]['contract']['channels'][i]['layout'].pop(j);bad_nodes.append(bad)
         for bad in bad_nodes:
             try:validate_publication_source(bad)
             except ValueError:pass
@@ -92,7 +93,7 @@ def main():
         def primitive(m,id):return next(p['rtl_path'].rsplit('.',1)[1] for p in m['design']['primitives'] if p['id']==id)
         def pin(text,m,id,port,value):return replace_pin(text,primitive(m,id),port,value)
         def reservation_reset(text,m):
-            child=m['design']['children'][0]['contract']
+            child=next(c['contract'] for c in m['design']['children'] if c['id']=='reservation')
             return replace_pin(text,child['rtl_path'].rsplit('.',1)[1],'reset','reset | applicationReset')
         simulate(variant+'-mixed-baseline',s['mixed'],True)
         simulate(variant+'-reservation-reset',s['mixed'],True,reservation_reset)
@@ -138,10 +139,14 @@ def main():
                 return replace_pin(t,'ca_child_'+owner+'_grant_bridge','in_bits_tag','!'+values[0].strip())
             simulate(variant+'-'+owner+'-grant-payload',s['atomic'],False,grant_bit)
             def debt_reset(t,m,owner=owner):
-                return replace_once(t,owner+"ReturnFence <= 1'h1;",owner+"ReturnFence <= 1'h0;")
-            # Native sticky debt now independently remembers raw reset. The
-            # retained fence has a distinct job after debt clears; use that
-            # unchanged return-window oracle to detect its reset corruption.
+                # Remove only native cleanup from the actual application fence.
+                pattern=r'(assign\s+'+owner+r'ReturnFence\s*=)(.*?);'
+                match=re.search(pattern,t,re.S);assert match,'PUBLICATION_FENCE_SHAPE'
+                term='| _ca_child_'+owner+'_source_recoveryReturning'
+                assert match[2].count(term)==1,'PUBLICATION_FENCE_TERM'
+                return t[:match.start(2)]+match[2].replace(term,'')+t[match.end(2):]
+            # The existing post-clear return-window assertion detects a missing
+            # native cleanup obligation without changing the functional oracle.
             simulate(variant+'-'+owner+'-return-fence',s['recovery_return'],False,debt_reset)
         for owner in ('telemetry','housekeeping'):
             key='' if owner=='telemetry' else 'housekeeping_'

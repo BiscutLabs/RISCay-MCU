@@ -7,7 +7,10 @@ from check_publication_source_export import channel_layout,publication_recovery_
 
 def fixture(click=False):
     top='ClickSoc' if click else 'FourPhaseSoc';children=[];scopes={};forces=[]
+    scopes[top]=dict(registers={})
     for name in ('telemetry','housekeeping'):
+        scopes[top]['registers'][name+'OwnerIdle']=1
+        forces.append(f"force {top}.{name}OwnerIdle = 1'h0;\n")
         path=top+'.ca_child_'+name+'_source';cells=[]
         for identity,initial in (('eligibility','0'),('debt_storage','1')):
             primitive=path+'.ca_primitive_'+identity
@@ -35,14 +38,15 @@ class RecoveryBackgroundTests(unittest.TestCase):
         for click in (False,True):
             manifest,scopes,source,coverage=fixture(click)
             result,count=publication_recovery_background(source,manifest,scopes,1)
-            self.assertEqual(count,33)
+            self.assertEqual(count,41)
             self.assertTrue(result.startswith(source[:source.index(coverage)]))
             self.assertEqual(result.count(coverage),1)
-            self.assertEqual(result.count('#1; check;'),33)
+            self.assertEqual(result.count('#1; check;'),41)
             self.assertEqual(set(re.findall(r'force (\S+) =',result)),set(re.findall(r'force (\S+) =',source)))
             self.assertNotIn('force command',result)
             for owner in ('telemetry','housekeeping'):
                 base=manifest['top']+'.ca_child_'+owner
+                self.assertIn(f"force {manifest['top']}.{owner}OwnerIdle = 1'h1;",result)
                 self.assertIn(f"force {base}_source.ca_child_reservation.ca_primitive_payload.q = 2'h2;",result)
                 self.assertIn(f"force {base}_grant_bridge.data_recovery = 1'h1;",result)
 

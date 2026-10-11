@@ -44,7 +44,7 @@ def monitors(node):
     # The recovery-specific campaign checks the new debt capture in both
     # variants. This retained campaign continues checking all six earlier cells.
     if actual!=set(CAPTURES)|{'debt_storage'}:raise ValueError('PUBLICATION_CAPTURE_INVENTORY')
-    for child in node['children']:
+    for child in (c for c in node['children'] if c['id']=='reservation'):
         timing=[t for t in child['contract']['timing'] if t['kind']=='click-bundling-v1']
         if len(timing)!=1 or any(timing[0]['times'][key]!='100000' for key in
             ('SETUP_FS','HOLD_FS','PULSE_HIGH_FS','PULSE_LOW_FS','CLOCK_SKEW_FS')):
