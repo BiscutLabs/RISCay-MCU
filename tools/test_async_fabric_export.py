@@ -144,8 +144,15 @@ class FabricExportTest(unittest.TestCase):
         anchor = '\"initial-token-literal-mux\": ([], \"data\", \"mux_state\", \"out_data\")}'
         binding = 'if timing["logic"] in ("exclusive-merge-input-mux", "controlled-multiplexer-input-mux"):'
         fallback = '    if "INACTIVE_ENDPOINT:" in simulation.stdout:'
-        original = anchor + "\n" + binding + "\nrequire(marker_ok, 'MARKER')\nrequire(budget_ok, 'BUDGET')\n" + fallback
+        layout = '        for endpoint in node["endpoints"]:\n            fields = layouts.get'
+        guard = 'request = next((p for p in budget_owner["primitives"] if p["id"] == "request_delay"), None)'
+        original = layout + "\n" + guard + "\n" + anchor + "\n" + binding + "\nrequire(marker_ok, 'MARKER')\nrequire(budget_ok, 'BUDGET')\n" + fallback
         adapted = fabric_checker_source(original)
+        self.assertIn('layouts["response_data"]', adapted)
+        self.assertIn('FourPhaseRamReturn', adapted)
+        for missing in (layout,guard):
+            with self.assertRaisesRegex(ValueError, "RAM_RETURN_.*CHECKER_SHAPE"):
+                fabric_checker_source(original.replace(missing,""))
         self.assertIn("validate_fabric_path(node, timing)", adapted)
         self.assertIn("fabric_path_bindings(node, timing)", adapted)
         self.assertIn("require(marker_ok, 'MARKER')", adapted)

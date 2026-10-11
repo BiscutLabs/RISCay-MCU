@@ -106,7 +106,12 @@ recorded separately. Final focused rechecks pass 63 cases and then 31 cases afte
 the last observation-only aliases. Temporary clocked client receipts add six net
 bits per variant; their removal remains tracked with their clocked clients.
 Passing digital checks does not establish physical timing or minimum synchronous
-state. Substep 10b2d next removes the RAM/program whole-word response round trips.
+state. Substep 10b2d1 connects separate native RAM return owners to SRAM, source
+publication and Completion. Fresh review, all 415 verification cases across
+44 suites, two physical-policy cases, 217 Python controls and both strict
+SoC exports pass. It removes 39 net clocked RTL bits per variant; program/loader
+word crossings remain. See the [RAM return contract](docs/ram-return-contract.md)
+and [remaining-state ledger](docs/async-residual-state.md).
 The independent LF timebase/watchdog remains necessary. See the [migration checklist](docs/async-soc-migration.md). A permanent
 Groundlark controller supervises power before upload and during application
 stalls. Its state, safety sample record and confirmation counters now reside

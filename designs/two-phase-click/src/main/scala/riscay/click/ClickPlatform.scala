@@ -92,7 +92,8 @@ abstract class ClickPlatform(p: SocParameters, board: SocParameters => BoardProf
   host.clock := serviceClock; host.scl := scl; host.sda := sda
   fabric.io.i2c <> host.host; sdaLow := host.pullLow
   val programAccess = asyncChild("program_access")(d => new SramAccess(d))
-  val ramAccess = asyncChild("ram_access")(d => new SramAccess(d))
+  val ramAccess = asyncChild("ram_access")(d => new RamAccess(d))
+  val ramReturn = asyncChild("ram_return")(d => new ClickRamReturn(d))
   programAccess.clock := workClock; ramAccess.clock := workClock
   programAccess.io <> fabric.io.program; ramAccess.io <> fabric.io.ram
   // POR identity/effects survive application reset. Only CPU reply eligibility
@@ -101,25 +102,34 @@ abstract class ClickPlatform(p: SocParameters, board: SocParameters => BoardProf
   val ramReserve=asyncChild("ram_reserve_bridge")(d => new DecoupledToClick(Bool(),d))
   val ramGrant=asyncChild("ram_grant_bridge")(d => new ClickToDecoupled(Bool(),d))
   val ramDecision=asyncChild("ram_decision_bridge")(d => new DecoupledToClick(Bool(),d))
-  val ramPublication=asyncChild("ram_publication_bridge")(d => new DecoupledToClick(Bool(),d))
-  Seq(ramReserve,ramDecision,ramPublication).foreach { b =>
+  Seq(ramReserve,ramDecision).foreach { b =>
     b.clock:=workClock; dontTouch(b.in); dontTouch(b.out)
   }
   ramGrant.clock:=workClock; dontTouch(ramGrant.in); dontTouch(ramGrant.out)
   chiselasync.protocol.TwoPhase.connect(ramSource.reserve,ramReserve.out)
   chiselasync.protocol.TwoPhase.connect(ramGrant.in,ramSource.grant)
   chiselasync.protocol.TwoPhase.connect(ramSource.decision,ramDecision.out)
-  chiselasync.protocol.TwoPhase.connect(ramSource.publication,ramPublication.out)
+  chiselasync.protocol.TwoPhase.connect(ramSource.publication,ramReturn.publication)
+  chiselasync.protocol.TwoPhase.connect(ramReturn.word,ramAccess.word)
+  ramAccess.captureRequest:=ramReturn.captureRequest
+  ramReturn.captureAcknowledge:=ramAccess.captureAcknowledge
+  ramAccess.returnIdle:=ramReturn.idle
+  ramReturn.applicationReset:=fabric.io.cpuReset.asAsyncReset
+  ramReturn.eligible:=ramSource.eligible
+  completion.ram.req:=ramReturn.response.req; completion.ram.bits:=ramReturn.response.bits
+  ramReturn.response.ack:=completion.ram.ack
   ramReserve.in <> fabric.io.ramSource.reserve; fabric.io.ramSource.grant <> ramGrant.out
-  ramDecision.in <> fabric.io.ramSource.decision; ramPublication.in <> fabric.io.ramSource.publication
+  ramDecision.in <> fabric.io.ramSource.decision
   ramSource.applicationReset:=fabric.io.cpuReset.asAsyncReset
-  ramSource.wordDrained:= !ramAccess.io.busy // Excludes its own receipt bridges.
+  // Effects and application presentation return before publication ACK. Owner
+  // occupancy is deliberately excluded: publication must not wait for itself.
+  ramSource.wordDrained:=ramAccess.effectsDrained && ramReturn.presentationSettled
   fabric.io.ramSource.eligible:=ramSource.eligible
   val ramOwnerIdle=withClockAndReset(workClock,reset) {
     val first=RegNext(ramSource.idle,false.B); RegNext(first,false.B)
   }
   val ramSourceEmpty=ramOwnerIdle && !ramAccess.io.busy && ramReserve.in.ready &&
-    ramDecision.in.ready && ramPublication.in.ready && !ramGrant.out.valid
+    ramDecision.in.ready && !ramGrant.out.valid
   val ramResetDebt=withClockAndReset(workClock,fabric.io.cpuReset.asAsyncReset) {
     val debt=RegInit(true.B)
     // Restart the release history on EVERY raw pulse, even between clock edges.

@@ -23,6 +23,8 @@ from check_completion_export import (BD_COMPLETION_PATH, CLICK_COMPLETION_PATH,
                                      validate_completion, completion_bindings)
 from check_completion_integration import completion_background, completion_constants_probe
 from check_admission_export import validate_admission, literal_nets, admission_probe
+from check_ram_return_contract import PATHS as RAM_RETURN_PATHS, validate_ram_return, ram_return_bindings, policy as ram_return_policy
+from check_ram_return_integration import ram_return_probe
 from check_application_reset import validate_application_reset, persistent_reset_children
 from check_ram_source_export import ARM_PATH, RETIRE_PATH, validate_ram_source, ram_source_bindings, ram_source_probe
 from check_program_source_export import PROGRAM_PATHS, validate_program_source, program_source_bindings, program_source_probe, validate_program_receipts
@@ -143,7 +145,12 @@ def sleep_clock_background(source: str, manifest: dict, scopes: dict, checks: in
     if gate not in zero_header or end <= start:
         raise ValueError("SLEEP_GATE_DRIVER_MISSING")
     coverage = list(re.finditer(r"^if \(ones_\d+ !==.*INACTIVE_ENDPOINT:.*$", source, re.M))
-    steps = campaign.count("#1; check;")
+    # The copied campaign can include native-source settlement checks with
+    # longer delays. Count every canonical positive-integer-delay invocation,
+    # and reject unrecognized check syntax rather than under-reporting work.
+    steps = len(re.findall(r"^[ \t]*#[1-9][0-9]*;[ \t]+check;[ \t]*$", campaign, re.M))
+    if steps != len(re.findall(r"\bcheck\b", campaign)):
+        raise ValueError("SLEEP_PROBE_CHECK_SHAPE")
     completion = f"CONTRACT_PROBES_PASS:{checks}"
     if not coverage or not steps or source.count(completion) != 1:
         raise ValueError("SLEEP_PROBE_SHAPE_CHANGED")
@@ -395,7 +402,7 @@ def sram_background(source: str, manifest: dict, scopes: dict, checks: int):
     if not owners:
         return source, checks
     if (set(owners) != {"program_access", "ram_access"} or
-            any(not re.fullmatch(r"SramAccess(?:_[0-9]+)?", n["module"]) for n in owners.values())):
+            any(not re.fullmatch((r"SramAccess" if k=="program_access" else r"RamAccess")+r"(?:_[0-9]+)?", n["module"]) for k,n in owners.items())):
         raise ValueError("SRAM_PROBE_OWNER_MISMATCH")
     top = manifest["top"]
     anchor = f"initial begin\nforce {top}.reset = 1'b1; #1;\n"
@@ -436,6 +443,8 @@ def sram_background(source: str, manifest: dict, scopes: dict, checks: int):
                           "bytesReturned_stages_2", "bytesReturned_stages_3"):
                 for stage in (0, 1):
                     force(node["rtl_path"] + f".{group}_{stage}", 1, 1)
+            if node is owners["ram_access"]:
+                for stage in (0,1):force(node["rtl_path"]+f".ownerReturned_stages_{stage}",1,1)
         check()
 
     idle()
@@ -744,6 +753,8 @@ def validate_fabric_inventory(manifest):
     """Required obligations cannot vanish along with their passive markers."""
     def visit(node):
         module = node["module"]
+        if re.fullmatch(r"(?:FourPhase|Click)RamReturn(?:_[0-9]+)?", module):
+            validate_ram_return(node)
         if re.fullmatch(r"(?:FourPhase|Click)RecoveryReturn(?:_[0-9]+)?", module):
             validate_recovery_return(node)
         if re.fullmatch(r"(?:FourPhase|Click)PublicationSource(?:_[0-9]+)?", module):
@@ -817,6 +828,9 @@ def validate_fabric_path(node, timing):
     primitive, elaborated pin, endpoint mapping and endpoint activity afterwards.
     """
     logic = timing.get("logic")
+    if logic in RAM_RETURN_PATHS:
+        validate_ram_return(node,resolved=True)
+        return
     if logic in RECOVERY_RETURN_PATHS:
         validate_recovery_return(node)
         return
@@ -944,6 +958,8 @@ def spi_program_probe(source, manifest, scopes):
 
 def fabric_path_bindings(node, timing):
     """Actual mux/storage pin comparisons added to the unchanged library probe."""
+    if timing.get("logic") in RAM_RETURN_PATHS:
+        return ram_return_bindings(node,resolved=True)
     if timing.get("logic") in RECOVERY_RETURN_PATHS:
         return recovery_return_bindings(node)
     if timing.get("logic") in PUBLICATION_PATHS:
@@ -1000,16 +1016,35 @@ def fabric_checker_source(source):
              + f' {PROGRAM_PATHS[0]!r}: ([], "arm_data_delay", "arm_sources", "arm_data"),'
              + f' {PROGRAM_PATHS[1]!r}: ([], "data_delay", "retire_sources", "register_data"),'
              + f' {PROGRAM_PATHS[2]!r}: ([], "stored_data_delay", "stored_target", "stored_phase_data"),'
-             + ','.join(f'{logic!r}: ([], {delay!r}, {src!r}, {sink!r})' for _,logic,src,sink,delay in PUBLICATION_PATH_TABLE+RECOVERY_RETURN_PATH_TABLE)+'}'
+             + ','.join(f'{logic!r}: ([], {delay!r}, {src!r}, {sink!r})' for _,logic,src,sink,delay in PUBLICATION_PATH_TABLE+RECOVERY_RETURN_PATH_TABLE)+','
+             + ','.join(f'{t["logic"]!r}: ([], {t["delay_cell"]!r}, '+
+                 ("('input_sources' if node['module'].startswith('Click') else 'word_data')" if t['source']=='input_sources' else repr(t['source']))+
+                 f', {t["sink"]!r})' for t in ram_return_policy('click')['timings'] if t['kind']=='bundled-data-path-v1')+'}'
              + "\n                validate_fabric_path(node, timing)")
     source = source.replace(anchor, extra)
     anchor = 'if timing["logic"] in ("exclusive-merge-input-mux", "controlled-multiplexer-input-mux"):'
     if source.count(anchor) != 1:
         raise ValueError("MCU_FABRIC_CHECKER_SHAPE_CHANGED")
     source = source.replace(anchor,
-        f'if timing["logic"] in ({BD_FABRIC_PATH!r}, {CLICK_FABRIC_PATH!r}, {I2C_PROJECTION_PATH!r}, {BD_COMPLETION_PATH!r}, {CLICK_COMPLETION_PATH!r}, {ARM_PATH!r}, {RETIRE_PATH!r}, {PROGRAM_PATHS[0]!r}, {PROGRAM_PATHS[1]!r}, {PROGRAM_PATHS[2]!r},'+','.join(map(repr,PUBLICATION_PATHS+RECOVERY_RETURN_PATHS))+'):\n'
+        f'if timing["logic"] in ({BD_FABRIC_PATH!r}, {CLICK_FABRIC_PATH!r}, {I2C_PROJECTION_PATH!r}, {BD_COMPLETION_PATH!r}, {CLICK_COMPLETION_PATH!r}, {ARM_PATH!r}, {RETIRE_PATH!r}, {PROGRAM_PATHS[0]!r}, {PROGRAM_PATHS[1]!r}, {PROGRAM_PATHS[2]!r},'+','.join(map(repr,PUBLICATION_PATHS+RECOVERY_RETURN_PATHS+RAM_RETURN_PATHS))+'):\n'
         '                    pairs = fabric_path_bindings(node, timing)\n'
         '                el' + anchor)
+    # A mixed-reset raw response is not a same-reset library channel. Its
+    # separately closed schema still supplies independent scalar-port packing
+    # comparisons; do not infer an aggregate response_bits net that does not exist.
+    anchor = '        for endpoint in node["endpoints"]:\n            fields = layouts.get'
+    if source.count(anchor) != 1:raise ValueError("RAM_RETURN_LAYOUT_CHECKER_SHAPE")
+    source = source.replace(anchor,
+        '        if re.fullmatch(r"(?:FourPhase|Click)RamReturn(?:_[0-9]+)?", node["module"]):\n'
+        '            value = endpoint_by_id["response_data"]["source"]\n'
+        '            layouts["response_data"] = [{"source": value+".error", "lsb": 0, "width": 1}, {"source": value+".data", "lsb": 1, "width": 32}]\n' + anchor)
+    # BD's captured-word arm uses the explicitly checked request_guard. Keep
+    # every original budget comparison and validate its complete wiring above.
+    anchor = 'request = next((p for p in budget_owner["primitives"] if p["id"] == "request_delay"), None)'
+    if source.count(anchor) != 1:raise ValueError("RAM_RETURN_GUARD_CHECKER_SHAPE")
+    source = source.replace(anchor,
+        'request = next((p for p in budget_owner["primitives"] if p["id"] == '
+        '("request_guard" if re.fullmatch(r"FourPhaseRamReturn(?:_[0-9]+)?", budget_owner["module"]) else "request_delay")), None)')
     anchor = '    if "INACTIVE_ENDPOINT:" in simulation.stdout:'
     if source.count(anchor) != 1:
         raise ValueError("MCU_FABRIC_CHECKER_SHAPE_CHANGED")
@@ -1017,6 +1052,127 @@ def fabric_checker_source(source):
     return source.replace(anchor,
         '    (directory / "contract_first_simulation.log").write_text(simulation.stdout + simulation.stderr, encoding="utf-8")\n'
         '    (directory / "contract_first_probe.sv").write_text(probe, encoding="utf-8")\n' + anchor)
+
+
+def activity_diagnostics(source):
+    """Report every unmet polarity obligation before the original fatal checks.
+
+    Long SoC runs should expose all missing stimulus combinations in one attempt.
+    Keep each original condition/fatal untouched, including literal-leaf masks.
+    This adds only observations and never turns a failed campaign into a pass.
+    """
+    pattern = re.compile(r'^if \((ones_(\d+) !== ([^|]+) \|\| zeros_\2 !== ([^)]+))\) '
+                         r'\$fatal\(1, "INACTIVE_ENDPOINT:([^"]+)"\);$', re.M)
+    matches = list(pattern.finditer(source))
+    if not matches:
+        raise ValueError('MAPPING_ACTIVITY_DIAGNOSTIC_SHAPE')
+    diagnostics = ''.join(
+        f'if ({m[1]}) $display("ACTIVITY_GAP:{m[5]}:ones=%h zeros=%h expected_ones=%h expected_zeros=%h", '
+        f'ones_{m[2]}, zeros_{m[2]}, {m[3]}, {m[4]});\n' for m in matches)
+    position = matches[0].start()
+    return source[:position] + diagnostics + source[position:]
+
+
+class MappingProbeAttestation:
+    """Bind a strict PASS to the exact probe that was compiled and executed.
+
+    resolved.json binds RTL and metadata. This additional receipt prevents a
+    later edited testbench from borrowing that positive baseline for mutations.
+    Every hash is taken from file bytes; the simulated output is also compared
+    with the library's saved log before recording PASS.
+    """
+    def __init__(self, directory):
+        self.directory = Path(directory).resolve()
+        self.compiled = None
+        self.simulated = None
+
+    def digest(self, name):
+        return hashlib.sha256((self.directory / name).read_bytes()).hexdigest()
+
+    def sources(self):
+        paths = [Path(line.strip()) for line in
+                 (self.directory / 'filelist.f').read_text().splitlines() if line.strip()]
+        if any(not (self.directory / p).resolve().is_relative_to(self.directory) for p in paths):
+            raise ValueError('MAPPING_ATTESTATION_NONLOCAL_SOURCE')
+        if len({p.name for p in paths}) != len(set(paths)):
+            raise ValueError('MAPPING_ATTESTATION_AMBIGUOUS_SOURCE')
+        return {p.name: self.digest(p) for p in paths}
+
+    def snapshot(self):
+        return dict(probe_sha256=self.digest('contract_probe.sv'), source_sha256=self.sources())
+
+    def validate_command(self, parts, compile_probe):
+        if not compile_probe:
+            if parts[1:] != ['contract_probe.vvp']:
+                raise ValueError('MAPPING_ATTESTATION_SIMULATION_COMMAND')
+            return
+        files, outputs, tops = [], [], []
+        index = 1
+        while index < len(parts):
+            part = parts[index]
+            if part in ('-s', '-o') and index + 1 < len(parts):
+                (tops if part == '-s' else outputs).append(parts[index + 1])
+                index += 2
+            elif part in ('-g2012', '-DCHISEL_ASYNC_MAPPING'):
+                index += 1
+            elif part.startswith('-'):
+                raise ValueError('MAPPING_ATTESTATION_COMPILE_OPTION')
+            else:
+                files.append((self.directory / part).resolve())
+                index += 1
+        expected = {(self.directory / line.strip()).resolve() for line in
+                    (self.directory / 'filelist.f').read_text().splitlines() if line.strip()}
+        expected.add(self.directory / 'contract_probe.sv')
+        if outputs != ['contract_probe.vvp'] or tops.count('ContractProbe') != 1 or set(files) != expected or len(files) != len(expected):
+            raise ValueError('MAPPING_ATTESTATION_COMPILE_COMMAND')
+
+    def run(self, runner, command, *args, **kwargs):
+        parts = list(map(str, command))
+        executable = Path(parts[0]).stem.lower()
+        compile_probe = executable == 'iverilog' and 'ContractProbe' in parts
+        simulate_probe = executable == 'vvp' and 'contract_probe.vvp' in parts
+        if not (compile_probe or simulate_probe):
+            return runner(command, *args, **kwargs)
+        if Path(kwargs.get('cwd', '.')).resolve() != self.directory:
+            raise ValueError('MAPPING_ATTESTATION_WORKDIR')
+        self.validate_command(parts, compile_probe)
+        before = self.snapshot()
+        if simulate_probe:
+            if self.compiled is None or before != self.compiled['inputs'] or self.digest('contract_probe.vvp') != self.compiled['vvp']:
+                raise ValueError('MAPPING_ATTESTATION_CHANGED_BEFORE_EXECUTION')
+        else:
+            self.compiled = None
+        self.simulated = None
+        result = runner(command, *args, **kwargs)
+        if self.snapshot() != before:
+            raise ValueError('MAPPING_ATTESTATION_INPUT_CHANGED_DURING_EXECUTION')
+        if compile_probe and result.returncode == 0:
+            self.compiled = dict(inputs=before, vvp=self.digest('contract_probe.vvp'), command=parts)
+        if simulate_probe:
+            if self.digest('contract_probe.vvp') != self.compiled['vvp']:
+                raise ValueError('MAPPING_ATTESTATION_BINARY_CHANGED_DURING_EXECUTION')
+            self.simulated = dict(returncode=result.returncode, output=result.stdout + result.stderr, command=parts)
+        return result
+
+    def finish(self, result):
+        if result.get('status') != 'PASS' or self.simulated is None or self.simulated['returncode'] != 0:
+            raise ValueError('MAPPING_ATTESTATION_NO_EXECUTED_PASS')
+        if self.snapshot() != self.compiled['inputs'] or self.digest('contract_probe.vvp') != self.compiled['vvp']:
+            raise ValueError('MAPPING_ATTESTATION_CHANGED_AFTER_EXECUTION')
+        output = self.simulated['output']
+        if ((self.directory / 'contract_simulation.log').read_text(encoding='utf-8') != output or
+                re.findall(r'CONTRACT_PROBES_PASS:(\d+)', output) != [str(result['mapping_checks'])] or
+                re.search(r'FATAL|TIMEOUT|DEADLINE', output)):
+            raise ValueError('MAPPING_ATTESTATION_SIMULATION_LOG')
+        if result['source_sha256'] != self.compiled['inputs']['source_sha256']:
+            raise ValueError('MAPPING_ATTESTATION_SOURCE_RECEIPT')
+        record = dict(schema='riscay-mapping-probe-attestation-v1', status='PASS',
+                      **self.compiled['inputs'], compiled_vvp_sha256=self.compiled['vvp'],
+                      simulation_log_sha256=self.digest('contract_simulation.log'),
+                      mapping_checks=result['mapping_checks'], semantic_sha256=result['semantic_sha256'],
+                      compile_command=self.compiled['command'], simulation_command=self.simulated['command'])
+        (self.directory / 'mapping-probe-attestation.json').write_text(json.dumps(record, indent=2)+'\n', encoding='utf-8')
+        return record
 
 
 def main() -> None:
@@ -1083,19 +1239,27 @@ def main() -> None:
             (args.directory / (manifest["top"]+".sv")).read_text(encoding="utf-8"))
         source = admission_probe(source, manifest, scopes)
         source = ram_source_probe(source, manifest, scopes)
+        source = ram_return_probe(source, manifest, scopes, args.directory)
         source = program_source_probe(source, manifest, scopes)
         source = publication_source_probe(source, manifest, scopes)
+        if args.vector_coverage:
+            source = activity_diagnostics(source)
         return source, count
     module.probe_source = probe
+
+    attestation = MappingProbeAttestation(args.directory)
+    (args.directory / 'mapping-probe-attestation.json').write_text(
+        json.dumps(dict(schema='riscay-mapping-probe-attestation-v1', status='RUNNING'))+'\n', encoding='utf-8')
 
     def run(command, *pargs, **kwargs):
         kwargs["timeout"] = probe_timeout(command, kwargs.get("timeout"),
                                          args.probe_timeout, args.probe_compile_timeout)
-        return original_run(command, *pargs, **kwargs)
+        return attestation.run(original_run, command, *pargs, **kwargs)
 
     subprocess.run = run
     try:
         result = module.validate_export(args.directory.resolve())
+        attestation.finish(result)
     finally:
         subprocess.run = original_run
         module.validate_manifest = original_manifest

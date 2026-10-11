@@ -116,21 +116,23 @@ $display("CONTRACT_PROBES_PASS:1"); $finish; end endmodule
                            top+".ca_child_request_bridge": request,
                            top+".ca_child_program_grant_bridge": dict(state=2,data=1)}
             for bank in ("program", "ram"):
-                inventories[top+f".ca_child_{bank}_access"] = sync
-                inventories[top+f".ca_child_{bank}_access.ca_child_reply_bridge"] = dict(state=2,data=32)
+                inventories[top+f".ca_child_{bank}_access"] = dict(sync)
+                if bank=="ram":inventories[top+f".ca_child_{bank}_access"].update({f"ownerReturned_stages_{i}":1 for i in (0,1)})
+                if bank=="program":inventories[top+f".ca_child_{bank}_access.ca_child_reply_bridge"] = dict(state=2,data=32)
             scopes = {path: {"registers": regs} for path, regs in inventories.items()}
             manifest = {"top": top, "design": {"children": [{"id": bank+"_access", "contract": {
-                "module": "SramAccess", "rtl_path": top+f".ca_child_{bank}_access"}} for bank in ("program", "ram")]}}
+                "module": "SramAccess" if bank=="program" else "RamAccess", "rtl_path": top+f".ca_child_{bank}_access"}} for bank in ("program", "ram")]}}
             def declarations(regs):
                 return "\n".join(f"reg [{width-1}:0] {name};" for name,width in regs.items())
             rtl = "module WordReply; reg [1:0] state; reg [31:0] data; endmodule\n"
             rtl += "module Access; WordReply ca_child_reply_bridge();\n"+declarations(sync)+"\nwire idle = !active && " + " && ".join(
                 name for name in sync if name.endswith("_1")) + "; endmodule\n"
+            rtl += "module RamNativeAccess;\n"+declarations(inventories[top+".ca_child_ram_access"])+"\nwire idle = !active && "+" && ".join(n for n in inventories[top+".ca_child_ram_access"] if n.endswith("_1"))+"; endmodule\n"
             rtl += "module Reply;\n"+declarations(reply)+"\nendmodule\n"
             rtl += "module Request;\n"+declarations(request)+"\nendmodule\n"
             rtl += "module Grant; reg [1:0] state; reg data; endmodule\n"
             rtl += f"module {top}; reg reset;\n"+declarations(root)+"""
-Access ca_child_program_access(); Access ca_child_ram_access();
+Access ca_child_program_access(); RamNativeAccess ca_child_ram_access();
 Reply ca_child_control_reply_bridge(); Request ca_child_request_bridge();
 Grant ca_child_program_grant_bridge();
 wire program_valid = ca_child_program_access.idle && gate_enabled && fabric_controlOutstanding &&
@@ -311,6 +313,55 @@ endmodule
                 result = subprocess.run(["vvp", "sim.vvp"], cwd=path, capture_output=True, text=True, timeout=30)
                 self.assertIn(diagnostic, result.stdout)
                 self.assertEqual(result.returncode == 0, "CONTRACT_PROBES_PASS" in diagnostic)
+
+    def test_sleep_background_counts_delayed_checks_and_rejects_unknown_shapes(self):
+        manifest = {"top": "SleepCount"}
+        scopes = {"SleepCount": {"registers": {"gate_enabled": 1}}}
+        zero = "force SleepCount.reset = 1'h0;\nforce SleepCount.gate_enabled = 1'h0;\nforce SleepCount.data = 1'h0;\n#1;\n"
+        one = zero.replace("1'h0", "1'h1")
+        campaign = zero+"#1; check;\nforce SleepCount.data = 1'h1;\n#17; check;\nforce SleepCount.data = 1'h0;\n#201000001; check;\n"
+        stimulus = "initial begin\nforce SleepCount.reset = 1'b1; #1;\n"+campaign+one+"#1; check;\n"
+        prelude = '''module ContractProbe; timeunit 1fs; timeprecision 1fs;
+integer calls=0;
+reg ones_0=0, zeros_0=0, ones_1=0, zeros_1=0;
+task check; begin
+calls=calls+1;
+if(SleepCount.observed !== SleepCount.data) $fatal(1,"BINDING_MISMATCH");
+if(SleepCount.observed === 1'b1) begin ones_0=1; zeros_1=1; end
+if(SleepCount.observed === 1'b0) begin zeros_0=1; ones_1=1; end
+end endtask
+'''
+        coverage = ''.join(f'if (ones_{i} !== 1\'h1 || zeros_{i} !== 1\'h1) $fatal(1,"INACTIVE_ENDPOINT:observed{i}");\n'
+                           for i in (0,1))
+        original = prelude+stimulus+coverage+'$display("CONTRACT_PROBES_PASS:8"); $finish; end endmodule\n'
+        augmented,count = sleep_clock_background(original,manifest,scopes,8)
+        self.assertEqual(count,14)  # Four original calls plus three copied calls, two endpoints each.
+        self.assertTrue(augmented.startswith(prelude+stimulus))
+        expected_copy=campaign.replace("force SleepCount.gate_enabled = 1'h0;", "force SleepCount.gate_enabled = 1'h1;")
+        self.assertEqual(augmented,prelude+stimulus+expected_copy+coverage+
+                         '$display("CONTRACT_PROBES_PASS:14"); $finish; end endmodule\n')
+        # Every invocation must have a recognized positive integer delay. A
+        # malformed or conditional call may not silently disappear from count.
+        for statement in ("#0; check;", "#-1; check;", "#1.5; check;", "#(17); check;",
+                          "#delay; check;", "#01; check;", "check;", "#1; check();",
+                          "if (SleepCount.data) #1; check;", "// #1; check;", '#1; $display("check");'):
+            with self.assertRaisesRegex(ValueError,"SLEEP_PROBE_CHECK_SHAPE"):
+                sleep_clock_background(original.replace("#17; check;",statement),manifest,scopes,8)
+        verified = augmented.replace('$display("CONTRACT_PROBES_PASS:14");',
+            'if(calls*2 != 14) $fatal(1,"EXECUTED_CHECK_COUNT"); $display("CONTRACT_PROBES_PASS:14");')
+        for probe,broken,expected in ((verified,False,"CONTRACT_PROBES_PASS:14"),
+                (verified.replace("calls*2 != 14","calls*2 != 10"),False,"EXECUTED_CHECK_COUNT"),
+                (verified,True,"BINDING_MISMATCH")):
+            with tempfile.TemporaryDirectory(prefix="riscay-sleep-count-") as folder:
+                path=Path(folder)
+                rtl="module SleepCount; reg reset=0,gate_enabled=0,data=0; wire observed="+("~data" if broken else "data")+"; endmodule\n"
+                (path/"test.sv").write_text(rtl+probe)
+                built=subprocess.run(["iverilog","-g2012","-s","SleepCount","-s","ContractProbe","-o","sim.vvp","test.sv"],
+                                     cwd=path,capture_output=True,text=True,timeout=30)
+                self.assertEqual(built.returncode,0,built.stderr)
+                run=subprocess.run(["vvp","sim.vvp"],cwd=path,capture_output=True,text=True,timeout=30)
+                self.assertIn(expected,run.stdout)
+                self.assertEqual(run.returncode==0,expected.startswith("CONTRACT_PROBES_PASS"))
 
     def test_timeout_extension_only_targets_generated_probe(self):
         self.assertEqual(probe_timeout(["vvp", "contract_probe.vvp"], 60, 601, 602), 601)
@@ -565,10 +616,12 @@ Child supervisor_command_bridge(.reset(%s)); Child supervisor_reply_bridge(.rese
                 f"byte_{kind}_{lane}" for kind in ("request", "reply") for lane in range(4)]
             for name in ("program_access", "ram_access"):
                 manifest["design"]["children"].append({"id": name, "contract": {
-                    "rtl_path": f"{top}.{name}", "module": "SramAccess", "children": [
+                    "rtl_path": f"{top}.{name}", "module": "SramAccess" if name=="program_access" else "RamAccess", "children": [
                         {"id": part, "contract": {"rtl_path": f"{top}.{name}.{part}", "module": "Child", "children": []}}
                         for part in descendants]}})
-            paths = ["core"] + [name + suffix for name in ("program_access", "ram_access")
+            manifest["design"]["children"].append({"id":"ram_return","contract":{
+                "rtl_path":top+".ram_return","module":"ClickRamReturn" if top=="ClickSoc" else "FourPhaseRamReturn","children":[]}})
+            paths = ["core","ram_return"] + [name + suffix for name in ("program_access", "ram_access")
                                 for suffix in [""] + ["." + part for part in descendants]]
             checks = "\n".join(f'if ({top}.{p}.reset !== {top}.reset) $fatal(1, "RESET_BINDING_MISMATCH");' for p in paths)
             probe = generated_reset_probe("module ContractProbe; task check; begin\n" + checks + f'''
@@ -590,6 +643,7 @@ initial begin #1; check; {top}.watchdog=1; #1; check;
 module {top};
 reg reset=0, watchdog=0; wire systemReset=reset|watchdog;
 Child core(.reset({pin("core")}));
+Child ram_return(.reset({pin("ram_return")}));
 program_access_model program_access(.reset({pin("program_access")}),.systemReset(systemReset));
 ram_access_model ram_access(.reset({pin("ram_access")}),.systemReset(systemReset));
 endmodule

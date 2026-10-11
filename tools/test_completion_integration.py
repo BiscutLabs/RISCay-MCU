@@ -16,7 +16,7 @@ def fixture(top):
     children, scopes, instances, declarations, comparisons, coverage = [], {}, [], [], [], []
     for i, name in enumerate(("plan", "memory", "telemetry", "housekeeping")):
         path = top+".ca_child_completion_"+name+"_bridge"
-        width = 36 if name == "plan" else 33 if name == "memory" else 1
+        width = 37 if name == "plan" else 33 if name == "memory" else 1
         layout = [("bits.error", 0, 1), ("bits.data", 1, 32)] if name == "memory" else [("bits", 0, width)]
         node = dict(module=module, rtl_path=path, channels=[
             dict(id="in", protocol="decoupled-v1", role="input", data="in_data",
@@ -93,16 +93,18 @@ class CompletionIntegrationTest(unittest.TestCase):
             manifest,scopes,_,_=fixture(top)
             regs={top:{n:1 for n in ("gate_enabled","fabric_io_completionIdle_REG","fabric_controlOutstanding",
                                     "fabric_mmioCurrent","fabric_telemetryOutstanding",
-                                    "fabric_housekeepingOutstanding")}}
+                                    "fabric_housekeepingOutstanding","fabric_controlState_programmed")}}
+            regs[top]["fabric_controlState_imageLength"]=32
             regs[top+".ca_child_request_bridge"] = dict(state=2,data_mask=4,data_operation=2,data_address=32)
             if top == "ClickSoc":
                 regs[top]["ca_child_admission_start_stages"] = 2
             regs[top+".ca_child_admission_grant_bridge"] = dict(state=2)
             regs[top+".ca_child_ram_grant_bridge"] = dict(state=2)
-            path=top+".ca_child_ram_source.ca_primitive_eligibility"
+            regs[top+".ca_child_program_grant_bridge"] = dict(state=2)
+            path=top+".ca_child_program_source.ca_primitive_eligibility"
             regs[path]=dict(q=1)
             scopes[path]=dict(ports={"q":dict(name="q",width=1,direction="output")})
-            manifest["design"]["children"].append(dict(id="ram_source",contract=dict(primitives=[
+            manifest["design"]["children"].append(dict(id="program_source",contract=dict(primitives=[
                 dict(id="eligibility",rtl_path=path,model="ChiselAsyncEventRegister_v1",parameters=dict(WIDTH="1"))])))
             for owner in ("telemetry","housekeeping"):
                 regs[top+f".ca_child_{owner}_grant_bridge"]=dict(state=2)
@@ -115,18 +117,80 @@ class CompletionIntegrationTest(unittest.TestCase):
             for bank in ("program","ram"):
                 regs[top+f".ca_child_{bank}_access"]={f"{group}_{stage}":1 for group in (
                     "returned_stages","bytesReturned_stages","bytesReturned_stages_1","bytesReturned_stages_2","bytesReturned_stages_3") for stage in (0,1)}
+            regs[top+".ca_child_program_access"]["active"]=1
             regs[top+".ca_child_ram_access"]["active"]=1
-            regs[top+".ca_child_ram_access.ca_child_reply_bridge"]=dict(state=2,data=32)
+            regs[top+".ca_child_ram_access"].update({f"ownerReturned_stages_{i}":1 for i in (0,1)})
+            regs[top+".ca_child_ram_access.ca_child_capture_receipt"]=dict(requestSync=1,phase=1)
+            root=top+".ca_child_ram_return"
+            native=[]
+            if top=="ClickSoc":
+                native.append(("owned","pending_ca_primitive_owned","ChiselAsyncXor_v1",dict(DELAY_FS="1000000")))
+                native.append(("acknowledge_guard","completedDelayed_ca_primitive_acknowledge_guard","ChiselAsyncControlGate_v1",
+                               dict(DELAY_FS="200000000",OP="0",RESET_VALUE="0",WIDTH="1")))
+                native.extend((n,"ca_primitive_"+n,"ChiselAsyncEventRegister_v1",
+                               dict(WIDTH="1",DELAY_FS="1000000",RESET_VALUE="0"))
+                              for n in ("received_phase","completed_phase"))
+            else:
+                native.append(("pending","ca_primitive_pending","ChiselAsyncAsymmetricC_v1",
+                               dict(COMMON="1",COMMON_INVERT="1",DELAY_FS="1000000",FALLING="0",FALLING_INVERT="0",
+                                    RESET_VALUE="0",RISING="2",RISING_INVERT="0")))
+            cells=[]
+            for identity,suffix,model,parameters in native:
+                path=root+"."+suffix
+                q=dict(name="q",width=1,direction="output")
+                cells.append(dict(id=identity,rtl_path=path,model=model,parameters=parameters,
+                                  reset="reset",reset_domain="root",ports=[q]))
+                regs[path]=dict(q=1)
+                scopes[path]=dict(model=model,parameters=parameters,ports=dict(q=q))
+            manifest["design"]["children"].append(dict(id="ram_return",contract=dict(rtl_path=root,
+                module="ClickRamReturn" if top=="ClickSoc" else "FourPhaseRamReturn",primitives=cells)))
+            regs[top+".ca_child_program_access.ca_child_reply_bridge"]=dict(state=2,data=32)
             regs[top+".ca_child_telemetry_reply_bridge"]=dict(state=2,data_kind=2)
             regs[top+".ca_child_housekeeping_reply_bridge"]=dict(state=2,data_cpuCompletion=1)
             for path,rs in regs.items():scopes.setdefault(path,{})['registers']=rs
             header="".join(f"force {path}.{name} = {width}'h0;\n" for path,rs in regs.items() for name,width in rs.items())+"#1;\n"
             coverage='if (ones_0 !== 1\'h1 || zeros_0 !== 1\'h1) $fatal(1, "INACTIVE_ENDPOINT:test");\n'
-            original=f"initial begin\nforce {top}.reset = 1'b1; #1;\n"+header+coverage+'$display("CONTRACT_PROBES_PASS:1");'
+            generic="// Original generic campaign sentinel\n#1; check;\n"
+            original=f"initial begin\nforce {top}.reset = 1'b1; #1;\n"+header+generic+coverage+'$display("CONTRACT_PROBES_PASS:1");'
             augmented,count=completion_background(original,manifest,scopes,1)
             self.assertGreater(count,130)
-            self.assertTrue(augmented.startswith(original[:original.index(coverage)]))
+            first_end=original.index(generic)
+            self.assertTrue(augmented.startswith(original[:first_end]))
+            self.assertEqual(augmented.count(generic),1)
+            prelude=augmented[first_end:augmented.index(generic)]
+            self.assertEqual(len(re.findall(r"#\d+; check;",prelude)),2)
+            self.assertTrue(prelude.endswith(header))
+            if top=="ClickSoc":
+                owned=root+".pending_ca_primitive_owned.q"
+                self.assertIn(f"release {owned};",prelude)
+                guard=root+".completedDelayed_ca_primitive_acknowledge_guard.q"
+                self.assertIn(f"release {guard};",prelude)
+                self.assertEqual(prelude.count("#201000001; check;"),2)
+                # The only owned-Q force is in the restored original header.
+                self.assertNotIn(f"force {owned}",prelude[:-len(header)])
+                self.assertNotIn(f"force {guard}",prelude[:-len(header)])
+                for n,value in (("received_phase",1),("completed_phase",0)):
+                    self.assertIn(f"force {root}.ca_primitive_{n}.q = 1'h{value};",prelude)
+            else:
+                self.assertIn(f"force {root}.ca_primitive_pending.q = 1'h1;",prelude)
             self.assertIn(coverage,augmented)
+            # Both memory selections must be reached from the real source
+            # state. The old RAM-only scenario can no longer cover program.
+            for path,width,value in ((top+".fabric_controlState_programmed",1,1),
+                                     (top+".fabric_controlState_imageLength",32,4),
+                                     (top+".ca_child_program_grant_bridge.state",2,2),
+                                     (top+".ca_child_request_bridge.data_address",32,0x10000000),
+                                     (top+".ca_child_request_bridge.data_address",32,0x20000000)):
+                self.assertIn(f"force {path} = {width}'h{value:x};",augmented)
+            ram=top+".ca_child_ram_access"
+            receipt=ram+".ca_child_capture_receipt"
+            for active in (0,1):
+                for request_sync in (0,1):
+                    for phase in (0,1):
+                        scenario=(f"force {ram}.active = 1'h{active};\n"
+                                  f"force {receipt}.requestSync = 1'h{request_sync};\n"
+                                  f"force {receipt}.phase = 1'h{phase};\n#1; check;\n")
+                        self.assertEqual(augmented.count(scenario),1)
             if top == "ClickSoc":
                 for value in range(4):
                     self.assertIn(f"force {top}.ca_child_admission_start_stages = 2'h{value:x};\n#1; check;",augmented)
@@ -135,10 +199,32 @@ class CompletionIntegrationTest(unittest.TestCase):
             for path,rs in regs.items():
                 for name in rs:
                     bad=copy.deepcopy(scopes)
-                    if path.endswith('.ca_primitive_eligibility'): del bad[path]['ports'][name]
+                    if 'ports' in bad[path] and name in bad[path]['ports']: del bad[path]['ports'][name]
                     else: del bad[path]['registers'][name]
-                    with self.assertRaisesRegex(ValueError,"COMPLETION_BACKGROUND_DRIVER"):
+                    with self.assertRaisesRegex(ValueError,"COMPLETION_BACKGROUND_DRIVER|COMPLETION_RAM_DRAIN_CELL"):
                         completion_background(original,manifest,bad,1)
+            owner=manifest["design"]["children"][-1]["contract"]
+            for key,value in (("module","WrongOwner"),("rtl_path",root+"_alias")):
+                bad=copy.deepcopy(manifest);bad["design"]["children"][-1]["contract"][key]=value
+                with self.assertRaisesRegex(ValueError,"COMPLETION_RAM_DRAIN_OWNER"):
+                    completion_background(original,bad,scopes,1)
+            for index,cell in enumerate(owner["primitives"]):
+                for key,value in (("id","alias"),("rtl_path",cell["rtl_path"]+"_alias"),
+                                  ("model","WrongPrimitive"),("reset","application_reset"),
+                                  ("reset_domain","application"),("parameters",{}),
+                                  ("ports",[dict(name="q",width=2,direction="output")]),
+                                  ("ports",[dict(name="q",width=1,direction="input")])):
+                    bad=copy.deepcopy(manifest);bad["design"]["children"][-1]["contract"]["primitives"][index][key]=value
+                    with self.assertRaisesRegex(ValueError,"COMPLETION_RAM_DRAIN_CELL"):
+                        completion_background(original,bad,scopes,1)
+                for key,value in (("model","WrongPrimitive"),("parameters",{}),
+                                  ("ports",dict(q=dict(name="q",width=2,direction="output")))):
+                    bad=copy.deepcopy(scopes);bad[cell["rtl_path"]][key]=value
+                    with self.assertRaisesRegex(ValueError,"COMPLETION_RAM_DRAIN_CELL"):
+                        completion_background(original,manifest,bad,1)
+                bad=copy.deepcopy(manifest);bad["design"]["children"][-1]["contract"]["primitives"].append(copy.deepcopy(cell))
+                with self.assertRaisesRegex(ValueError,"COMPLETION_RAM_DRAIN_CELL"):
+                    completion_background(original,bad,scopes,1)
 
 
 if __name__ == '__main__':unittest.main()

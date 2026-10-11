@@ -290,7 +290,15 @@ when no next item has been chosen. Both implementations remain active throughout
       - [ ] **10b2d. Remove whole-word response round trips.** Use the verified
         ownership/isolation contract to connect native completion paths directly
         and remove superseded pending flags and crossings.
-        - [ ] **10b2d1. Working-RAM native return and presentation isolation.**
+        - [x] **10b2d1. Working-RAM native return and presentation isolation.**
+          Separate native return owners are connected to working SRAM, source
+          publication and an independently selected Completion input in both
+          variants. Fresh review, all 415 verification tests across 44 suites,
+          two physical-policy tests, 217 Python tests and both strict SoC exports
+          pass. Production wiring controls detect all 40 actual RTL faults.
+          Evidence: `build/async-ram-return-migration/qualification-evidence.json`.
+          Net reduction: 39 clocked RTL bits per variant, with the 34-port ABI
+          unchanged. See `docs/ram-return-contract.md`; physical timing remains open.
           Capture the native word and retained slot identity in POR-owned storage;
           acknowledge SRAM independently of publication retirement. Connect its
           payload to a separately selected native Completion input. Application
@@ -302,7 +310,7 @@ when no next item has been chosen. Both implementations remain active throughout
           Exclude the retained publication token from the word-drain proof it
           releases. A temporary control-only capture receipt may replace the
           wide reply crossing; count it and retain its item-14 removal obligation.
-          Existing SramAccess active/return synchronizers and RAM debt/previous-
+          Existing RamAccess active/return synchronizers and RAM debt/previous-
           safe policy remain explicit until their own native proof is verified.
           Source occupancy cannot substitute for memoryBusy: it would block the
           reservation's own commit. Distinguish original effect/receipt drainage
@@ -325,12 +333,22 @@ when no next item has been chosen. Both implementations remain active throughout
           implementation. Preserve retained loader/CPU role and separate selected
           program/RAM Completion inputs with immutable plan selection. Loader
           effects must issue exactly one Stored token and never CPU completion.
+          ProgramSource.eligible alone denotes the live application lifetime;
+          it does not distinguish loader writes from CPU reads. Capture the
+          retained native role with presentation permission; never infer role
+          from projected loader state or reuse RAM's eligibility-only binding.
           Stored ACK remains Control command acceptance; preserve the subsequent
           busy/reply gap, independent Click Stored history and BD complete return.
           Test alternating banks/roles/cancellations, earliest real I2C status,
           repeated reset with held old replies, and exact received/CRC/write counts.
           Remove the old wide memory ingress only after both banks qualify;
           preserve the Completion return barrier and complete capture aperture.
+          The current inventory identifies a 39-bit program word reply bridge,
+          eight-bit publication bridge and 40-bit Completion memory ingress as
+          removal candidates. Account for every replacement receipt, reset and
+          idle synchronizer in the net change. Keep the existing five-bit Stored
+          receipt until its Control consumer is native; a loader completion must
+          remain live while application reset is held.
         Both steps require closed strict-export bindings, independent references,
         unchanged external ABI, fresh review and updated crossing/state counts.
         Wrappers are temporary implementation choices, not physical necessities.
@@ -398,7 +416,8 @@ when no next item has been chosen. Both implementations remain active throughout
   an obvious direct connection in an earlier item.
   - [ ] Remove each temporary source reservation/grant/decision/publication/drain
     crossing only when both adjacent owners use the same native protocol.
-    Include the temporary final-return receipts introduced by 10b2c2b.
+    Include the temporary final-return receipts introduced by 10b2c2b and
+    working-RAM capture receipt/return-idle synchronization introduced by 10b2d1.
   - [ ] Connect command/reply, I2C frame/snapshot and SRAM word paths directly;
     retain explicit lifetime isolation between POR and application-reset owners.
   - [ ] Reconcile the emitted crossing inventory and gate demand after every
@@ -447,6 +466,9 @@ when no next item has been chosen. Both implementations remain active throughout
   assigning a physical justification. Native-to-clocked bridges are removal
   candidates whenever their clocked consumer is migrated; their presence alone
   does not justify retaining a service clock.
+  The [preliminary residual ledger](async-residual-state.md) partitions all
+  current reference-configuration nonprimitive bits and identifies the largest
+  remaining transport, replica and history owners; it does not close this item.
   - [ ] Resolve the complete emitted register/event-control inventory to clocks
     and reset domains; account for flattened and generated state as well as children.
   - [ ] Maintain a separate chip-boundary ledger for reset hold and oscillator/

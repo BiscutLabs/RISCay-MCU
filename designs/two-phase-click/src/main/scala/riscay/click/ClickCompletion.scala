@@ -16,19 +16,21 @@ import riscay.soc._
 class ClickCompletion(domain: ResetDomain) extends AsyncModule(domain) {
   val plan=twoPhaseInput("plan",new CompletionPlan)
   val memory=twoPhaseInput("memory",new MemoryResponse)
+  val ram=twoPhaseInput("ram",new MemoryResponse)
   val telemetry=twoPhaseInput("telemetry",Bool())
   val housekeeping=twoPhaseInput("housekeeping",Bool())
   val response=twoPhaseOutput("response",new MemoryResponse)
   val creditReturn=twoPhaseOutput("creditReturn",Bool())
   // Keep the full declared channel ABI even when a particular endpoint always
   // publishes error=false or an effect token has no architectural payload.
-  Seq(plan,memory,telemetry,housekeeping,response,creditReturn).foreach(dontTouch(_))
+  Seq(plan,memory,ram,telemetry,housekeeping,response,creditReturn).foreach(dontTouch(_))
   private val timing=ClickTiming.Simulation
   private val cell=timing.controls.fire.model
   private val resetRef=contract.endpoint("reset",reset)
-  // Selected-input comparators and three composed ANDs are deeper than a
+  // Selected-input comparators and four composed ANDs are deeper than a
   // standard ClickStage. Source/output reuse waits for the entire pulse to drain.
-  private val drain=timing.controls.inputPhase.max.fs+20*timing.controls.fire.max.fs+
+  // The RAM selection adds three serial control cells to the previous envelope.
+  private val drain=timing.controls.inputPhase.max.fs+23*timing.controls.fire.max.fs+
     timing.clockSkew.fs+math.max(timing.pulseLow.fs,timing.hold.fs)+1
   private val guard=ModelTime(math.max(math.max(timing.acknowledgeDelay.fs,timing.outputDelay.fs),drain))
   private def gate(id: String,op: GateOperation.Value,a: UInt,b: UInt=0.U,
@@ -55,30 +57,32 @@ class ClickCompletion(domain: ResetDomain) extends AsyncModule(domain) {
   }
   private val accepted=phase("plan_phase")
   private val memoryPhase=phase("memory_phase")
+  private val ramPhase=phase("ram_phase")
   private val telemetryPhase=phase("telemetry_phase")
   private val housekeepingPhase=phase("housekeeping_phase")
   // A new plan may select a previously absent source. Qualify its phase only
   // after selection has propagated through the entire readiness chain (data max
-  // + requestDelay + nine fire maxima + skew/hold <= 111.2 ns). The 210.2 ns
+  // + requestDelay + twelve fire maxima + skew/hold <= 141.2 ns). The 240.2 ns
   // guard covers this; delaying before XOR leaves accepted-phase feedback prompt.
   private val delayed=gate("request_guard",GateOperation.Buffer,plan.req.asUInt,delay=guard).asBool
   private val pending=xor("plan_pending",delayed,accepted.q.asBool)
   private val occupied=xor("response_occupied",accepted.q.asBool,creditReturn.ack)
   private val sources=Seq(("memory",memory.req,plan.bits.memory,memoryPhase),
+    ("ram",ram.req,plan.bits.ram,ramPhase),
     ("telemetry",telemetry.req,plan.bits.telemetry,telemetryPhase),
     ("housekeeping",housekeeping.req,plan.bits.housekeeping,housekeepingPhase))
   // Fixed guard IDs are recognized by the library's timing experiments. The
   // vector guards preserve independent source parities without separate pulses.
   private val readyInputs=Cat(sources.reverse.map { case(_,req,needed,phase) => !needed || (req =/= phase.q.asBool) })
-  private val ready=gate("request_delay",GateOperation.Buffer,readyInputs,width=3,delay=timing.requestDelay)
+  private val ready=gate("request_delay",GateOperation.Buffer,readyInputs,width=4,delay=timing.requestDelay)
   private val available=sources.zipWithIndex.foldLeft(and("runnable",pending,!occupied)) {
     case(acc,((name,_,_,_),i)) => and(name+"_available",acc,ready(i))
   }
   private val captureEvent=WireDefault(available); dontTouch(captureEvent)
-  private val result=Mux(plan.bits.memory,memory.bits,plan.bits.response)
+  private val result=Mux(plan.bits.ram,ram.bits,Mux(plan.bits.memory,memory.bits,plan.bits.response))
   // Phase feedback belongs to the same bundled-data aperture as the payload.
   // Delay/observe the COMPLETE capture vector, including every selected mux.
-  private val captureWidth=(new MemoryResponse).getWidth+4
+  private val captureWidth=(new MemoryResponse).getWidth+5
   private val phaseInputs=Cat(sources.reverse.map { case(_,req,needed,phase) => Mux(needed,req.asUInt,phase.q) })
   private val captureInputs=Cat(phaseInputs,plan.req,result.asUInt)
   private val data=gate("data_delay",GateOperation.Buffer,captureInputs,width=captureWidth,delay=timing.data.model)
@@ -91,17 +95,17 @@ class ClickCompletion(domain: ResetDomain) extends AsyncModule(domain) {
   sources.zipWithIndex.foreach { case((_,_,_,phase),i) =>
     phase.trigger:=captureEvent; phase.d:=registerData(34+i)
   }
-  private val captured=WireDefault(UInt(captureWidth.W),Cat(housekeepingPhase.q,telemetryPhase.q,memoryPhase.q,accepted.q,payload.q))
+  private val captured=WireDefault(UInt(captureWidth.W),Cat(housekeepingPhase.q,telemetryPhase.q,ramPhase.q,memoryPhase.q,accepted.q,payload.q))
   dontTouch(captured)
   private val acknowledgments=gate("acknowledge_guard",GateOperation.Buffer,
-    Cat(housekeepingPhase.q,telemetryPhase.q,memoryPhase.q,accepted.q),width=4,delay=guard)
+    Cat(housekeepingPhase.q,telemetryPhase.q,ramPhase.q,memoryPhase.q,accepted.q),width=5,delay=guard)
   plan.ack:=acknowledgments(0); memory.ack:=acknowledgments(1)
-  telemetry.ack:=acknowledgments(2); housekeeping.ack:=acknowledgments(3)
+  ram.ack:=acknowledgments(2); telemetry.ack:=acknowledgments(3); housekeeping.ack:=acknowledgments(4)
   response.req:=gate("output_guard",GateOperation.Buffer,accepted.q,delay=guard).asBool
   response.bits:=payload.q.asTypeOf(new MemoryResponse)
   creditReturn.req:=response.ack; creditReturn.bits:=false.B
-  private val resultSources=WireDefault(UInt(76.W),Cat(plan.bits.asUInt,memory.bits.asUInt,
-    plan.req,memory.req,telemetry.req,housekeeping.req,memoryPhase.q,telemetryPhase.q,housekeepingPhase.q))
+  private val resultSources=WireDefault(UInt(112.W),Cat(plan.bits.asUInt,memory.bits.asUInt,ram.bits.asUInt,
+    plan.req,memory.req,ram.req,telemetry.req,housekeeping.req,memoryPhase.q,ramPhase.q,telemetryPhase.q,housekeepingPhase.q))
   contract.endpoint("result_sources",resultSources)
   contract.endpoint("captured",captured)
   contract.endpoint("register_data",registerData); contract.endpoint("capture_event",captureEvent)

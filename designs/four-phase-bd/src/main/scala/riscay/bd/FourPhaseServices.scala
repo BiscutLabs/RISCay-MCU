@@ -40,14 +40,13 @@ class FourPhaseServices(p: SocParameters, boardFactory: SocParameters => BoardPr
   boardReply.ready := false.B
   val program = Module(new SramBank(config.programBytes))
   val ram = Module(new SramBank(config.workingRamBytes))
-  Seq((program, io.program), (ram, io.ram)).foreach { case(memory, port) =>
-    memory.io.request <> port.bytes; port.completions <> memory.io.response
+  program.io.request <> io.program.bytes; io.program.completions <> program.io.response
+  ram.io.request <> io.ram.bytes; io.ram.completions <> ram.io.response
+  for(request <- Seq(io.program.request, io.ram.request)) {
+    request.valid := false.B
+    request.bits := 0.U.asTypeOf(new SramWordRequest)
   }
-  Seq(io.program, io.ram).foreach { memory =>
-    memory.request.valid := false.B
-    memory.request.bits := 0.U.asTypeOf(new SramWordRequest)
-    memory.response.ready := true.B
-  }
+  io.program.response.ready := true.B
   // Native state owns decisions; this is a coherent clock-domain snapshot.
   val controlState = RegInit(ControlState.initial)
   val controlOutstanding = RegInit(false.B)
@@ -271,10 +270,12 @@ class FourPhaseServices(p: SocParameters, boardFactory: SocParameters => BoardPr
   io.admissionGrant.ready := io.request.fire
   val response = WireDefault(0.U.asTypeOf(new MemoryResponse))
   val waitMemory = WireDefault(false.B)
+  val waitRam = WireDefault(false.B)
   io.response <> io.completionResponse
   io.completionPlan.valid := io.request.fire && io.request.bits.operation =/= Operation.Halt.U
   io.completionPlan.bits.response := response
   io.completionPlan.bits.memory := waitMemory
+  io.completionPlan.bits.ram := waitRam
   io.completionPlan.bits.telemetry := telemetryAccepted
   io.completionPlan.bits.housekeeping := housekeepingAction.cpuCompletion
   io.completionMemory.valid := false.B; io.completionMemory.bits := 0.U.asTypeOf(new MemoryResponse)
@@ -302,9 +303,6 @@ class FourPhaseServices(p: SocParameters, boardFactory: SocParameters => BoardPr
   io.ramSource.grant.ready := io.ramSource.decision.ready && (ramCommit || io.ramSource.resetDebt)
   io.ramSource.decision.valid := io.ramSource.grant.fire
   io.ramSource.decision.bits := ramCommit
-  io.ram.response.ready := io.ramSource.publication.ready
-  io.ramSource.publication.valid := io.ram.response.valid
-  io.ramSource.publication.bits := io.ram.response.bits(0)
   when(ramCommit) {
     assert(io.ramSource.grant.fire && io.ramSource.decision.fire && io.ram.request.fire,
       "RAM_SOURCE_COMMIT_NOT_ATOMIC")
@@ -426,14 +424,6 @@ class FourPhaseServices(p: SocParameters, boardFactory: SocParameters => BoardPr
     io.completionMemory.bits.data := io.program.response.bits
     assert(io.completionMemory.ready,"COMPLETION_MEMORY_OVERFLOW")
   }
-  // The exclusive SRAM pipeline's actual publication qualifies this retained
-  // cancellation attribute. Eligibility alone never denotes a pending response.
-  when(io.ram.response.fire && io.ramSource.eligible && !io.ramSource.resetDebt && !io.cpuResetActive) {
-    io.completionMemory.valid := true.B
-    io.completionMemory.bits.error := false.B
-    io.completionMemory.bits.data := io.ram.response.bits
-    assert(io.completionMemory.ready,"COMPLETION_MEMORY_OVERFLOW")
-  }
   when(io.request.fire) {
     when(waitingRead) { housekeepingAction.waitAccepted := true.B }
     when(nativeMmio && housekeepingWriteRequired && req.address(6,0) =/= 64.U) { housekeepingAction.write := true.B }
@@ -449,7 +439,7 @@ class FourPhaseServices(p: SocParameters, boardFactory: SocParameters => BoardPr
         }
       }.elsewhen(ramOperation) {
         io.ram.request.valid := true.B
-        waitMemory := true.B
+        waitRam := true.B
       }.elsewhen(!isFetch && req.address >= MemoryMap.mmio.U && req.address < (MemoryMap.mmio + 76).U && fullWord) {
         val offset = req.address(6, 0)
         response := io.controlReply.bits.memory

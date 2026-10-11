@@ -8,38 +8,54 @@ import riscay.soc._
 class BdRamSourceFixture(p: SocParameters) extends SramCrossingFixture(p) {
   val holdGrant=IO(Input(Bool())); val holdDecision=IO(Input(Bool()))
   val holdPublication=IO(Input(Bool()))
+  val holdCaptureReceipt=IO(Input(Bool())); val stopWorkClock=IO(Input(Bool()))
+  workClock:=(serviceClock.asBool && !stopWorkClock).asClock
+  fabric.io.clockRunning:= !stopWorkClock
+  val observedWorkClock=IO(Output(Clock()));observedWorkClock:=workClock
+  val captureWaiting=IO(Output(Bool()));captureWaiting:=ramReturn.captureRequest =/= ramReturn.captureAcknowledge
+  ramAccess.captureRequest:=ramReturn.captureRequest && !holdCaptureReceipt
+
   fabric.io.ramSource.grant.valid:=ramGrant.out.valid && !holdGrant
   ramGrant.out.ready:=fabric.io.ramSource.grant.ready && !holdGrant
   ramDecision.in.valid:=fabric.io.ramSource.decision.valid && !holdDecision
   fabric.io.ramSource.decision.ready:=ramDecision.in.ready && !holdDecision
-  ramPublication.in.valid:=fabric.io.ramSource.publication.valid && !holdPublication
-  fabric.io.ramSource.publication.ready:=ramPublication.in.ready && !holdPublication
+  ramSource.publication.req:=ramReturn.publication.req && !holdPublication
+  ramReturn.publication.ack:=ramSource.publication.ack && !holdPublication
+  val nativeClick=IO(Output(Bool())); nativeClick:=false.B
   val reserved=IO(Output(Bool())); reserved:=ramReserve.in.fire
   val grantWaiting=IO(Output(Bool())); grantWaiting:=ramGrant.out.valid
   val sourceDebt=IO(Output(Bool())); sourceDebt:=ramResetDebt
   val sourceEmpty=IO(Output(Bool())); sourceEmpty:=ramSourceEmpty
   val sourceDraining=IO(Output(Bool())); sourceDraining:=fabric.io.ramSource.draining
   val wordAccepted=IO(Output(Bool())); wordAccepted:=ramAccess.io.request.fire
-  val publicationAccepted=IO(Output(Bool())); publicationAccepted:=ramPublication.in.fire
+  val publicationAccepted=IO(Output(Bool())); publicationAccepted:=ramReturn.publication.ack
   val cancelled=IO(Output(Bool())); cancelled:=ramDecision.in.fire && !ramDecision.in.bits
 }
 
 class ClickRamSourceFixture(p: SocParameters) extends ClickSramCrossingFixture(p) {
   val holdGrant=IO(Input(Bool())); val holdDecision=IO(Input(Bool()))
   val holdPublication=IO(Input(Bool()))
+  val holdCaptureReceipt=IO(Input(Bool())); val stopWorkClock=IO(Input(Bool()))
+  workClock:=(serviceClock.asBool && !stopWorkClock).asClock
+  fabric.io.clockRunning:= !stopWorkClock
+  val observedWorkClock=IO(Output(Clock()));observedWorkClock:=workClock
+  val captureWaiting=IO(Output(Bool()));captureWaiting:=ramReturn.captureRequest =/= ramReturn.captureAcknowledge
+  ramAccess.captureRequest:=Mux(holdCaptureReceipt,ramReturn.captureAcknowledge,ramReturn.captureRequest)
+
   fabric.io.ramSource.grant.valid:=ramGrant.out.valid && !holdGrant
   ramGrant.out.ready:=fabric.io.ramSource.grant.ready && !holdGrant
   ramDecision.in.valid:=fabric.io.ramSource.decision.valid && !holdDecision
   fabric.io.ramSource.decision.ready:=ramDecision.in.ready && !holdDecision
-  ramPublication.in.valid:=fabric.io.ramSource.publication.valid && !holdPublication
-  fabric.io.ramSource.publication.ready:=ramPublication.in.ready && !holdPublication
+  ramSource.publication.req:=Mux(holdPublication,ramSource.publication.ack,ramReturn.publication.req)
+  ramReturn.publication.ack:=ramSource.publication.ack
+  val nativeClick=IO(Output(Bool())); nativeClick:=true.B
   val reserved=IO(Output(Bool())); reserved:=ramReserve.in.fire
   val grantWaiting=IO(Output(Bool())); grantWaiting:=ramGrant.out.valid
   val sourceDebt=IO(Output(Bool())); sourceDebt:=ramResetDebt
   val sourceEmpty=IO(Output(Bool())); sourceEmpty:=ramSourceEmpty
   val sourceDraining=IO(Output(Bool())); sourceDraining:=fabric.io.ramSource.draining
   val wordAccepted=IO(Output(Bool())); wordAccepted:=ramAccess.io.request.fire
-  val publicationAccepted=IO(Output(Bool())); publicationAccepted:=ramPublication.in.fire
+  val publicationAccepted=IO(Output(Bool())); publicationAccepted:=ramReturn.publication.ack
   val cancelled=IO(Output(Bool())); cancelled:=ramDecision.in.fire && !ramDecision.in.bits
 }
 
@@ -69,18 +85,23 @@ class RamSourceSpec extends AnyFunSuite {
     assert(error.getMessage.contains("reset-settlement budget"),error.getMessage)
   }
   private val tasks="""
-    integer accepted=0,words=0,writes=0,published=0,cancelledCount=0;
-    integer n,beforeAccepted,beforeWords,beforeWrites,beforePublished,beforeCancel;
+    wire captureAccepted=dut.ca_child_ram_access.ca_child_capture_receipt.accepted;
+    wire accessActive=dut.ca_child_ram_access.ca_child_capture_receipt.accept;
+    integer accepted=0,words=0,writes=0,published=0,cancelledCount=0,captures=0;
+    integer n,beforeAccepted,beforeWords,beforeWrites,beforePublished,beforeCancel,beforeCaptures;
     reg [31:0] expected;
-    always @(posedge serviceClock) if(!reset) begin
+    always @(posedge observedWorkClock) if(!reset) begin
+      if(captureAccepted) captures=captures+1;
       if(request_valid && request_ready) accepted=accepted+1;
       if(wordAccepted) words=words+1;
-      if(publicationAccepted) published=published+1;
       if(cancelled) cancelledCount=cancelledCount+1;
-      if(!dut.fabric_ram_macros_0.CEN && !dut.fabric_ram_macros_0.GWEN) writes=writes+1;
       if(sourceDebt && wordAccepted) $fatal(1,"RAM_SOURCE_RESET_DEBT_ADMITTED");
       if(sourceDraining && sleepEligible) $fatal(1,"RAM_SOURCE_DRAIN_SLEPT");
     end
+    always @(posedge dut.fabric_ram_macros_0.CLK) if(!reset && !dut.fabric_ram_macros_0.CEN && !dut.fabric_ram_macros_0.GWEN) writes=writes+1;
+    // Count native acceptance at its actual ACK edge, independently of the
+    // service clock; Click accepts on either phase, BD on ACK assertion.
+    always @(publicationAccepted) if(!reset && (nativeClick || publicationAccepted)) published=published+1;
     task offer(input [1:0] op,input [31:0] data); begin
       @(negedge serviceClock); request_valid=1; request_bits_operation=op;
       request_bits_address=32'h20000000; request_bits_data=data; request_bits_mask=15;
@@ -174,6 +195,29 @@ class RamSourceSpec extends AnyFunSuite {
         end
       """,tasks+"real beforeResetRelease;",serviceHalfPeriodNs=25,deadlineNs=2000000,
         maximumDelaySubtree=Some("ca_child_completion"))
+    }
+    test(s"$name RAM capture receipt stalls across reset release and stopped work clock without losing accepted effects") {
+      ClockedSimulation.run(fixture,name+"-ram-capture-receipt-reset","""
+        for(n=0;n<4;n=n+1) begin
+          idle_check();beforeWords=words;beforeWrites=writes;beforePublished=published;beforeCaptures=captures;
+          holdCaptureReceipt=(n%2==0);
+          offer(2,32'h719ca500+n);admitted();
+          wait(captureWaiting);@(negedge serviceClock);
+          if(n%2==1) stopWorkClock=1;
+          two_short_resets();
+          // The reset qualifier keeps running from the ungated service clock.
+          wait(!systemReset);offer(1,0);
+          repeat(20) begin @(negedge serviceClock);
+            if(!accessActive || !memoryBusy || !sourceDebt || request_ready || response_valid ||
+              captures!=beforeCaptures || words-beforeWords!=1 || writes-beforeWrites!=4 || published!=beforePublished)
+              $fatal(1,"RAM_CAPTURE_RECEIPT_FENCE_OR_EFFECT_COUNT");
+          end
+          holdCaptureReceipt=0;stopWorkClock=0;
+          admitted();answer(32'h719ca500+n);idle_check();
+          if(words-beforeWords!=2 || writes-beforeWrites!=4 || captures-beforeCaptures!=2 || published-beforePublished!=2)
+            $fatal(1,"RAM_CAPTURE_RECEIPT_RETURN_COUNTS");
+        end
+      """,tasks,serviceHalfPeriodNs=25,deadlineNs=2000000,maximumDelaySubtree=Some("ca_child_ram_return"))
     }
     test(s"$name RAM source: old publication fences a fresh request and every recovery pulse restarts safe history") {
       ClockedSimulation.run(fixture,name+"-ram-publication-fence","""

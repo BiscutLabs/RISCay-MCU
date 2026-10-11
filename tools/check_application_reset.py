@@ -71,7 +71,7 @@ def persistent_reset_children(manifest):
     if present and present != housekeeping.keys():
         raise ValueError("SOC_PERSISTENT_RESET_INVENTORY")
     persistent.update(housekeeping)
-    sram = {"program_access": "SramAccess", "ram_access": "SramAccess"}
+    sram = {"program_access": "SramAccess", "ram_access": "RamAccess", "ram_return": "ClickRamReturn" if top == "ClickSoc" else "FourPhaseRamReturn"}
     present = {c.get("id") for c in root["children"]} & sram.keys()
     if present and present != sram.keys():
         raise ValueError("SOC_PERSISTENT_RESET_INVENTORY")
@@ -79,7 +79,7 @@ def persistent_reset_children(manifest):
     ram_source = {"ram_source": "ClickRamSource" if top == "ClickSoc" else "FourPhaseRamSource",
                   "ram_grant_bridge": "ClickToDecoupled" if top == "ClickSoc" else "FourPhaseToDecoupled"}
     ram_source.update({"ram_"+n+"_bridge": "DecoupledToClick" if top == "ClickSoc" else "DecoupledToFourPhase"
-                       for n in ("reserve", "decision", "publication")})
+                       for n in ("reserve", "decision")})
     present = {c.get("id") for c in root["children"]} & ram_source.keys()
     if present and present != ram_source.keys():
         raise ValueError("SOC_RAM_SOURCE_RESET_INVENTORY")

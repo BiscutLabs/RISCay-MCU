@@ -163,12 +163,12 @@ def ram_source_probe(source,manifest,scopes):
     top=manifest["top"]
     if top in ("FourPhaseSoc","ClickSoc"):
         cs={c["id"]:c["contract"] for c in manifest["design"]["children"]}
-        names={"ram_source"}|{"ram_"+n+"_bridge" for n in ("reserve","grant","decision","publication")}
+        names={"ram_source","ram_return","ram_access"}|{"ram_"+n+"_bridge" for n in ("reserve","grant","decision")}
         if not names<=cs.keys():raise ValueError("RAM_SOURCE_SOC_INVENTORY")
         click=top=="ClickSoc"; prefix="Click" if click else "FourPhase"
         if not re.fullmatch(prefix+r"RamSource(?:_[0-9]+)?",cs["ram_source"]["module"]):raise ValueError("RAM_SOURCE_SOC_OWNER")
         e={x["id"]:x["rtl_path"] for x in cs["ram_source"]["endpoints"]}
-        for name in ("reserve","grant","decision","publication"):
+        for name in ("reserve","grant","decision"):
             n=cs["ram_"+name+"_bridge"];output=name=="grant"
             model=("ClickToDecoupled" if click else "FourPhaseToDecoupled") if output else ("DecoupledToClick" if click else "DecoupledToFourPhase")
             protocol="two-phase-bundled-v1" if click else "four-phase-bundled-v1"
@@ -179,7 +179,11 @@ def ram_source_probe(source,manifest,scopes):
                 raise ValueError("RAM_SOURCE_BRIDGE_SCHEMA")
             b={x["id"]:x["rtl_path"] for x in n["endpoints"]}
             pairs += [(e[name+"_"+f],b[("in_" if output else "out_")+f]) for f in ("request","data","acknowledge")]
-        pairs += [(e["application_reset"],top+".systemReset"),(e["word_drained"],"!"+cs["ram_access"]["rtl_path"]+".io_busy")]
+        ret={x["id"]:x["rtl_path"] for x in cs["ram_return"]["endpoints"]}
+        access={x["id"]:x["rtl_path"] for x in cs["ram_access"]["endpoints"]}
+        pairs += [(e["publication_"+f],ret["publication_"+f]) for f in ("request","data","acknowledge")]
+        pairs += [(e["application_reset"],top+".systemReset"),
+                  (e["word_drained"],"("+access["effects_drained"]+" && "+ret["presentation_settled"]+")")]
     anchor="task check; begin"
     if source.count(anchor)!=1:raise ValueError("RAM_SOURCE_PROBE_SHAPE")
     comparisons=[f'if ({a} !== {b}) $fatal(1,"RAM_SOURCE_BINDING:{a}");' for a,b in pairs]

@@ -1,5 +1,60 @@
 # Build and test
 
+## Working-RAM native return — digitally verified 2026-10-11
+
+Substep 10b2d1 removes working RAM's clocked whole-word reply/publication path
+and connects retained native word capture to source publication and a separately
+selected Completion RAM input. Program/loader return remains clocked. The
+temporary five-bit capture receipt acknowledges the same edge that clears
+RamAccess.active; full return-idle observation adds two temporary clocked bits.
+The emitted comparison removes 47 crossing bits and adds those seven bits plus
+one plan selector, for a net reduction of 39 clocked RTL bits per variant.
+All 34 public port schemas and emitted declarations match commit `666af18`.
+See [the return contract](ram-return-contract.md) for reset and drain ownership.
+
+Evidence is under `build/async-ram-return-migration/`. Focused integration passes
+79 cases, the two added actual receipt/work-clock stall cases pass, and the final
+four-source Completion campaign passes 18 cases. Unchanged functional oracles
+pass 41 RAM-return replays and reject 36 actual RTL mutations. Actual-pin capture
+checks pass 1,117 replays, reject 45 defects and meet all 28 reset-release overlap
+obligations. The final full regression passes 415 tests across 44 suites,
+including core/reference, firmware, SRAM-capacity, reset and sleep coverage;
+both physical-policy tests pass. Both full strict SoC exports pass, with every
+dynamic endpoint's polarity checks retained. All 40 production wiring mutations
+compile and fail their own unchanged mapping assertions. Fresh independent RTL,
+checker and residual-ledger reviews are resolved.
+
+`qualification-evidence.json` records frozen reports, source/probe hashes and
+control results. Earlier strict runs exposed missing program-plan and capture-
+receipt activity; the first wiring campaign also lacked two joint drain states.
+Corrected native/source-register stimulus covers them without changing masks
+or assertions. Original failures, surviving faults and stopped fallback attempts
+remain preserved. The final exports use BD strict-r5, whose probe is byte-
+identical with the corrected counter, and Click strict-r6 with its corrected
+composed check count.
+
+`check_ram_return_contract.py` closes primitive/reset/capture ownership;
+`check_ram_capture_receipt.py` consumes the complete emitted access/receipt RTL;
+`check_ram_return_integration.py` checks the production connections and complete
+literal-error alias cone. Dynamic payload bits keep their activity requirements.
+Completion wiring controls reject 28 actual RTL and 321 metadata defects,
+including a separate shortened-guard control for each of its four sources.
+Earlier compile failures, surviving experimental mutants and checker mismatches
+remain in their original evidence folders. They are not counted as passes.
+
+`check_export.py` also writes `mapping-probe-attestation.json` only after the
+exact compiled probe completes successfully. It binds source/probe/VVP/log
+hashes and checks compile inputs and output names. Production RAM wiring controls
+require that receipt and exact case-specific Icarus fatal locations. Stale
+positive evidence, display-only messages and unrelated/mixed failures are
+rejected. The final Python discovery passes 217 tests, including these controls.
+
+
+| Strict export | Endpoints | Mapping checks |
+| --- | ---: | ---: |
+| four-phase | 2,482 | 729,134,658 |
+| click | 2,240 | 634,280,640 |
+
 ## Native final recovery return — digitally verified 2026-10-11
 
 Substep 10b2c2b replaces the four clocked fence/previous-safe bits per variant

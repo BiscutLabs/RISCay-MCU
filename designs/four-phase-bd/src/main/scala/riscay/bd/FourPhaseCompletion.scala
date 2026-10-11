@@ -17,13 +17,14 @@ import riscay.soc._
 class FourPhaseCompletion(domain: ResetDomain) extends AsyncModule(domain) {
   val plan=fourPhaseInput("plan",new CompletionPlan)
   val memory=fourPhaseInput("memory",new MemoryResponse)
+  val ram=fourPhaseInput("ram",new MemoryResponse)
   val telemetry=fourPhaseInput("telemetry",Bool())
   val housekeeping=fourPhaseInput("housekeeping",Bool())
   val response=fourPhaseOutput("response",new MemoryResponse)
   val creditReturn=fourPhaseOutput("creditReturn",Bool())
   // Keep the full declared channel ABI even when a particular endpoint always
   // publishes error=false or an effect token has no architectural payload.
-  Seq(plan,memory,telemetry,housekeeping,response,creditReturn).foreach(dontTouch(_))
+  Seq(plan,memory,ram,telemetry,housekeeping,response,creditReturn).foreach(dontTouch(_))
   private val timing=BundledTiming.Simulation
   private val cell=ModelTime.ps(1000)
   private val resetRef=contract.endpoint("reset",reset)
@@ -42,28 +43,30 @@ class FourPhaseCompletion(domain: ResetDomain) extends AsyncModule(domain) {
   }
   private val guarded=gate("request_guard",GateOperation.Buffer,plan.req,delay=timing.matchedDelay)
   private val selected=Seq(("memory",memory.req,plan.bits.memory),
+    ("ram",ram.req,plan.bits.ram),
     ("telemetry",telemetry.req,plan.bits.telemetry),("housekeeping",housekeeping.req,plan.bits.housekeeping))
   // A rendezvous has a full return barrier, not a combinational AND. No source
   // may reuse its phase until every old request, including the plan, returns.
-  private val rendezvous=Module(new AsymmetricCElement(1,3,3,cell)); rendezvous.reset:=reset
+  private val rendezvous=Module(new AsymmetricCElement(1,4,4,cell)); rendezvous.reset:=reset
   rendezvous.common:=guarded.asUInt
   rendezvous.rising:=Cat(selected.map { case(_,req,needed) => !needed || req })
   rendezvous.falling:=Cat(selected.map { case(_,req,needed) => needed && req })
-  contract.primitive("rendezvous",rendezvous,Map("COMMON"->BigInt(1),"RISING"->BigInt(3),"FALLING"->BigInt(3),
+  contract.primitive("rendezvous",rendezvous,Map("COMMON"->BigInt(1),"RISING"->BigInt(4),"FALLING"->BigInt(4),
     "DELAY_FS"->BigInt(cell.fs),"RESET_VALUE"->BigInt(0),"COMMON_INVERT"->BigInt(0),
     "RISING_INVERT"->BigInt(0),"FALLING_INVERT"->BigInt(0)),resetRef,"selected join offer holds through every input return")
-  private val result=WireDefault(Mux(plan.bits.memory,memory.bits,plan.bits.response))
+  private val result=WireDefault(Mux(plan.bits.ram,ram.bits,Mux(plan.bits.memory,memory.bits,plan.bits.response)))
   private val reply=asyncChild("reply")(d => new FourPhaseStage(new MemoryResponse,new MemoryResponse,
     (x: MemoryResponse) => x,timing,d))
   reply.in.req:=rendezvous.q; reply.in.bits:=result
   memory.ack:=and("memory_ack",reply.in.ack,plan.bits.memory)
+  ram.ack:=and("ram_ack",reply.in.ack,plan.bits.ram)
   telemetry.ack:=and("telemetry_ack",reply.in.ack,plan.bits.telemetry)
   housekeeping.ack:=and("housekeeping_ack",reply.in.ack,plan.bits.housekeeping)
-  private val complete=Module(new AsymmetricCElement(1,0,3,cell)); complete.reset:=reset
+  private val complete=Module(new AsymmetricCElement(1,0,4,cell)); complete.reset:=reset
   complete.common:=reply.in.ack.asUInt; complete.rising:=1.U
-  complete.falling:=Cat(memory.ack,telemetry.ack,housekeeping.ack)
+  complete.falling:=Cat(memory.ack,ram.ack,telemetry.ack,housekeeping.ack)
   plan.ack:=complete.q
-  contract.primitive("plan_ack",complete,Map("COMMON"->BigInt(1),"RISING"->BigInt(0),"FALLING"->BigInt(3),
+  contract.primitive("plan_ack",complete,Map("COMMON"->BigInt(1),"RISING"->BigInt(0),"FALLING"->BigInt(4),
     "DELAY_FS"->BigInt(cell.fs),"RESET_VALUE"->BigInt(0),"COMMON_INVERT"->BigInt(0),
     "RISING_INVERT"->BigInt(0),"FALLING_INVERT"->BigInt(0)),resetRef,"plan payload release waits for every source acknowledgment return")
   response.req:=reply.out.req; response.bits:=reply.out.bits
@@ -71,9 +74,9 @@ class FourPhaseCompletion(domain: ResetDomain) extends AsyncModule(domain) {
   // Retirement must be retained by the native credit owner before releasing
   // response storage. Its empty input slot permits clock-stopped completion.
   reply.out.ack:=creditReturn.ack
-  contract.endpoint("result_sources",Cat(plan.bits.asUInt,memory.bits.asUInt))
+  contract.endpoint("result_sources",Cat(plan.bits.asUInt,memory.bits.asUInt,ram.bits.asUInt))
   contract.endpoint("result",result)
   contract.dataPathTiming("completion_mux","result_sources","result",timing,
-    "held plan selects immediate or completed memory reply",Seq("reply"))
+    "held plan selects immediate, completed program or completed RAM reply",Seq("reply"))
   contract.capacity(1)
 }

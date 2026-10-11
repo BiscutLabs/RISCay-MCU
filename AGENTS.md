@@ -17,7 +17,7 @@
   obtain a fresh independent agent review, address its findings, rerun affected
   checks, update its evidence/contracts, commit and push. Repeat this review loop
   for every item. Continue to the next item when the user has authorized it;
-  otherwise ask. Items 1-9, 10a, 10b1, 10b2a, 10b2b, 10b2c1, 10b2c2a and 10b2c2b are digitally verified within their scopes.
+  otherwise ask. Items 1-9, 10a, 10b1, 10b2a, 10b2b, 10b2c1, 10b2c2a, 10b2c2b and 10b2d1 are digitally verified within their scopes.
   The user has authorized deeper migration under expanded items 10-16: native
   service coordination, observation reduction, publication, direct interconnect
   and physically justified boundary minimization. Audit every remaining clocked
@@ -55,8 +55,25 @@
   Native RAM source ownership reserves before CPU acceptance. Commit/grant/word
   capture must agree; cancel old queued grants without issuing memory effects.
   Eligibility alone is not a response-valid signal. Release reset debt only
-  after owner/receipt/word/byte drainage; wordDrained must exclude receipt bridges.
+  after owner/receipt/word/byte drainage. wordDrained excludes source reservation,
+  grant, decision and publication receipts; it includes the independent capture
+  receipt idle condition.
   Keep source phases/effects POR-only and run AsyncRamSourceSpec/RamSourceSpec.
+  Working-RAM return now connects native SRAM directly to retained RamReturn,
+  RAM-source publication and a separate Completion input. Follow
+  `docs/ram-return-contract.md`; substep 10b2d1 is digitally verified.
+  Preserve captured permission, independent POR/application phases, actual issue
+  history, full BD returns and payload retention through every branch. Temporary
+  capture ACK means RamAccess.active cleared on that clock edge. Its acceptance
+  must not depend on publication, debt or return-owner idle. wordDrained joins
+  effectsDrained and presentationSettled; full busy additionally includes return
+  occupancy. Run AsyncRamReturnSpec, capture-stall/work-clock-stop RamSourceSpec,
+  exact macro-effect checks and four-source AsyncCompletionSpec. Validate actual
+  receipt/access RTL and the complete literal-error alias cone before masking
+  impossible polarity; preserve all dynamic activity and mutation oracles.
+  Bind production wiring controls to the actual executed strict probe and
+  compiled binary. Reject stale evidence and require each mutant's exact fatal
+  assertion location; unrelated failures and matching display text do not count.
   Native program ownership tags each slot CPU-read or loader-write. Late Control
   work may cancel an unaccepted CPU slot; revalidate image permissions after
   BEGIN and fault invalid reads without a word effect. Loader reserve, grant,
@@ -110,8 +127,10 @@
   Inject reset-test pulses before this qualifier; never lengthen failing pulses.
   Run AsyncCompletionSpec/CompletionSpec and real completion wiring mutation
   controls; preserve the full emitted port ABI even for constant error fields.
-  Strict completion stimulus may force only catalogued source registers or the
-  exactly validated source eligibility EventRegister output. Preserve
+  Strict completion stimulus may force only catalogued source registers or
+  exactly validated native storage outputs. Joint RAM-drain scenarios use BD's
+  retained C-element state and Click's retained phase registers; release and
+  settle Click's derived ownership cone instead of forcing its result. Preserve
   every dynamic bit's polarity activity; the three literal bridge input leaves
   require exact emitted bindings, schemas and per-check value assertions. Reject
   dynamic expressions before granting a constant mask. Keep actual-RTL mutation

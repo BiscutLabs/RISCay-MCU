@@ -9,7 +9,10 @@ import riscay.MemoryResponse
   */
 class CompletionPlan extends Bundle {
   val response = new MemoryResponse
+  // Program and working-RAM responses have independent native histories. An
+  // admitted plan selects at most one memory owner; effects may join either.
   val memory = Bool()
+  val ram = Bool()
   val telemetry = Bool()
   val housekeeping = Bool()
 }

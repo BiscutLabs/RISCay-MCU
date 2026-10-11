@@ -31,6 +31,22 @@ def main():
             bad=copy.deepcopy(node); bad['timing'].pop(index); bads.append(bad)
         for index in range(len(node['channels'])):
             bad=copy.deepcopy(node); bad['channels'][index]['protocol']='unrecognized'; bads.append(bad)
+            for field in ('request','data','acknowledge','reset_domain'):
+                bad=copy.deepcopy(node); bad['channels'][index][field]='unknown'; bads.append(bad)
+            bad=copy.deepcopy(node); bad['channels'][index]['layout'][0]['lsb']+=1; bads.append(bad)
+        bad=copy.deepcopy(node); bad['channels'].append(copy.deepcopy(bad['channels'][0])); bads.append(bad)
+        bad=copy.deepcopy(node); bad['capacity']=2; bads.append(bad)
+        for index in range(len(node['endpoints'])):
+            bad=copy.deepcopy(node); bad['endpoints'][index]['width']+=1; bads.append(bad)
+        bad=copy.deepcopy(node); bad['endpoints'].append(copy.deepcopy(bad['endpoints'][0])); bads.append(bad)
+        bad=copy.deepcopy(node); bad['endpoints'].append(dict(id='unknown',width=1)); bads.append(bad)
+        for field in ('min_fs','max_fs','model_fs'):
+            bad=copy.deepcopy(node); next(t for t in bad['timing'] if t['id']=='completion_mux')['budget'][field]='1'; bads.append(bad)
+        for index,primitive in enumerate(node['primitives']):
+            if primitive['model']=='ChiselAsyncTimingMarker_v1':continue
+            for field in ('reset','reset_domain'):
+                bad=copy.deepcopy(node); bad['primitives'][index][field]='unknown'; bads.append(bad)
+            bad=copy.deepcopy(node); bad['primitives'][index]['parameters']['UNKNOWN']='1'; bads.append(bad)
         bad=copy.deepcopy(node); bad['primitives'].append(copy.deepcopy(bad['primitives'][0])); bads.append(bad)
         bad=copy.deepcopy(node); bad['primitives'][0]['id']='unknown'; bads.append(bad)
         for id in ('request_guard',)+(('acknowledge_guard','request_delay','output_guard') if name=='click' else ('rendezvous','plan_ack')):
@@ -46,14 +62,14 @@ def main():
                ('credit-payload-literal','literal',None)]
         if name=='click':
             cases += [('response-and-feedback-mux','data_delay','a'),('selected-phase-load','memory_phase','d'),
-                      ('selected-phase-trigger','telemetry_phase','trigger'),('readiness-selection','request_delay','a'),
+                      ('selected-phase-trigger','telemetry_phase','trigger'),('ram-phase-load','ram_phase','d'),('ram-phase-trigger','ram_phase','trigger'),('ram-readiness','ram_available_nb','a'),('readiness-selection','request_delay','a'),
                       ('output-backpressure','runnable_nb','a'),('join-cascade','housekeeping_available_na','a'),
                       ('acknowledgment-feedback','acknowledge_guard','a'),
                       ('retained-credit-ownership','response_occupied','b')]
         else:
             cases += [('rendezvous-common','rendezvous','common'),('rendezvous-selection','rendezvous','rising'),
                       ('rendezvous-return','rendezvous','falling'),('source-ack-selection','memory_ack_nb','a'),
-                      ('source-ack-return','memory_ack_or','a'),('plan-return','plan_ack','falling'),
+                      ('source-ack-return','memory_ack_or','a'),('ram-ack-selection','ram_ack_nb','a'),('ram-ack-return','ram_ack_or','a'),('plan-return','plan_ack','falling'),
                       ('retirement-storage-release','reply','out_ack')]
             primitives['reply']=node['children'][0]['contract']['rtl_path'].split('.')[-1]
         for label,primitive,pin in cases:
@@ -83,28 +99,46 @@ def main():
         before=hashes(source)
         node=json.loads((source/'export/contract.json').read_text())['manifest']['design']
         validate_completion(node)
+        # A shortened-guard counterexample is meaningful only against a complete
+        # passing source cohort with the same RTL, and unchanged native oracles.
+        seeds={int(p.name[5:]):p for p in source.glob('seed-*') if p.is_dir()}
+        assert set(seeds)==set(range(1,25)),'SELECTION_SEED_COHORT'
+        for seed,folder in seeds.items():
+            result=json.loads((folder/'result.json').read_text())
+            assert result.get('status')=='PASS' and int(result['seed'])==seed,'SELECTION_SEED_NOT_PASSED'
+        rtl_hash=hashlib.sha256((source/'export/ClickCompletion.sv').read_bytes()).hexdigest()
+        assert rtl_hash==hashlib.sha256((args.click/'ClickCompletion.sv').read_bytes()).hexdigest(),'SELECTION_RTL_COHORT'
+        results['click']['selection_cohort']=dict(source=str(source),seeds=sorted(seeds),rtl_sha256=rtl_hash)
         instance=next(p['rtl_path'].split('.')[-1] for p in node['primitives'] if p['id']=='request_guard')
-        for selected in ('memory','telemetry'):
+        for selected in ('memory','ram','telemetry','housekeeping'):
             oracle_source=source/('selected-skew-'+selected)/'testbench.sv'
             oracle=hashlib.sha256(oracle_source.read_bytes()).hexdigest()
+            assert 'CA_TEST_PASS' in (oracle_source.parent/'simulation.log').read_text(),'SELECTION_SKEW_NOT_PASSED'
+            skew=json.loads((oracle_source.parent/'delays.json').read_text())
+            assert (skew.get('first_selected_source')==selected and skew.get('transactions')==40 and
+                    skew.get('per_source_transactions')==4 and skew.get('other_delays_and_oracle_unchanged') is True), 'SELECTION_ROTATED_COHORT'
             for mutated in (False,True):
                 label='selection-'+selected+('-short-guard' if mutated else '-baseline')
                 case=out/label;shutil.copytree(source/'export',case)
                 shutil.copy2(oracle_source,case/'testbench.sv');rtl=case/'ClickCompletion.sv'
                 if mutated:
-                    pattern=r'(ChiselAsyncControlGate_v1\s+#\(\s*\.DELAY_FS\()210200001(\),(?:\s*\.\w+\([^)]*\),?)+\s*\)\s+'+re.escape(instance)+r'\s*\()'
-                    changed,count=re.subn(pattern,lambda m:m[1]+'11000000'+m[2],rtl.read_text())
+                    pattern=r'(ChiselAsyncControlGate_v1\s+#\(\s*\.DELAY_FS\()240200001(\),(?:\s*\.\w+\([^)]*\),?)+\s*\)\s+'+re.escape(instance)+r'\s*\()'
+                    # Bypass the selection guard with an ordinary minimum-delay
+                    # gate. An 11 ns substitution does not expose every source
+                    # after the fourth selected-input AND extends the cascade.
+                    changed,count=re.subn(pattern,lambda m:m[1]+'1000000'+m[2],rtl.read_text())
                     assert count==1,'SELECTION_GUARD_MUTATION_SHAPE'
                     rtl.write_text(changed,encoding='utf-8')
                 files=[str((case/x.strip()).resolve()) for x in (case/'filelist.f').read_text().splitlines() if x.strip()]
                 compiled,log=run(['iverilog','-g2012','-s','Testbench','-o','control.vvp',*files,'testbench.sv'],case,'compile.log',commands)
                 assert compiled['exit_code']==0,log[-4000:]
                 simulated,log=run(['vvp','control.vvp'],case,'simulation.log',commands)
-                expected='COMPLETION_SELECTED_SOURCE_ABSENT' if mutated else 'CA_TEST_PASS'
+                expected='COMPLETION_CAPTURE_SOURCE_ABSENT_'+selected if mutated else 'CA_TEST_PASS'
                 assert expected in log and (simulated['exit_code']!=0)==mutated,log[-4000:]
                 assert hashlib.sha256((case/'testbench.sv').read_bytes()).hexdigest()==oracle
                 results['click']['cases'][label]=dict(compile=compiled,simulation=simulated,
-                    expected=expected,oracle_sha256=oracle,oracle_kind='native-selected-source-skew')
+                    expected=expected,oracle_sha256=oracle,oracle_kind='native-selected-source-skew',
+                    request_guard_fs=1000000 if mutated else 240200001)
                 print('click',label,'PASS',flush=True)
         assert hashes(source)==before,'ORIGINAL_SELECTION_ORACLE_MODIFIED'
         results['click']['selection_original_preserved']=True

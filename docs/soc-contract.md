@@ -33,7 +33,7 @@ Native completion assembly connects production replies directly from the
 selected-input join to Fabric; checklist substep 10a passes digital verification,
 independent review and both strict SoC exports.
 The clocked plan crossing captures an immutable response and completion mask. Selected
-memory/Telemetry/Housekeeping tokens may arrive independently; only their native
+program-memory/RAM/Telemetry/Housekeeping tokens may arrive independently; only their native
 join can publish the CPU reply. Application reset cancels this presentation path,
 while existing POR effect owners finish accepted persistent work.
 Native admission replaces synchronized retirement/clocked occupancy with one
@@ -49,6 +49,16 @@ digitally verified). Grant, CPU/word acceptance and a commit receipt agree;
 actual word publication qualifies CPU completion, and cancellation cannot undo
 accepted SRAM effects. All source phases and receipt crossings are POR-only.
 The application resets only eligibility and reset-debt release history.
+Working-RAM return is now connected directly from native SRAM through retained
+RamReturn to native source publication and Completion's separate RAM input
+(10b2d1, digitally verified). It bypasses the clocked
+whole-word reply bridge and Services. POR retains the word and effect/publication
+history; qualified application reset revokes presentation permission. A temporary
+control-only receipt clears the clocked access active bit on acceptance. The
+drain proof excludes publication and native return occupancy to avoid a cycle;
+full busy includes both. Program/loader return still uses its clocked path.
+See [the working-RAM return contract](ram-return-contract.md) for independent
+branch return, mixed reset lifetime, temporary state and timing obligations.
 Program-source ownership and Stored delivery now use separate native owners
 (10b2b, digitally verified), replacing clocked CPU/Stored pending flags.
 The retained tag classifies actual word responses; projected loader state does

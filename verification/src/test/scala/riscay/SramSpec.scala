@@ -27,15 +27,16 @@ class SramCrossingFixture(p: SocParameters) extends MemoryResetFixture(p) {
     ramAccess.io.completions(i).valid := fabric.io.ram.completions(i).valid && !hold
     fabric.io.ram.completions(i).ready := ramAccess.io.completions(i).ready && !hold
   }
-  fabric.io.ram.response.valid := ramAccess.io.response.valid && !holdWord
-  ramAccess.io.response.ready := fabric.io.ram.response.ready && !holdWord
+  ramReturn.word.req := ramAccess.word.req && !holdWord
+  ramAccess.word.ack := ramReturn.word.ack && !holdWord
   byteWaiting := fabric.io.ram.completions(heldLane).valid
   val holdProgramWord = IO(Input(Bool())); val programWordWaiting = IO(Output(Bool()))
   val sleepEligible = IO(Output(Bool())); sleepEligible := fabric.io.canSleep
   fabric.io.program.response.valid := programAccess.io.response.valid && !holdProgramWord
   programAccess.io.response.ready := fabric.io.program.response.ready && !holdProgramWord
   programWordWaiting := programAccess.io.response.valid
-  wordWaiting := ramAccess.io.response.valid; memoryBusy := ramAccess.io.busy || programAccess.io.busy
+  wordWaiting := ramAccess.word.req || ramReturn.publication.req
+  memoryBusy := ramAccess.io.busy || programAccess.io.busy
 }
 class ClickSramCrossingFixture(p: SocParameters) extends ClickMemoryResetFixture(p) {
   val holdByte = IO(Input(Bool())); val heldLane = IO(Input(UInt(2.W)))
@@ -46,15 +47,18 @@ class ClickSramCrossingFixture(p: SocParameters) extends ClickMemoryResetFixture
     ramAccess.io.completions(i).valid := fabric.io.ram.completions(i).valid && !hold
     fabric.io.ram.completions(i).ready := ramAccess.io.completions(i).ready && !hold
   }
-  fabric.io.ram.response.valid := ramAccess.io.response.valid && !holdWord
-  ramAccess.io.response.ready := fabric.io.ram.response.ready && !holdWord
+  // Hold the next native phase at the last accepted phase; no RTZ adapter.
+  ramReturn.word.req := Mux(holdWord,ramReturn.word.ack,ramAccess.word.req)
+  ramAccess.word.ack := ramReturn.word.ack
   byteWaiting := fabric.io.ram.completions(heldLane).valid
   val holdProgramWord = IO(Input(Bool())); val programWordWaiting = IO(Output(Bool()))
   val sleepEligible = IO(Output(Bool())); sleepEligible := fabric.io.canSleep
   fabric.io.program.response.valid := programAccess.io.response.valid && !holdProgramWord
   programAccess.io.response.ready := fabric.io.program.response.ready && !holdProgramWord
   programWordWaiting := programAccess.io.response.valid
-  wordWaiting := ramAccess.io.response.valid; memoryBusy := ramAccess.io.busy || programAccess.io.busy
+  wordWaiting := (ramAccess.word.req =/= ramAccess.word.ack) ||
+    (ramReturn.publication.req =/= ramReturn.publication.ack)
+  memoryBusy := ramAccess.io.busy || programAccess.io.busy
 }
 
 class SramSpec extends AnyFunSuite {

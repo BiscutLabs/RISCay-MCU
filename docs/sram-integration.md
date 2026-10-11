@@ -59,13 +59,23 @@ response-valid signal: CPU completion requires an actual SRAM response publicati
 and cleared reset debt. Every reset pulse restarts the coordinated application
 reset hold. Debt and its release history reset asynchronously, and fresh admission
 waits for the owner, all four source bridges and the existing SRAM paths to drain.
-The word-drained input excludes the new receipt bridges, avoiding a circular wait.
+The word-drained input excludes the source reservation, grant, decision and
+publication receipts, avoiding a circular wait. In 10b2d1 it includes the
+independent capture receipt idle condition through effectsDrained.
 
 RAM no longer uses Services' `cpuMemoryPending`; substep 10b2b now removes that
 program-read flag and the clocked Stored-pending flag, with digital qualification complete.
-Four RAM ownership crossings, synchronized idle/debt qualification,
-`SramAccess.active`, word crossings and the synchronous macro boundary remain.
-Later checklist items remove those round trips under this ownership contract.
+That substep retained four RAM ownership crossings and the whole-word round trip.
+The digitally verified 10b2d1 integration removes the word reply crossing and RAM
+publication bridge: separate native RamReturn owners retain the whole word,
+publish directly to RamSource and feed Completion's independent RAM input.
+Fresh review and digital qualification pass. Three reservation/grant/decision crossings,
+the word-command crossing, synchronized idle/debt qualification, RamAccess.active,
+a temporary five-bit capture receipt and synchronous byte boundaries remain.
+The receipt clears active independently of publication; effectsDrained excludes
+return-owner occupancy while full busy includes it. See
+[the working-RAM return contract](ram-return-contract.md). Program/loader retains
+the existing round trip until 10b2d2.
 No reset, bundled-path, CDC or physical macro timing closure is claimed.
 
 ## Native program source reservation (10b2b; digitally verified)

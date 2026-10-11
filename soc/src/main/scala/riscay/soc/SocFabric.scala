@@ -17,7 +17,7 @@ object MemoryMap {
 abstract class ServiceEndpoint extends Module with InlineInstance {
   val io = IO(new Bundle {
     val program = new SramAccessPort
-    val ram = new SramAccessPort
+    val ram = new RamAccessPort
     val ramSource = new RamSourceBoundaryPort
     val programSource = new ProgramSourceBoundaryPort
     val telemetrySource = new PublicationSourceBoundaryPort
