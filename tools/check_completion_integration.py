@@ -158,6 +158,9 @@ def completion_background(source, manifest, scopes, checks):
             force(top+".fabric_mmioCurrent", 1, 1)
             force(control+".state", 2, 2)
             force(control+".data_kind", 3, 4)
+            if operation==2 and address==0x30000008:
+                for owner in ("telemetry","housekeeping"):
+                    force(top+f".ca_child_{owner}_grant_bridge.state",2,2)
         check()
 
     plan(1, 0x30000004, True)
@@ -181,7 +184,11 @@ def completion_background(source, manifest, scopes, checks):
     for name, field, width in (("telemetry", "data_kind", 2), ("housekeeping", "data_cpuCompletion", 1)):
         extra.append(header)
         force(top+f".fabric_{name}Outstanding", 1, 1)
-        force(top+f".fabric_{name}CpuPending", 1, 1)
+        owner=next(c["contract"] for c in manifest["design"]["children"] if c["id"]==name+"_source")
+        cell=next(p for p in owner["primitives"] if p["id"]=="eligibility")
+        if cell["model"]!="ChiselAsyncEventRegister_v1" or cell["parameters"].get("WIDTH")!="1":
+            raise ValueError("COMPLETION_PUBLICATION_ELIGIBILITY_OWNER")
+        force(cell["rtl_path"]+".q",1,1,primitive=True)
         force(top+f".ca_child_{name}_reply_bridge.state", 2, 2)
         force(top+f".ca_child_{name}_reply_bridge.{field}", width, 1); check()
     count = checks+steps*len(coverage)

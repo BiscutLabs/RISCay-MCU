@@ -59,6 +59,27 @@ Host admission retains its busy history through Stored-reply publication.
 Five source crossings, drain/debt projections and existing SRAM word crossings
 remain explicit boundaries for later migration.
 
+Telemetry and Housekeeping publication sources now have separate native exclusive
+owners (10b2c1; digitally verified). Successful MMIO work reserves
+every required source before CPU acceptance; deadline writes acquire both.
+The validated Control reply waits until those grants and decision ingresses can
+commit atomically. Parked WAITs do not reserve a source. Application reset cancels
+uncommitted grants and revokes live CPU eligibility without resetting POR phases.
+A staged Telemetry commit may be cancelled before dispatch; accepted ordered
+Housekeeping actions still execute and publish. Actual publication issues a
+receipt even for an old CPU lifetime. Only actual publication with live native
+eligibility and a clear reset fence can issue CPU completion.
+
+Publication acknowledgment is independent of owner retirement. Every committed
+decision issues a persistent drain offer; its clocked consumer proves staging,
+dispatch, command/reply and publication paths quiet before acknowledging it.
+Accumulated observations and undispatched recovery work are retained and do not
+prevent this quiet proof. BD requires complete request/acknowledgment return;
+Click retains independent publication and drain phase histories across skipped
+or cancelled slots. Neither receipt acceptance nor retirement advances consumedGray.
+Five POR crossings per source, clocked staging/dispatch, reset-debt release,
+recovery attribution and state/output projections remain explicit for later steps.
+
 Application reset asserts immediately and releases after eight ungated service
 edges. With a maximum service clock of 20 MHz, the minimum hold is 350 ns; the
 current native application island has a 250 ns digital reset-settlement budget.

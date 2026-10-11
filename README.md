@@ -1,8 +1,9 @@
 # RISCay-MCU
 
 Migration items use a fresh independent agent review, fixes, affected verification,
-and a commit/push before completion. Items 1–9, native response assembly (10a)
-native admission credit (10b1) and RAM ownership/cancellation (10b2a) are digitally verified; see the
+and a commit/push before completion. Items 1–9, native response assembly (10a),
+admission credit (10b1), RAM/program ownership (10b2a/b) and publication receipts
+(10b2c1) are digitally verified within their documented scopes. See the
 [migration checklist](docs/async-soc-migration.md)
 for the remaining clocked state and physical qualification work.
 
@@ -90,9 +91,13 @@ Native RAM source ownership/cancellation (10b2a) passes fresh review, all 276
 verification cases, both core policy cases, 96 Python controls, mutation controls
 and strict exports. Native program-memory CPU/loader ownership and Stored
 delivery (10b2b) pass fresh review, all 309 verification cases, both core policy
-cases, 105 Python controls, 50 actual RTL mutation controls and strict exports. Other source
-flags, publication crossings and reset/drain projections remain tracked for
-subsequent migration.
+cases, 105 Python controls, 50 actual RTL mutation controls and strict exports.
+Separate native publication owners now replace Telemetry/Housekeeping CPU-pending
+flags (10b2c1, digitally verified). Fresh review fixes, all 334 verification cases,
+both core policy cases, 113 Python controls, 49 actual RTL mutation controls and
+both strict SoC exports pass. Their five POR crossings per source, clocked
+recovery attribution, reset/drain projections and client staging remain
+tracked for subsequent migration.
 The independent LF timebase/watchdog remains necessary. See the [migration checklist](docs/async-soc-migration.md). A permanent
 Groundlark controller supervises power before upload and during application
 stalls. Its state, safety sample record and confirmation counters now reside

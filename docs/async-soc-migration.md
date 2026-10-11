@@ -161,7 +161,7 @@ when no next item has been chosen. Both implementations remain active throughout
       - [ ] **10b2c. Publication receipts and recovery debt.** Move Telemetry and
         Housekeeping CPU eligibility only with their publication acknowledgments;
         repeated resets cannot let an old recovery clear newly incurred debt.
-        - [ ] **10b2c1. CPU eligibility and exclusive publication receipts.**
+        - [x] **10b2c1. CPU eligibility and exclusive publication receipts — digitally verified, 2026-10-10.**
           Reserve before CPU acceptance, including both sources for deadline
           writes. Cancel uncommitted grants without consuming admission; keep
           offered-request event history visible during stalls. Do not let a
@@ -170,24 +170,36 @@ when no next item has been chosen. Both implementations remain active throughout
           accepted POR-owned Housekeeping actions must still execute and publish.
           Retain an independent reset/full-drain fence until native recovery is
           qualified; remove each clocked CPU-pending bit with its native owner.
-          - [ ] Retain publication receipts and acknowledge their ingress
+          - [x] Retain publication receipts and acknowledge their ingress
             independently of owner retirement. Prove that no captured receipt
             remains in flight before cancellation permits reuse. Keep separate
             Click publication/drain phase histories and complete BD returns.
-          - [ ] Issue a persistent drain offer for every committed decision,
+          - [x] Issue a persistent drain offer for every committed decision,
             including one accepted before application reset. Acknowledgment
             must prove the old dispatch, command, reply and publication paths
             quiet; accumulated observations and undispatched recovery work must
             not prevent that proof or lose their retained history.
-          - [ ] Hold the validated MMIO Control reply until all required grants
+          - [x] Hold the validated MMIO Control reply until all required grants
             and decision ingresses can commit together. Leave parked WAITs
             unreserved; separate engine readiness from reservation occupancy.
-          - [ ] Publish receipts even for cancelled CPU lifetimes. Qualify live
+          - [x] Publish receipts even for cancelled CPU lifetimes. Qualify live
             completion with actual service publication, native eligibility and
             the reset fence. Receipt retirement never advances `consumedGray`.
-          - [ ] Verify independent crossing stalls, reset during capture and
+          - [x] Verify independent crossing stalls, reset during capture and
             return, both deadline arrival orders, skipped phase histories,
             continuous ticks, permanent supervision and immediate source reuse.
+
+          Separate native owners now replace both clocked CPU-pending bits.
+          Five POR crossings per source and clocked recovery/debt projection
+          remain temporary boundaries. Fresh implementation and qualification
+          reviews required actual register-pin timing controls and independent
+          Housekeeping publication/drain stalls, in addition to Telemetry cases.
+          All 334 verification cases, both core policy cases, 113 Python controls
+          and both strict SoC exports pass. Unchanged oracles reject 49 actual RTL
+          defects, 857 metadata mutations and six dynamic substitutions.
+          Actual Click pin checks pass 130 positive replays, including reset
+          overlap in every capture-reset seed/skew case. Evidence and failures:
+          `build/async-publication-source-migration/qualification-evidence.json`.
         - [ ] **10b2c2. Fresh recovery attribution and native debt.** An old reset
           reply cannot clear a later raw reset pulse, even when several pulses
           occur before publication. Associate recovery with a retained exclusive
@@ -195,6 +207,21 @@ when no next item has been chosen. Both implementations remain active throughout
           reuse. Qualify each projection update with that same identity; keep
           physical reset release and clock-domain observations explicit. Avoid
           a cycle in which debt blocks the recovery dispatch needed to clear it.
+          - [ ] **10b2c2a. Fresh recovery ownership.** Extend the retained source
+            role to distinguish CPU work and recovery. Admit a recovery only
+            after older accepted effects drain; commit its grant and decision
+            with actual reset-command acceptance. A later reset revokes that
+            slot's freshness. Require actual attributed publication before
+            authorizing application projection or ending recovery. Remove the
+            Services reset-needed/recovery flags only with this native owner;
+            retain and identify the clocked full-return fence in this substep.
+          - [ ] **10b2c2b. Native full-return debt release.** Replace clocked
+            debt/previous-safe sequencing only after a native retained proof
+            joins fresh recovery publication with complete owner and crossing
+            return. If a temporary quiescence receipt is needed at the clocked
+            client boundary, count it and schedule its later removal. Never
+            use an unqualified combinational strobe or a bare idle observation
+            to clear debt. A reset invalidates every older clear obligation.
       - [ ] **10b2d. Remove whole-word response round trips.** Use the verified
         ownership/isolation contract to connect native completion paths directly
         and remove superseded pending flags and crossings.
@@ -889,3 +916,52 @@ a clear request arrives but before its later dispatch. No software ABI changes.
 The native buffers, BD return barrier, Click reset-start and phase-feedback paths,
 and their crossing setup/hold assumptions require physical qualification. Current
 digital delay bounds do not establish routed timing closure or minimum area/power.
+
+## Native publication ownership scope (10b2c1, digitally verified)
+
+Each design has its own native capacity-one publication owner, used independently
+by Telemetry and Housekeeping. A retained reservation tag accompanies the grant
+and drain offer. The validated MMIO Control reply remains held until every
+required grant and decision ingress can commit with CPU acceptance. A deadline
+write requires both sources; a parked WAIT reserves neither. Cancelled queued
+grants settle without consuming admission or issuing effects. Source occupancy
+does not feed its own admission predicate. Offered MMIO requests remain visible
+to event history throughout these stalls.
+
+Application reset revokes only CPU eligibility. Reservation, decision, publication
+and drain phases remain POR-owned. Every committed decision issues a persistent
+drain offer, even if application reset cancels a staged Telemetry command before
+dispatch. Accepted ordered Housekeeping actions persist and publish. Actual
+service publication always sends the old owner's receipt, including after reset;
+only that same publication with eligible ownership and a clear reset fence may
+produce CPU completion. `consumedGray` still advances solely on actual
+Housekeeping publication.
+
+Publication ACK comes from retained receipt capture independently of retirement.
+Retirement requires grant return, decision, committed drain acknowledgment,
+publication or revoked eligibility, and publication return. BD holds drain REQ
+through reserve return and waits for all receipt/drain/decision returns before
+reserve ACK falls. Its direct ACK-to-seen fork assumes a minimum 12 ns ACK pulse
+(11 ns request delay plus a minimum 1 ns receipt cell), exceeding the 10 ns seen
+cell maximum. Other BD source guards are 200 ns digital delays.
+
+Click retains independent publication and drain targets when arming each slot;
+false decisions skip both histories. Its custom arm, eligibility, publication,
+drain and retirement registers use native event capture. Publication capture
+also waits for a committed guarded decision. Balanced control trees and retained
+phase feedback are covered by 241.200001 ns outward/decision guards, 10 ns data
+paths and 100 ps setup/hold, pulse and capture-distribution assumptions. The
+actual-pin campaign checks all six custom registers, including min/max gate
+skew and observed reset overlap with publication/drain capture and ACK propagation.
+These are digital bounds, not characterized or routed physical timing evidence.
+
+Each source currently uses five POR-owned clocked-client crossings. The drain
+consumer acknowledges only after staging/outstanding commands, reply return and
+publication ingress are quiet. Queued observations and undispatched recovery
+work do not block this proof; they retain their history. Two-flop owner-idle
+observation and reset-debt release after two fresh safe observations remain
+clocked. These convenience boundaries are temporary. Item 10b2c2 owns fresh
+recovery attribution and native debt; later items remove staging, dispatch,
+projection and direct-interconnect round trips. Full tests, strict export checks,
+fresh review and retained failure evidence pass for this scope. No physical
+qualification or minimum synchronous-state claim follows from this checkpoint.

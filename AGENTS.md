@@ -17,7 +17,7 @@
   obtain a fresh independent agent review, address its findings, rerun affected
   checks, update its evidence/contracts, commit and push. Repeat this review loop
   for every item. Continue to the next item when the user has authorized it;
-  otherwise ask. Items 1-9, 10a, 10b1, 10b2a and 10b2b are digitally verified within their scopes.
+  otherwise ask. Items 1-9, 10a, 10b1, 10b2a, 10b2b and 10b2c1 are digitally verified within their scopes.
   The user has authorized deeper migration under expanded items 10-16: native
   service coordination, observation reduction, publication, direct interconnect
   and physically justified boundary minimization. Audit every remaining clocked
@@ -70,6 +70,20 @@
   POR phase/ACK ownership; ACK means Control acceptance. Its payload is held by
   the native Stored buffer through acknowledgment. Run StoredReceiptSpec and
   earliest on-wire I2C status tests; qualify the complete bundled-data CDC path.
+  Native Telemetry/Housekeeping publication owners reserve every required source
+  before CPU acceptance. Keep grant/decision/CPU commit atomic and leave parked
+  WAIT unreserved. Reservation occupancy must not block its own commit. Actual
+  publication feeds a POR receipt even after CPU cancellation; live eligibility
+  alone cannot issue completion. Every committed decision retains a drain offer,
+  including reset-cancelled staged Telemetry; accepted Housekeeping work persists.
+  Keep publication ACK independent of retirement and exclude queued observations
+  and recovery flags from the old-client quiet proof. Click publication/drain
+  phase histories are independent; BD waits for complete grant/receipt/drain
+  return. Run AsyncPublicationSourceSpec/PublicationSourceSpec, independent stalls
+  for both sources, repeated raw resets and actual RTL mutation controls. Run
+  tools/check_publication_capture_controls.py against every seed/skew fixture;
+  require actual-pin capture, pulse, distribution and reset-overlap evidence.
+  Clocked reset debt and recovery attribution remain until 10b2c2 is qualified.
   Application reset asserts immediately and releases after eight ungated service
   edges (>=350 ns at the 20 MHz ceiling), restarting on every raw pulse. Audit
   all custom timing bounds against the 250 ns digital reset-settlement budget.

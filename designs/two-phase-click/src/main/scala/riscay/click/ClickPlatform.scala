@@ -210,6 +210,87 @@ abstract class ClickPlatform(p: SocParameters, board: SocParameters => BoardProf
   // Click reply acceptance returns the clocked bridge to idle on that edge.
   // The outstanding command covers reply wait; native guard drainage is clockless.
   fabric.io.telemetryDraining := !telemetryCommandBridge.in.ready
+
+  // Native receipt ownership is POR-only. The client recovery fence remains
+  // clocked until 10b2c2; debt alone never pauses its own recovery dispatch.
+  val telemetrySource=asyncChild("telemetry_source")(d => new ClickPublicationSource(d))
+  val telemetryReserve=asyncChild("telemetry_reserve_bridge")(d => new DecoupledToClick(Bool(),d))
+  val telemetryGrant=asyncChild("telemetry_grant_bridge")(d => new ClickToDecoupled(Bool(),d))
+  val telemetryDecision=asyncChild("telemetry_decision_bridge")(d => new DecoupledToClick(Bool(),d))
+  val telemetryPublication=asyncChild("telemetry_publication_bridge")(d => new DecoupledToClick(Bool(),d))
+  val telemetryDrain=asyncChild("telemetry_drain_bridge")(d => new ClickToDecoupled(Bool(),d))
+  Seq(telemetryReserve,telemetryDecision,telemetryPublication).foreach { b =>
+    b.clock:=workClock; dontTouch(b.in); dontTouch(b.out)
+  }
+  Seq(telemetryGrant,telemetryDrain).foreach { b => b.clock:=workClock; dontTouch(b.in); dontTouch(b.out) }
+  chiselasync.protocol.TwoPhase.connect(telemetrySource.reserve,telemetryReserve.out)
+  chiselasync.protocol.TwoPhase.connect(telemetryGrant.in,telemetrySource.grant)
+  chiselasync.protocol.TwoPhase.connect(telemetrySource.decision,telemetryDecision.out)
+  chiselasync.protocol.TwoPhase.connect(telemetrySource.publication,telemetryPublication.out)
+  chiselasync.protocol.TwoPhase.connect(telemetryDrain.in,telemetrySource.drain)
+  telemetryReserve.in <> fabric.io.telemetrySource.reserve
+  fabric.io.telemetrySource.grant <> telemetryGrant.out
+  telemetryDecision.in <> fabric.io.telemetrySource.decision
+  telemetryPublication.in <> fabric.io.telemetrySource.publication
+  fabric.io.telemetrySource.drain <> telemetryDrain.out
+  telemetrySource.applicationReset:=fabric.io.cpuReset.asAsyncReset
+  fabric.io.telemetrySource.eligible:=telemetrySource.eligible
+  val telemetryOwnerIdle=withClockAndReset(workClock,reset) {
+    val first=RegNext(telemetrySource.idle,false.B); RegNext(first,false.B)
+  }
+  val telemetrySourceEmpty=telemetryOwnerIdle && telemetryReserve.in.ready &&
+    telemetryDecision.in.ready && telemetryPublication.in.ready && !telemetryGrant.out.valid && !telemetryDrain.out.valid
+  val telemetryResetDebt=withClockAndReset(workClock,fabric.io.cpuReset.asAsyncReset) {
+    val debt=RegInit(true.B); val previousSafe=RegInit(false.B)
+    val safe=telemetrySourceEmpty && fabric.io.telemetrySource.quiet && !fabric.io.cpuResetActive
+    previousSafe:=safe
+    when(previousSafe && safe) { debt:=false.B }
+    debt
+  }
+  fabric.io.telemetrySource.occupied:= !telemetrySourceEmpty
+  fabric.io.telemetrySource.resetDebt:=telemetryResetDebt
+  fabric.io.telemetrySource.draining:=telemetryResetDebt || !telemetrySourceEmpty
+
+  // Native receipt ownership is POR-only. The client recovery fence remains
+  // clocked until 10b2c2; debt alone never pauses its own recovery dispatch.
+  val housekeepingSource=asyncChild("housekeeping_source")(d => new ClickPublicationSource(d))
+  val housekeepingReserve=asyncChild("housekeeping_reserve_bridge")(d => new DecoupledToClick(Bool(),d))
+  val housekeepingGrant=asyncChild("housekeeping_grant_bridge")(d => new ClickToDecoupled(Bool(),d))
+  val housekeepingDecision=asyncChild("housekeeping_decision_bridge")(d => new DecoupledToClick(Bool(),d))
+  val housekeepingPublication=asyncChild("housekeeping_publication_bridge")(d => new DecoupledToClick(Bool(),d))
+  val housekeepingDrain=asyncChild("housekeeping_drain_bridge")(d => new ClickToDecoupled(Bool(),d))
+  Seq(housekeepingReserve,housekeepingDecision,housekeepingPublication).foreach { b =>
+    b.clock:=workClock; dontTouch(b.in); dontTouch(b.out)
+  }
+  Seq(housekeepingGrant,housekeepingDrain).foreach { b => b.clock:=workClock; dontTouch(b.in); dontTouch(b.out) }
+  chiselasync.protocol.TwoPhase.connect(housekeepingSource.reserve,housekeepingReserve.out)
+  chiselasync.protocol.TwoPhase.connect(housekeepingGrant.in,housekeepingSource.grant)
+  chiselasync.protocol.TwoPhase.connect(housekeepingSource.decision,housekeepingDecision.out)
+  chiselasync.protocol.TwoPhase.connect(housekeepingSource.publication,housekeepingPublication.out)
+  chiselasync.protocol.TwoPhase.connect(housekeepingDrain.in,housekeepingSource.drain)
+  housekeepingReserve.in <> fabric.io.housekeepingSource.reserve
+  fabric.io.housekeepingSource.grant <> housekeepingGrant.out
+  housekeepingDecision.in <> fabric.io.housekeepingSource.decision
+  housekeepingPublication.in <> fabric.io.housekeepingSource.publication
+  fabric.io.housekeepingSource.drain <> housekeepingDrain.out
+  housekeepingSource.applicationReset:=fabric.io.cpuReset.asAsyncReset
+  fabric.io.housekeepingSource.eligible:=housekeepingSource.eligible
+  val housekeepingOwnerIdle=withClockAndReset(workClock,reset) {
+    val first=RegNext(housekeepingSource.idle,false.B); RegNext(first,false.B)
+  }
+  val housekeepingSourceEmpty=housekeepingOwnerIdle && housekeepingReserve.in.ready &&
+    housekeepingDecision.in.ready && housekeepingPublication.in.ready && !housekeepingGrant.out.valid && !housekeepingDrain.out.valid
+  val housekeepingResetDebt=withClockAndReset(workClock,fabric.io.cpuReset.asAsyncReset) {
+    val debt=RegInit(true.B); val previousSafe=RegInit(false.B)
+    val safe=housekeepingSourceEmpty && fabric.io.housekeepingSource.quiet && !fabric.io.cpuResetActive
+    previousSafe:=safe
+    when(previousSafe && safe) { debt:=false.B }
+    debt
+  }
+  fabric.io.housekeepingSource.occupied:= !housekeepingSourceEmpty
+  fabric.io.housekeepingSource.resetDebt:=housekeepingResetDebt
+  fabric.io.housekeepingSource.draining:=housekeepingResetDebt || !housekeepingSourceEmpty
+
   // Immutable profile selects this design's native permanent controller.
   val supervisorBridges = board(p) match {
     case profile: riscay.profiles.GroundlarkBoard =>

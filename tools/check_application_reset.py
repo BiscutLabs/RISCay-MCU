@@ -93,6 +93,15 @@ def persistent_reset_children(manifest):
     if present and present != program_source.keys():
         raise ValueError("SOC_PROGRAM_SOURCE_RESET_INVENTORY")
     persistent.update(program_source)
+    for owner in ("telemetry","housekeeping"):
+        publication={owner+"_source":"ClickPublicationSource" if top=="ClickSoc" else "FourPhasePublicationSource"}
+        publication.update({owner+"_"+n+"_bridge":"DecoupledToClick" if top=="ClickSoc" else "DecoupledToFourPhase"
+                            for n in ("reserve","decision","publication")})
+        publication.update({owner+"_"+n+"_bridge":"ClickToDecoupled" if top=="ClickSoc" else "FourPhaseToDecoupled"
+                            for n in ("grant","drain")})
+        present={c.get("id") for c in root["children"]}&publication.keys()
+        if present and present!=publication.keys():raise ValueError("SOC_PUBLICATION_SOURCE_RESET_INVENTORY")
+        persistent.update(publication)
     persistent["i2c"] = "I2cTarget"
     persistent.update({"elapsed_scaler": "ElapsedTicks", "sample_scaler": "SampleScaler", "spi_adc": "SpiAdc"})
     for child in root["children"]:

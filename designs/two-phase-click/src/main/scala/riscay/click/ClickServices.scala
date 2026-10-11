@@ -72,9 +72,8 @@ class ClickServices(p: SocParameters, boardFactory: SocParameters => BoardProfil
   val telemetryResetNeeded = applicationReg(true.B)
   val telemetryRecovery = applicationReg(true.B)
   val telemetryCommitPending = applicationReg(false.B)
-  val telemetryCpuPending = applicationReg(false.B)
   val telemetryCommit = Reg(new TelemetryCommand(config.measurements.size))
-  val telemetryBarrier = telemetryOutstanding || telemetryResetNeeded || telemetryRecovery || telemetryCpuPending
+  val telemetryBarrier = telemetryOutstanding || telemetryResetNeeded || telemetryRecovery || telemetryCommitPending
   val telemetryWork = Wire(Bool())
   val telemetryAccepted = WireDefault(false.B)
   val telemetryDispatchedEvents = applicationReg(0.U(6.W))
@@ -112,7 +111,6 @@ class ClickServices(p: SocParameters, boardFactory: SocParameters => BoardProfil
   val housekeepingQueued = RegInit(0.U.asTypeOf(new HousekeepingCommand))
   val housekeepingResetNeeded = RegInit(true.B)
   val housekeepingRecovery = applicationReg(true.B)
-  val housekeepingCpuPending = applicationReg(false.B)
   val housekeepingWork = Wire(Bool())
   val housekeepingAction = WireDefault(0.U.asTypeOf(new HousekeepingCommand))
   val now = housekeepingState.now; io.now := now
@@ -366,7 +364,38 @@ class ClickServices(p: SocParameters, boardFactory: SocParameters => BoardProfil
     req.operation =/= Operation.Halt.U
   val mmioComplete = io.controlReply.fire && io.controlReply.bits.kind === ControlKind.Mmio.U && mmioCurrent
   val cpuAvailable = completionAvailable && !io.cpuResetActive && !resetRecovery && io.clockRunning && io.admissionGrant.valid && !bootWait && !eventWait &&
-    !memoryBusy && !loaderWrite && !telemetryBarrier && !housekeepingBarrierBusy
+    !memoryBusy && !loaderWrite && !telemetryBarrier && !housekeepingBarrierBusy &&
+    !io.telemetrySource.resetDebt && !io.housekeepingSource.resetDebt
+  // Reserve from a validated, held Control reply. An unused parked WAIT owns
+  // no source. Engine readiness excludes these reservations, avoiding self-wait.
+  val currentMmio=controlOutstanding && mmioCurrent && io.controlReply.valid &&
+    io.controlReply.bits.kind === ControlKind.Mmio.U && io.request.valid && nativeMmio
+  val successfulWrite=isWrite && !io.controlReply.bits.memory.error
+  val telemetryRequired=successfulWrite &&
+    Seq(8,12,24,28,44,52).map(x => req.address(6,0) === x.U).reduce(_ || _)
+  val housekeepingWriteRequired=successfulWrite &&
+    Seq(8,32,56,60,64).map(x => req.address(6,0) === x.U).reduce(_ || _)
+  val housekeepingRequired=waitingRead || housekeepingWriteRequired
+  val publicationAdmission=(!telemetryRequired ||
+    (io.telemetrySource.grant.valid && io.telemetrySource.decision.ready)) &&
+    (!housekeepingRequired || (io.housekeepingSource.grant.valid && io.housekeepingSource.decision.ready))
+  for((source,required) <- Seq(io.telemetrySource -> telemetryRequired,io.housekeepingSource -> housekeepingRequired)) {
+    source.reserve.valid:=currentMmio && required && cpuAvailable
+    source.reserve.bits:=req.data(0)
+    val committed=io.request.fire && nativeMmio && required
+    val cancelled=source.resetDebt || io.cpuResetActive || !currentMmio || !required
+    source.grant.ready:=source.decision.ready && (committed || cancelled)
+    source.decision.valid:=source.grant.fire; source.decision.bits:=committed
+    source.drain.ready:=source.quiet
+    when(committed) {
+      assert(source.grant.fire && source.decision.fire && source.eligible,
+        "PUBLICATION_SOURCE_COMMIT_NOT_ATOMIC")
+      assert(source.grant.bits === req.data(0),"PUBLICATION_SOURCE_GRANT_IDENTITY")
+    }
+    when(source.decision.fire && !source.decision.bits) {
+      assert(!committed,"PUBLICATION_SOURCE_CANCELLED_EFFECT")
+    }
+  }
   val ramAdmission = io.ramSource.grant.valid && io.ramSource.decision.ready &&
     !io.ramSource.resetDebt && io.ram.request.ready
   val programAdmission = io.programSource.grant.valid && !io.programSource.grant.bits &&
@@ -394,6 +423,7 @@ class ClickServices(p: SocParameters, boardFactory: SocParameters => BoardProfil
   }
   when(io.request.fire) {
     when(waitingRead) { housekeepingAction.waitAccepted := true.B }
+    when(nativeMmio && housekeepingWriteRequired && req.address(6,0) =/= 64.U) { housekeepingAction.write := true.B }
     response.data := 0.U; response.error := true.B
     when(req.operation === Operation.Halt.U) { haltPending := true.B }
       .elsewhen(req.address < (MemoryMap.boot.size * 4).U && !isWrite) {
@@ -412,11 +442,11 @@ class ClickServices(p: SocParameters, boardFactory: SocParameters => BoardProfil
         response := io.controlReply.bits.memory
         when(isWrite && !io.controlReply.bits.memory.error) {
           switch(offset) {
-            is(8.U) { housekeepingAction.write := true.B; replaceDeadline := true.B; response.error := false.B }
+            is(8.U) { replaceDeadline := true.B; response.error := false.B }
             is(12.U) { clear := req.data & ~mmioEvents; response.error := false.B }
             is(24.U) { response.error := false.B }
             is(28.U) { response.error := false.B }
-            is(32.U) { when(req.data === "h57444f47".U) { housekeepingAction.write := true.B; response.error := false.B } }
+            is(32.U) { when(req.data === "h57444f47".U) { response.error := false.B } }
             is(36.U) { when(req.data < config.measurements.size.U) { response.error := false.B } }
             is(40.U) { response.error := false.B }
             is(44.U) {
@@ -432,10 +462,10 @@ class ClickServices(p: SocParameters, boardFactory: SocParameters => BoardProfil
             is(52.U) { for((word, value) <- application.toSeq.sortBy(_._1)) {
               when(appIndex === word.U) { response.error := false.B }
             } }
-            is(56.U) { when((req.data & "hffffffc0".U) === 0.U) { housekeepingAction.write := true.B; response.error := false.B } }
+            is(56.U) { when((req.data & "hffffffc0".U) === 0.U) { response.error := false.B } }
             is(60.U) {
               when(p.lowPower.nonEmpty.B && req.data <= p.lowPower.map(_.maximumSleepMs).getOrElse(0).U) {
-                housekeepingAction.write := true.B; response.error := false.B
+                response.error := false.B
               }
             }
             is(64.U) { when(validPeriod(req.data)) { periodUpdate.valid := true.B; periodUpdate.bits := req.data; response.error := false.B } }
@@ -518,7 +548,9 @@ class ClickServices(p: SocParameters, boardFactory: SocParameters => BoardProfil
   // A reply belongs to the single outstanding command, including reset recovery.
   io.controlReply.ready := controlOutstanding &&
     (io.controlReply.bits.kind =/= ControlKind.Mmio.U || !mmioCurrent ||
-      (!telemetryBarrier && !housekeepingBarrierBusy)) &&
+      (!telemetryBarrier && !housekeepingBarrierBusy && completionAvailable && !io.cpuResetActive &&
+        !resetRecovery && io.clockRunning && io.admissionGrant.valid && !bootWait && !eventWait &&
+        !memoryBusy && !io.telemetrySource.resetDebt && !io.housekeepingSource.resetDebt && publicationAdmission)) &&
     (!io.controlReply.bits.periodUpdate || !housekeepingOrderedPending) &&
     (!io.controlReply.bits.programWrite || programLoaderReady)
   when(io.controlReply.fire) {
@@ -568,15 +600,20 @@ class ClickServices(p: SocParameters, boardFactory: SocParameters => BoardProfil
   }
   queueNext.discard:=queueBase.discard || (io.adc.done && !io.adc.result.valid)
   housekeepingCommand.valid := !housekeepingOutstanding && !housekeepingBarrier &&
-    (housekeepingOrderedPending || housekeepingReset ||
+    (housekeepingOrderedPending || (!io.housekeepingSource.occupied && (housekeepingReset ||
       ((housekeepingQueuedWork || rawTimeValid || queueNext.discard || housekeepingRetry) && !cpuTimingTurn && !mmioLaunch &&
-        !(mmioCurrent && io.controlReply.valid) && !io.request.fire))
+        !(mmioCurrent && io.controlReply.valid) && !io.request.fire))))
   housekeepingCommand.bits := queueNext
   housekeepingCommand.bits.resetApplication := housekeepingReset || io.cpuResetActive
   housekeepingCommand.bits.started := started; housekeepingCommand.bits.parked := parked
   housekeepingCommand.bits.adcBusy := io.adc.busy || adcLaunchPending
   when(housekeepingOrderedPending) { housekeepingCommand.bits := housekeepingOrdered }
-  housekeepingReply.ready := housekeepingOutstanding
+  housekeepingReply.ready := housekeepingOutstanding &&
+    (!housekeepingReply.bits.cpuCompletion || io.housekeepingSource.publication.ready)
+  io.housekeepingSource.publication.valid:=housekeepingOutstanding && housekeepingReply.valid && housekeepingReply.bits.cpuCompletion
+  io.housekeepingSource.publication.bits:=housekeepingReply.bits.state.now(0)
+  io.housekeepingSource.quiet:= !housekeepingOutstanding && !housekeepingOrderedPending &&
+    !io.housekeepingDraining && io.housekeepingSource.publication.ready
   housekeepingQueued:=queueNext
   when(housekeepingCommand.fire) {
     housekeepingOutstanding:=true.B; housekeepingInFlight:=housekeepingCommand.bits
@@ -596,7 +633,6 @@ class ClickServices(p: SocParameters, boardFactory: SocParameters => BoardProfil
     housekeepingOrdered.adcBusy:=io.adc.busy || adcLaunchPending
     housekeepingOrderedPending:=true.B; housekeepingQueued:=0.U.asTypeOf(new HousekeepingCommand)
   }
-  when(housekeepingAction.cpuCompletion) { housekeepingCpuPending:=true.B }
   when(housekeepingPublished) {
     housekeepingOutstanding:=false.B; housekeepingState:=housekeepingReply.bits.state
     housekeepingInFlight:=0.U.asTypeOf(new HousekeepingCommand)
@@ -604,17 +640,17 @@ class ClickServices(p: SocParameters, boardFactory: SocParameters => BoardProfil
     when(housekeepingReply.bits.resetApplication && !housekeepingResetNeeded && !io.cpuResetActive) {
       housekeepingRecovery:=false.B
     }
-    when(housekeepingReply.bits.cpuCompletion && housekeepingCpuPending && !io.cpuResetActive) {
-      housekeepingCpuPending:=false.B
+    when(housekeepingReply.bits.cpuCompletion && io.housekeepingSource.eligible &&
+        !io.housekeepingSource.resetDebt && !io.cpuResetActive) {
       io.completionHousekeeping.valid:=true.B
       assert(io.completionHousekeeping.ready,"COMPLETION_HOUSEKEEPING_OVERFLOW")
     }
   }
   when(resetEdge) { housekeepingResetNeeded:=true.B }
   housekeepingBarrierBusy:=housekeepingOutstanding || housekeepingOrderedPending || housekeepingReset ||
-    housekeepingCpuPending || io.housekeepingDraining
+    io.housekeepingDraining
   housekeepingWork:=housekeepingOutstanding || housekeepingOrderedPending || housekeepingReset ||
-    housekeepingQueuedWork || housekeepingRetry || housekeepingCpuPending || io.housekeepingDraining
+    housekeepingQueuedWork || housekeepingRetry || io.housekeepingDraining || io.housekeepingSource.draining
 
   // POR ingress compacts every publication and elapsed interval independently
   // of native backpressure. The separate native supervisor receives the same
@@ -636,11 +672,10 @@ class ClickServices(p: SocParameters, boardFactory: SocParameters => BoardProfil
   }
   val capturesPending = telemetryCaptures.map(_.seen).foldLeft(false.B)(_ || _)
   val observationPending = telemetryEvents.orR || telemetryElapsed.orR || capturesPending
-  telemetryWork := telemetryBarrier || observationPending || io.telemetryDraining
-  telemetryAccepted := io.request.fire && nativeMmio && isWrite && !io.controlReply.bits.memory.error &&
-    Seq(8,12,24,28,44,52).map(x => req.address(6,0) === x.U).reduce(_ || _)
+  telemetryWork := telemetryBarrier || observationPending || io.telemetryDraining || io.telemetrySource.draining
+  telemetryAccepted := io.request.fire && nativeMmio && telemetryRequired
   when(telemetryAccepted) {
-    telemetryCommitPending := true.B; telemetryCpuPending := true.B
+    telemetryCommitPending := true.B
     telemetryCommit := 0.U.asTypeOf(new TelemetryCommand(config.measurements.size))
     telemetryCommit.kind := TelemetryKind.Commit.U; telemetryCommit.offset := req.address(6,0)
     telemetryCommit.data := req.data; telemetryCommit.appIndex := appIndex; telemetryCommit.clear := acceptedClear
@@ -648,8 +683,8 @@ class ClickServices(p: SocParameters, boardFactory: SocParameters => BoardProfil
   // CPU validation has priority over background batching. In particular a tick
   // on every service edge cannot prevent forward progress at serviceHz=1000.
   telemetryCommand.valid := !telemetryOutstanding && !io.cpuResetActive &&
-    (telemetryResetNeeded || telemetryCommitPending ||
-      (observationPending && !cpuTimingTurn && !mmioCurrent && !mmioLaunch && !io.request.fire))
+    (telemetryCommitPending || (!io.telemetrySource.occupied && (telemetryResetNeeded ||
+      (observationPending && !cpuTimingTurn && !mmioCurrent && !mmioLaunch && !io.request.fire))))
   telemetryCommand.bits := 0.U.asTypeOf(new TelemetryCommand(config.measurements.size))
   when(telemetryCommitPending) { telemetryCommand.bits := telemetryCommit }
   when(telemetryResetNeeded) { telemetryCommand.bits.kind := TelemetryKind.ResetApplication.U }
@@ -662,7 +697,13 @@ class ClickServices(p: SocParameters, boardFactory: SocParameters => BoardProfil
     when(telemetryCommand.bits.kind === TelemetryKind.ResetApplication.U) { telemetryResetNeeded := false.B }
     when(telemetryCommand.bits.kind === TelemetryKind.Commit.U) { telemetryCommitPending := false.B }
   }
-  telemetryReply.ready := telemetryOutstanding
+  telemetryReply.ready := telemetryOutstanding &&
+    (telemetryReply.bits.kind =/= TelemetryKind.Commit.U || io.telemetrySource.publication.ready)
+  io.telemetrySource.publication.valid:=telemetryOutstanding && telemetryReply.valid &&
+    telemetryReply.bits.kind === TelemetryKind.Commit.U
+  io.telemetrySource.publication.bits:=telemetryReply.bits.state.output(0)
+  io.telemetrySource.quiet:= !telemetryOutstanding && !telemetryCommitPending &&
+    !io.telemetryDraining && io.telemetrySource.publication.ready
   when(telemetryReply.fire) {
     val result = telemetryReply.bits
     telemetryDispatchedEvents := 0.U
@@ -673,8 +714,8 @@ class ClickServices(p: SocParameters, boardFactory: SocParameters => BoardProfil
     when(!io.cpuResetActive && (!telemetryRecovery || recovered)) {
       output := result.state.output; enable := result.state.enable; pendingState := result.state.pending
       for((word,index) <- telemetryWords.zipWithIndex) { application(word) := result.state.application.get(index) }
-      when(result.kind === TelemetryKind.Commit.U && telemetryCpuPending) {
-        telemetryCpuPending := false.B
+      when(result.kind === TelemetryKind.Commit.U && io.telemetrySource.eligible &&
+          !io.telemetrySource.resetDebt) {
         io.completionTelemetry.valid := true.B
         assert(io.completionTelemetry.ready,"COMPLETION_TELEMETRY_OVERFLOW")
       }

@@ -26,6 +26,8 @@ from check_admission_export import validate_admission, literal_nets, admission_p
 from check_application_reset import validate_application_reset, persistent_reset_children
 from check_ram_source_export import ARM_PATH, RETIRE_PATH, validate_ram_source, ram_source_bindings, ram_source_probe
 from check_program_source_export import PROGRAM_PATHS, validate_program_source, program_source_bindings, program_source_probe, validate_program_receipts
+from check_publication_source_export import PATHS as PUBLICATION_PATH_TABLE, validate_publication_source, publication_source_bindings, publication_source_probe
+PUBLICATION_PATHS=tuple(p[1] for p in PUBLICATION_PATH_TABLE)
 
 
 def sram_array_shapes(contents, scopes):
@@ -739,6 +741,8 @@ def validate_fabric_inventory(manifest):
     """Required obligations cannot vanish along with their passive markers."""
     def visit(node):
         module = node["module"]
+        if re.fullmatch(r"(?:FourPhase|Click)PublicationSource(?:_[0-9]+)?", module):
+            validate_publication_source(node)
         if re.fullmatch(r"(?:FourPhase|Click)ProgramSource(?:_[0-9]+)?", module):
             validate_program_source(node)
         if re.fullmatch(r"(?:FourPhase|Click)RamSource(?:_[0-9]+)?", module):
@@ -808,6 +812,9 @@ def validate_fabric_path(node, timing):
     primitive, elaborated pin, endpoint mapping and endpoint activity afterwards.
     """
     logic = timing.get("logic")
+    if logic in PUBLICATION_PATHS:
+        validate_publication_source(node)
+        return
     if logic in PROGRAM_PATHS:
         validate_program_source(node)
         return
@@ -862,7 +869,7 @@ def validate_fabric_path(node, timing):
 
 def validate_native_click(manifest):
     """A Click export must remain native throughout its async hierarchy."""
-    if manifest["top"] not in ("ClickSoc", "ClickCore", "ClickFabric", "ClickControl", "ClickTelemetry", "ClickSupervisor", "ClickElapsed", "ClickSample", "ClickSram", "ClickI2c", "ClickSpiAdc", "ClickHousekeeping", "ClickCompletion", "ClickAdmission", "ClickRamSource", "ClickProgramSource"):
+    if manifest["top"] not in ("ClickSoc", "ClickCore", "ClickFabric", "ClickControl", "ClickTelemetry", "ClickSupervisor", "ClickElapsed", "ClickSample", "ClickSram", "ClickI2c", "ClickSpiAdc", "ClickHousekeeping", "ClickCompletion", "ClickAdmission", "ClickRamSource", "ClickProgramSource", "ClickPublicationSource"):
         return
     def nodes(node):
         yield node
@@ -929,6 +936,8 @@ def spi_program_probe(source, manifest, scopes):
 
 def fabric_path_bindings(node, timing):
     """Actual mux/storage pin comparisons added to the unchanged library probe."""
+    if timing.get("logic") in PUBLICATION_PATHS:
+        return publication_source_bindings(node)
     if timing.get("logic") in PROGRAM_PATHS:
         return program_source_bindings(node)
     if timing.get("logic") in (ARM_PATH, RETIRE_PATH):
@@ -980,14 +989,15 @@ def fabric_checker_source(source):
              + f' {RETIRE_PATH!r}: ([], "data_delay", "retire_sources", "register_data"),'
              + f' {PROGRAM_PATHS[0]!r}: ([], "arm_data_delay", "arm_sources", "arm_data"),'
              + f' {PROGRAM_PATHS[1]!r}: ([], "data_delay", "retire_sources", "register_data"),'
-             + f' {PROGRAM_PATHS[2]!r}: ([], "stored_data_delay", "stored_target", "stored_phase_data")}}'
+             + f' {PROGRAM_PATHS[2]!r}: ([], "stored_data_delay", "stored_target", "stored_phase_data"),'
+             + ','.join(f'{logic!r}: ([], {delay!r}, {src!r}, {sink!r})' for _,logic,src,sink,delay in PUBLICATION_PATH_TABLE)+'}'
              + "\n                validate_fabric_path(node, timing)")
     source = source.replace(anchor, extra)
     anchor = 'if timing["logic"] in ("exclusive-merge-input-mux", "controlled-multiplexer-input-mux"):'
     if source.count(anchor) != 1:
         raise ValueError("MCU_FABRIC_CHECKER_SHAPE_CHANGED")
     source = source.replace(anchor,
-        f'if timing["logic"] in ({BD_FABRIC_PATH!r}, {CLICK_FABRIC_PATH!r}, {I2C_PROJECTION_PATH!r}, {BD_COMPLETION_PATH!r}, {CLICK_COMPLETION_PATH!r}, {ARM_PATH!r}, {RETIRE_PATH!r}, {PROGRAM_PATHS[0]!r}, {PROGRAM_PATHS[1]!r}, {PROGRAM_PATHS[2]!r}):\n'
+        f'if timing["logic"] in ({BD_FABRIC_PATH!r}, {CLICK_FABRIC_PATH!r}, {I2C_PROJECTION_PATH!r}, {BD_COMPLETION_PATH!r}, {CLICK_COMPLETION_PATH!r}, {ARM_PATH!r}, {RETIRE_PATH!r}, {PROGRAM_PATHS[0]!r}, {PROGRAM_PATHS[1]!r}, {PROGRAM_PATHS[2]!r},'+','.join(map(repr,PUBLICATION_PATHS))+'):\n'
         '                    pairs = fabric_path_bindings(node, timing)\n'
         '                el' + anchor)
     anchor = '    if "INACTIVE_ENDPOINT:" in simulation.stdout:'
@@ -1062,6 +1072,7 @@ def main() -> None:
         source = admission_probe(source, manifest, scopes)
         source = ram_source_probe(source, manifest, scopes)
         source = program_source_probe(source, manifest, scopes)
+        source = publication_source_probe(source, manifest, scopes)
         return source, count
     module.probe_source = probe
 

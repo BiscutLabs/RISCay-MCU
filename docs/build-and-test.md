@@ -1,5 +1,66 @@
 # Build and test
 
+## Native publication ownership — digitally verified, 2026-10-10
+
+Substep 10b2c1 replaces the clocked Telemetry/Housekeeping CPU-pending bits with
+separate native exclusive owners. Atomic reservations precede CPU acceptance;
+publication receipts and persistent drain offers preserve independent histories
+across cancellation. Five POR clocked-client crossings per source, recovery
+attribution, full-return debt fencing, dispatch/staging and projections remain.
+
+Evidence: `build/async-publication-source-migration/qualification-evidence.json`.
+The first full run passes **330 cases across 39 verification suites**, plus both
+core physical-policy tests. Review adds four Housekeeping receipt/drain cases
+and stronger native progress bounds; `focused-reviewed.log` passes all **25**
+native/coupled cases. Fresh XML reports total **334 verification cases**, with
+no failures, errors, skips or pending tests. Production RTL is unchanged between
+those runs, and final emission matches the strict inputs. The full run includes
+independent core references, firmware, sleep, watchdog, serial and SRAM effects.
+All **113 working-tree Python controls** and **11 pinned SRAM assets** pass.
+The 34-port public ABI matches `e87f531`, including emitted declarations.
+
+The original functional oracles reject **49 actual RTL defects**: 33 source and
+integration mutations, ten custom Click capture-timing defects, and six strict
+constant corruptions. Another **857 metadata mutations** and **six dynamic-binding
+substitutions** are rejected. Source and oracle hashes are retained; compilation
+failures and deadlines are never counted as passing negative controls.
+
+The custom Click register campaign passes **130 positive replays**: every seed
+and directed-skew fixture plus a legal 100 ps distribution case. All six custom
+EventRegisters are checked at actual D/trigger pins for setup, hold, high/low
+pulse and distribution. All 27 reset-capture fixtures observe publication
+capture, drain capture and publication ACK-propagation overlap with reset.
+These are digital assumptions, not physical capture or routing qualification.
+Extracting shared pin monitors preserves the prior program-owner results:
+127 positive replays and ten rejected timing defects.
+
+Both strict exports pass their first probes. Complete dynamic endpoint activity,
+sleep-clock backgrounds, reset bindings, native Click and SRAM checks remain.
+The strengthened TimingMarker policy reproduces the original probes unchanged;
+`contract_first_probe.sv` and first simulation output remain the evidence.
+
+| Variant | Endpoints | Mapping checks | Semantic SHA-256 |
+| --- | ---: | ---: | --- |
+| four-phase | 2396 | 701328368 | `8774103778a84005a60936c422954b171a20bee4a5df3db0ae44c90abdd46a6c` |
+| click | 2112 | 594612480 | `10d3d5a5f3602b7f92fc2a863195c888b91bb555604aaed9b4e0475847b37774` |
+
+Fresh implementation review expanded reset offsets through Click's complete
+guard interval and required actual-pin/reset-overlap controls. Fresh qualification
+review added independent Housekeeping publication/reset and drain/reuse cases,
+with matching actual bridge mutations. Both reviews' findings are resolved and
+affected checks pass. Failures remain in the evidence folder: initial generic
+bridge-name compilation, capture-testbench declaration/alias compilation,
+incomplete marker WIDTH policy, and a Click reset mutation reaching only a global
+deadline. The latter prompted scoped drain/ACK progress assertions; immediate
+reuse, fast timing, phase/count and reset oracles remain intact.
+
+The residual non-primitive state inventory has 67 candidate owners per design:
+BD 1,138 registers / 8,712 bits; Click 1,137 / 8,713. Ten temporary bridge owners
+add 76 registers / 86 bits relative to 10b2b despite removing CPU-pending flags.
+This is an ownership migration checkpoint, not minimum area/power or physical
+necessity evidence. Items 10b2c2a/b and subsequent interconnect steps explicitly
+remove convenience recovery/debt and crossing state. Older P&R cannot qualify it.
+
 ## Native program source ownership - digitally verified, 2026-10-10
 
 Substep 10b2b replaces clocked program-read and Stored-pending ownership with

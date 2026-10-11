@@ -93,7 +93,7 @@ class CompletionIntegrationTest(unittest.TestCase):
             manifest,scopes,_,_=fixture(top)
             regs={top:{n:1 for n in ("gate_enabled","fabric_io_completionIdle_REG","fabric_controlOutstanding",
                                     "fabric_mmioCurrent","fabric_telemetryOutstanding",
-                                    "fabric_telemetryCpuPending","fabric_housekeepingOutstanding","fabric_housekeepingCpuPending")}}
+                                    "fabric_housekeepingOutstanding")}}
             regs[top+".ca_child_request_bridge"] = dict(state=2,data_mask=4,data_operation=2,data_address=32)
             if top == "ClickSoc":
                 regs[top]["ca_child_admission_start_stages"] = 2
@@ -104,6 +104,13 @@ class CompletionIntegrationTest(unittest.TestCase):
             scopes[path]=dict(ports={"q":dict(name="q",width=1,direction="output")})
             manifest["design"]["children"].append(dict(id="ram_source",contract=dict(primitives=[
                 dict(id="eligibility",rtl_path=path,model="ChiselAsyncEventRegister_v1",parameters=dict(WIDTH="1"))])))
+            for owner in ("telemetry","housekeeping"):
+                regs[top+f".ca_child_{owner}_grant_bridge"]=dict(state=2)
+                path=top+f".ca_child_{owner}_source.ca_primitive_eligibility"
+                regs[path]=dict(q=1)
+                scopes[path]=dict(ports={"q":dict(name="q",width=1,direction="output")})
+                manifest["design"]["children"].append(dict(id=owner+"_source",contract=dict(primitives=[
+                    dict(id="eligibility",rtl_path=path,model="ChiselAsyncEventRegister_v1",parameters=dict(WIDTH="1"))])))
             regs[top+".ca_child_control_reply_bridge"] = dict(state=2,data_kind=3,data_memory_data=32,data_memory_error=1)
             for bank in ("program","ram"):
                 regs[top+f".ca_child_{bank}_access"]={f"{group}_{stage}":1 for group in (
