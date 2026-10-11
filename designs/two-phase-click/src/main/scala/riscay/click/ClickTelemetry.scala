@@ -37,6 +37,7 @@ class ClickTelemetry(p: SocParameters, words: Vector[Int], domain: ResetDomain) 
   private def transition(s: TelemetryState, c: TelemetryCommand): TelemetryReply = {
     val r = WireDefault(0.U.asTypeOf(new TelemetryReply(p.config.measurements.size, words.size)))
     r.kind := c.kind; r.state := s
+    r.recovery := c.recovery
     val n = r.state
     when(c.kind === TelemetryKind.ResetApplication.U) {
       n.output := TelemetryState.initial(p, words.size).output

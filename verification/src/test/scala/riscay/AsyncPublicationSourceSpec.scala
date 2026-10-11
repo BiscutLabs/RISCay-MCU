@@ -74,9 +74,9 @@ class AsyncPublicationSourceSpec extends AnyFunSuite {
           val publicationPhase=if(click) publications%2 else 1
           val drainPhase=if(click) drains%2 else 1
           s"""
-            reserve_bits=${n%2}; reserve_req=$phase;
+            reserve_bits_tag=${n%2}; reserve_req=$phase;
             wait(grant_req == $phase); #2;
-            if(!eligible || grant_bits !== ${n%2}) $$fatal(1,"PUBLICATION_SOURCE_GRANT_IDENTITY");
+            if(!eligible || grant_bits_tag !== ${n%2}) $$fatal(1,"PUBLICATION_SOURCE_GRANT_IDENTITY");
             #300000000;
             if(reserve_ack == $phase || delivered_grant != $n)
               $$fatal(1,"PUBLICATION_SOURCE_PRECOMMIT_RETIREMENT");
@@ -90,7 +90,7 @@ class AsyncPublicationSourceSpec extends AnyFunSuite {
               #1000000000;
               if(drain_req !== $drainPhase) $$fatal(1,"PUBLICATION_SOURCE_DRAIN_OFFER_BOUND");
               wait(drain_req == $drainPhase); #2;
-              if(drain_bits !== ${n%2}) $$fatal(1,"PUBLICATION_SOURCE_DRAIN_IDENTITY");
+              if(drain_bits_tag !== ${n%2}) $$fatal(1,"PUBLICATION_SOURCE_DRAIN_IDENTITY");
               ${if(publish) s"""
                 publication_bits=${n%2}; publication_req=$publicationPhase;
                 #1000000000;
@@ -129,7 +129,7 @@ class AsyncPublicationSourceSpec extends AnyFunSuite {
     test(s"$name publication source: a live committed slot cannot retire without its actual publication") {
       AsyncTest.run(top(click),1L to 24L,fresh(name+"-publication-required")) { _ =>
         """
-          reserve_bits=1; reserve_req=1; wait(grant_req); #2; grant_ack=1;
+          reserve_bits_tag=1; reserve_req=1; wait(grant_req); #2; grant_ack=1;
         """+(if(click) "#300000000;" else "wait(!grant_req); #2; grant_ack=0; #300000000;")+"""
           decision_bits=1; decision_req=1; wait(drain_req); #2; drain_ack=1;
           #1000000000;
@@ -148,7 +148,7 @@ class AsyncPublicationSourceSpec extends AnyFunSuite {
     test(s"$name publication source: a second publication cannot be accepted into one reservation") {
       AsyncTest.run(top(click),1L to 24L,fresh(name+"-duplicate")) { _ =>
         """
-          reserve_bits=1; reserve_req=1; wait(grant_req); #2; grant_ack=1;
+          reserve_bits_tag=1; reserve_req=1; wait(grant_req); #2; grant_ack=1;
         """+(if(click) "#300000000;" else "wait(!grant_req); #2; grant_ack=0; #300000000;")+"""
           decision_bits=1; decision_req=1; wait(drain_req); #2;
           publication_bits=0; publication_req=1; wait(publication_ack); #2;
@@ -175,7 +175,7 @@ class AsyncPublicationSourceSpec extends AnyFunSuite {
         (0 until 72).map { n =>
           val phase=if(click) (n+1)%2 else 1
           s"""
-            reserve_bits=${n%2}; reserve_req=$phase;
+            reserve_bits_tag=${n%2}; reserve_req=$phase;
             wait(grant_req == $phase); #2; grant_ack=$phase;
             decision_bits=1; decision_req=$phase;
             publication_bits=${n%2}; publication_req=$phase;
@@ -210,7 +210,7 @@ class AsyncPublicationSourceSpec extends AnyFunSuite {
           if(commit) receipts+=1
           val receipt=if(click) receipts%2 else 1
           s"""
-            reserve_bits=${n%2}; reserve_req=$phase;
+            reserve_bits_tag=${n%2}; reserve_req=$phase;
             wait(grant_req == $phase); #2; grant_ack=$phase;
             decision_bits=${if(commit) 1 else 0}; decision_req=$phase;
             ${if(commit) s"publication_bits=${n%2}; publication_req=$receipt;" else ""}
@@ -239,7 +239,7 @@ class AsyncPublicationSourceSpec extends AnyFunSuite {
   test("bd publication source: early drain ACK and delayed grant/receipt return cannot recycle ownership") {
     AsyncTest.run(top(false),1L to 24L,fresh("bd-return")) { _ =>
       """
-        reserve_bits=1; reserve_req=1; wait(grant_req); #2; grant_ack=1;
+        reserve_bits_tag=1; reserve_req=1; wait(grant_req); #2; grant_ack=1;
         decision_bits=1; decision_req=1;
         wait(drain_req); #2; drain_ack=1;
         publication_bits=1; publication_req=1; wait(publication_ack); #2;

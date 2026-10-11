@@ -7,16 +7,18 @@ import chiselasync.bundled.ClickBuffer
 import chiselasync.core.{AsyncModule,ResetDomain}
 import chiselasync.metadata.{BundledTiming,ClickTiming,ModelTime}
 import chiselasync.primitives.{ControlGate,EventRegister,GateOperation,XorGate}
+import riscay.soc.PublicationReservation
 
 /** Native exclusive publication receipt; physical timing remains unqualified. */
 class ClickPublicationSource(domain: ResetDomain) extends AsyncModule(domain) {
-  val reserve=twoPhaseInput("reserve",Bool())
-  val grant=twoPhaseOutput("grant",Bool())
+  val reserve=twoPhaseInput("reserve",new PublicationReservation)
+  val grant=twoPhaseOutput("grant",new PublicationReservation)
   val decision=twoPhaseInput("decision",Bool())
   val publication=twoPhaseInput("publication",Bool())
-  val drain=twoPhaseOutput("drain",Bool())
+  val drain=twoPhaseOutput("drain",new PublicationReservation)
   val applicationReset=IO(Input(AsyncReset()))
   val eligible=IO(Output(Bool())); val idle=IO(Output(Bool()))
+  val ownerRecovery=IO(Output(Bool())); val recoveryDebt=IO(Output(Bool()))
   Seq(reserve,grant,decision,publication,drain).foreach(dontTouch(_))
   private val timing=ClickTiming.Simulation
   private val cell=timing.controls.fire.model
@@ -50,7 +52,7 @@ class ClickPublicationSource(domain: ResetDomain) extends AsyncModule(domain) {
     val g=Module(new XorGate(cell)); g.reset:=reset; g.a:=a; g.b:=b
     contract.primitive(id,g,Map("DELAY_FS"->BigInt(cell.fs)),resetRef,"native source phase comparator"); g.q
   }
-  private val reservation=asyncChild("reservation")(d => new ClickBuffer(Bool(),timing,d))
+  private val reservation=asyncChild("reservation")(d => new ClickBuffer(new PublicationReservation,timing,d))
   reservation.in.req:=reserve.req; reservation.in.bits:=reserve.bits
   private val reserved=WireDefault(reservation.in.ack); dontTouch(reserved)
   private val published=phase("publication_phase")
@@ -70,6 +72,7 @@ class ClickPublicationSource(domain: ResetDomain) extends AsyncModule(domain) {
     "arm before grant; application reset revokes CPU eligibility without changing POR receipt history")
   grant.req:=buffer("output_guard",reservation.out.req.asUInt,delay=guard).asBool
   grant.bits:=reservation.out.bits; reservation.out.ack:=grant.ack
+  ownerRecovery:=reservation.out.bits.recovery
   private val retired=phase("retired_phase"); private val decided=phase("decision_phase")
   private val owned=xor("owned",reservation.in.ack,retired.q.asBool)
   private val armMatches=armed.q(0) === reservation.in.ack
@@ -109,13 +112,25 @@ class ClickPublicationSource(domain: ResetDomain) extends AsyncModule(domain) {
   private val retirementSources=WireDefault(UInt(2.W),Cat(decision.req,reservation.in.ack))
   private val data=WireDefault(UInt(2.W),buffer("data_delay",retirementSources,width=2,delay=timing.data.model))
   retired.trigger:=capture; retired.d:=data(0); decided.trigger:=capture; decided.d:=data(1)
+  // This selector settles before the guarded decision. Unlike owned/pending,
+  // its inputs survive retirement feedback until the guarded external ACK.
+  // A live committed retirement already requires its actual publication.
+  private val recoverySelected=WireDefault(and("recovery_selected",ownerRecovery,
+    and("recovery_live",decision.bits,eligible)))
+  private val recoveryClear=WireDefault(and("recovery_clear",capture,recoverySelected))
+  dontTouch(recoverySelected); dontTouch(recoveryClear)
+  private val debt=Module(new EventRegister(1,timing.payload.model,1)); debt.reset:=eligibilityReset
+  debt.trigger:=recoveryClear; debt.d:=0.U; recoveryDebt:=debt.q.asBool
+  contract.primitive("debt_storage",debt,Map("WIDTH"->BigInt(1),"DELAY_FS"->BigInt(timing.payload.model.fs),
+    "RESET_VALUE"->BigInt(1)),eligibilityResetRef,
+    "reset-dominant recovery debt; only fresh committed publication retirement clears it")
   private val captured=WireDefault(UInt(2.W),Cat(decided.q,retired.q))
   private val acknowledged=buffer("acknowledge_guard",Cat(published.q,captured),width=3,delay=guard)
   reserve.ack:=acknowledged(0); decision.ack:=acknowledged(1); publication.ack:=acknowledged(2)
   idle:=reserve.req === reserve.ack && reservation.in.ack === reserve.ack &&
     decision.req === decision.ack && publication.req === publication.ack &&
     grant.req === grant.ack && drain.req === drain.ack &&
-    !capture && !armEvent && !publicationFire && !drainFire
+    !capture && !armEvent && !publicationFire && !drainFire && !recoveryClear
 
   // Balanced capture trees have at most three 3-cell AND levels. Including a
   // phase cell, comparator and 11 ns guard gives <=121.2 ns feedback settlement;
@@ -124,6 +139,13 @@ class ClickPublicationSource(domain: ResetDomain) extends AsyncModule(domain) {
   // No physical timing closure is implied by these simulation values.
   contract.endpoint("application_reset",applicationReset)
   contract.endpoint("eligible",eligible); contract.endpoint("idle",idle); contract.endpoint("reserved",reserved)
+  contract.endpoint("owner_recovery",ownerRecovery); contract.endpoint("recovery_debt",recoveryDebt)
+  contract.endpoint("recovery_select",recoverySelected); contract.endpoint("recovery_event",recoveryClear)
+  // The shortest retire pulse is 1 ns phase + 1 ns XOR + nine 1 ns AND-tree
+  // cells = 11 ns. Each clear-tree cell is <=10 ns, so a stable selector passes
+  // the pulse. Selector settlement <=60 ns precedes the 241.200001 ns decision
+  // guard; clear propagation <=30 ns and Q <=10 ns precede its outward ACK.
+  // Application reset holds >=350 ns, beyond this clear/eligibility settlement.
   val armedValue=WireDefault(UInt(3.W),armed.q); dontTouch(armedValue)
   val publishedValue=WireDefault(UInt(1.W),published.q); dontTouch(publishedValue)
   val issuedValue=WireDefault(UInt(1.W),issued.q); dontTouch(issuedValue)

@@ -34,6 +34,7 @@ class ClickHousekeeping(p: SocParameters,domain: ResetDomain) extends AsyncModul
 
   private def transition(s: HousekeepingState, c: HousekeepingCommand): HousekeepingReply = {
     val r=WireDefault(0.U.asTypeOf(new HousekeepingReply)); r.state:=s
+    r.recovery := c.recovery
     val n=r.state; val elapsed=c.elapsed(0); val tick=elapsed =/= 0.U || c.elapsedOverflow
     r.timeValid:=c.timeValid; r.tick:=tick; r.single:=c.single; r.elapsed:=c.elapsed
     r.resetApplication:=c.resetApplication; r.cpuCompletion:=c.cpuCompletion

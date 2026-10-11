@@ -96,8 +96,11 @@ Separate native publication owners now replace Telemetry/Housekeeping CPU-pendin
 flags (10b2c1, digitally verified). Fresh review fixes, all 334 verification cases,
 both core policy cases, 113 Python controls, 49 actual RTL mutation controls and
 both strict SoC exports pass. Their five POR crossings per source, clocked
-recovery attribution, reset/drain projections and client staging remain
-tracked for subsequent migration.
+client staging and reset/drain projections remain tracked for subsequent migration.
+Fresh recovery ownership (10b2c2a) is digitally verified: native CPU/recovery roles
+and sticky debt replace clocked recovery attribution. All 352 verification cases,
+two core policy cases, 137 Python controls, 91 actual RTL mutation controls and
+both strict exports pass. The clocked full-return fence remains for 10b2c2b.
 The independent LF timebase/watchdog remains necessary. See the [migration checklist](docs/async-soc-migration.md). A permanent
 Groundlark controller supervises power before upload and during application
 stalls. Its state, safety sample record and confirmation counters now reside

@@ -17,7 +17,7 @@
   obtain a fresh independent agent review, address its findings, rerun affected
   checks, update its evidence/contracts, commit and push. Repeat this review loop
   for every item. Continue to the next item when the user has authorized it;
-  otherwise ask. Items 1-9, 10a, 10b1, 10b2a, 10b2b and 10b2c1 are digitally verified within their scopes.
+  otherwise ask. Items 1-9, 10a, 10b1, 10b2a, 10b2b, 10b2c1 and 10b2c2a are digitally verified within their scopes.
   The user has authorized deeper migration under expanded items 10-16: native
   service coordination, observation reduction, publication, direct interconnect
   and physically justified boundary minimization. Audit every remaining clocked
@@ -83,7 +83,14 @@
   for both sources, repeated raw resets and actual RTL mutation controls. Run
   tools/check_publication_capture_controls.py against every seed/skew fixture;
   require actual-pin capture, pulse, distribution and reset-overlap evidence.
-  Clocked reset debt and recovery attribution remain until 10b2c2 is qualified.
+  Recovery reservations carry an immutable role through grant, command, reply
+  and drain. Housekeeping resetApplication alone is not recovery identity.
+  Native recovery debt clears only from fresh attributed publication retirement;
+  CPU reuse still requires the retained clocked full-return fence until 10b2c2b.
+  Run AsyncRecoveryOwnershipSpec/RecoveryOwnershipSpec, actual debt-pin capture
+  controls and isolated owner mutations after recovery changes. Include
+  pre-recovery quiet with reserve ingress stalled, stale recovery replies,
+  offered CPU work, final-return reset and prolonged-reset housekeeping progress.
   Application reset asserts immediately and releases after eight ungated service
   edges (>=350 ns at the 20 MHz ceiling), restarting on every raw pulse. Audit
   all custom timing bounds against the 250 ns digital reset-settlement budget.

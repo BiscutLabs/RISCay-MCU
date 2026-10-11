@@ -26,7 +26,7 @@ from check_admission_export import validate_admission, literal_nets, admission_p
 from check_application_reset import validate_application_reset, persistent_reset_children
 from check_ram_source_export import ARM_PATH, RETIRE_PATH, validate_ram_source, ram_source_bindings, ram_source_probe
 from check_program_source_export import PROGRAM_PATHS, validate_program_source, program_source_bindings, program_source_probe, validate_program_receipts
-from check_publication_source_export import PATHS as PUBLICATION_PATH_TABLE, validate_publication_source, publication_source_bindings, publication_source_probe
+from check_publication_source_export import PATHS as PUBLICATION_PATH_TABLE, validate_publication_source, publication_source_bindings, publication_source_probe, publication_recovery_background
 PUBLICATION_PATHS=tuple(p[1] for p in PUBLICATION_PATH_TABLE)
 
 
@@ -1061,6 +1061,7 @@ def main() -> None:
         source, count = sram_background(source, manifest, scopes, count)
         source, count = service_background(source, manifest, scopes, count)
         source, count = completion_background(source, manifest, scopes, count)
+        source, count = publication_recovery_background(source, manifest, scopes, count)
         if args.sleep_clock:
             source, count = sleep_clock_background(source, manifest, scopes, count)
         if args.soc:

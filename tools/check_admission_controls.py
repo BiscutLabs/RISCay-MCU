@@ -7,13 +7,66 @@ from check_admission_export import validate_admission, admission_probe
 
 
 def replace_pin(source, instance, pin, value):
-    matches=list(re.finditer(r'\b'+re.escape(instance)+r'\s*\((.*?)(\n\s*\);)',source,re.S))
+    """Replace one complete named-port expression, preserving surrounding RTL.
+
+    Only named-port instances are accepted. Comments and strings are masked at
+    their original offsets so their identifiers and delimiters cannot select a
+    target or terminate a nested expression.
+    """
+    masked=list(source); position=0
+    while position<len(source):
+        start=position
+        if source.startswith('//',position):
+            end=source.find('\n',position+2)
+            position=len(source) if end<0 else end
+        elif source.startswith('/*',position):
+            end=source.find('*/',position+2)
+            if end<0: raise ValueError('ADMISSION_MUTATION_INSTANCE')
+            position=end+2
+        elif source[position]=='"':
+            position+=1
+            while position<len(source) and source[position]!='"':
+                position+=2 if source[position]=='\\' else 1
+            if position>=len(source): raise ValueError('ADMISSION_MUTATION_INSTANCE')
+            position+=1
+        else:
+            position+=1
+            continue
+        masked[start:position]=['\n' if c=='\n' else ' ' for c in source[start:position]]
+    code=''.join(masked)
+
+    def close_group(start):
+        stack=[]; closing={')':'(',']':'[','}':'{'}
+        for index in range(start,len(code)):
+            char=code[index]
+            if char in '([{': stack.append(char)
+            elif char in closing:
+                if not stack or stack.pop()!=closing[char]:
+                    raise ValueError('ADMISSION_MUTATION_INSTANCE')
+                if not stack: return index
+        raise ValueError('ADMISSION_MUTATION_INSTANCE')
+
+    matches=list(re.finditer(r'(?<![\w$])'+re.escape(instance)+r'(?![\w$])\s*\(',code))
     if len(matches)!=1: raise ValueError('ADMISSION_MUTATION_INSTANCE')
-    match=matches[0]
-    block,count=re.subn(r'(\.'+re.escape(pin)+r'\s*\()([^)]*)(\))',
-        lambda m:m[1]+value+m[3],match[1])
-    if count!=1: raise ValueError('ADMISSION_MUTATION_PIN')
-    return source[:match.start(1)]+block+source[match.end(1):]
+    opening=matches[0].end()-1; ending=close_group(opening)
+    if not re.match(r'\s*;',code[ending+1:]): raise ValueError('ADMISSION_MUTATION_INSTANCE')
+    position=opening+1; targets=[]; names=set()
+    while position<ending:
+        while position<ending and code[position].isspace(): position+=1
+        if position==ending: break
+        port=re.match(r'\.([A-Za-z_$][\w$]*)\s*\(',code[position:ending])
+        if port is None or port[1] in names: raise ValueError('ADMISSION_MUTATION_PIN')
+        names.add(port[1]); start=position+port.end()-1; end=close_group(start)
+        if port[1]==pin: targets.append((start+1,end))
+        position=end+1
+        while position<ending and code[position].isspace(): position+=1
+        if position==ending: break
+        if code[position]!=',': raise ValueError('ADMISSION_MUTATION_PIN')
+        position+=1
+        if not code[position:ending].strip(): raise ValueError('ADMISSION_MUTATION_PIN')
+    if len(targets)!=1: raise ValueError('ADMISSION_MUTATION_PIN')
+    start,end=targets[0]
+    return source[:start]+value+source[end:]
 
 
 def main():

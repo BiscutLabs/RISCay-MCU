@@ -41,7 +41,9 @@ def monitors(node):
     if node['module']!='ClickPublicationSource':raise ValueError('PUBLICATION_CAPTURE_OWNER')
     cells={p['id']:p for p in node['primitives']}
     actual={p['id'] for p in node['primitives'] if p['model']=='ChiselAsyncEventRegister_v1'}
-    if actual!=CAPTURES.keys():raise ValueError('PUBLICATION_CAPTURE_INVENTORY')
+    # The recovery-specific campaign checks the new debt capture in both
+    # variants. This retained campaign continues checking all six earlier cells.
+    if actual!=set(CAPTURES)|{'debt_storage'}:raise ValueError('PUBLICATION_CAPTURE_INVENTORY')
     for child in node['children']:
         timing=[t for t in child['contract']['timing'] if t['kind']=='click-bundling-v1']
         if len(timing)!=1 or any(timing[0]['times'][key]!='100000' for key in

@@ -207,7 +207,7 @@ when no next item has been chosen. Both implementations remain active throughout
           reuse. Qualify each projection update with that same identity; keep
           physical reset release and clock-domain observations explicit. Avoid
           a cycle in which debt blocks the recovery dispatch needed to clear it.
-          - [ ] **10b2c2a. Fresh recovery ownership.** Extend the retained source
+          - [x] **10b2c2a. Fresh recovery ownership — digitally verified, 2026-10-10.** Extend the retained source
             role to distinguish CPU work and recovery. Admit a recovery only
             after older accepted effects drain; commit its grant and decision
             with actual reset-command acceptance. A later reset revokes that
@@ -215,6 +215,32 @@ when no next item has been chosen. Both implementations remain active throughout
             authorizing application projection or ending recovery. Remove the
             Services reset-needed/recovery flags only with this native owner;
             retain and identify the clocked full-return fence in this substep.
+            Fresh review and final digital qualification pass. The new
+            native debt and CPU/recovery role reuse the original five crossings.
+            Separate command/reply markers identify the recovery reservation;
+            Housekeeping `resetApplication` alone is not that identity.
+            - [x] Verify repeated raw resets with old recovery replies held,
+              revoked queued grants, offered CPU requests, independent source
+              return and reset after debt clears but before complete return.
+            - [x] Stall reservation ingress while the owner is empty after
+              reset: quiet alone must not release the retained return fence.
+            - [x] Check the debt register's actual capture pins for every seed
+              and skew, including observed reset immediately before/after capture.
+            - [x] Reject role, freshness, publication, drain, marker and fence
+              defects with unchanged functional oracles. Isolate mutations by
+              actual emitted instance even when firtool deduplicates modules.
+            - [x] Complete fresh review, full regressions, strict exports,
+              preserved ABI/P&R checks, evidence, commit and push.
+
+            All 352 verification cases across 41 suites, two core policy cases,
+            43 final focused cases, 137 working-tree Python controls and both
+            strict exports pass. The final 34-port ABI matches 10b2c1. Original
+            oracles reject 91 actual RTL defects, 989 metadata mutations and six
+            dynamic substitutions. Capture checks pass 342 positive replays;
+            every reset-overlap fixture meets its coverage obligations. Failed
+            probes, surviving mutants and all fixes/rechecks remain recorded in
+            `build/async-recovery-ownership-migration/qualification-evidence.json`
+            and `failures-and-rechecks.md`. No physical qualification is implied.
           - [ ] **10b2c2b. Native full-return debt release.** Replace clocked
             debt/previous-safe sequencing only after a native retained proof
             joins fresh recovery publication with complete owner and crossing
@@ -222,6 +248,19 @@ when no next item has been chosen. Both implementations remain active throughout
             client boundary, count it and schedule its later removal. Never
             use an unqualified combinational strobe or a bare idle observation
             to clear debt. A reset invalidates every older clear obligation.
+            - [ ] Retain successful recovery identity independently of the
+              reopened BD payload latch and independent Click proof phases.
+            - [ ] Certify original native return before offering a final receipt;
+              its consumer checks original bridge/engine drainage without
+              waiting on the new receipt or its own owner-idle feedback.
+            - [ ] Enforce native capacity against an early next request/phase.
+              Gate new clocked reserve acceptance without truncating the active
+              bridge request; an unaccepted next input cannot block old return.
+            - [ ] Test repeated reset, offered next payload changes, all original
+              return stalls, final receipt stalls and proof cleanup. Qualify
+              every new capture/feedback path and reject real proof bypasses.
+            - [ ] Count temporary receipt synchronizers/ACK storage separately
+              from removed policy state, and schedule their removal in item 14.
       - [ ] **10b2d. Remove whole-word response round trips.** Use the verified
         ownership/isolation contract to connect native completion paths directly
         and remove superseded pending flags and crossings.
@@ -253,16 +292,47 @@ when no next item has been chosen. Both implementations remain active throughout
   failed-acquisition history and set-wins events. Supervisor progress must remain
   independent of CPU, Control, Telemetry and Housekeeping publication. Prove
   bounded ingress capacity and overflow behavior against physical source rates.
+  - [ ] **12a. Elapsed ordering and reduction.** Move queued/ordered elapsed
+    batches, lower time, upper age and overflow history to native tokens. Keep
+    accepted writes ordered against the frozen older batch; only Housekeeping
+    publication advances consumedGray. Preserve the independent LF source.
+  - [ ] **12b. Acquisition fan-out.** Give Telemetry and Supervisor independent
+    retained histories, including extrema, failed frames, validity gaps and
+    conversion age. One stalled consumer must not stop permanent supervision or
+    make an old frame fresh. Prove bounded buffering and all overflow responses.
+  - [ ] **12c. GPIO/event history.** Move post-sampling edge/history reduction
+    and the offered-MMIO clear-protection window to native ownership. Preserve
+    events raised before dispatch, application-reset masking, set-wins behavior
+    and deadline replacement without duplicating or losing a physical observation.
 - [ ] **13. Native publication and coherent host reads.** Replace clocked state
   replicas, bank capture/selection and output-effect coordination where feasible.
   Define the read snapshot's atomic point and output feedback timing explicitly;
   preserve the ABI, programming lock, freshness and current-boot ACK qualification.
+  - [ ] **13a. State projections.** Remove service-clock Control, Telemetry and
+    Housekeeping replicas where native retained views can serve consumers.
+    Preserve immediate application masking, persistent samples/time, status
+    observation deadlines and all accepted POR-owned effects.
+  - [ ] **13b. Output publication.** Move GPIO, cadence launch and board-result
+    presentation/feedback to native ownership where pin and downstream timing
+    permit. Separate permanent board ownership from resettable application bits;
+    permanent-supervisor applied-output feedback must remain independently live.
+  - [ ] **13c. Host snapshots.** Replace clocked bank capture/selection with
+    retained native snapshots. Define the atomic read point and immutable byte
+    lifetime, including adjacent I2C reads, earliest loader status and reset
+    during a frame. Keep the existing address/width/error ABI.
 - [ ] **14. Remove intermediate service-clock round trips.** Connect the resulting
   native controllers directly, including I2C frame/snapshot delivery and native
   SRAM word/control paths. Remove obsolete bridges, duplicated payload storage,
   clocked outstanding bits and gate demands. Keep only crossings with an actual
   remaining clock domain. This is an integration item, not permission to defer
   an obvious direct connection in an earlier item.
+  - [ ] Remove each temporary source reservation/grant/decision/publication/drain
+    crossing only when both adjacent owners use the same native protocol.
+    Include the temporary final-return receipts introduced by 10b2c2b.
+  - [ ] Connect command/reply, I2C frame/snapshot and SRAM word paths directly;
+    retain explicit lifetime isolation between POR and application-reset owners.
+  - [ ] Reconcile the emitted crossing inventory and gate demand after every
+    removal. Prove complete old phase/RTZ drainage and immediate new-source reuse.
 - [ ] **15. Minimize timed I/O and time-source boundaries.** Audit sampled I2C/GPIO,
   SPI playback/admission/age bookkeeping, SRAM byte launch/capture, watchdog kick
   delivery, application reset release, crash accounting, legacy timers, source wake and retained gating.
@@ -273,6 +343,25 @@ when no next item has been chosen. Both implementations remain active throughout
   SRAM macro contract and independent watchdog/time source unless an equally
   qualified replacement is explicitly designed and verified. A generated local
   clock or renamed clocked module does not establish asynchronous migration.
+  - [ ] **15a. SRAM macro boundary.** Reduce clocked state to the pinned macro's
+    required byte launch/capture and clock obligations. Move remaining word busy,
+    sequencing, accounting and response presentation out of that boundary.
+  - [ ] **15b. Sampled input boundaries.** Evaluate I2C/GPIO edge-driven capture
+    against metastability, input filtering, minimum pulse widths, coherent slots,
+    address-only wake and independent stuck-bus timeout. Retain periodic sampling
+    only with a specific electrical or verified capture constraint.
+  - [ ] **15c. SPI waveform boundary.** Separate required timed pin transitions
+    and MISO capture from convenience admission, age and playback bookkeeping.
+    Evaluate event-driven sequencing without stretching an in-progress frame or
+    violating either edge's setup/hold and minimum high/low bounds.
+  - [ ] **15d. Independent time and watchdog.** Keep supervision live while
+    service clocks stop; minimize delivery/coalescing, legacy dividers and kick
+    bookkeeping around the independent source. Requalify Gray/ACK CDC, timeout
+    units and worst-case progress before changing a source or crossing.
+  - [ ] **15e. Reset, wake and gating.** Audit qualification, crash accounting,
+    source enable and safe clock stop/start. Native replacements must preserve
+    asynchronous assertion, bounded release, no lost wake and the independent
+    watchdog. Count physical reset/synchronizer/gating state explicitly.
 - [ ] **16. Residual synchronous-state audit.** Inventory every remaining
   periodic-clocked state owner in both elaborated production SoCs. For each,
   record its clock, purpose, physical/ABI constraint, alternatives considered and
@@ -316,28 +405,29 @@ invariant-focused tests and a fresh independent review before completion.
 
 ## Preliminary residual-state inventory
 
-The current 10b2b production exports still contain substantial clocked state. An emitted
-candidate inventory is retained in
-`build/async-program-source-migration/residual-register-candidates.json` with each
-register's width and local event control. It excludes fixed async primitive state,
-probe state and SRAM arrays. These are elaborated declarations, not mapped flop
-counts, area, power or proof that any remaining boundary is physically necessary.
-Moving program ownership adds five temporary clocked-client crossings and drain
-projection state while removing two clocked ownership flags. This checkpoint
-therefore increases the candidate inventory by 35 registers / 39 bits; the later
-direct-connection items must remove crossings as their clients migrate.
-This inventory includes the Stored-crossing fix, which removes a duplicate payload
-register and capture FSM. Digital qualification is complete; physical timing remains open.
+The current 10b2c2a production exports still contain substantial clocked state.
+The candidate inventory is retained in
+`build/async-recovery-ownership-migration/residual-register-candidates.json` with
+each register's width and local event control. It excludes fixed async primitive
+state, probe state and SRAM arrays. These are elaborated declarations, not mapped
+flop counts, area, power or proof that a boundary is physically necessary.
+
+Compared with 10b2c1, native recovery ownership removes four clocked recovery
+flags but adds retained role bits to existing command, reply and source crossings.
+The net candidate inventory increases by six declarations / six bits per variant.
+No extra crossing is introduced in this substep. Compared with the older 10b2b
+inventory, publication ownership adds ten temporary clocked-client crossings;
+the direct-connection items must remove crossings as their clients migrate.
 
 | Candidate group | BD registers / bits | Click registers / bits | Follow-up |
 | --- | ---: | ---: | --- |
-| Flattened SoC/Services state | 296 / 3,277 | 295 / 3,278 | Split ownership across items 10-16 |
+| Flattened SoC/Services state | 298 / 3,279 | 297 / 3,280 | Split ownership across items 10-16 |
 | I2C sampling, capture and projection | 101 / 941 | 101 / 941 | Items 13-15 |
 | SPI waveform/capture boundary | 18 / 175 | 18 / 175 | Items 12-15 |
 | Two SRAM access wrappers | 26 / 26 | 26 / 26 | Items 10b2d, 14-15 |
 | Elapsed ingress wrapper | 6 / 37 | 6 / 37 | Items 12, 14-15 |
-| 51 explicit clocked bridge instances | 615 / 4,170 | 615 / 4,170 | Remove as their clocked clients migrate |
-| Total candidates in 57 emitted owners | 1,062 / 8,626 | 1,061 / 8,627 | Item 16 must account for every owner |
+| 61 explicit clocked bridge instances | 695 / 4,260 | 695 / 4,260 | Remove as their clocked clients migrate |
+| Total candidates in 67 emitted owners | 1,144 / 8,718 | 1,143 / 8,719 | Item 16 must account for every owner |
 
 An owner is retained only with a specific physical or interface obligation and
 supporting evidence. Independent time/watchdog operation and the pinned synchronous
@@ -499,7 +589,7 @@ move SPI conversion state and low-power time/deadline/mask/lease/cadence policy
 into their own native loops. GPIO synchronizers, LF/watchdog, I2C snapshots,
 SPI wire timing and peripheral ingress remain explicit clocked boundaries. This migration does not qualify new physical timing: native
 transform data paths, compacted ingress crossings, reset recovery, forks and
-capture pulses still require item 10 characterization.
+capture pulses still require item 17 characterization.
 
 ## MMIO/loader scope and contract
 

@@ -1,5 +1,59 @@
 # Build and test
 
+## Fresh recovery ownership — digitally verified, 2026-10-10
+
+Substep 10b2c2a adds immutable CPU/recovery roles and native sticky debt to the
+independent BD and Click publication owners, removing four clocked recovery
+flags per variant. No additional crossing is introduced. The original five
+crossings and clocked full-return fence remain until later substeps. Prolonged
+application reset still permits independent Housekeeping maintenance. This
+checkpoint does not establish minimum synchronous state or physical timing.
+
+Evidence: `build/async-recovery-ownership-migration/qualification-evidence.json`.
+The full run passes **352 tests across 41 verification suites**, including
+independent core references, real serial firmware uploads, sleep, watchdog,
+full-capacity SRAM and permanent supervision, plus **two core policy tests**.
+After the final test/probe changes, all **43 focused cases** pass. Final production
+RTL matches the full-regression emission apart from source comments/whitespace
+and two preserved Click probe-wire identifier renames; canonical connectivity,
+manifest semantics and hashes are checked. All **137 working-tree Python tests**
+and **11 pinned SRAM assets** pass. The emitted 34-port ABI matches `afd7500`.
+
+Unchanged functional oracles reject **91 actual RTL defects**: 33 existing source
+controls, 32 new recovery controls, 20 capture-timing defects and six exported
+constant corruptions. Another **989 metadata mutations** and **six dynamic-binding
+substitutions** are rejected. Compilation failures and global deadlines are not
+passing negative controls. Deduplicated child modules are copied and rebound at
+only the selected owner; original source and oracle hashes are retained.
+
+Actual D/trigger pin checks pass **130 publication** and **212 recovery** positive
+replays, covering every seed and directed skew, legal distribution, setup/hold,
+high/low pulses and observed reset overlap. The six earlier Click custom registers
+remain covered; both new debt registers are checked separately. All 27 publication
+and 54 recovery reset fixtures satisfy their per-case overlap obligations. Native
+and coupled tests also separate publication from grant return, stall reservation
+ingress while empty after reset, hold stale recovery replies, offer CPU work during
+recovery, and exercise reset after debt clear and prolonged-reset maintenance.
+
+Fresh design, implementation, qualification and final-evidence reviews found
+and addressed test/tool gaps without weakening implementation oracles. Retained
+failures include duplicate metadata, missing probe preservation, absent reset
+capture overlap, surviving publication/fence mutants, deduplicated-owner mutation
+and malformed nested-pin replacement. The first BD strict probe lacked activity
+on the new recovery command marker. A source-only joint-state campaign now covers
+that conjunction while retaining every generic campaign, binding check and
+dynamic-bit polarity assertion. Its six checker controls pass. The corrected BD
+and Click exports pass their first probes; earlier failed attempts remain evidence
+and are not counted as passes.
+
+| Variant | Endpoints | Mapping checks | Semantic SHA-256 |
+| --- | ---: | ---: | --- |
+| four-phase | 2402 | 703584232 | `28294e9a3064947789f9d5e105473aed717356366efdbb64230465e0cc8b1ffa` |
+| click | 2120 | 597678880 | `341b05728c1f3f770722f39e1d029da8eb41d82159c29d23e222fad5f96aab31` |
+
+Full cell/path, capture/reset, CDC and routed qualification remain item 17. The
+residual clocked-state inventory and removal obligations are in the checklist.
+
 ## Native publication ownership — digitally verified, 2026-10-10
 
 Substep 10b2c1 replaces the clocked Telemetry/Housekeeping CPU-pending bits with
@@ -760,7 +814,7 @@ python tools/sram_assets.py --verify-only
 ```
 
 No physical timing or power qualification is implied. Native transforms,
-feedback, crossings and macro paths still require item 10 qualification; older
+feedback, crossings and macro paths still require item 17 qualification; older
 baseline P&R results remain inapplicable.
 
 ## Asynchronous permanent supervisor migration
@@ -840,7 +894,7 @@ acquisition flags removed from the registered ABI). Explicitly retaining the
 complete registered capture boundary fixes the ABI; no check is removed.
 
 No physical timing or power qualification is claimed. Entire native transforms,
-feedback forks, capture pulses and crossings require item 10 characterization.
+feedback forks, capture pulses and crossings require item 17 characterization.
 Historical baseline `8637099` P&R is not applicable to this RTL.
 
 ## Asynchronous scaling and CRC migration
@@ -930,7 +984,7 @@ The `*-strict-preserved.log` attempts reached their 1200-second simulation limit
 `*-strict-final.log` reruns the same complete probes with a longer time allowance.
 
 No physical timing or power qualification is claimed. The new entire arithmetic
-transforms, feedback paths, capture pulses and crossings need item 10
+transforms, feedback paths, capture pulses and crossings need item 17
 characterization. Historical baseline `8637099` P&R remains inapplicable.
 
 

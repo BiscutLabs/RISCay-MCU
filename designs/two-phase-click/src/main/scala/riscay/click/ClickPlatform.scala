@@ -211,14 +211,14 @@ abstract class ClickPlatform(p: SocParameters, board: SocParameters => BoardProf
   // The outstanding command covers reply wait; native guard drainage is clockless.
   fabric.io.telemetryDraining := !telemetryCommandBridge.in.ready
 
-  // Native receipt ownership is POR-only. The client recovery fence remains
-  // clocked until 10b2c2; debt alone never pauses its own recovery dispatch.
+  // Native identity and sticky recovery debt own reset attribution. This explicit
+  // clocked full-return fence remains until 10b2c2b; recovery ignores the fence.
   val telemetrySource=asyncChild("telemetry_source")(d => new ClickPublicationSource(d))
-  val telemetryReserve=asyncChild("telemetry_reserve_bridge")(d => new DecoupledToClick(Bool(),d))
-  val telemetryGrant=asyncChild("telemetry_grant_bridge")(d => new ClickToDecoupled(Bool(),d))
+  val telemetryReserve=asyncChild("telemetry_reserve_bridge")(d => new DecoupledToClick(new PublicationReservation,d))
+  val telemetryGrant=asyncChild("telemetry_grant_bridge")(d => new ClickToDecoupled(new PublicationReservation,d))
   val telemetryDecision=asyncChild("telemetry_decision_bridge")(d => new DecoupledToClick(Bool(),d))
   val telemetryPublication=asyncChild("telemetry_publication_bridge")(d => new DecoupledToClick(Bool(),d))
-  val telemetryDrain=asyncChild("telemetry_drain_bridge")(d => new ClickToDecoupled(Bool(),d))
+  val telemetryDrain=asyncChild("telemetry_drain_bridge")(d => new ClickToDecoupled(new PublicationReservation,d))
   Seq(telemetryReserve,telemetryDecision,telemetryPublication).foreach { b =>
     b.clock:=workClock; dontTouch(b.in); dontTouch(b.out)
   }
@@ -235,30 +235,33 @@ abstract class ClickPlatform(p: SocParameters, board: SocParameters => BoardProf
   fabric.io.telemetrySource.drain <> telemetryDrain.out
   telemetrySource.applicationReset:=fabric.io.cpuReset.asAsyncReset
   fabric.io.telemetrySource.eligible:=telemetrySource.eligible
+  fabric.io.telemetrySource.ownerRecovery:=telemetrySource.ownerRecovery
+  fabric.io.telemetrySource.recoveryDebt:=telemetrySource.recoveryDebt
   val telemetryOwnerIdle=withClockAndReset(workClock,reset) {
     val first=RegNext(telemetrySource.idle,false.B); RegNext(first,false.B)
   }
   val telemetrySourceEmpty=telemetryOwnerIdle && telemetryReserve.in.ready &&
     telemetryDecision.in.ready && telemetryPublication.in.ready && !telemetryGrant.out.valid && !telemetryDrain.out.valid
-  val telemetryResetDebt=withClockAndReset(workClock,fabric.io.cpuReset.asAsyncReset) {
+  val telemetryReturnFence=withClockAndReset(workClock,fabric.io.cpuReset.asAsyncReset) {
     val debt=RegInit(true.B); val previousSafe=RegInit(false.B)
-    val safe=telemetrySourceEmpty && fabric.io.telemetrySource.quiet && !fabric.io.cpuResetActive
+    val safe=telemetrySourceEmpty && fabric.io.telemetrySource.quiet &&
+      !telemetrySource.recoveryDebt && !fabric.io.cpuResetActive
     previousSafe:=safe
     when(previousSafe && safe) { debt:=false.B }
     debt
   }
   fabric.io.telemetrySource.occupied:= !telemetrySourceEmpty
-  fabric.io.telemetrySource.resetDebt:=telemetryResetDebt
-  fabric.io.telemetrySource.draining:=telemetryResetDebt || !telemetrySourceEmpty
+  fabric.io.telemetrySource.returnFence:=telemetryReturnFence
+  fabric.io.telemetrySource.draining:=telemetryReturnFence || telemetrySource.recoveryDebt || !telemetrySourceEmpty
 
-  // Native receipt ownership is POR-only. The client recovery fence remains
-  // clocked until 10b2c2; debt alone never pauses its own recovery dispatch.
+  // Native identity and sticky recovery debt own reset attribution. This explicit
+  // clocked full-return fence remains until 10b2c2b; recovery ignores the fence.
   val housekeepingSource=asyncChild("housekeeping_source")(d => new ClickPublicationSource(d))
-  val housekeepingReserve=asyncChild("housekeeping_reserve_bridge")(d => new DecoupledToClick(Bool(),d))
-  val housekeepingGrant=asyncChild("housekeeping_grant_bridge")(d => new ClickToDecoupled(Bool(),d))
+  val housekeepingReserve=asyncChild("housekeeping_reserve_bridge")(d => new DecoupledToClick(new PublicationReservation,d))
+  val housekeepingGrant=asyncChild("housekeeping_grant_bridge")(d => new ClickToDecoupled(new PublicationReservation,d))
   val housekeepingDecision=asyncChild("housekeeping_decision_bridge")(d => new DecoupledToClick(Bool(),d))
   val housekeepingPublication=asyncChild("housekeeping_publication_bridge")(d => new DecoupledToClick(Bool(),d))
-  val housekeepingDrain=asyncChild("housekeeping_drain_bridge")(d => new ClickToDecoupled(Bool(),d))
+  val housekeepingDrain=asyncChild("housekeeping_drain_bridge")(d => new ClickToDecoupled(new PublicationReservation,d))
   Seq(housekeepingReserve,housekeepingDecision,housekeepingPublication).foreach { b =>
     b.clock:=workClock; dontTouch(b.in); dontTouch(b.out)
   }
@@ -275,21 +278,24 @@ abstract class ClickPlatform(p: SocParameters, board: SocParameters => BoardProf
   fabric.io.housekeepingSource.drain <> housekeepingDrain.out
   housekeepingSource.applicationReset:=fabric.io.cpuReset.asAsyncReset
   fabric.io.housekeepingSource.eligible:=housekeepingSource.eligible
+  fabric.io.housekeepingSource.ownerRecovery:=housekeepingSource.ownerRecovery
+  fabric.io.housekeepingSource.recoveryDebt:=housekeepingSource.recoveryDebt
   val housekeepingOwnerIdle=withClockAndReset(workClock,reset) {
     val first=RegNext(housekeepingSource.idle,false.B); RegNext(first,false.B)
   }
   val housekeepingSourceEmpty=housekeepingOwnerIdle && housekeepingReserve.in.ready &&
     housekeepingDecision.in.ready && housekeepingPublication.in.ready && !housekeepingGrant.out.valid && !housekeepingDrain.out.valid
-  val housekeepingResetDebt=withClockAndReset(workClock,fabric.io.cpuReset.asAsyncReset) {
+  val housekeepingReturnFence=withClockAndReset(workClock,fabric.io.cpuReset.asAsyncReset) {
     val debt=RegInit(true.B); val previousSafe=RegInit(false.B)
-    val safe=housekeepingSourceEmpty && fabric.io.housekeepingSource.quiet && !fabric.io.cpuResetActive
+    val safe=housekeepingSourceEmpty && fabric.io.housekeepingSource.quiet &&
+      !housekeepingSource.recoveryDebt && !fabric.io.cpuResetActive
     previousSafe:=safe
     when(previousSafe && safe) { debt:=false.B }
     debt
   }
   fabric.io.housekeepingSource.occupied:= !housekeepingSourceEmpty
-  fabric.io.housekeepingSource.resetDebt:=housekeepingResetDebt
-  fabric.io.housekeepingSource.draining:=housekeepingResetDebt || !housekeepingSourceEmpty
+  fabric.io.housekeepingSource.returnFence:=housekeepingReturnFence
+  fabric.io.housekeepingSource.draining:=housekeepingReturnFence || housekeepingSource.recoveryDebt || !housekeepingSourceEmpty
 
   // Immutable profile selects this design's native permanent controller.
   val supervisorBridges = board(p) match {

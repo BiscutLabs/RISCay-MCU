@@ -77,8 +77,29 @@ Accumulated observations and undispatched recovery work are retained and do not
 prevent this quiet proof. BD requires complete request/acknowledgment return;
 Click retains independent publication and drain phase histories across skipped
 or cancelled slots. Neither receipt acceptance nor retirement advances consumedGray.
-Five POR crossings per source, clocked staging/dispatch, reset-debt release,
-recovery attribution and state/output projections remain explicit for later steps.
+Fresh recovery ownership (10b2c2a, digitally verified) extends each reservation
+with an immutable CPU/recovery role. Native sticky debt starts asserted and is
+asynchronously restored by qualified application reset. Only a committed recovery
+with actual attributed publication, completed drain acknowledgment and still-live
+eligibility may clear it. A reset revokes freshness without resetting POR phases
+or cancelling accepted persistent effects. Recovery admission bypasses its own
+debt and return fence after older work drains; CPU admission does not.
+
+Explicit command/reply recovery markers must match that retained role.
+Housekeeping resetApplication also marks ordinary maintenance and cannot prove
+recovery identity. Fresh Telemetry recovery publication may project post-reset
+events before debt clears; stale replies cannot restore application projections.
+Host samples, board time and acquisition continue through recovery. Prolonged
+application reset permits unowned Housekeeping maintenance, including watchdog
+kicks, while fresh recovery reservations wait for reset release. Only actual
+Housekeeping publication advances consumedGray.
+
+Five POR crossings per source, clocked staging/dispatch, full-return fences and
+state/output projections remain explicit for later steps. The full-return fence
+requires two fresh safe observations of owner/client/crossing drainage and cleared
+native recovery debt. An empty owner before recovery does not satisfy that proof.
+Item 10b2c2b must replace this fence with retained native full-return ownership;
+current native retirement occurs before complete outward protocol return.
 
 Application reset asserts immediately and releases after eight ungated service
 edges. With a maximum service clock of 20 MHz, the minimum hold is 350 ns; the
