@@ -275,3 +275,13 @@ drain guard remain unchanged. POR alone resets I2C state/crossings; frame and
 read-start publication waits for local POR release. Pending frames retain
 intervening watchdog-reset history. Independent LF/watchdog timing
 remains necessary. See the migration checklist for qualification status.
+
+Item 11a1 replaces the clocked frame payload copy with a control-only receipt
+in each design. The native publisher retains the frame while that receipt
+waits for the actual work-clock enable. Receipt acknowledgment and mailbox
+capture share the same rising edge; a stopped work clock cannot consume a
+frame on the ungated front clock alone. Low-power enable comes from the existing
+falling-edge gate register. Pending `out.valid`, independently of ready, remains
+in ungated wake demand. The unchanged snapshot bridge and clocked mailbox are
+still migration candidates. See the [frame-admission contract](frame-admission-contract.md)
+for current qualification status and physical timing obligations.

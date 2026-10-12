@@ -31,6 +31,8 @@ from check_program_return_integration import program_return_probe
 from check_application_reset import validate_application_reset, persistent_reset_children
 from check_ram_source_export import ARM_PATH, RETIRE_PATH, validate_ram_source, ram_source_bindings, ram_source_probe
 from check_program_source_export import PROGRAM_PATHS, validate_program_source, program_source_bindings, program_source_probe, validate_program_receipts
+from check_frame_receipt import validate_frame_receipts
+from check_frame_integration import frame_receipt_probe
 from check_publication_source_export import PATHS as PUBLICATION_PATH_TABLE, validate_publication_source, publication_source_bindings, publication_source_probe, publication_recovery_background
 from check_recovery_return_export import (PATHS as RECOVERY_RETURN_PATH_TABLE,validate_recovery_return,
     recovery_return_bindings,validate_return_receipts)
@@ -1106,7 +1108,13 @@ class MappingProbeAttestation:
         return {p.name: self.digest(p) for p in paths}
 
     def snapshot(self):
-        return dict(probe_sha256=self.digest('contract_probe.sv'), source_sha256=self.sources())
+        # Closed policies also inspect layer bindings that are not compiled by
+        # the mapping probe. Attest those inputs without claiming execution of
+        # uninstantiated verification modules; functional suites inline them.
+        auxiliary = {str(p.relative_to(self.directory)).replace('\\', '/'): self.digest(p)
+                     for p in sorted((self.directory / 'verification').rglob('*')) if p.is_file()}
+        return dict(probe_sha256=self.digest('contract_probe.sv'), source_sha256=self.sources(),
+                    validation_auxiliary_sha256=auxiliary)
 
     def validate_command(self, parts, compile_probe):
         if not compile_probe:
@@ -1226,6 +1234,7 @@ def main() -> None:
         top_rtl=(args.directory / (manifest["top"]+".sv")).read_text(encoding="utf-8")
         validate_application_reset(manifest,scopes,top_rtl)
         validate_program_receipts(manifest,args.directory)
+        validate_frame_receipts(manifest,args.directory)
         validate_return_receipts(manifest,args.directory,scopes)
         source, count = original_probe(manifest, scopes, paired)
         source = spi_program_probe(source, manifest, scopes)
@@ -1252,6 +1261,7 @@ def main() -> None:
         source = apply_return_literal_obligations(source,literal_obligations)
         source = program_source_probe(source, manifest, scopes)
         source = publication_source_probe(source, manifest, scopes)
+        source = frame_receipt_probe(source, manifest, scopes, args.directory)
         if args.vector_coverage:
             source = activity_diagnostics(source)
         return source, count

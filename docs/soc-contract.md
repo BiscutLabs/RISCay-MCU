@@ -72,6 +72,12 @@ without a word access. Loader decisions follow held grant/word acceptance and
 remain operational throughout application reset debt. Stored is offered only
 after actual publication and acknowledged only at Control-command acceptance.
 Host admission retains its busy history through Stored-reply publication.
+Digitally verified item 11a1 removes the redundant clocked I2C
+frame copy. Separate native-protocol receipts acknowledge only the actual
+work-clock mailbox capture; the native publisher retains the complete frame.
+The mailbox, reset debt and dispatcher remain clocked. The
+[frame-admission contract](frame-admission-contract.md) defines reset/busy context,
+clock-gate acceptance and the remaining capture qualification.
 Five source crossings, drain/debt projections and existing SRAM word crossings
 remain explicit boundaries for later migration.
 

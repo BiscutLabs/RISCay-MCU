@@ -85,6 +85,7 @@ abstract class FourPhasePlatform(p: SocParameters, board: SocParameters => Board
 
   val host = asyncChild("i2c")(d => new I2cTarget(p.i2cAddress,p.i2cIdleCycles,d))
   host.clock := serviceClock; host.scl := scl; host.sda := sda
+  host.frameAcceptEnable := fabric.io.clockRunning
   fabric.io.i2c <> host.host; sdaLow := host.pullLow
   val programAccess = asyncChild("program_access")(d => new ProgramAccess(d))
   val programReturn = asyncChild("program_return")(d => new FourPhaseProgramReturn(d))

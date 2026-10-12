@@ -116,6 +116,13 @@ Fresh review, all 461 verification cases across 45 suites in an audited split
 regression, two physical-policy cases, 301 Python tests and both strict exports
 pass. The strengthened final loader-source recheck passes all 16 cases.
 Host admission, dispatch and the remaining ledger still require migration.
+Substep 11a1 removes the redundant I2C frame payload copy in both
+designs. Five-bit receipts acknowledge only an actual work-clock mailbox capture;
+the native publisher retains the 337-bit frame. Emitted state falls by 339 clocked
+bits per variant with unchanged public ports. The audited 489-case verification
+cohort, two physical-policy cases, 329 Python tests, actual capture/fault controls
+and both strict exports pass. The mailbox and dispatcher remain clocked. See the
+[frame-admission contract](docs/frame-admission-contract.md).
 See the [RAM return contract](docs/ram-return-contract.md),
 [program return contract](docs/program-return-contract.md) and
 [remaining-state ledger](docs/async-residual-state.md).

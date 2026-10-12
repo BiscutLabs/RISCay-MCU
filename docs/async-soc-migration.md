@@ -388,6 +388,64 @@ when no next item has been chosen. Both implementations remain active throughout
   and unqualified MUTEX model cannot satisfy native Click or physical signoff.
   - [ ] **11a. Host admission storage.** Replace mailbox/reset-debt storage while
     preserving each frame's admission-time reset/busy context and overflow proof.
+    - [x] **11a1. Remove the redundant clocked I2C frame copy.** A separate
+      native-protocol receipt in each design carries only synchronization and
+      acceptance history. The existing native publisher retains the full frame
+      until the real mailbox capture edge. Qualify receipt acceptance with the
+      destination work-clock enable; retain ungated wake demand while stalled.
+      Preserve the two-slot mailbox, admission-time context and overflow behavior
+      in this substep. Check all 337 source bits through actual destination capture,
+      full BD return and Click parity, stopped-work clocks, POR and watchdog
+      episodes. Existing wire/status/reset/busy oracles must stay unchanged.
+      Digitally verified: 489 verification cases in an audited combined cohort,
+      two physical-policy cases, 329 Python tests, actual capture/fault controls
+      and both strict exports pass. Evidence is in
+      `build/async-host-frame-migration/qualification-evidence.json`. The change
+      removes 339 clocked bits per variant with unchanged public ports. The
+      mailbox/count/debt remains clocked; physical qualification is still open.
+      Follow the [frame-admission contract](frame-admission-contract.md), including
+      actual mailbox capture, complete epoch comparison, same-edge Stored context
+      and source/work-clock handoff. Separate digital native-bus aperture evidence
+      from the still-unqualified physical synchronous-context hold paths.
+    - [ ] **11a2. Native accepted-frame slots and context.** Replace both mailbox
+      payloads, occupancy and reset debt with native ownership. Keep exactly two
+      accepted, undispatched frame credits; distinguish reservation and physical
+      return occupancy. A full-queue offer must still fault rather than wait for
+      an idle context. Join each reserved slot with its actual admission-edge
+      busy/reset context, and retain existing reset epoch through Host dispatch.
+      The 64-bit epoch rejects wrap; it is not an unbounded lifetime identity.
+      Use the existing Control-command capture as the destination and remove
+      the temporary receipt when its dispatcher becomes native in 11b/14.
+      - [ ] **11a2a. Native payload ownership and per-frame epoch.** Replace the
+        two clocked payload banks with separate native, non-compacting retained
+        banks. Retain each frame's original epoch through actual Host-command
+        capture and remove queued reset debt. Keep the existing narrow logical
+        occupancy count explicitly temporary while validating wide ownership.
+        Distinguish accepted credits from banks still occupied by physical
+        return. If an accepted frame remains in its native publisher while its
+        assigned bank returns, it already consumes a logical credit. Prove this
+        cannot hide a later completed-frame offer and its overflow fault; retain
+        the original offer frontier or qualify the complete return/backlog bound.
+        Additional native retirement storage must not add accepted credits.
+        Do not acknowledge the publisher before immutable payload retention is
+        proved. Qualify each head's full return independently of the next head's
+        selection.
+      - [ ] **11a2b. Native logical credits and admission observation.** Remove
+        the temporary occupancy count using separate retained admission/dispatch
+        histories or an equivalently proved native owner. Keep the frame-offer
+        observer live while full: delaying an offer until dequeue would silently
+        remove the existing overflow fault. Prove full plus simultaneous dequeue
+        still faults, while an earlier dequeue releases logical capacity before
+        the next permitted admission. Bound every credit-observation path at
+        the 20 MHz service limit; a 110 ns transport guard cannot substitute for
+        a required next-edge decision. Account for physical return occupancy,
+        reserved payloads, and accepted but not yet copied publisher payloads
+        separately. With two queued frames and a third offer reaching request
+        meta at E1, release an old Host dispatch at E2: admission at E3 must
+        succeed. Move that dispatch to E3 or E4 and require the original overflow
+        at E3. Drive the control-release stimulus off active edges. Publisher
+        reuse spacing does not constrain this independently delayed dispatch.
+        Complete the native credit proof before closing 11a2.
     - [ ] Inventory the entire frame path, including native I2C publication,
       its clocked delivery copy, both mailbox slots and reset-debt count. Preserve
       effective capacity and the exact admission event across the replacement.
@@ -461,6 +519,8 @@ when no next item has been chosen. Both implementations remain active throughout
     10b2d1/d2. Replace RAM/program clocked reset-debt/previous-safe policy with
     retained native cancellation/return proof; idle alone cannot release debt.
     The specialized Stored receipt remains until Control acceptance is native.
+    The control-only I2C frame receipt from 11a1 is also temporary: remove its
+    request synchronizers and clocked ACK with the final clocked admission client.
   - [ ] Connect command/reply, I2C frame/snapshot and SRAM word paths directly;
     retain explicit lifetime isolation between POR and application-reset owners.
   - [ ] Reconcile the emitted crossing inventory and gate demand after every
@@ -550,10 +610,10 @@ invariant-focused tests and a fresh independent review before completion.
 
 ## Preliminary residual-state inventory
 
-The 10b2d2 Groundlark, ADC-enabled, source-stopping low-power portable SoC
+The 11a1 Groundlark, ADC-enabled, source-stopping low-power portable SoC
 exports still contain substantial clocked state. The emitted declaration audit,
 baseline comparison and per-owner removal candidates are retained under
-`build/async-program-return-migration/`; see the
+`build/async-host-frame-migration/`; see the
 [remaining-state ledger](async-residual-state.md). These are RTL declarations,
 not mapped flop counts, area, power or proof of physical necessity.
 
@@ -564,18 +624,20 @@ not mapped flop counts, area, power or proof of physical necessity.
 | SPI wrapper | 175 | 175 | Items 12–15 |
 | Two SRAM access wrappers | 30 | 30 | Items 14–15 |
 | Elapsed ingress wrapper | 37 | 37 | Items 12, 14–15 |
-| 60 crossing/receipt owners | 4,147 | 4,147 | Remove with their clocked clients |
-| **Total: 66 owners** | **8,605** | **8,606** | Complete audit in item 16 |
+| 60 crossing/receipt owners | 3,808 | 3,808 | Remove with their clocked clients |
+| **Total: 66 owners** | **8,266** | **8,267** | Complete audit in item 16 |
 
 Each total includes one unchanged asynchronous SDA capture bit; periodic-clocked
-subsets are 8,604/8,605 bits. Async primitive storage, fixed SRAM arrays and
+subsets are 8,265/8,266 bits. Async primitive storage, fixed SRAM arrays and
 verification state are excluded. The generated chip wrapper, including its
 20-bit default reset hold, is outside these totals. Other supported configurations
 may add the legacy service-time divider, autonomous ADC interval counter or
 generic application projections. Items 15e/16 require their separate inventories.
 Program return removes 87 crossing bits and adds seven temporary receipt/idle
 bits, for a net reduction of 80 per variant relative to `60c5590`. The earlier
-RAM return step removed another 39. Temporary crossings and reset/debt policy
+RAM return step removed another 39. Frame receipt 11a1 removes 339 more relative
+to `d688255`, reducing I2C delivery crossings from 359 to 20 bits. The 550-bit
+mailbox/count/debt is unchanged. Temporary crossings and reset/debt policy
 remain removal candidates; neither those savings nor passing tests close the audit.
 
 An owner is retained only with a specific physical or interface obligation and

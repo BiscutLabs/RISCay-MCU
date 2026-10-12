@@ -18,13 +18,17 @@ import riscay.soc._
 class I2cTarget(address: Int,idleCycles: Int,domain: ResetDomain) extends ClockedBridge(domain,2) {
   val scl=IO(Input(Bool())); val sda=IO(Input(Bool())); val pullLow=IO(Output(Bool()))
   val host=IO(new I2cHostPort)
+  val frameAcceptEnable=IO(Input(Bool()))
   val native=asyncChild("native")(d => new FourPhaseI2c(address,d))
-  val frames=asyncChild("frame_bridge")(d => new FourPhaseToDecoupled(new I2cFrame,2,d))
+  val frames=asyncChild("frame_bridge")(d => new FourPhaseFrameReceipt(d))
   val snapshots=asyncChild("snapshot_bridge")(d => new FourPhaseToDecoupled(UInt(8.W),2,d))
   frames.clock:=clock; snapshots.clock:=clock
   FourPhase.connect(frames.in,native.frame); FourPhase.connect(snapshots.in,native.snapshot)
   // Publish only after this POR-only service boundary has left reset.
-  frames.out.ready:= !localReset.asBool; snapshots.out.ready:= !localReset.asBool
+  // ACK and mailbox enqueue must share a real work-clock edge. A held frame
+  // still contributes ungated busy/wake demand while the work gate is stopped.
+  frames.out.ready:= !localReset.asBool && frameAcceptEnable
+  snapshots.out.ready:= !localReset.asBool
   host.frame.valid:=frames.out.fire; host.frame.bits:=frames.out.bits.ingress
   host.readStart:=snapshots.out.fire
   dontTouch(frames.out); dontTouch(snapshots.out)
@@ -93,6 +97,7 @@ class I2cTarget(address: Int,idleCycles: Int,domain: ResetDomain) extends Clocke
     host.busy:=active || start || stop || effects || frames.out.valid || snapshots.out.valid
     dontTouch(slots); dontTouch(tailGray)
   }
+  contract.endpoint("frame_accept_enable",frameAcceptEnable)
   contract.endpoint("reset",reset)
   private val wireInputs=WireDefault(UInt(2.W),Cat(scl,sda)); dontTouch(wireInputs)
   contract.endpoint("wire_inputs",wireInputs); contract.endpoint("pull_low",pullLow)

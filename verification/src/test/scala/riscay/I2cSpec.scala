@@ -11,7 +11,7 @@ class BdI2cFixture(p: SocParameters) extends FabricFixture(p) {
   val readStarted=IO(Output(Bool())); readStarted:=host.host.readStart
   val frameLength=IO(Output(UInt(6.W))); val frameByte=IO(Output(UInt(8.W)))
   val frameOverflow=IO(Output(Bool())); val busBusy=IO(Output(Bool()))
-  dontTouch(frameRun) // Testbench stalls frame-crossing admission.
+  host.frameAcceptEnable:=frameRun && fabric.io.clockRunning // Stall actual receipt acceptance.
   host.host.resetActive:=resetContext
   host.host.readWord:=VecInit((0 until 9).map(i => ((0x89abcdefL ^ (i*0x10203041L)) & 0xffffffffL).U(32.W)))(host.host.wordIndex)
   received:=host.host.frame.valid; frameReset:=host.host.frame.bits.resetActive
@@ -24,7 +24,7 @@ class ClickI2cFixture(p: SocParameters) extends ClickFabricFixture(p) {
   val readStarted=IO(Output(Bool())); readStarted:=host.host.readStart
   val frameLength=IO(Output(UInt(6.W))); val frameByte=IO(Output(UInt(8.W)))
   val frameOverflow=IO(Output(Bool())); val busBusy=IO(Output(Bool()))
-  dontTouch(frameRun) // Testbench stalls frame-crossing admission.
+  host.frameAcceptEnable:=frameRun && fabric.io.clockRunning // Stall actual receipt acceptance.
   host.host.resetActive:=resetContext
   host.host.readWord:=VecInit((0 until 9).map(i => ((0x89abcdefL ^ (i*0x10203041L)) & 0xffffffffL).U(32.W)))(host.host.wordIndex)
   received:=host.host.frame.valid; frameReset:=host.host.frame.bits.resetActive
@@ -47,17 +47,13 @@ always @(negedge serviceClock) begin
         dut.ca_child_i2c.ca_child_snapshot_bridge.out_ready !== 0 || received !== 0 || readStarted !== 0)
       $fatal(1,"I2C_RESET_PUBLICATION");
   end else if (dut.ca_child_i2c.localReset_release_1 === 1'b0) begin
-    if (dut.ca_child_i2c.ca_child_frame_bridge.out_ready !== 1 ||
+    if (dut.ca_child_i2c.ca_child_frame_bridge.out_ready !== frameRun ||
         dut.ca_child_i2c.ca_child_snapshot_bridge.out_ready !== 1) $fatal(1,"I2C_RELEASE_ADMISSION");
   end
 end
 always @(posedge serviceClock) if(readStarted) snapshots=snapshots+1;
 always @(posedge serviceClock) if(received) begin
   frames=frames+1; frameOrder={frameOrder[15:0],frameByte}; lastReset=frameReset; lastLength=frameLength; firstByte=frameByte; lastOverflow=frameOverflow;
-end
-always @(frameRun) begin
-  if(frameRun) release dut.ca_child_i2c.ca_child_frame_bridge.state;
-  else force dut.ca_child_i2c.ca_child_frame_bridge.state=2'b0;
 end
 // 400 kHz, equal 1250 ns phases. SDA changes100 ns after falling SCL,
 // exercising separate synchronized samples without violating the wire setup.
@@ -185,7 +181,9 @@ integer i,saved; reg [7:0] value; reg [31:0] expected;
         #1000;
         if(heldSlots !== $slotBus || heldHead !== dut.ca_child_i2c.ca_child_native.observedBits[339:336])
           $$fatal(1,"I2C_OCCUPIED_SLOT_MUTATED");
-        frameRun=1; #5000;
+        // Match the production falling-edge gate-enable aperture. Keep the
+        // existing recovery bound and frame-order oracle after this release.
+        @(negedge serviceClock); #2; frameRun=1; #5000;
         if(frames!=2 || frameOrder[15:0]!==16'h090a) $$fatal(1,"I2C_RING_FRAME_ORDER");
         value=8'h6a;
         for(i=6;i>=0;i=i-1) begin #100; hostLow=!value[i]; #1150; scl=1; #1250; scl=0; end

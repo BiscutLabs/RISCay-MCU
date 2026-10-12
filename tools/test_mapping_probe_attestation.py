@@ -75,6 +75,24 @@ class MappingProbeAttestationTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'NO_EXECUTED_PASS'):
             self.attestation.finish(self.receipt())
 
+    def test_auxiliary_validation_bindings_are_attested_and_cannot_change(self):
+        binding = self.root / 'verification/assert/layers-Target-Assert.sv'
+        binding.parent.mkdir(parents=True)
+        original = b'bind Target TargetAssert assertions ();\n'
+        binding.write_bytes(original)
+        self.compile()
+        binding.write_bytes(original + b'// changed before execution\n')
+        with self.assertRaisesRegex(ValueError, 'CHANGED_BEFORE_EXECUTION'):
+            self.simulate()
+        binding.write_bytes(original)
+        self.assertEqual(self.simulate().returncode, 0)
+        record = self.attestation.finish(self.receipt())
+        self.assertEqual(record['validation_auxiliary_sha256'], {
+            'verification/assert/layers-Target-Assert.sv': self.attestation.digest(binding)})
+        binding.unlink()
+        with self.assertRaisesRegex(ValueError, 'CHANGED_AFTER_EXECUTION'):
+            self.attestation.finish(self.receipt())
+
     def test_uncompiled_binary_is_rejected(self):
         (self.root / 'contract_probe.vvp').write_text('not compiled by this invocation')
         with self.assertRaisesRegex(ValueError, 'CHANGED_BEFORE_EXECUTION'):

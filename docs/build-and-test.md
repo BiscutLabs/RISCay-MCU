@@ -1,5 +1,76 @@
 # Build and test
 
+## I2C frame receipt — digitally verified 2026-10-12
+
+Substep 11a1 replaces the clocked I2C frame copy with separate BD and native
+Click receipts. Each retains five POR-only control bits and passes the native
+publisher's held 337-bit payload directly to actual work-clock mailbox capture.
+This removes 339 periodic-clocked RTL bits per variant. All 34 public ports, their schemas
+and emitted declarations match `d688255`. The 550-bit mailbox/count/reset-debt
+group and dispatcher remain clocked; 11a2/11b own their removal.
+
+Evidence: `build/async-host-frame-migration/qualification-evidence.json`.
+The complete digital cohort is **489 verification cases / 48 suites**, plus two
+physical-policy cases. This is an explicit combined cohort: the full run passed
+485 cases and failed all four FrameWake tests during compilation because a task
+referenced a later localparam. Moving only that declaration before the task and
+rerunning all four wake cases closes the cohort. The failed full run remains
+classified as failed; its reports, exact source and compiler failures are kept.
+Core/reference, real serial loader, firmware, watchdog/reset, sleep and both
+independent implementations' regressions are included. No assertion, deadline or
+functional oracle was relaxed by the declaration repair.
+
+- `FrameReceiptSpec`: 10 cases covering all 337 bits, stopped clocks, POR,
+  backpressure and application-reset isolation.
+- `FrameAdmissionSpec`: 14 cases including actual native publication, both
+  mailbox slots, same-edge dispatch/admission and Stored context, repeated reset,
+  and four exact original full-queue assertion controls, including dequeue.
+- `FrameWakeSpec`: four production gate/source-stop cases with explicit source
+  stop, exact work-clock capture and eventual sleep checks.
+- Standalone receipt controls: six positive replays and 12 actual RTL defects,
+  independently bound to compiled fatal locations.
+- Composed capture controls: 56 positive replays and 32 exact negative controls.
+  Sixteen 808-admission supplemental runs cover all 337 source and 273 destination
+  bits in both polarities, both banks, and all 64 epoch-comparator bits separately.
+  They drive the native publication input boundary; retained source storage and
+  actual mailbox capture are not forced. Original real-wire functional oracles
+  are preserved in the separate composed fixture replays.
+- Capture profiles retain fixed guards while sweeping minimum and opposing
+  variable-cell delays. Minimum observed source setup / destination D setup /
+  retained-payload hold are 216 ns / 23 ns / 252 ns for BD and 210 ns / 23 ns /
+  4 ns for Click. The native bus meets the 100 ps digital aperture; synchronous
+  context uses pre-edge identity and post-edge capture checks. Its physical hold
+  time is explicitly unqualified. Full BD return and Click phase retention,
+  earliest input reuse and original epoch-wrap fault are checked.
+- Strict static sensitivity: 288 receipt and 260 integration mutants rejected.
+  These validate emitted control storage, complete aliases, actual gate enable,
+  epoch/context/mailbox logic, writer inventories and exact literal masks.
+- Both standalone receipt strict exports pass 12 endpoints / 35,424 mapping
+  checks each. Full SoC strict exports pass BD 2,509 endpoints / 730,939,443 checks and
+  Click 2,281 endpoints / 640,374,783 checks, with unchanged dynamic activity
+  requirements. Executed probes, RTL, compiler commands, binaries and logs are
+  hash-bound. Verification-layer files are separately bound as static validator
+  inputs; their uninstantiated assertion modules are not claimed as executed.
+- All 329 Python tests and verification of 11 pinned SRAM assets pass.
+
+Earlier failed attempts remain under the same evidence root. The original I2C
+ring-release stimulus raced an active edge (then a #1 monitor); release now
+occurs two nanoseconds after a falling edge, retaining the original frame order
+and 5,000 ns post-release deadline. An initial new Stored-context test supplied a
+malformed one-byte WRITE; its corrected valid WRITE retains the Busy oracle.
+A wake fixture initially used a service model below the chip model's supported
+range; production wake checks use 8 MHz, while composed captures cover 3.2 and
+20 MHz. An export attempt used an invalid sbt project ID after all I2C tests
+passed; export was rerun using the actual project IDs. Capture development
+failures and their exact explanations remain in `capture-development-notes.md`.
+
+Fresh independent review covers implementation, controls, frozen evidence and
+scope. The separate implementation files, original assertions, public ABI and
+pre-existing P&R work are preserved. This closes only 11a1's digital scope.
+Native mailbox ownership, narrow credit tracking, dispatch, observation,
+publication and remaining crossings still require migration. Full cell/path,
+metastability, capture/reset, CDC and routed timing remain item 17 work.
+
 ## Program/loader native return — digitally verified 2026-10-12
 
 Substep 10b2d2 removes the program word-reply, publication and Completion-memory

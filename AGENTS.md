@@ -17,7 +17,7 @@
   obtain a fresh independent agent review, address its findings, rerun affected
   checks, update its evidence/contracts, commit and push. Repeat this review loop
   for every item. Continue to the next item when the user has authorized it;
-  otherwise ask. Items 1-9, 10a, 10b1, 10b2a, 10b2b, 10b2c1, 10b2c2a, 10b2c2b, 10b2d1 and 10b2d2 are digitally verified within their scopes.
+  otherwise ask. Items 1-9, 10a, 10b1, 10b2a, 10b2b, 10b2c1, 10b2c2a, 10b2c2b, 10b2d1, 10b2d2 and 11a1 are digitally verified within their scopes.
   The user has authorized deeper migration under expanded items 10-16: native
   service coordination, observation reduction, publication, direct interconnect
   and physically justified boundary minimization. Audit every remaining clocked
@@ -165,6 +165,19 @@
   SupervisorSpec, including repeated 32-edge watchdog resets and stalled crossings.
   Include queued elapsed time in host freshness.
 - I2C migration uses separate native protocol loops and POR-only publication.
+  The 11a1 frame receipt keeps five POR-only clocked bits and no payload copy.
+  ACK must coincide with actual work-clock mailbox capture. Qualify ready with
+  the falling-edge gate's running state, retaining ungated pending-frame demand.
+  Follow `docs/frame-admission-contract.md`; the mailbox/count/debt still belongs
+  to item 11a2. Separate native payload/epoch ownership from the native logical
+  credit proof; any retained narrow count remains temporary. Keep the completed-
+  frame offer observable while full, even while an older bank finishes return.
+  Run FrameReceiptSpec, FrameAdmissionSpec and FrameWakeSpec, actual
+  337-bit source/273-bit mailbox capture controls, exact-fatal full-queue controls
+  including simultaneous dequeue, and unchanged Stored-edge/context assertions.
+  Keep native-bus aperture checks separate from physical synchronous-context hold.
+  Strict exports must close receipt storage/reset, native publisher/data aliases,
+  actual clock-enable and mailbox bindings before accepting any literal mask.
   Keep sampled wire slots immutable until the synchronized published head frees
   them; keep Click phase feedback in the complete projection timing aperture.
   Retain completed-frame reset history across whole watchdog episodes. Run
