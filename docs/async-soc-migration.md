@@ -487,6 +487,11 @@ when no next item has been chosen. Both implementations remain active throughout
           output polarity, preserve an independent integer occupancy oracle,
           and qualify the remaining consumer cones before removing the count.
           Neither target is a measured physical delay.
+          The preliminary five-corner Boolean experiment measured 0.262479 to
+          9.705319 ns before source flops, downstream consumers and wiring. It
+          establishes neither a one-nanosecond minimum nor complete-path closure.
+          Close the relevant physical-flow prerequisites in 17a before using a
+          mapped credit-cone result to authorize removal of Q.
         - [ ] **11a2b2. Native descriptor and order ownership.** Replace descriptor
           movement and the retained admission tail with native owners. Reassess
           every temporary receipt and count net state after new ownership is
@@ -648,6 +653,38 @@ when no next item has been chosen. Both implementations remain active throughout
   pulse/fork/return timing, reset and CDC bounds, then new P&R and extracted
   validation. Feed physical failures back into the migration design; digital
   passes alone cannot check this item or establish physical feasibility.
+  Local physical prerequisites may be addressed during migration when a design
+  decision depends on them; full-chip closure still follows the residual audit.
+  - [ ] **17a. Restore complete physical-flow coverage for migrated RTL.**
+    - [x] **17a1. Bind control guards by their role — locally verified.** The
+      repaired mapper explicitly classifies every ControlGate by reviewed owner/ID
+      and exact timing references, rejects unknown/conflicting/passive roles and
+      parameter-tuple collisions, and preserves real per-lane control chains.
+      The complete 1,440-instance audit fixes 54 scalar-data and 12 vector-control
+      misclassifications. All 60 candidate tuples have five-corner per-lane
+      measurements; all ten original vector-control tuples fail their intended
+      minimums. Fresh review closed the passive-view bypass. Keep whole-transform
+      allowances distinct; their complete upstream
+      paths remain a separate 17a3 obligation. A corrected local adapter is not
+      whole-controller timing qualification. Follow the
+      [guard binding contract](physical-control-guard-contract.md).
+    - [ ] **17a2. Export and constrain the actual controller policies.** The old
+      physical emitter is rejected by ClickFabric's simulation-policy guard.
+      Preserve that guard until an explicit supported policy is verified. Bind
+      each controller's actual contract, generated clock and reset domain;
+      reconcile extracted verification sources without admitting arbitrary RTL.
+      Replace stale hierarchy names and broad false paths that hide related-
+      clock credit consumers. Preserve all original source and mapping checks.
+    - [ ] **17a3. Measure every custom timing obligation.** Canonical payload-stage
+      reports do not cover the migrated controllers' custom transform, trigger,
+      feedback, distribution and return paths. Require a complete per-obligation
+      inventory, exact mapped endpoints, min/max coverage and negative controls;
+      omitted paths or unmeasured allowances must prevent qualification.
+      Measured 17a1 candidates already require envelope redesign: the 110 ns
+      vector guard reaches 711.972290 ns and the 241.200001 ns guard reaches
+      1548.816406 ns before wiring. Their reset paths also exceed the current
+      250 ns settlement assumption. Long guards currently lack a finite local
+      maximum check; local minimum passes cannot authorize controller use.
   - [ ] Characterize complete new data/control transforms, selection guards,
     feedback, arbitration and reset paths at all required pinned corners.
   - [ ] Bind mapped cells and constraints to the final emitted ownership graph;

@@ -1,5 +1,35 @@
 # Build and test
 
+## Physical guard-role binding (17a1)
+
+The physical mapper now uses `physical/gf180/controlgate-roles.json` and exact
+contract timing references instead of width to distinguish data allowances from
+control guards. Evidence, independent review and preserved old failures belong
+under `build/async-physical-guard-migration/`. See the
+[binding contract](physical-control-guard-contract.md) for scope and open timing
+obligations. No controller RTL or delay budget changes in this substep.
+
+```powershell
+python -m unittest discover -s tools -p 'test_gf180_control_roles.py' -v
+python -m unittest discover -s tools -p 'test_gf180_physical.py' -v
+python tools/sbt.py 'physical/test'
+```
+
+Run the complete Python controls too. Check the actual mapper's fail-before-write
+behavior for passive ControlGate views and tuple-role collisions. Physical
+characterization requires exact per-lane min/max and rise/fall coverage at all
+five pinned corners, reset paths, missing/nonfinite/duplicate measurement
+controls, and the original misclassified guard graphs as negative controls.
+Keep complete-transform and controller qualification open; a restored guard's
+measured maximum need not match its old fixed digital delay.
+The final reviewed-source run passes all 375 Python tests and both physical-policy
+cases. The complete adapter campaign contains 1,256,960 finite, independently
+audited measurements across five corners. All 60 new tuples meet their local
+checks; all ten old vector-control graphs fail the intended minimums. Long
+guards have no finite adapter-level maximum check. The measured 110 ns guard
+reaches about 712 ns and the 241.200001 ns guard about 1.55 microseconds, exposing
+controller/reset envelope work rather than establishing physical qualification.
+
 ## Native frame payload and epoch — digitally verified 2026-10-12
 
 Substep 11a2a uses separate four-bank native stores and five-bit head receipts,

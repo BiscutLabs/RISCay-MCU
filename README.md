@@ -130,6 +130,12 @@ native return. The emitted audit confirms another 516 fewer periodically clocked
 bits per variant with unchanged public ports. Physical qualification remains open.
 Narrow descriptor/credit state and the dispatcher remain clocked. See the
 [frame-admission contract](docs/frame-admission-contract.md).
+The next credit-removal step requires physical evidence for the complete
+same-edge hold and next-edge decision paths. The physical mapper's width-based
+guard classification is now replaced with explicit reviewed roles and
+per-lane delay chains. The local five-corner audit passes, while measured guard
+maxima expose controller/reset timing work; see the [guard contract](docs/physical-control-guard-contract.md).
+Full controller timing qualification and further clocked-state removal remain open.
 See the [RAM return contract](docs/ram-return-contract.md),
 [program return contract](docs/program-return-contract.md) and
 [remaining-state ledger](docs/async-residual-state.md).

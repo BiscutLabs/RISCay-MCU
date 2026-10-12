@@ -6,6 +6,7 @@ import subprocess
 import tempfile
 import unittest
 from gf180_physical import adapter, sha
+from gf180_control_roles import CONTROL, DATA
 from gf180_constraints import monitors, brace
 from check_gf180_envelopes import strict, run as envelopes
 
@@ -37,12 +38,12 @@ class PhysicalControls(unittest.TestCase):
             self.assertFalse((folder/"result.json").exists())
 
     def test_data_allowance_is_not_a_bank_of_delay_lines(self):
-        c,r=adapter(primitive("ControlGate",WIDTH=278,OP=0,DELAY_FS=20000000,RESET_VALUE=0),0.1)
+        c,r=adapter(primitive("ControlGate",WIDTH=278,OP=0,DELAY_FS=20000000,RESET_VALUE=0),0.1,role=DATA)
         self.assertEqual(sum(x["cell"].endswith("buf_1") for x in c.cells),278)
         self.assertEqual(r["role"],"whole-transform-allowance")
 
     def test_long_guard_has_real_preserved_cells(self):
-        c,r=adapter(primitive("ControlGate",WIDTH=1,OP=0,DELAY_FS=31000000,RESET_VALUE=0),1.4)
+        c,r=adapter(primitive("ControlGate",WIDTH=1,OP=0,DELAY_FS=31000000,RESET_VALUE=0),1.4,role=CONTROL)
         self.assertEqual(sum(x["cell"].endswith("dlyd_1") for x in c.cells),27)
         text=c.verilog("candidate",[])
         self.assertNotIn("#",text); self.assertIn('dont_touch = "yes"',text)

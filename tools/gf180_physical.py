@@ -15,6 +15,7 @@ import math
 from pathlib import Path
 import re
 import shutil
+from gf180_control_roles import CATALOGUE, CONTROL, DATA, resolve_roles
 
 ROOT = Path(__file__).resolve().parents[1]
 SC = "gf180mcu_fd_sc_mcu7t5v0__"
@@ -98,7 +99,7 @@ class Circuit:
         body += [ATTR+c["cell"]+" "+c["name"]+" ("+", ".join(f'.{p}({v})' for p,v in c["pins"].items())+");" for c in self.cells]
         return "\n".join(body)+"\nendmodule\n"
 
-def adapter(p, guard_min_ns):
+def adapter(p, guard_min_ns, *, role=None):
     k=dict(key(p)[1]); model=p["model"].removeprefix("ChiselAsync").removesuffix("_v1")
     c=Circuit(); requirement={"control_max_ns":10}
     # Long guards use GF180's DLYD cell (less area per guaranteed delay than
@@ -129,10 +130,15 @@ def adapter(p, guard_min_ns):
         c.chain(value,9); requirement["control_min_ns"]=1
     elif model=="ControlGate":
         width=k["WIDTH"]; op=k["OP"]
+        if role not in (DATA,CONTROL): raise ValueError("EXPLICIT_CONTROL_ROLE_REQUIRED")
+        if width<1 or not 0<=k["RESET_VALUE"]<(1<<width) or k["DELAY_FS"]<=0:
+            raise ValueError("INVALID_CONTROL_PARAMETERS")
+        if not math.isfinite(guard_min_ns) or guard_min_ns<=0:
+            raise ValueError("INVALID_GUARD_FLOOR")
         if op not in (0,1,2): raise ValueError("UNKNOWN_CONTROL_OPERATION")
-        if width>1 and (op!=0 or k["RESET_VALUE"]!=0): raise ValueError("UNKNOWN_DATA_ALLOWANCE")
-        data=width>1
-        requirement={"role":"whole-transform-allowance" if data else "matched-control-delay",
+        data=role==DATA
+        if data and (op!=0 or k["RESET_VALUE"]!=0): raise ValueError("UNKNOWN_DATA_ALLOWANCE")
+        requirement={"role":role,
                      "data_max_ns" if data else "control_min_ns":k["DELAY_FS"]/1e6}
         nr=c.inv("reset")
         reset_groups={}
@@ -206,6 +212,7 @@ def prepare(export,out,pdk):
     for name,asset in lock["assets"].items():
         verify((ROOT/".tools/gf180-sram"/name).read_bytes(),asset["sha256"])
     manifest,sources,groups=inventory(export)
+    roles=resolve_roles(manifest["design"])
     policy=json.loads((export/"physical-policy.json").read_text())
     if policy["policy_enabled"] is not True: raise ValueError("DISABLED_ESTIMATE_POLICY")
     floor=guard_floor(pdk)
@@ -222,7 +229,8 @@ def prepare(export,out,pdk):
     for index,(k,ps) in enumerate(sorted(groups.items())):
         p=ps[0]
         if passive(p): bymodel[k[0]].append((k,None)); continue
-        circuit,requirements=adapter(p,floor)
+        role=roles[p["rtl_path"]]["role"] if p["rtl_path"] in roles else None
+        circuit,requirements=adapter(p,floor,role=role)
         module=f'riscay_gf180_cell_{index}'
         text=circuit.verilog(module,p["ports"])
         # Internal keeper nets are explicitly declared, never implicit wires.
@@ -231,6 +239,8 @@ def prepare(export,out,pdk):
         circuits.append(text)
         binding=dict(model=k[0],parameters=dict(k[1]),module=module,ports=p["ports"],
             instances=[x["rtl_path"] for x in ps],requirements=requirements,cells=circuit.cells)
+        if role is not None:
+            binding["role_evidence"]={x["rtl_path"]:roles[x["rtl_path"]] for x in ps}
         bindings.append(binding); bymodel[k[0]].append((k,binding))
     for model,variants in sorted(bymodel.items()):
         source=(export/(model+".sv")).read_text(); start=source.index("module "+model)
@@ -259,6 +269,7 @@ def prepare(export,out,pdk):
     write_json(out/"mapping.json",dict(schema="riscay-gf180-mapping-v1",status="mapped-unqualified",
         top="RiscayMcuDigital",variant=policy["variant"],matched_delay_cell="dlyd_1",matched_delay_floor_ns=floor,
         bindings=bindings,inputs={p.name:sha(p) for p in sources},
+        control_roles_sha256=sha(CATALOGUE),
         files_sha256={f:sha(out/f) for f in filelist},
         qualification="PVT, extracted relative timing, pulse/aperture, reset and C-element checks required"))
     return len(bindings)

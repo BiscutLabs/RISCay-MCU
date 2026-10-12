@@ -287,6 +287,13 @@
   changed cells/whole transforms across all five pinned corners, and rerun
   `physical/test` plus mapping/monitor controls after changing physical budgets.
   No standalone-cell, stage or constraint-binding pass implies routed closure.
+  Bind ControlGate intent through the reviewed owner/ID catalogue and exact
+  contract delay-cell references, never bus width. Reject unknown roles,
+  passive active-gate views and tuple-role collisions before mapping. Preserve
+  per-lane control chains and scalar data allowances. Follow
+  `docs/physical-control-guard-contract.md`; local adapter measurements do not
+  close complete custom transforms or controller envelopes. Feed actual guard
+  maxima back into those envelopes without relaxing functional timing oracles.
 - Keep generated RTL, tools, simulator logs and test evidence under ignored
   `.tools/`, `build/` or `target/` directories. Pin dependencies and record limits.
 - Firmware and memory budgets live in `firmware/`; run FirmwareSpec and the
