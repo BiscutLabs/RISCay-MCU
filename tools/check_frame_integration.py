@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-"""Strict frame receipt wiring and original mailbox capture policy.
+"""Strict native frame storage, receipt wiring and descriptor capture policy.
 
 This audits emitted production wiring and returns the validated inlined data/
 load expressions for independent capture monitors. It does not measure timing.
@@ -9,7 +9,7 @@ from collections import Counter
 from functools import lru_cache
 import re
 
-from check_frame_receipt import FIELDS, validate_frame_receipt, frame_receipt_bindings
+from check_frame_receipt import FIELDS, validate_frame_receipt, frame_receipt_bindings, actual_receipt_rtl, _HEADER
 
 
 def require(condition, diagnostic):
@@ -59,7 +59,7 @@ def pins(rtl, instance, model):
 
 def driver(rtl, name, expected):
     un = clean(rtl)
-    matches = re.findall(r"\b(?:wire\s+(?:\[\d+:0\]\s*)?|assign\s+)" +
+    matches = re.findall(r"\b(?:wire\s+(?:\[\d+:0\]\s*)*|assign\s+)" +
                          re.escape(name) + r"\s*=\s*([^;]+);", un)
     require(len(matches) == 1 and compact(matches[0]) == compact(expected), "DRIVER:" + name)
     no_other_writers(un, name, 1)
@@ -102,12 +102,14 @@ def writer_inventory(rtl):
     return bool(re.search(r"\b(?:force|release|alias|bind)\b", un)), counts, partial
 
 
+@lru_cache(maxsize=12)
 def always_blocks(rtl):
     # The pinned emitter marks the outer end; nested ends cannot be mistaken for it.
     return [clean(block) for block in re.findall(
         r"\balways\s*@\(.*?^\s*end\s*//\s*always[^\n]*", rtl, re.S | re.M)]
 
 
+@lru_cache(maxsize=12)
 def statement_tree(text):
     """Parse the emitted if/begin/assignment subset, preserving every condition."""
     text = clean(text); at = 0
@@ -194,6 +196,12 @@ def initial_policy(rtl, values, reset):
 
 
 def state_policy(rtl, values, sensitivity, expected, reset="reset"):
+    return _state_policy(rtl, tuple(values.items()), sensitivity, expected, reset)
+
+
+@lru_cache(maxsize=24)
+def _state_policy(rtl, value_pairs, sensitivity, expected, reset):
+    values = dict(value_pairs)
     names = set(values)
     blocks = [b for b in always_blocks(rtl) if any(re.search(r"\b" + re.escape(n) + r"\s*<=", b) for n in names)]
     require(len(blocks) == 1, "STATE_CLOCK_OWNERS:" + sorted(names)[0])
@@ -214,19 +222,55 @@ def state_policy(rtl, values, sensitivity, expected, reset="reset"):
     initial_policy(rtl, values, reset)
 
 
+def assertion_wrapper_policy(directory, model, raw, label, diagnostic):
+    """Close preprocessing and binding around the actual executable assertion."""
+    un = clean(raw)
+    module = re.search(r"\bmodule\s+" + re.escape(model) + r"_Verification_Assert\s*\(\s*\)\s*;", un)
+    require(module is not None, diagnostic + "_MODULE")
+    header = "".join(f"`ifndef {m}_\n`ifdef {m}\n`define {m}_ (`{m})\n`else\n`define {m}_ 1\n`endif\n`endif\n"
+                     for m in ("STOP_COND", "ASSERT_VERBOSE_COND")) + _HEADER
+    prefix = un[:module.start()]
+    directives = lambda value: [compact(line) for line in value.splitlines() if line.strip().startswith("`")]
+    require(compact(prefix) == compact(header) and directives(prefix) == directives(header), diagnostic + "_HEADER")
+    body = un[module.end():]
+    position = body.find(label)
+    require(position >= 0, diagnostic + "_COUNT")
+    # The assertion must execute under the sole non-synthesis guard. Any extra
+    # wrapper, redefinition, or early closing directive changes its meaning.
+    tokens = list(re.finditer(r"`(?:ifndef|ifdef|elsif|else|endif|define|undef|include)\b[^\n]*", body))
+    before = [m for m in tokens if m.start() < position]
+    after = [m for m in tokens if m.start() > position]
+    require(len(before) == 1 and compact(before[0][0]) == "`ifndefSYNTHESIS" and
+            after and compact(after[0][0]) == "`endif", diagnostic + "_WRAPPER")
+    binding = Path(directory) / "verification" / "assert" / ("layers-" + model + "-Verification-Assert.sv")
+    require(binding.is_file(), diagnostic + "_BIND_FILE")
+    raw_bind = clean(binding.read_text(encoding="utf-8"))
+    guard = "layers_" + model + "_Verification_Assert"
+    child_include = '`include "layers-I2cTarget-Verification-Assert.sv"\n' if model in ("FourPhaseSoc", "ClickSoc") else ""
+    expected = f'`ifndef {guard}\n`define {guard}\n`include "layers-{model}-Verification.sv"\n' + child_include + f'bind {model} {model}_Verification_Assert verification_assert ();\n`endif'
+    require(compact(raw_bind) == compact(expected) and directives(raw_bind) == directives(expected), diagnostic + "_BIND")
+
+
 def epoch_assertion_policy(directory, model, rising, ready_reset):
     path = Path(directory) / "verification" / "assert" / (model + "_Verification_Assert.sv")
     require(path.is_file(), "EPOCH_ASSERTION_FILE")
     raw = path.read_text(encoding="utf-8"); un = clean(raw); prefix = model + "."
-    blocks = re.findall(r"`ifndef\s+SYNTHESIS[^\n]*\n\s*(always\s*@\(.*?^\s*end)\s*//\s*always[^\n]*\n\s*`endif", raw, re.M | re.S)
-    require(len(blocks) == 1, "EPOCH_ASSERTION_GUARD")
-    expected = ("always @(posedge " + prefix + "clock) begin if(" + prefix + rising + "&~" + prefix + ready_reset +
-                "&(&" + prefix + "resetEpoch_epoch))begin if(`ASSERT_VERBOSE_COND_)$error(\"Assertion failed: I2C_RESET_EPOCH_WRAP\\n\");if(`STOP_COND_)$fatal;end ")
-    # Pin the complete block so an extra ancestor condition or disabled assertion
-    # cannot coexist with an apparently intact substring.
-    expected += ("if(" + prefix + "event_layerCapture&~" + prefix + ready_reset + "&" + prefix +
-                 "tailGray==(headGray^4'hC))begin if(`ASSERT_VERBOSE_COND_)$error(\"Assertion failed: I2C_EDGE_RING_OVERFLOW\\n\");if(`STOP_COND_)$fatal;end end")
-    require(compact(clean(blocks[0])) == compact(expected), "EPOCH_ASSERTION_LOGIC")
+    blocks = re.findall(r"`ifndef\s+SYNTHESIS[^\n]*\n(.*?)`endif\s*//\s*not def SYNTHESIS", raw, re.S)
+    require(len(blocks) == 2 and compact(clean(blocks[0])) == "`ifndefENABLE_INITIAL_REG_`defineENABLE_INITIAL_REG_`endif", "EPOCH_ASSERTION_GUARD")
+    def packed(path):
+        return "{" + ",".join(prefix + path + leaf(f) + "_layerCapture" for f, _, _ in reversed(FIELDS)) + "}"
+    banks = "{" + ",".join("{" + packed(f"ca_child_frame_store_banks_{i}_bits_") + "}" for i in reversed(range(4))) + "}"
+    expected = "wire _GEN=" + prefix + "_host_frame_valid_T_layerCapture&~" + prefix + "localReset_layerCapture;"
+    expected += "wire[3:0][336:0]_GEN_0=" + banks + ";always@(posedge " + prefix + "clock)begin "
+    checks = [
+        ("_GEN&" + prefix + "ca_child_frame_store_in_ack_layerCapture!=" + prefix + "ca_child_native_frame_req_layerCapture", "FRAME_STORE_COPY_NOT_READY_AT_A"),
+        ("_GEN&_GEN_0[" + prefix + "frameSlot]!=" + packed("ca_child_native_frame_bits_"), "FRAME_STORE_COPY_IDENTITY_AT_A"),
+        (prefix + rising + "&~" + prefix + ready_reset + "&(&" + prefix + "resetEpoch_epoch)", "I2C_RESET_EPOCH_WRAP"),
+        (prefix + "event_layerCapture&~" + prefix + ready_reset + "&" + prefix + "tailGray==(headGray^4'hC)", "I2C_EDGE_RING_OVERFLOW")]
+    for condition, label in checks:
+        expected += 'if(' + condition + ')begin if(`ASSERT_VERBOSE_COND_)$error("Assertion failed: ' + label + '\\n");if(`STOP_COND_)$fatal;end '
+    expected += "end"
+    require(compact(clean(blocks[1])) == compact(expected), "EPOCH_ASSERTION_LOGIC")
     binding = Path(directory) / "verification" / "assert" / ("layers-" + model + "-Verification-Assert.sv")
     require(binding.is_file(), "EPOCH_ASSERTION_BIND_FILE")
     bind_text = compact(clean(binding.read_text(encoding="utf-8")))
@@ -237,14 +281,50 @@ def epoch_assertion_policy(directory, model, rising, ready_reset):
         expected_macro = f"`ifndef {macro}_\n`ifdef {macro}\n`define {macro}_ (`{macro})\n`else\n`define {macro}_ 1\n`endif\n`endif"
         require(compact(expected_macro) in compact(un) and len(re.findall(r"`define\s+" + macro + r"_\b", un)) == 2,
                 "EPOCH_ASSERTION_MACRO")
+    assertion_wrapper_policy(directory, model, raw, "I2C_RESET_EPOCH_WRAP", "EPOCH_ASSERTION")
+
+
+def overflow_assertion_policy(directory, model):
+    """Check the overflow assertion's actual clock, ancestors and both actions."""
+    path = Path(directory) / "verification" / "assert" / (model + "_Verification_Assert.sv")
+    require(path.is_file(), "OVERFLOW_ASSERTION_FILE")
+    raw = path.read_text(encoding="utf-8")
+    assertion_wrapper_policy(directory, model, raw, "CONTROL_HOST_MAILBOX_OVERFLOW", "OVERFLOW_ASSERTION")
+    blocks = [b for b in always_blocks(raw) if "CONTROL_HOST_MAILBOX_OVERFLOW" in b]
+    require(len(blocks) == 1 and clean(raw).count("CONTROL_HOST_MAILBOX_OVERFLOW") == 1, "OVERFLOW_ASSERTION_COUNT")
+    head = re.match(r"always\s*@\((.*?)\)\s*(.*)", blocks[0], re.S)
+    require(head and compact(head[1]) == "posedge" + model + ".fabric_clock", "OVERFLOW_ASSERTION_CLOCK")
+    calls = []
+    def replace(match):
+        calls.append(match[0])
+        return f"check_call_{len(calls)-1}<=1;"
+    body = re.sub(r'\$error\("[^"\n]*"\);|\$fatal;', replace, head[2])
+    tree = statement_tree(body)
+    index = [i for i, call in enumerate(calls) if "CONTROL_HOST_MAILBOX_OVERFLOW" in call]
+    require(len(index) == 1 and index[0] + 1 < len(calls) and calls[index[0] + 1] == "$fatal;", "OVERFLOW_ASSERTION_ACTIONS")
+    guards = {}
+    def visit(node, path=()):
+        if node[0] == "assign": guards.setdefault(node[1], []).append((path, node[2]))
+        elif node[0] == "sequence":
+            for item in node[1:]: visit(item, path)
+        else:
+            visit(node[2], path + ((node[1], True),)); visit(node[3], path + ((node[1], False),))
+    visit(tree)
+    pred = "~" + model + ".reset&~(~" + model + ".fabric_io_i2c_frame_valid|" + model + ".fabric_hostFrames_io_enq_ready)"
+    for number, macro in ((index[0], "`ASSERT_VERBOSE_COND_"), (index[0] + 1, "`STOP_COND_")):
+        require(guards.get(f"check_call_{number}") == [(((pred, True), (macro, True)), "1")], "OVERFLOW_ASSERTION_LOGIC")
+    for macro in ("STOP_COND", "ASSERT_VERBOSE_COND"):
+        expected = f"`ifndef {macro}_\n`ifdef {macro}\n`define {macro}_ (`{macro})\n`else\n`define {macro}_ 1\n`endif\n`endif"
+        require(compact(expected) in compact(clean(raw)) and len(re.findall(r"`define\s+" + macro + r"_\b", clean(raw))) == 2, "OVERFLOW_ASSERTION_MACRO")
 
 
 def _mailbox_policy(rtl, clock, source):
     """Close every original slot/count transition including its ancestor guards."""
-    fields = [("frame_length", 6), ("frame_overflow", 1)] + [
-        (f"frame_bytes_{i}", 8) for i in range(33)] + [("resetActive", 1), ("programBusy", 1)]
+    fields = [("bank", 2), ("resetActive", 1), ("programBusy", 1)]
     names = {f"fabric_hostFrames_{slot}_{name}" for slot in ("first", "second") for name, _ in fields}
     names.add("fabric_hostFrames_count")
+    inventory = re.findall(r"\breg\s+(?:\[[^;]+?\]\s*)?(fabric_hostFrames_\w+)\b", clean(rtl))
+    require(len(inventory) == len(names) and set(inventory) == names, "MAILBOX_REGISTER_INVENTORY")
     reset = "".join(f"fabric_hostFrames_{slot}_{name}<={width}'h0;"
                     for slot in ("first", "second") for name, width in fields) + "fabric_hostFrames_count<=2'h0;"
     incoming = lambda slot: "".join(f"fabric_hostFrames_{slot}_{name}<={source[name]};" for name, _ in fields)
@@ -281,6 +361,111 @@ def _mailbox_policy(rtl, clock, source):
     return fields
 
 
+def native_bank_integration(directory, root, target, store, heads, tr, sr, sp, rp, tp, gate, pairs):
+    """Close borrowed input, physical bank heads and selected D command routing."""
+    top = root["rtl_path"]; t = target["rtl_path"]; st = store["rtl_path"]
+    qualify = lambda expression: re.sub(r"(?<![\w'])\b[A-Za-z_]\w*\b", lambda match: top + "." + match[0], expression)
+    require(sp.get("reset") == "reset" and sp.get("slot") == "frameSlot" and
+            sp.get("in_ack") == "ca_child_frame_store_in_ack_layerCapture" and
+            sp.get("busy") == "_ca_child_frame_store_busy", "STORE_CONTROL_PINS")
+    for i in range(4):
+        require(sp.get(f"available_{i}") == "", "STORE_AVAILABILITY_PIN:" + str(i))
+    pairs += [(st + ".reset", top + ".reset"), (st + ".slot", t + ".frameSlot"),
+              (t + ".ca_child_frame_store_in_ack_layerCapture", st + ".in_ack"),
+              (t + "._ca_child_frame_store_busy", st + ".busy")]
+    for net in (sp["in_ack"], sp["busy"]): no_other_writers(tr, net)
+    for suffix in ["req"] + ["bits_" + leaf(f) for f, _, _ in FIELDS]:
+        require(sp.get("in_" + suffix) == rp["in_" + suffix], "BORROWED_SOURCE:" + suffix)
+        pairs.append((st + ".in_" + suffix, target["rtl_path"] + "." + rp["in_" + suffix]))
+    command = child(root, "control_command_bridge")
+    click = store["module"].startswith("Click")
+    expected_command = "DecoupledToClick" if click else "DecoupledToFourPhase"
+    require(re.fullmatch(expected_command + r"(?:_[0-9]+)?", command["module"]) and
+            command["reset_domain"] == "root", "COMMAND_OWNER")
+    cp = pins(sr, command["rtl_path"].rsplit(".", 1)[1], command["module"])
+    require(cp.get("clock") == "fabric_clock" and cp.get("reset") == "reset" and
+            cp.get("in_valid") == "fabric_io_controlCommand_valid" and
+            cp.get("in_ready") == "_ca_child_control_command_bridge_in_ready" and
+            cp.get("in_bits_kind") == "fabric_io_controlCommand_bits_kind", "COMMAND_CONTROL_PINS")
+    expected = {
+        "fabric_mmioLaunch": "fabric__mmioLaunch_T&fabric_cpuAvailable&~fabric_hostFrames_io_deq_valid",
+        "fabric_hostHeadValid": "fabric_hostFrames_io_deq_valid&_GEN_12[fabric_hostFrames_first_bank]",
+        "fabric__io_i2c_heads_0_ready_T": gate + "&fabric_hostFrames_io_deq_ready" if gate != "1'h1" else "fabric_hostFrames_io_deq_ready",
+        "fabric_controlBusy": "fabric_controlOutstanding|_ca_child_program_stored_bridge_out_valid|fabric_mmioCommitPending|fabric_resetPending|fabric_haltPending|fabric_hostFrames_io_deq_valid",
+        "fabric_io_controlCommand_valid": "~fabric_controlOutstanding&(_ca_child_program_stored_bridge_out_valid|fabric_mmioCommitPending|fabric_resetPending|fabric_haltPending|fabric_hostHeadValid|fabric_mmioLaunch)",
+        "fabric__27": "fabric_mmioCommitPending&~_ca_child_program_stored_bridge_out_valid",
+        "_GEN_50": "fabric__27|~fabric_hostFrames_io_deq_valid",
+        "fabric_io_controlCommand_bits_kind": "fabric__27?3'h5:_ca_child_program_stored_bridge_out_valid?3'h1:fabric_mmioCommitPending?3'h5:fabric_resetPending?3'h2:fabric_haltPending?3'h3:{~fabric_hostHeadValid,2'h0}",
+    }
+    for name, expression in expected.items():
+        driver(sr, name, expression)
+        pairs.append((top + "." + name, "(" + qualify(expression) + ")"))
+    banks = []
+    for i, head in enumerate(heads):
+        actual, _ = actual_receipt_rtl(head, directory, tr)
+        hp = pins(tr, head["rtl_path"].rsplit(".", 1)[1], actual)
+        require(hp.get("clock") == "clock" and hp.get("reset") == "reset", "HEAD_CLOCK_RESET:" + str(i))
+        pairs += [(head["rtl_path"] + ".clock", top + ".serviceClock"), (head["rtl_path"] + ".reset", top + ".reset")]
+        for suffix in ["req", "ack"] + ["bits_" + leaf(f) for f, _, _ in FIELDS]:
+            require(hp.get("in_" + suffix) == sp.get(f"banks_{i}_" + suffix) and
+                    re.fullmatch(r"\w+", hp.get("in_" + suffix, "")), "BANK_HEAD_PIN:" + str(i) + ":" + suffix)
+            no_other_writers(tr, hp["in_" + suffix])
+            pairs.append((head["rtl_path"] + ".in_" + suffix, st + f".banks_{i}_" + suffix))
+        for suffix in ["ready", "valid"] + ["bits_" + leaf(f) for f, _, _ in FIELDS]:
+            out_net = f"host_heads_{i}_" + suffix
+            require(hp.get("out_" + suffix) == out_net, "HEAD_OUTPUT_PIN:" + str(i) + ":" + suffix)
+            if suffix != "ready": no_other_writers(tr, out_net)
+            if suffix == "ready":
+                selected = f"fabric_hostFrames_first_bank==2'h{i}" if i < 3 else "(&fabric_hostFrames_first_bank)"
+                expression = "fabric__io_i2c_heads_0_ready_T&fabric_hostFrames_io_deq_valid&" + selected
+            elif suffix in ("bits_ingress_resetActive", "bits_ingress_programBusy"):
+                # Context comes from the A descriptor, but the full receipt ABI
+                # remains present and directly bound through the target port.
+                expression = ""
+                pairs.append((t + "." + out_net, head["rtl_path"] + ".out_" + suffix))
+            else:
+                expression = f"_ca_child_i2c_host_heads_{i}_" + suffix
+            require(tp.get(f"host_heads_{i}_" + suffix) == expression, "TOP_HEAD_PIN:" + str(i) + ":" + suffix)
+            if suffix == "ready": pairs.append((head["rtl_path"] + ".out_ready", "(" + qualify(expression) + ")"))
+            if expression and suffix != "ready":
+                no_other_writers(sr, expression)
+                pairs.append((top + "." + expression, head["rtl_path"] + ".out_" + suffix))
+        fields = [f"{st}.banks_{i}_bits_" + leaf(f) for f, _, _ in reversed(FIELDS)]
+        owner = store if click else child(store, f"storage{i}")
+        cells = [c for c in owner.get("primitives", []) if c["id"] == (f"payload{i}" if click else "payload")]
+        require(len(cells) == 1 and cells[0]["model"] == ("ChiselAsyncEventRegister_v1" if click else "ChiselAsyncClosingLatch_v1") and
+                cells[0]["parameters"].get("WIDTH") == "337", "BANK_PAYLOAD_OWNER:" + str(i))
+        payload = cells[0]["rtl_path"]
+        pairs.append((payload + ".q", "{" + ",".join(fields) + "}"))
+        banks.append(dict(index=i, receipt=head["rtl_path"], request=f"{st}.banks_{i}_req", acknowledge=f"{st}.banks_{i}_ack",
+                          data="{" + ",".join(fields) + "}", payload=payload, d=payload + ".d", q=payload + ".q",
+                          capture=payload + (".trigger" if click else ".closed"), copy_ack=st + ".in_ack"))
+    # Exact packed arrays feed one selected head; no byte/epoch truncation or permutation.
+    selected_fields = [("valid", 12)] + [("bits_ingress_frame_length", 13), ("bits_ingress_frame_overflow", 14)] + [
+        (f"bits_ingress_frame_bytes_{i}", 15 + i) for i in range(33)] + [("bits_resetEpoch", 48)]
+    for field, number in selected_fields:
+        expression = "{" + ",".join("{" + f"_ca_child_i2c_host_heads_{i}_" + field + "}" for i in reversed(range(4))) + "}"
+        driver(sr, f"_GEN_{number}", expression)
+        pairs.append((top + f"._GEN_{number}", qualify(expression)))
+    driver(sr, "fabric_io_controlCommand_bits_frame_bytes_0", "_GEN_50?8'h0:_GEN_15[fabric_hostFrames_first_bank]")
+    command_fields = [("length", 6, 13), ("overflow", 1, 14)] + [(f"bytes_{i}", 8, 15 + i) for i in range(33)]
+    for field, width, number in command_fields:
+        select = f"_GEN_{number}[fabric_hostFrames_first_bank]"
+        expression = ("fabric_io_controlCommand_bits_frame_bytes_0" if field == "bytes_0" else
+                      "~fabric__27&fabric_hostFrames_io_deq_valid&" + select if field == "overflow" else
+                      f"_GEN_50?{width}'h0:" + select)
+        require(cp.get("in_bits_frame_" + field) == expression, "COMMAND_FRAME_PIN:" + field)
+        pairs.append((command["rtl_path"] + ".in_bits_frame_" + field, "(" + qualify(expression) + ")"))
+    for field, expression in {
+        "cpuResetActive": "~fabric__27&(cpuResetActive|fabric_hostFrames_io_deq_valid&(fabric_hostFrames_first_resetActive|_GEN_48[fabric_hostFrames_first_bank]!=_ca_child_i2c_host_currentEpoch))",
+        "programBusy": "~fabric__27&(_ca_child_program_access_io_busy|fabric_hostFrames_io_deq_valid&fabric_hostFrames_first_programBusy)"}.items():
+        require(cp.get("in_bits_" + field) == expression, "COMMAND_CONTEXT_PIN:" + field)
+        pairs.append((command["rtl_path"] + ".in_bits_" + field, "(" + qualify(expression) + ")"))
+    return banks, dict(path=command["rtl_path"], clock=command["rtl_path"] + ".clock", reset=command["rtl_path"] + ".reset",
+                       valid=command["rtl_path"] + ".in_valid", ready=command["rtl_path"] + ".in_ready",
+                       kind=command["rtl_path"] + ".in_bits_kind", selected_bank=top + ".fabric_hostFrames_first_bank")
+
+
 def validate_frame_integration(manifest, scopes, directory):
     """Return validated production source/capture paths, or None without I2cTarget."""
     directory = Path(directory); root = manifest["design"]; top = manifest["top"]
@@ -291,12 +476,21 @@ def validate_frame_integration(manifest, scopes, directory):
     require(len(targets) == 1, "TARGET_COUNT"); target = targets[0]
     require(re.fullmatch(r"I2cTarget(?:_[0-9]+)?", target["module"]), "TARGET_MODEL")
     native = child(target, "native"); receipt = child(target, "frame_bridge")
+    store = child(target, "frame_store")
+    heads = [child(target, f"frame_head{i}_bridge") for i in range(4)]
+    ids = [c["id"] for c in target["children"]]
+    require(len(ids) == 8 and set(ids) == {"native", "frame_bridge", "frame_store", "snapshot_bridge"} |
+            {f"frame_head{i}_bridge" for i in range(4)}, "TARGET_INVENTORY")
     publication = child(native, "publication"); snapshot = child(target, "snapshot_bridge")
     click = validate_frame_receipt(receipt); prefix = "Click" if click else "FourPhase"
     require(re.fullmatch(prefix + r"I2c(?:_[0-9]+)?", native["module"]) and
             re.fullmatch(r"I2cPublication(?:_[0-9]+)?", publication["module"]), "NATIVE_OWNERS")
     require(re.fullmatch(prefix + r"ToDecoupled(?:_[0-9]+)?", snapshot["module"]), "SNAPSHOT_OWNER")
-    for node in (target, native, receipt, publication, snapshot): require(node["reset_domain"] == "root", "POR_OWNER")
+    require(re.fullmatch(prefix + r"FrameStore(?:_[0-9]+)?", store["module"]) and
+            type(store.get("capacity")) is int and store["capacity"] == 4, "STORE_OWNER")
+    for h in heads: require(validate_frame_receipt(h) == click, "HEAD_OWNER")
+    for node in (target, native, receipt, publication, snapshot, store, *heads):
+        require(node["reset_domain"] == "root", "POR_OWNER")
     te = {e["id"]: e for e in target["endpoints"]}
     require(len(te) == len(target["endpoints"]) and type(te.get("frame_accept_enable", {}).get("width")) is int and
             te["frame_accept_enable"]["width"] == 1 and
@@ -304,7 +498,9 @@ def validate_frame_integration(manifest, scopes, directory):
     tr = (directory / (target["module"] + ".sv")).read_text(encoding="utf-8")
     nr = (directory / (native["module"] + ".sv")).read_text(encoding="utf-8")
     sr = (directory / (root["module"] + ".sv")).read_text(encoding="utf-8")
-    rp = pins(tr, receipt["rtl_path"].rsplit(".", 1)[1], receipt["module"])
+    receipt_model, _ = actual_receipt_rtl(receipt, directory, tr)
+    rp = pins(tr, receipt["rtl_path"].rsplit(".", 1)[1], receipt_model)
+    sp = pins(tr, store["rtl_path"].rsplit(".", 1)[1], store["module"])
     np = pins(tr, native["rtl_path"].rsplit(".", 1)[1], native["module"])
     pp = pins(nr, publication["rtl_path"].rsplit(".", 1)[1], publication["module"])
     tp = pins(sr, target["rtl_path"].rsplit(".", 1)[1], target["module"])
@@ -324,10 +520,17 @@ def validate_frame_integration(manifest, scopes, directory):
                   (n + ".frame_" + suffix, p + ".frame_" + suffix)]
     for field, _, _ in FIELDS:
         f = leaf(field)
-        output = "_ca_child_frame_bridge_out_bits_" + f if field in ("resetEpoch", "ingress.resetActive") else (
-            "host_frame_bits_" + f.removeprefix("ingress_"))
+        output = ("_ca_child_frame_bridge_out_bits_" + f if field in ("resetEpoch", "ingress.resetActive") else
+                  "host_frame_bits_programBusy" if field == "ingress.programBusy" else
+                  "host_frame_bits_" + f.removeprefix("ingress_"))
         require(rp.get("out_bits_" + f) == output, "FRAME_OUTPUT_PIN:" + f)
         no_other_writers(tr, output)
+        if field.startswith("ingress.frame."):
+            # No clocked client consumes the old payload port. Preserve its
+            # declared ABI and exact source, and require the explicit unused
+            # parent connection instead of accepting a pruned/missing pin.
+            require(tp.get(output) == "", "TOP_UNUSED_FRAME_PIN:" + f)
+            pairs.append((t + "." + output, r + ".out_bits_" + f))
     require(rp.get("out_ready") == "ca_child_frame_bridge_out_ready" and
             rp.get("out_valid") == "_ca_child_frame_bridge_out_valid", "RECEIPT_CONTROL_PINS")
     observed = "localReset_layerCapture" in clean(tr)
@@ -340,14 +543,21 @@ def validate_frame_integration(manifest, scopes, directory):
     for name, value in dict(ca_child_frame_bridge_out_ready="~" + ready_reset + "&frameAcceptEnable",
                            **{rising: "host_resetActive&~resetEpoch_previous"},
                            resetEpoch=rising + "?resetEpoch_epoch+64'h1:resetEpoch_epoch",
-                           host_frame_valid="ca_child_frame_bridge_out_ready&_ca_child_frame_bridge_out_valid",
+                           _host_frame_valid_T_layerCapture="ca_child_frame_bridge_out_ready&_ca_child_frame_bridge_out_valid",
+                           host_frame_valid="_host_frame_valid_T_layerCapture",
+                           host_frameSlot="frameSlot", host_currentEpoch="resetEpoch",
                            host_frame_bits_resetActive="_ca_child_frame_bridge_out_bits_ingress_resetActive|host_resetActive|_ca_child_frame_bridge_out_bits_resetEpoch!=resetEpoch",
-                           host_busy="active_stages_1|start|stop|effects_stages_1|_ca_child_frame_bridge_out_valid|_ca_child_snapshot_bridge_out_valid").items(): driver(tr, name, value)
+                           host_busy="active_stages_1|start|stop|effects_stages_1|_ca_child_frame_bridge_out_valid|_ca_child_snapshot_bridge_out_valid|frameStoreBusy_stages_1").items(): driver(tr, name, value)
     state_policy(tr, {"localReset_release_0": "1'h1", "localReset_release_1": "1'h1"},
                  "posedge clock or posedge reset", "begin if(reset)begin localReset_release_0<=1'h1;localReset_release_1<=1'h1;end else begin localReset_release_0<=1'h0;localReset_release_1<=localReset_release_0;end end")
     state_policy(tr, {"resetEpoch_epoch": "64'h0", "resetEpoch_previous": "1'h0"},
                  "posedge clock or posedge " + local_reset,
                  "begin if(" + local_reset + ")begin resetEpoch_epoch<=64'h0;resetEpoch_previous<=1'h0;end else begin if(" + rising + ")resetEpoch_epoch<=resetEpoch_epoch+64'h1;resetEpoch_previous<=host_resetActive;end end", local_reset)
+    state_policy(tr, {"frameSlot": "2'h0"}, "posedge clock or posedge " + local_reset,
+                 "begin if(" + local_reset + ")frameSlot<=2'h0;else if(_host_frame_valid_T_layerCapture)frameSlot<=frameSlot+2'h1;end", local_reset)
+    state_policy(tr, {"frameStoreBusy_stages_0": "1'h0", "frameStoreBusy_stages_1": "1'h0"},
+                 "posedge clock or posedge " + local_reset,
+                 "begin if(" + local_reset + ")begin frameStoreBusy_stages_0<=1'h0;frameStoreBusy_stages_1<=1'h0;end else begin frameStoreBusy_stages_0<=_ca_child_frame_store_busy;frameStoreBusy_stages_1<=frameStoreBusy_stages_0;end end", local_reset)
     epoch_assertion_policy(directory, target["module"], rising, ready_reset)
     pairs += [(r + ".clock", top + ".serviceClock"),
               (r + ".out_ready", f"(!{t}.localReset_release_1 && {t}.frameAcceptEnable)"),
@@ -402,16 +612,23 @@ def validate_frame_integration(manifest, scopes, directory):
             tp.get("host_programBusy") == host_busy and tp.get("host_busy") == "_ca_child_i2c_host_busy", "TOP_ADMISSION_PINS")
     state_policy(sr, {"fabric_loaderControlPending": "1'h0"}, "posedge fabric_clock or posedge reset",
                  "begin if(reset)fabric_loaderControlPending<=1'h0;else fabric_loaderControlPending<=~fabric__5&(fabric__6?fabric__loaderControlPending_T&fabric__loaderControlPending_T_1&fabric__loaderControlPending_T_3:fabric_loaderControlPending);end")
-    source = {}
-    for field, _, _ in FIELDS:
-        if not field.startswith("ingress."): continue
-        f = leaf(field.removeprefix("ingress."))
+    source = {"bank": "_ca_child_i2c_host_frameSlot"}
+    for f in ("resetActive", "programBusy"):
         net = "_ca_child_i2c_host_frame_bits_" + f
         require(tp.get("host_frame_bits_" + f) == net, "TOP_FRAME_PIN:" + f)
         no_other_writers(sr, net)
-        source[f] = "fabric_hostFrames_io_enq_bits_" + f if f in ("resetActive", "programBusy") else net
+        source[f] = "fabric_hostFrames_io_enq_bits_" + f
         pairs.append((top + "." + net, t + ".host_frame_bits_" + f))
+    require(tp.get("host_frameSlot") == source["bank"] and
+            tp.get("host_currentEpoch") == "_ca_child_i2c_host_currentEpoch", "TOP_STORE_PINS")
+    for net in (source["bank"], "_ca_child_i2c_host_currentEpoch"): no_other_writers(sr, net)
+    pairs += [(top + "." + source["bank"], t + ".frameSlot"),
+              (top + "._ca_child_i2c_host_currentEpoch", t + ".resetEpoch")]
+    require(not re.search(r"\breg\s+(?:\[[^;]+\]\s*)?(?:fabric_hostResetDebt|fabric_hostFrames_(?:first|second)_frame_\w+)\b", clean(sr)), "OLD_CLOCKED_PAYLOAD_OR_DEBT")
+    bank_records, command_record = native_bank_integration(directory, root, target, store, heads, tr, sr,
+                                                           sp, rp, tp, gate, pairs)
     fields = _mailbox_policy(sr, "fabric_clock", source)
+    overflow_assertion_policy(directory, root["module"])
     cells = [cell for cell in publication["primitives"] if cell["id"] == "frame_payload"]
     require(len(cells) == 1 and cells[0]["model"] == "ChiselAsyncEventRegister_v1" and
             cells[0]["parameters"].get("WIDTH") == "337", "PUBLISHER_PAYLOAD")
@@ -426,6 +643,7 @@ def validate_frame_integration(manifest, scopes, directory):
                             d=f"({enq} ? {top}.{source[f]} : {top}.fabric_hostFrames_second_{f})" if slot == "first" else top + "." + source[f])
                        for f, w in fields]
     return dict(top=top, target=t, receipt=r, publication=p, frame_payload=q, source_epoch=r + ".in_bits_resetEpoch",
+                store=store["rtl_path"], frame_slot=t + ".frameSlot", banks=bank_records, command=command_record,
                 current_epoch=t + ".resetEpoch", clock=top + ".fabric_clock", reset=top + ".reset", gate=gate_path,
                 enq=enq, deq=deq, count=top + ".fabric_hostFrames_count", slots=slots, pairs=pairs,
                 reset_context=top + ".fabric_hostFrames_io_enq_bits_resetActive",

@@ -7,6 +7,7 @@ validator sensitivity; production simulation/capture mutations remain separate.
 """
 import argparse
 import copy
+from datetime import datetime, timezone
 import hashlib
 import json
 from pathlib import Path
@@ -15,7 +16,39 @@ import sys
 import unittest
 
 from check_frame_receipt import (validate_frame_receipt, validate_frame_receipt_rtl,
-                                 frame_receipt_bindings, validate_frame_receipts)
+                                 frame_receipt_bindings, validate_frame_receipts, actual_receipt_rtl)
+
+
+class PolicyRunEvidence:
+    """Bind a structural-policy run to unchanged helpers and emitted inputs."""
+    def __init__(self, exports, helpers):
+        self.started = datetime.now(timezone.utc).isoformat()
+        self.command = [sys.executable, *sys.argv]
+        self.cwd = str(Path.cwd().resolve())
+        self.exports = [Path(directory).resolve() for directory in exports]
+        self.helpers = [Path(path).resolve() for path in helpers]
+        self.sources = self.source_inventory()
+        self.before = self.hashes([*self.helpers, *self.sources, Path(sys.executable)])
+
+    def source_inventory(self):
+        return sorted({path.resolve() for directory in self.exports
+                       for path in [*directory.rglob("*.sv"), directory / "contract.json",
+                                    directory / "filelist.f"] if path.is_file()})
+
+    @staticmethod
+    def hashes(paths):
+        return {str(path.resolve()): hashlib.sha256(path.read_bytes()).hexdigest() for path in paths}
+
+    def finish(self):
+        if (self.source_inventory() != self.sources or
+                self.hashes([*self.helpers, *self.sources, Path(sys.executable)]) != self.before):
+            raise AssertionError("POLICY_RUN_INPUT_CHANGED")
+        select = lambda paths: {str(path): self.before[str(path)] for path in paths}
+        return dict(command=self.command, cwd=self.cwd, started_utc=self.started,
+                    finished_utc=datetime.now(timezone.utc).isoformat(),
+                    python=dict(path=str(Path(sys.executable).resolve()),
+                                sha256=self.before[str(Path(sys.executable).resolve())]),
+                    helpers=select(self.helpers), sources=select(self.sources), unchanged=True)
 
 
 def receipt_node(click=False):
@@ -169,10 +202,15 @@ class FrameReceiptPolicyTests(unittest.TestCase):
             receipt = receipt_node(click)
             target = dict(module="I2cTarget", children=[
                 dict(id="native", contract=dict(module=("Click" if click else "FourPhase") + "I2c", children=[])),
-                dict(id="frame_bridge", contract=receipt)])
+                dict(id="frame_bridge", contract=receipt),
+                dict(id="frame_store", contract=dict(module=("Click" if click else "FourPhase") + "FrameStore", children=[])),
+                dict(id="snapshot_bridge", contract=dict(module=("Click" if click else "FourPhase") + "ToDecoupled", children=[]))] + [
+                    dict(id=f"frame_head{i}_bridge", contract=copy.deepcopy(receipt)) for i in range(4)])
             for mutate, error in (
                     (lambda n: n["children"].pop(), "TARGET_INVENTORY"),
                     (lambda n: n["children"].append(n["children"][-1]), "TARGET_INVENTORY"),
+                    (lambda n: n["children"][2]["contract"].update(module="HiddenRTZAdapter"), "TARGET_STORE_OWNER"),
+                    (lambda n: n["children"][4]["contract"].update(module="ClickToDecoupled"), "TARGET_OWNER"),
                     (lambda n: n["children"][1]["contract"].update(module="ClickToDecoupled"), "TARGET_OWNER"),
                     (lambda n: n["children"][1]["contract"].update(module=("FourPhase" if click else "Click") + "FrameReceipt"), "TARGET_OWNER")):
                 bad = copy.deepcopy(target); mutate(bad)
@@ -180,36 +218,42 @@ class FrameReceiptPolicyTests(unittest.TestCase):
                     validate_frame_receipts(dict(design=bad), Path("unused"))
 
 
-def actual_rtl_controls(directory):
+def actual_rtl_controls(directory, ordinal=0, saved=None):
     """Mutate real emitted text without weakening its expected policy."""
     directory = Path(directory).resolve()
     manifest_path = directory / "contract.json"
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))["manifest"]
     found = []
 
-    def visit(node):
+    def visit(node, parent=None):
         if re.fullmatch(r"(?:FourPhase|Click)FrameReceipt(?:_[0-9]+)?", node.get("module", "")):
-            found.append(node)
-        for child in node.get("children", []): visit(child["contract"])
+            found.append((node, parent))
+        for child in node.get("children", []): visit(child["contract"], node)
 
     visit(manifest["design"])
-    if len(found) != 1:
-        raise AssertionError("Expected one actual receipt in " + str(directory))
-    node = found[0]
+    if len(found) not in (1, 5) or ordinal >= len(found):
+        raise AssertionError("Expected one standalone or five production receipts in " + str(directory))
+    node, parent = found[ordinal]
+    parent_rtl = (directory / (parent["module"] + ".sv")).read_text(encoding="utf-8") if parent else None
+    actual, _ = actual_receipt_rtl(node, directory, parent_rtl)
     click = validate_frame_receipt(node)
-    rtl_path = directory / (node["module"] + ".sv")
+    rtl_path = directory / (actual + ".sv")
     original = rtl_path.read_text(encoding="utf-8")
     original_bytes = rtl_path.read_bytes()
     validate_frame_receipts(manifest, directory)
-    result = dict(directory=str(directory), module=node["module"],
+    result = dict(directory=str(directory), module=node["module"], actual_module=actual, receipt=node["rtl_path"],
                   rtl_sha256=hashlib.sha256(original_bytes).hexdigest(),
                   contract_sha256=hashlib.sha256(manifest_path.read_bytes()).hexdigest(),
                   baseline="PASS", cases={})
+    if saved is not None:
+        saved = Path(saved).resolve() / node["rtl_path"].rsplit(".", 1)[1]
+        saved.mkdir(parents=True, exist_ok=True)
 
     def check(label, mutated, error):
         if mutated == original: raise AssertionError("Mutation was not applied: " + label)
         try:
-            validate_frame_receipt_rtl(node, mutated)
+            normalized = re.sub(r"\bmodule\s+" + re.escape(actual) + r"\s*\(", "module " + node["module"] + " (", mutated)
+            validate_frame_receipt_rtl(node, normalized)
         except ValueError as caught:
             if str(caught) != "FRAME_RECEIPT_" + error:
                 raise AssertionError((label, error, str(caught))) from caught
@@ -217,6 +261,12 @@ def actual_rtl_controls(directory):
             raise AssertionError("Undetected actual RTL mutation: " + label)
         result["cases"][label] = dict(expected="FRAME_RECEIPT_" + error,
                                       rtl_sha256=hashlib.sha256(mutated.encode()).hexdigest(), status="PASS")
+        if saved is not None:
+            dest = saved / label / (actual + ".sv")
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            dest.write_text(mutated, encoding="utf-8")
+            result["cases"][label].update(source=str(dest),
+                                          sha256=hashlib.sha256(dest.read_bytes()).hexdigest())
 
     def replace(label, old, new, error, count=1):
         if original.count(old) != count: raise AssertionError((label, "emitter shape", original.count(old)))
@@ -290,13 +340,21 @@ if __name__ == "__main__":
     parser.add_argument("--out", type=Path)
     args, unit_args = parser.parse_known_args()
     if bool(args.export) != bool(args.out): parser.error("--export and --out must be supplied together")
+    evidence = PolicyRunEvidence(args.export, [Path(__file__), Path(__file__).with_name("check_frame_receipt.py")])
     tests = unittest.main(argv=[sys.argv[0], *unit_args], exit=False)
     if not tests.result.wasSuccessful(): raise SystemExit(1)
     if args.export:
-        results = [actual_rtl_controls(directory) for directory in args.export]
+        results = []
+        for directory in args.export:
+            saved = args.out.parent / (args.out.stem + "-mutants") / directory.name
+            first = actual_rtl_controls(directory, saved=saved)
+            results.append(first)
+            if first["receipt"].endswith("ca_child_frame_bridge"):
+                results.extend(actual_rtl_controls(directory, i, saved=saved) for i in range(1, 5))
         if {r["module"].split("FrameReceipt")[0] for r in results} != {"FourPhase", "Click"}:
             raise AssertionError("Actual receipt controls require both native variants")
         report = dict(schema="riscay-frame-receipt-policy-controls-v1", status="PASS", exports=results,
+                      attestation=evidence.finish(),
                       qualification="emitted-RTL validator controls; not simulation or physical qualification")
         args.out.parent.mkdir(parents=True, exist_ok=True)
         args.out.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")

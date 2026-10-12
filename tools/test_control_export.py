@@ -22,17 +22,30 @@ class ControlBackgroundTest(unittest.TestCase):
             manifest = {"top": top, "design": {"children": [{"id": "control", "contract": {
                 "module": "ClickControl" if click else "FourPhaseControl",
                 "children": [{"id": "join", "contract": {"children": children}}]}}]}}
+            store_prefix = top + ".ca_child_i2c.ca_child_frame_store"
+            banks = [{"id": f"payload{i}" if click else "payload",
+                "model": "ChiselAsyncEventRegister_v1" if click else "ChiselAsyncClosingLatch_v1",
+                "rtl_path": store_prefix + (f".ca_primitive_payload{i}" if click else
+                    f".ca_child_storage{i}.ca_primitive_payload"),
+                "ports": [{"name": "q", "width": 337, "direction": "output"}]} for i in range(4)]
+            store = {"module": "ClickFrameStore" if click else "FourPhaseFrameStore"}
+            if click:
+                store["primitives"] = banks
+            else:
+                store["children"] = [{"id": f"storage{i}", "contract": {"primitives": [bank]}}
+                                     for i, bank in enumerate(banks)]
+            manifest["design"]["children"].append({"id": "i2c", "contract": {
+                "children": [{"id": "frame_store", "contract": store}]}})
             scopes = {top: {"registers": {"fabric_housekeepingState_now": 32}},
                       top + ".ca_child_request_bridge": {"registers": {"data_address": 32}}}
             registers = [("reset", 1), ("fabric_housekeepingState_now", 32), ("fabric_hostFrames_count", 2),
                          ("fabric_mmioCommitPending", 1), ("fabric_mmioCommit_applicationWritable", 1),
-                         ("fabric_hostFrames_first_frame_length", 6),
-                         ("fabric_hostFrames_first_frame_overflow", 1)] + [
-                         (f"fabric_hostFrames_first_frame_bytes_{i}", 8) for i in range(33)]
+                         ("fabric_hostFrames_first_bank", 2)]
             drivers = [(top + "." + name, width) for name, width in registers] + [
                 (top + ".ca_child_request_bridge.data_address", 32),
                 (prefix + ".ca_child_" + left + ".ca_primitive_payload.q", 337),
-                (prefix + ".ca_child_" + right + ".ca_primitive_payload.q", 379)]
+                (prefix + ".ca_child_" + right + ".ca_primitive_payload.q", 379)] + [
+                (bank["rtl_path"] + ".q", 337) for bank in banks]
             prelude = f'''module ContractProbe; timeunit 1ns; timeprecision 1ps;
 reg [98:0] ones_0=0, zeros_0=0;
 task check; integer i; begin
@@ -61,6 +74,9 @@ force {top}.reset = 1'b1; #1;
                     (augmented, False, f"CONTRACT_PROBES_PASS:{count}"),
                     (augmented, True, "BINDING_MISMATCH")):
                 declarations = "\n".join(f"reg [{width-1}:0] {name}=0;" for name, width in registers)
+                bank_declarations = "\n".join(
+                    f"Payload #(337) ca_primitive_payload{i}();" if click else
+                    f"Storage #(337) ca_child_storage{i}();" for i in range(4))
                 rtl = f'''
 module Payload #(parameter W=1); reg [W-1:0] q=0; endmodule
 module Storage #(parameter W=1); Payload #(W) ca_primitive_payload(); endmodule
@@ -69,9 +85,12 @@ Storage #(337) ca_child_{left}(); Storage #(379) ca_child_{right}();
 endmodule
 module Control; Join ca_child_join(); endmodule
 module Request; reg [31:0] data_address=0; endmodule
+module FrameStore; {bank_declarations} endmodule
+module I2c; FrameStore ca_child_frame_store(); endmodule
 module {top};
 {declarations}
 Control ca_child_control(); Request ca_child_request_bridge();
+I2c ca_child_i2c();
 wire [378:0] c=ca_child_control.ca_child_join.ca_child_{right}.ca_primitive_payload.q;
 wire [336:0] s=ca_child_control.ca_child_join.ca_child_{left}.ca_primitive_payload.q;
 wire host=c[378:376]==0;

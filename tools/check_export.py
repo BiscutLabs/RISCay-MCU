@@ -32,12 +32,14 @@ from check_application_reset import validate_application_reset, persistent_reset
 from check_ram_source_export import ARM_PATH, RETIRE_PATH, validate_ram_source, ram_source_bindings, ram_source_probe
 from check_program_source_export import PROGRAM_PATHS, validate_program_source, program_source_bindings, program_source_probe, validate_program_receipts
 from check_frame_receipt import validate_frame_receipts
+from check_frame_store import validate_frame_stores, validate_frame_store_metadata, timing_spec as frame_store_timing
 from check_frame_integration import frame_receipt_probe
 from check_publication_source_export import PATHS as PUBLICATION_PATH_TABLE, validate_publication_source, publication_source_bindings, publication_source_probe, publication_recovery_background
 from check_recovery_return_export import (PATHS as RECOVERY_RETURN_PATH_TABLE,validate_recovery_return,
     recovery_return_bindings,validate_return_receipts)
 PUBLICATION_PATHS=tuple(p[1] for p in PUBLICATION_PATH_TABLE)
 RECOVERY_RETURN_PATHS=tuple(p[1] for p in RECOVERY_RETURN_PATH_TABLE)
+FRAME_STORE_PATHS=tuple(frame_store_timing(click)[0]["logic"] for click in (False,True))
 
 
 def sram_array_shapes(contents, scopes):
@@ -276,13 +278,29 @@ def control_background(source: str, manifest: dict, scopes: dict, checks: int):
     for value in walk(32):
         force(now, 32, value); check()
     extra.append(header)
-    # Frame payload selection requires a nonempty mailbox, whose count is wide.
+    # Frame payloads now live in the four native banks. Keep the nonempty
+    # descriptor context and select every bank while walking its complete
+    # retained frame, including epoch and source context. Never force a head
+    # endpoint or the combinational command mux instead of its actual storage.
     force(top + ".fabric_hostFrames_count", 2, 1)
-    for name, width in [("length", 6), ("overflow", 1)] + [(f"bytes_{i}", 8) for i in range(33)]:
-        path = top + ".fabric_hostFrames_first_frame_" + name
-        for value in walk(width):
-            force(path, width, value); check()
-        force(path, width, 0)
+    targets = [c["contract"] for c in root.get("children", []) if c["id"] == "i2c"]
+    stores = [c["contract"] for target in targets for c in target.get("children", []) if c["id"] == "frame_store"]
+    if len(targets) != 1 or len(stores) != 1 or not re.fullmatch(
+            ("Click" if click else "FourPhase") + r"FrameStore(?:_\d+)?", stores[0]["module"]):
+        raise ValueError("CONTROL_PROBE_FRAME_STORE_OWNER")
+    store = stores[0]
+    for bank in range(4):
+        cells = ([p for p in store.get("primitives", []) if p["id"] == "payload" + str(bank)] if click else
+                 [p for child in store.get("children", []) if child["id"] == "storage" + str(bank)
+                  for p in child["contract"].get("primitives", []) if p["id"] == "payload"])
+        if len(cells) != 1 or cells[0]["model"] != ("ChiselAsyncEventRegister_v1" if click else "ChiselAsyncClosingLatch_v1") or \
+                {"name": "q", "width": 337, "direction": "output"} not in cells[0].get("ports", []):
+            raise ValueError("CONTROL_PROBE_FRAME_STORE_PAYLOAD")
+        force(top + ".fabric_hostFrames_first_bank", 2, bank)
+        path = cells[0]["rtl_path"] + ".q"
+        for value in walk(337):
+            force(path, 337, value); check()
+        force(path, 337, 0)
     extra.append(header)
     force(top + ".fabric_mmioCommitPending", 1, 1)
     force(top + ".fabric_mmioCommit_applicationWritable", 1, 1); check()
@@ -316,6 +334,72 @@ def control_background(source: str, manifest: dict, scopes: dict, checks: int):
     position = coverage[0].start()
     result = source[:position] + "".join(extra) + source[position:]
     return result.replace(completion, f"CONTRACT_PROBES_PASS:{count}"), count
+
+
+def frame_head_background(source: str, manifest: dict, scopes: dict, checks: int):
+    """Exercise native-bank idle and selected Host dispatch from retained sources.
+
+    A bit walk cannot set every bit of a four-bit idle guard, or combine a
+    nonempty descriptor, observed head and running work gate. Keep the original
+    campaigns, comparisons and every activity requirement; force no endpoint.
+    """
+    top = manifest.get("top")
+    if top not in ("FourPhaseSoc", "ClickSoc"):
+        return source, checks
+    click = top == "ClickSoc"
+    targets = [c["contract"] for c in manifest["design"].get("children", []) if c["id"] == "i2c"]
+    if len(targets) != 1:
+        raise ValueError("FRAME_HEAD_PROBE_OWNER")
+    children = targets[0].get("children", [])
+    def owner(identity, family):
+        found = [c["contract"] for c in children if c["id"] == identity]
+        if len(found) != 1 or not re.fullmatch(("Click" if click else "FourPhase") + family + r"(?:_\d+)?", found[0]["module"]):
+            raise ValueError("FRAME_HEAD_PROBE_OWNER")
+        return found[0]
+    store = owner("frame_store", "FrameStore")
+    heads = [owner(f"frame_head{i}_bridge", "FrameReceipt") for i in range(4)]
+    anchor = f"initial begin\nforce {top}.reset = 1'b1; #1;\n"
+    if source.count(anchor) != 1:
+        raise ValueError("FRAME_HEAD_PROBE_SHAPE")
+    start = source.index(anchor) + len(anchor)
+    end = source.index("\n#1;\n", start) + len("\n#1;\n")
+    header = source[start:end]
+    coverage = list(re.finditer(r"^if \(ones_\d+ !==.*INACTIVE_ENDPOINT:.*$", source, re.M))
+    marker = f"CONTRACT_PROBES_PASS:{checks}"
+    if not coverage or source.count(marker) != 1:
+        raise ValueError("FRAME_HEAD_PROBE_SHAPE")
+    extra, steps = [], 0
+    def force(path, width, value, primitive=False):
+        parent, name = path.rsplit(".", 1)
+        if ((not primitive and scopes.get(parent, {}).get("registers", {}).get(name) != width) or
+                f"force {path} = {width}'h0;" not in header):
+            raise ValueError("FRAME_HEAD_PROBE_DRIVER")
+        extra.append(f"force {path} = {width}'h{value:x};\n")
+    def check():
+        nonlocal steps
+        extra.append("#1; check;\n"); steps += 1
+    if not click:
+        guards = [p for p in store.get("primitives", []) if p["id"] == "return_guard"]
+        if len(guards) != 1 or guards[0]["model"] != "ChiselAsyncControlGate_v1" or guards[0]["parameters"] != {
+                "WIDTH": "4", "OP": "0", "DELAY_FS": "32000000", "RESET_VALUE": "0"} or \
+                {"name": "q", "width": 4, "direction": "output"} not in guards[0]["ports"]:
+            raise ValueError("FRAME_HEAD_PROBE_RETURN_GUARD")
+        extra.append(header)
+        force(guards[0]["rtl_path"] + ".q", 4, 15, primitive=True); check()
+    for bank, head in enumerate(heads):
+        extra.append(header)
+        # Ungated configurations have an already validated constant-running
+        # connection and no gate storage. A present gate must still be 1 bit.
+        if "gate_enabled" in scopes.get(top, {}).get("registers", {}):
+            force(top + ".gate_enabled", 1, 1)
+        force(top + ".fabric_hostFrames_count", 2, 1)
+        force(top + ".fabric_hostFrames_first_bank", 2, bank)
+        force(head["rtl_path"] + ".requestSync", 1, 1)
+        check()
+    count = checks + steps * len(coverage)
+    position = coverage[0].start()
+    result = source[:position] + "".join(extra) + source[position:]
+    return result.replace(marker, f"CONTRACT_PROBES_PASS:{count}"), count
 
 
 def i2c_background(source: str, manifest: dict, scopes: dict, checks: int):
@@ -831,6 +915,11 @@ def validate_fabric_path(node, timing):
     primitive, elaborated pin, endpoint mapping and endpoint activity afterwards.
     """
     logic = timing.get("logic")
+    if logic in FRAME_STORE_PATHS:
+        validate_frame_store_metadata(node)
+        if timing != frame_store_timing(node['module'].startswith('Click'))[0]:
+            raise ValueError("FRAME_STORE_PATH_BINDING")
+        return
     if logic in PROGRAM_RETURN_PATHS:
         validate_program_return(node,resolved=True)
         return
@@ -897,7 +986,7 @@ def validate_fabric_path(node, timing):
 
 def validate_native_click(manifest):
     """A Click export must remain native throughout its async hierarchy."""
-    if manifest["top"] not in ("ClickSoc", "ClickCore", "ClickFabric", "ClickControl", "ClickTelemetry", "ClickSupervisor", "ClickElapsed", "ClickSample", "ClickSram", "ClickI2c", "ClickSpiAdc", "ClickHousekeeping", "ClickCompletion", "ClickAdmission", "ClickRamSource", "ClickProgramSource", "ClickPublicationSource"):
+    if manifest["top"] not in ("ClickSoc", "ClickCore", "ClickFabric", "ClickControl", "ClickTelemetry", "ClickSupervisor", "ClickElapsed", "ClickSample", "ClickSram", "ClickI2c", "ClickSpiAdc", "ClickHousekeeping", "ClickCompletion", "ClickAdmission", "ClickRamSource", "ClickProgramSource", "ClickPublicationSource", "ClickFrameStore"):
         return
     def nodes(node):
         yield node
@@ -964,6 +1053,30 @@ def spi_program_probe(source, manifest, scopes):
 
 def fabric_path_bindings(node, timing):
     """Actual mux/storage pin comparisons added to the unchanged library probe."""
+    if timing.get("logic") in FRAME_STORE_PATHS:
+        click=validate_frame_store_metadata(node,resolved=True)
+        endpoints={e['id']:e['rtl_path'] for e in node['endpoints']}
+        cells={p['id']:p['rtl_path'] for p in node['primitives']}
+        if not click:
+            return [(endpoints['route_data'],cells['data_delay']+'.q'),
+                    (endpoints['route_data'],cells['route']+'.d'),
+                    (endpoints['slot'],cells['data_delay']+'.a'),
+                    (endpoints['route_capture'],cells['request_delay']+'.q'),
+                    (endpoints['route_capture'],cells['route']+'.trigger'),
+                    (endpoints['route_value'],cells['route']+'.q'),
+                    (endpoints['in_request'],cells['request_delay']+'.a')]
+        cat=lambda values:'{'+','.join(values)+'}'
+        state=cat([cells[k+str(i)]+'.q' for i in reversed(range(4)) for k in ('payload','phase')])
+        data=cat([cells[k+str(i)]+'.d' for i in reversed(range(4)) for k in ('payload','phase')])
+        result=[(endpoints['register_data'],cells['data_delay']+'.q'),(endpoints['register_data'],data),
+                (endpoints['captured'],state),
+                (endpoints['sources'],cat([endpoints['slot'],endpoints['in_data'],state])),
+                (endpoints['capture_event'],cells['capture']+'.q'),
+                (endpoints['in_request'],cells['request_delay']+'.a'),
+                (endpoints['in_acknowledge'],cells['acknowledge_guard']+'.q')]
+        result += [(endpoints['capture_event'],cells[k]+'.trigger') for k in
+                   [kind+str(i) for i in range(4) for kind in ('payload','phase')]+['accepted_phase']]
+        return result
     if timing.get("logic") in PROGRAM_RETURN_PATHS:
         return program_return_bindings(node,resolved=True)
     if timing.get("logic") in RAM_RETURN_PATHS:
@@ -1017,6 +1130,8 @@ def fabric_checker_source(source):
     extra = (anchor[:-1] + f', {BD_FABRIC_PATH!r}: (["reply"], "data_delay", "mux_sources", "mux_result"),'
              + f' {CLICK_FABRIC_PATH!r}: ([], "data_delay", "reply_sources", "register_data"),'
              + f' {I2C_PROJECTION_PATH!r}: ([], "data_delay", "sources", "register_data"),'
+             + ','.join(f'{t["logic"]!r}: ([], "data_delay", {t["source"]!r}, {t["sink"]!r})'
+                        for t in (frame_store_timing(False)[0],frame_store_timing(True)[0]))+','
              + f' {BD_COMPLETION_PATH!r}: (["reply"], "data_delay", "result_sources", "result"),'
              + f' {CLICK_COMPLETION_PATH!r}: ([], "data_delay", "result_sources", "register_data"),'
              + f' {ARM_PATH!r}: ([], "arm_data_delay", "reserved", "arm_data"),'
@@ -1035,7 +1150,7 @@ def fabric_checker_source(source):
     if source.count(anchor) != 1:
         raise ValueError("MCU_FABRIC_CHECKER_SHAPE_CHANGED")
     source = source.replace(anchor,
-        f'if timing["logic"] in ({BD_FABRIC_PATH!r}, {CLICK_FABRIC_PATH!r}, {I2C_PROJECTION_PATH!r}, {BD_COMPLETION_PATH!r}, {CLICK_COMPLETION_PATH!r}, {ARM_PATH!r}, {RETIRE_PATH!r}, {PROGRAM_PATHS[0]!r}, {PROGRAM_PATHS[1]!r}, {PROGRAM_PATHS[2]!r},'+','.join(map(repr,PUBLICATION_PATHS+RECOVERY_RETURN_PATHS+RAM_RETURN_PATHS+PROGRAM_RETURN_PATHS))+'):\n'
+        f'if timing["logic"] in ({BD_FABRIC_PATH!r}, {CLICK_FABRIC_PATH!r}, {I2C_PROJECTION_PATH!r}, {BD_COMPLETION_PATH!r}, {CLICK_COMPLETION_PATH!r}, {ARM_PATH!r}, {RETIRE_PATH!r}, {PROGRAM_PATHS[0]!r}, {PROGRAM_PATHS[1]!r}, {PROGRAM_PATHS[2]!r},'+','.join(map(repr,PUBLICATION_PATHS+RECOVERY_RETURN_PATHS+RAM_RETURN_PATHS+PROGRAM_RETURN_PATHS+FRAME_STORE_PATHS))+'):\n'
         '                    pairs = fabric_path_bindings(node, timing)\n'
         '                el' + anchor)
     # A mixed-reset raw response is not a same-reset library channel. Its
@@ -1046,7 +1161,10 @@ def fabric_checker_source(source):
     source = source.replace(anchor,
         '        if re.fullmatch(r"(?:FourPhase|Click)(?:Ram|Program)Return(?:_[0-9]+)?", node["module"]):\n'
         '            value = endpoint_by_id["response_data"]["source"]\n'
-        '            layouts["response_data"] = [{"source": value+".error", "lsb": 0, "width": 1}, {"source": value+".data", "lsb": 1, "width": 32}]\n' + anchor)
+        '            layouts["response_data"] = [{"source": value+".error", "lsb": 0, "width": 1}, {"source": value+".data", "lsb": 1, "width": 32}]\n'
+        '        if re.fullmatch(r"(?:FourPhase|Click)FrameStore(?:_[0-9]+)?", node["module"]):\n'
+        '            value = endpoint_by_id["available"]["source"]\n'
+        '            layouts["available"] = [{"source": value+f"[{i}]", "lsb": i, "width": 1} for i in range(4)]\n' + anchor)
     # BD's captured-word arm uses the explicitly checked request_guard. Keep
     # every original budget comparison and validate its complete wiring above.
     anchor = 'request = next((p for p in budget_owner["primitives"] if p["id"] == "request_delay"), None)'
@@ -1235,11 +1353,13 @@ def main() -> None:
         validate_application_reset(manifest,scopes,top_rtl)
         validate_program_receipts(manifest,args.directory)
         validate_frame_receipts(manifest,args.directory)
+        validate_frame_stores(manifest,args.directory,resolved=True)
         validate_return_receipts(manifest,args.directory,scopes)
         source, count = original_probe(manifest, scopes, paired)
         source = spi_program_probe(source, manifest, scopes)
         source, count = register_file_background(source, manifest, count)
         source, count = control_background(source, manifest, scopes, count)
+        source, count = frame_head_background(source, manifest, scopes, count)
         source, count = i2c_background(source, manifest, scopes, count)
         source, count = sram_background(source, manifest, scopes, count)
         source, count = service_background(source, manifest, scopes, count)

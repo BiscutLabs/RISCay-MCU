@@ -43,6 +43,12 @@ object ControlToken {
 object ControlKind {
   val Host = 0; val Stored = 1; val ResetApplication = 2; val Halt = 3; val Mmio = 4; val MmioCommit = 5
 }
+class ControlDescriptor extends Bundle {
+  val bank = UInt(2.W)
+  val resetActive = Bool()
+  val programBusy = Bool()
+}
+
 class ControlIngress extends Bundle {
   val frame = new HostFrame
   val resetActive = Bool(); val programBusy = Bool()

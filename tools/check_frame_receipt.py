@@ -234,26 +234,61 @@ reg requestMeta; reg requestSync; reg acknowledge; wire in_ack_0 = acknowledge;
         raise ValueError("FRAME_RECEIPT_PREPROCESSOR_LINES")
 
 
+def actual_receipt_rtl(node, directory, parent_rtl=None):
+    """Resolve an exact parent instance after emitter module deduplication."""
+    validate_frame_receipt(node)
+    module = node["module"]
+    actual = module
+    if parent_rtl is not None:
+        instance = node["rtl_path"].rsplit(".", 1)[1]
+        raw = re.sub(r"/\*.*?\*/|//[^\n]*", "", parent_rtl, flags=re.S)
+        matches = re.findall(r"\b(\w+)\s+" + re.escape(instance) + r"\s*\(", raw)
+        if len(matches) != 1:
+            raise ValueError("FRAME_RECEIPT_INSTANCE")
+        actual = matches[0]
+        expected = re.sub(r"_[0-9]+$", "", module)
+        if re.fullmatch(re.escape(expected) + r"(?:_[0-9]+)?", actual) is None:
+            raise ValueError("FRAME_RECEIPT_INSTANCE_OWNER")
+    path = Path(directory) / (actual + ".sv")
+    if not path.is_file():
+        raise ValueError("FRAME_RECEIPT_RTL_FILE")
+    raw = path.read_text(encoding="utf-8")
+    normalized, count = re.subn(r"\bmodule\s+" + re.escape(actual) + r"\s*\(",
+                                "module " + module + " (", raw)
+    if count != 1:
+        raise ValueError("FRAME_RECEIPT_MODULE_DECLARATION")
+    validate_frame_receipt_rtl(node, normalized)
+    return actual, raw
+
+
 def validate_frame_receipts(manifest, directory):
-    """Validate every receipt and require its presence under every I2cTarget."""
+    """Close the original receipt and all four native-bank head receipts."""
     directory = Path(directory)
 
-    def visit(node):
+    def visit(node, parent_rtl=None):
         module = node.get("module", "")
         if module.startswith(("FourPhaseFrameReceipt", "ClickFrameReceipt")):
-            validate_frame_receipt(node)
-            validate_frame_receipt_rtl(node, (directory / (module + ".sv")).read_text(encoding="utf-8"))
+            actual_receipt_rtl(node, directory, parent_rtl)
         if re.fullmatch(r"I2cTarget(?:_[0-9]+)?", module):
             children = node.get("children", [])
-            native = [c["contract"] for c in children if c.get("id") == "native"]
-            receipts = [c["contract"] for c in children if c.get("id") == "frame_bridge"]
-            if (len(native) != 1 or len(receipts) != 1 or not re.fullmatch(
-                    r"(?:FourPhase|Click)I2c(?:_[0-9]+)?", native[0].get("module", ""))):
+            ids = [c.get("id") for c in children]
+            expected_ids = {"native", "frame_bridge", "frame_store", "snapshot_bridge"} | {
+                f"frame_head{i}_bridge" for i in range(4)}
+            if len(ids) != len(expected_ids) or set(ids) != expected_ids:
                 raise ValueError("FRAME_RECEIPT_TARGET_INVENTORY")
-            required = ("Click" if native[0]["module"].startswith("Click") else "FourPhase") + "FrameReceipt"
-            if not re.fullmatch(required + r"(?:_[0-9]+)?", receipts[0].get("module", "")):
-                raise ValueError("FRAME_RECEIPT_TARGET_OWNER")
-        for child in node.get("children", []):
-            visit(child["contract"])
+            owners = {c["id"]: c["contract"].get("module", "") for c in children}
+            if re.fullmatch(r"(?:FourPhase|Click)I2c(?:_[0-9]+)?", owners["native"]) is None:
+                raise ValueError("FRAME_RECEIPT_TARGET_INVENTORY")
+            prefix = "Click" if owners["native"].startswith("Click") else "FourPhase"
+            for name in ["frame_bridge"] + [f"frame_head{i}_bridge" for i in range(4)]:
+                if re.fullmatch(prefix + r"FrameReceipt(?:_[0-9]+)?", owners[name]) is None:
+                    raise ValueError("FRAME_RECEIPT_TARGET_OWNER")
+            if re.fullmatch(prefix + r"FrameStore(?:_[0-9]+)?", owners["frame_store"]) is None:
+                raise ValueError("FRAME_RECEIPT_TARGET_STORE_OWNER")
+        for item in node.get("children", []):
+            ch = item["contract"]
+            parent = ((directory / (module + ".sv")).read_text(encoding="utf-8")
+                      if re.fullmatch(r"(?:FourPhase|Click)FrameReceipt(?:_[0-9]+)?", ch.get("module", "")) else None)
+            visit(ch, parent)
 
     visit(manifest["design"])

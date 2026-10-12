@@ -1,5 +1,45 @@
 # Build and test
 
+## Native frame payload and epoch — digitally verified 2026-10-12
+
+Substep 11a2a uses separate four-bank native stores and five-bit head receipts,
+with the original completed-frame offer/admission/ACK frontier unchanged. Four
+physical banks retain two logical credits. The raw 64-bit epoch reaches actual
+Host dispatch, replacing queued reset debt. Narrow descriptors/Q, tail and
+clocked dispatch remain temporary. The emitted audit against `a0e2d1a` confirms
+516 fewer periodically clocked RTL bits per variant and unchanged 34-port public
+tops; this is not total storage, mapped area/power or physical timing evidence.
+
+Evidence is under `build/async-host-admission-payload-migration/`. The current
+focused cohort passes 68 cases in five suites, including 12 new clockless bank
+cases and six added real-admission cases. All original FrameAdmission case
+oracles and deadlines remain. The independent design review found and fixed a
+Host/MMIO priority gap while a queued descriptor waits for its new head receipt.
+The frozen full regression passed 507 verification cases in 49 suites and both
+physical-policy cases. Five subsequent port-preservation, metadata-alias and
+timing-monitor repairs passed the final 68-case affected rerun. All 364 Python
+tests pass with unchanged tools. The final native-store campaign passes 124
+positive cases and 75 exact-fatal controls; source-stop/wake passes 16 and four;
+composed admission/capture passes 260 and 52. The ten independent original-monitor
+controls also pass. Focused actual-RTL export stimulus passes both positive
+cases and nine exact-fatal omission controls, retaining the complete comparison
+tasks and original activity assertions. Both complete production strict exports
+and both standalone bank exports pass. The frozen evidence, source bindings and
+independent review are recorded in `qualification-evidence.json`; physical
+qualification remains open.
+See the [frame contract](frame-admission-contract.md)
+and [remaining-state ledger](async-residual-state.md).
+
+Retain the initial Click unknown-endpoint-width elaboration failure and its
+explicit-width repair. The first strict attempt rejected the new custom paths
+before probe execution; the adapter now declares their closed metadata and actual
+pin bindings. Fault injection also exposed a blocking timing monitor's missed
+short-low pulse: independent nonblocking pulse checks now cover all nine Click
+pins. The original Scala monitor now records edges without blocking on delayed
+Q checks; ten original-monitor-only negative replays prove that repaired check
+detects the BD route and all nine Click short-low faults. Original functional
+oracles remain unchanged.
+
 ## I2C frame receipt — digitally verified 2026-10-12
 
 Substep 11a1 replaces the clocked I2C frame copy with separate BD and native

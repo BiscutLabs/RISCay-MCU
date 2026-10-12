@@ -17,7 +17,7 @@ from unittest.mock import patch
 from check_frame_integration import (child, clean, compact, driver, initial_policy,
                                      pins, projected_tree, statement_tree,
                                      validate_frame_integration, frame_receipt_probe)
-from test_frame_receipt import receipt_node, registers
+from test_frame_receipt import PolicyRunEvidence, receipt_node, registers
 
 
 class FrameIntegrationTests(unittest.TestCase):
@@ -97,11 +97,13 @@ def actual_controls(directory, saved):
     paths = {"top":Path(top["module"] + ".sv"), "target":Path(target["module"] + ".sv"),
              "native":Path(native["module"] + ".sv"),
              "assertion":Path("verification/assert") / (target["module"] + "_Verification_Assert.sv"),
-             "bind":Path("verification/assert") / ("layers-" + target["module"] + "-Verification-Assert.sv")}
+             "bind":Path("verification/assert") / ("layers-" + target["module"] + "-Verification-Assert.sv"),
+             "top_assertion":Path("verification/assert") / (top["module"] + "_Verification_Assert.sv"),
+             "top_bind":Path("verification/assert") / ("layers-" + top["module"] + "-Verification-Assert.sv")}
     texts = {key:(directory / path).read_text(encoding="utf-8") for key,path in paths.items()}
     original_bytes = {key:(directory / path).read_bytes() for key,path in paths.items()}
     baseline = validate_frame_integration(manifest, {}, directory)
-    if len(baseline["slots"]["first"]) != 37 or sum(x["width"] for x in baseline["slots"]["second"]) != 273:
+    if len(baseline["slots"]["first"]) != 3 or sum(x["width"] for x in baseline["slots"]["second"]) != 4:
         raise AssertionError("Independent slot shape mismatch")
     result = dict(directory=str(directory), baseline="PASS", bindings=len(baseline["pairs"]),
                   files={str(paths[k]):hashlib.sha256(v).hexdigest() for k,v in original_bytes.items()},
@@ -134,27 +136,91 @@ def actual_controls(directory, saved):
     def inject(label, key, text, expected):
         replace(label,key,"endmodule",text + "\nendmodule",expected)
 
-    # Independently enumerate native frame leaves, without importing policy FIELDS.
-    leaves = ["resetEpoch", "ingress_programBusy", "ingress_resetActive"] + [
-        f"ingress_frame_bytes_{i}" for i in range(33)] + ["ingress_frame_overflow","ingress_frame_length"]
-    for field in leaves:
-        expression = "_ca_child_native_frame_bits_" + field
-        pattern = r"(\.in_bits_" + field + r"\s*\()" + expression + r"(\))"
-        mutated, count = re.subn(pattern,r"\g<1>~" + expression + r"\g<2>",texts["target"])
-        if count != 1: raise AssertionError((field,"input pin",count))
-        check("native-receipt-" + field,"target",mutated,"NATIVE_RECEIPT_PIN:bits_" + field)
-        pattern = r"(\.out_bits_" + field + r"\s*\()([^)]*)(\))"
-        mutated, count = re.subn(pattern,r"\g<1>broken\g<3>",texts["target"])
-        if count != 1: raise AssertionError((field,"output pin",count))
-        check("receipt-target-" + field,"target",mutated,"FRAME_OUTPUT_PIN:" + field)
+    def mutate_pin(label, key, instance, pin, value, expected):
+        match = re.search(r"\b\w+\s+" + re.escape(instance) + r"\s*\((.*?)\);", texts[key], re.S)
+        if match is None: raise AssertionError((label, "instance missing"))
+        body = match[1]
+        pm = re.search(r"\." + re.escape(pin) + r"\s*\(", body)
+        if pm is None: raise AssertionError((label, "pin missing"))
+        begin = pm.end(); end = begin; depth = 1
+        while end < len(body) and depth:
+            depth += (body[end] == "(") - (body[end] == ")"); end += 1
+        if depth: raise AssertionError((label, "unbalanced pin"))
+        raw = texts[key]; left = match.start(1) + begin; right = match.start(1) + end - 1
+        check(label, key, raw[:left] + value + raw[right:], expected)
 
+    def remove_pin(label, key, instance, pin, expected):
+        match = re.search(r"\b\w+\s+" + re.escape(instance) + r"\s*\((.*?)\);", texts[key], re.S)
+        if match is None: raise AssertionError((label, "instance missing"))
+        body, count = re.subn(r"\s*\." + re.escape(pin) + r"\s*\([^()]*\)\s*,", "", match[1])
+        if count != 1: raise AssertionError((label, "pin removal shape", count))
+        check(label, key, texts[key][:match.start(1)] + body + texts[key][match.end(1):], expected)
+
+    # Independently enumerate the full 337-bit native frame and each copied bank.
+    leaves = ["resetEpoch", "ingress_programBusy", "ingress_resetActive"] + [
+        f"ingress_frame_bytes_{i}" for i in range(33)] + ["ingress_frame_overflow", "ingress_frame_length"]
+    for field in leaves:
+        mutate_pin("native-receipt-" + field, "target", "ca_child_frame_bridge", "in_bits_" + field,
+                   "corrupt", "NATIVE_RECEIPT_PIN:bits_" + field)
+        mutate_pin("receipt-output-" + field, "target", "ca_child_frame_bridge", "out_bits_" + field,
+                   "corrupt", "FRAME_OUTPUT_PIN:" + field)
+        mutate_pin("borrowed-source-" + field, "target", "ca_child_frame_store", "in_bits_" + field,
+                   "corrupt", "BORROWED_SOURCE:bits_" + field)
+        for i in range(4):
+            mutate_pin(f"bank{i}-head-input-" + field, "target", f"ca_child_frame_head{i}_bridge", "in_bits_" + field,
+                       "corrupt", f"BANK_HEAD_PIN:{i}:bits_" + field)
+            mutate_pin(f"bank{i}-head-output-" + field, "target", f"ca_child_frame_head{i}_bridge", "out_bits_" + field,
+                       "corrupt", f"HEAD_OUTPUT_PIN:{i}:bits_" + field)
+            mutate_pin(f"bank{i}-top-field-" + field, "top", "ca_child_i2c", f"host_heads_{i}_bits_" + field,
+                       "corrupt", f"TOP_HEAD_PIN:{i}:bits_" + field)
+            if field in ("ingress_resetActive", "ingress_programBusy"):
+                pin = f"host_heads_{i}_bits_" + field
+                mutate_pin(f"bank{i}-context-disconnected-" + field, "target", f"ca_child_frame_head{i}_bridge",
+                           "out_bits_" + field, "", f"HEAD_OUTPUT_PIN:{i}:bits_" + field)
+                remove_pin(f"bank{i}-context-port-pruned-" + field, "top", "ca_child_i2c", pin,
+                           f"TOP_HEAD_PIN:{i}:bits_" + field)
+                inject(f"bank{i}-context-extra-writer-" + field, "target", f"assign {pin} = 1'b0;", "ALIAS_WRITERS:" + pin)
+        if field.startswith("ingress_frame_"):
+            pin = "host_frame_bits_" + field.removeprefix("ingress_")
+            mutate_pin("receipt-payload-disconnected-" + field, "target", "ca_child_frame_bridge",
+                       "out_bits_" + field, "", "FRAME_OUTPUT_PIN:" + field)
+            mutate_pin("unused-frame-top-field-" + field, "top", "ca_child_i2c", pin,
+                       "corrupt", "TOP_UNUSED_FRAME_PIN:" + field)
+            remove_pin("unused-frame-top-port-pruned-" + field, "top", "ca_child_i2c", pin,
+                       "TOP_UNUSED_FRAME_PIN:" + field)
+            inject("receipt-payload-extra-writer-" + field, "target", f"assign {pin} = 1'b0;", "ALIAS_WRITERS:" + pin)
+    for i in range(4):
+        for suffix in ("req", "ack"):
+            mutate_pin(f"bank{i}-head-" + suffix, "target", f"ca_child_frame_head{i}_bridge", "in_" + suffix,
+                       "corrupt", f"BANK_HEAD_PIN:{i}:" + suffix)
+        for suffix in ("ready", "valid"):
+            mutate_pin(f"bank{i}-head-" + suffix, "target", f"ca_child_frame_head{i}_bridge", "out_" + suffix,
+                       "corrupt", f"HEAD_OUTPUT_PIN:{i}:" + suffix)
+            mutate_pin(f"bank{i}-top-" + suffix, "top", "ca_child_i2c", f"host_heads_{i}_" + suffix,
+                       "corrupt", f"TOP_HEAD_PIN:{i}:" + suffix)
+        mutate_pin(f"bank{i}-clock", "target", f"ca_child_frame_head{i}_bridge", "clock", "wrongClock", f"HEAD_CLOCK_RESET:{i}")
+        mutate_pin(f"bank{i}-reset", "target", f"ca_child_frame_head{i}_bridge", "reset", "applicationReset", f"HEAD_CLOCK_RESET:{i}")
+    for field in ["length", "overflow"] + [f"bytes_{i}" for i in range(33)]:
+        mutate_pin("command-frame-" + field, "top", "ca_child_control_command_bridge", "in_bits_frame_" + field,
+                   "corrupt", "COMMAND_FRAME_PIN:" + field)
+    for field in ("cpuResetActive", "programBusy"):
+        mutate_pin("command-context-" + field, "top", "ca_child_control_command_bridge", "in_bits_" + field,
+                   "corrupt", "COMMAND_CONTEXT_PIN:" + field)
+    for pin in ("reset", "slot", "in_ack", "busy"):
+        mutate_pin("store-" + pin, "target", "ca_child_frame_store", pin, "corrupt", "STORE_CONTROL_PINS")
+    mutate_pin("store-request", "target", "ca_child_frame_store", "in_req", "corrupt", "BORROWED_SOURCE:req")
+    for i in range(4):
+        mutate_pin(f"store-availability-connected-{i}", "target", "ca_child_frame_store", f"available_{i}",
+                   "corrupt", f"STORE_AVAILABILITY_PIN:{i}")
+        remove_pin(f"store-availability-pruned-{i}", "target", "ca_child_frame_store", f"available_{i}",
+                   f"STORE_AVAILABILITY_PIN:{i}")
     # Keep explicitly expected failures at the owning policy boundary.
     entries = [
         ("epoch-increment-removed","target","resetEpoch_epoch <= resetEpoch_epoch + 64'h1","resetEpoch_epoch <= resetEpoch_epoch","STATE_TRANSITIONS:resetEpoch_epoch"),
         ("epoch-previous-live-zero","target","resetEpoch_previous <= host_resetActive","resetEpoch_previous <= 1'h0","STATE_TRANSITIONS:resetEpoch_epoch"),
         ("epoch-clock-changed","target","posedge clock or posedge localReset_layerCapture","posedge otherClock or posedge localReset_layerCapture","STATE_CLOCK_RESET:resetEpoch_epoch"),
         ("ready-reset-removed","target","~_resetEpoch_T_2_layerCapture & frameAcceptEnable","frameAcceptEnable","DRIVER:ca_child_frame_bridge_out_ready"),
-        ("epoch-width-truncated","target","reg  [63:0] resetEpoch_epoch","reg  [62:0] resetEpoch_epoch","STATE_REGISTER:resetEpoch_epoch"),
+
         ("gate-clock-inverted","top","serviceClock & gate_enabled","serviceClock | gate_enabled","DRIVER:fabric_clock"),
         ("gate-extra-high-edge","top","posedge gate__enabled_T_3 or posedge reset","posedge serviceClock or posedge reset","WORK_GATE_STATE"),
         ("wrap-upper-bit-lost","assertion","(&I2cTarget.resetEpoch_epoch)","(&I2cTarget.resetEpoch_epoch[31:0])","EPOCH_ASSERTION_LOGIC"),
@@ -162,7 +228,7 @@ def actual_controls(directory, saved):
         ("wrap-bind-disabled","bind","bind I2cTarget I2cTarget_Verification_Assert","bind Unrelated I2cTarget_Verification_Assert","EPOCH_ASSERTION_BIND"),
         ("wrap-stop-macro-disabled","assertion","`define STOP_COND_ 1","`define STOP_COND_ 0","EPOCH_ASSERTION_MACRO")]
     for row in entries: replace(*row)
-    replace("wrap-disabled","assertion","$fatal;",";","EPOCH_ASSERTION_LOGIC",2)
+    replace("wrap-disabled","assertion","$fatal;",";","EPOCH_ASSERTION_LOGIC",4)
     for name in ("fabric_hostFrames_io_enq_bits_resetActive", "fabric_hostFrames_io_enq_bits_programBusy",
                  "fabric__loaderControlPending_T", "fabric__loaderControlPending_T_1", "fabric__loaderControlPending_T_3",
                  "fabric_hostFrames_io_enq_ready", "fabric_hostFrames__1", "fabric_hostFrames__2"):
@@ -170,15 +236,15 @@ def actual_controls(directory, saved):
         if count!=1:raise AssertionError((name,"driver shape",count))
         check("context-"+name,"top",changed,"DRIVER:"+name)
     replace("mailbox-load-ancestor","top","if (fabric_hostFrames__1) begin","if (fabric_hostFrames__1 & gate_enabled) begin","MAILBOX_TRANSITIONS")
-    for name,old in (("gate_enabled","1'h1"),("fabric_hostFrames_first_frame_length","6'h0")):
+    for name,old in (("gate_enabled","1'h1"),("fabric_hostFrames_first_bank","2'h0")):
         pattern=r"(\b"+name+r"\s*=\s*)"+re.escape(old)+r";"
-        changed,count=re.subn(pattern,r"\g<1> 1'h0;" if name=="gate_enabled" else r"\g<1> 6'h1;",texts["top"])
+        changed,count=re.subn(pattern,r"\g<1> 1'h0;" if name=="gate_enabled" else r"\g<1> 2'h1;",texts["top"])
         if count!=1:raise AssertionError((name,"initializer shape",count))
         check("initializer-value-"+name,"top",changed,"INITIAL_GUARDS:"+name if name=="gate_enabled" else "MAILBOX_INITIALIZERS:"+name)
     changed,count=re.subn(r"(\bgate_enabled\s*=\s*1'h1;)",r"if(gate_needClock) \g<1>",texts["top"])
     if count!=1:raise AssertionError("Initializer ancestor shape")
     check("initializer-extra-ancestor","top",changed,"INITIAL_GUARDS:gate_enabled")
-    for name,key in (("gate_enabled","top"),("resetEpoch_epoch","target"),("fabric_hostFrames_first_frame_length","top")):
+    for name,key in (("gate_enabled","top"),("resetEpoch_epoch","target"),("fabric_hostFrames_first_bank","top")):
         for suffix,extra,error in (
             ("blocking",f"always_comb {name} = 0;", "STATE_INITIAL_WRITERS:" + name if name.startswith("resetEpoch") else "STATE_INITIAL_WRITERS:gate_enabled" if name=="gate_enabled" else "MAILBOX_INITIALIZERS:" + name),
             ("partial",f"always_comb {name}[0] = 0;", "STATE_PARTIAL_WRITER" if not name.startswith("fabric_") else "MAILBOX_PARTIAL_WRITER"),
@@ -190,12 +256,46 @@ def actual_controls(directory, saved):
             inject(name + "-" + suffix,key,extra,error)
     for key,name in (("target","ca_child_frame_bridge_out_ready"),("target","resetEpoch"),("top","fabric_clock")):
         inject("alias-procedural-"+name,key,f"always_comb {name} = 0;","ALIAS_WRITERS:"+name)
-    for field in ("frame_length","frame_bytes_0","frame_bytes_16","frame_bytes_32","resetActive","programBusy"):
+    for field in ("bank","resetActive","programBusy"):
         net = "fabric_hostFrames_first_" + field
         inject("mailbox-extra-clocked-"+field,"top",f"always @(negedge serviceClock) {net} <= 0;","MAILBOX_WRITERS:"+net)
+    for name in ("fabric_mmioLaunch", "fabric_hostHeadValid", "fabric_controlBusy", "fabric__io_i2c_heads_0_ready_T", "fabric_io_controlCommand_valid", "fabric_io_controlCommand_bits_kind", "_GEN_12", "_GEN_13", "_GEN_14", "_GEN_15", "_GEN_47", "_GEN_48"):
+        changed, count = re.subn(r"(\b(?:wire\s+(?:\[[^\]]+\]\s*)*|assign\s+)" + re.escape(name) + r"\s*=)[^;]+;", r"\g<1> 1'h0;", texts["top"])
+        if count != 1: raise AssertionError((name, "driver shape", count))
+        check("dispatch-driver-" + name, "top", changed, "DRIVER:" + name)
+    for label, old, new, diagnostic in (
+        ("tail-does-not-advance", "frameSlot <= frameSlot + 2'h1", "frameSlot <= frameSlot", "STATE_TRANSITIONS:frameSlot"),
+        ("tail-starts-wrong-bank", "frameSlot <= 2'h0", "frameSlot <= 2'h1", "STATE_TRANSITIONS:frameSlot"),
+        ("busy-sync-bypass", "frameStoreBusy_stages_1 <= frameStoreBusy_stages_0", "frameStoreBusy_stages_1 <= _ca_child_frame_store_busy", "STATE_TRANSITIONS:frameStoreBusy_stages_0")):
+        replace(label, "target", old, new, diagnostic)
+    replace("copy-ACK-assertion-disabled", "assertion", "_GEN\n          & I2cTarget.ca_child_frame_store_in_ack_layerCapture", "1'b0\n          & I2cTarget.ca_child_frame_store_in_ack_layerCapture", "EPOCH_ASSERTION_LOGIC")
+    replace("copy-full-width-assertion-corrupt", "assertion", "_GEN_0[I2cTarget.frameSlot]", "_GEN_0[2'h0]", "EPOCH_ASSERTION_LOGIC")
+    top_name = top["module"]
+    replace("overflow-offer-masked", "top_assertion", "~" + top_name + ".fabric_io_i2c_frame_valid", "1'b1", "OVERFLOW_ASSERTION_LOGIC")
+    replace("overflow-capacity-masked", "top_assertion", top_name + ".fabric_hostFrames_io_enq_ready", "1'b1", "OVERFLOW_ASSERTION_LOGIC")
+    # Changing only the mailbox failure action must fail independently of every other assertion.
+    old = '$error("Assertion failed: CONTROL_HOST_MAILBOX_OVERFLOW\\n");'
+    replace("overflow-message-removed", "top_assertion", old, '$error("UNRELATED_FAILURE");', "OVERFLOW_ASSERTION_COUNT")
+    replace("overflow-bind-disabled", "top_bind", "bind " + top_name + " ", "bind Unrelated ", "OVERFLOW_ASSERTION_BIND")
+    replace("overflow-child-bind-removed", "top_bind", '`include "layers-I2cTarget-Verification-Assert.sv"', "", "OVERFLOW_ASSERTION_BIND")
+    for key, diagnostic, model in (("assertion", "EPOCH_ASSERTION", target["module"]), ("top_assertion", "OVERFLOW_ASSERTION", top_name)):
+        module_header = "module " + model + "_Verification_Assert();"
+        replace(key + "-extra-header-macro", key, module_header, "`define SYNTHESIS\n" + module_header, diagnostic + "_HEADER")
+        if key == "top_assertion":
+            # Restrict mutations to the executable module, preserving the separate
+            # synthesis guard in the standard initializer header.
+            offset = texts[key].index(module_header)
+            head, body = texts[key][:offset], texts[key][offset:]
+            check("overflow-inverted-synthesis-wrapper", key, head + body.replace("`ifndef SYNTHESIS", "`ifdef SYNTHESIS", 1), diagnostic + "_WRAPPER")
+            check("overflow-extra-disabled-wrapper", key, head + body.replace("`ifndef SYNTHESIS", "`ifdef NEVER_EXECUTE\n`ifndef SYNTHESIS", 1).replace("endmodule", "`endif\nendmodule"), diagnostic + "_WRAPPER")
+            check("overflow-inner-disabled-wrapper", key, head + body.replace("`ifndef SYNTHESIS", "`ifndef SYNTHESIS\n`ifdef NEVER_EXECUTE", 1).replace("endmodule", "`endif\nendmodule"), diagnostic + "_WRAPPER")
+            replace("overflow-stop-macro-disabled", key, "`define STOP_COND_ 1", "`define STOP_COND_ 0", diagnostic + "_HEADER")
+    replace("overflow-bind-directives-joined", "top_bind", "`ifndef layers_" + top_name + "_Verification_Assert", "`ifndef layers_" + top_name + "_Verification_Assert `define DISABLED", "OVERFLOW_ASSERTION_BIND")
+    inject("descriptor-hidden-register", "top", "reg fabric_hostFrames_shadow;", "MAILBOX_REGISTER_INVENTORY")
+    inject("descriptor-hidden-memory", "top", "reg [336:0] fabric_hostFrames_shadow[0:1];", "MAILBOX_REGISTER_INVENTORY")
     # Dynamic enable cannot be changed to a literal by metadata or probe alone.
     endpoint = next(e["rtl_path"] for e in target["endpoints"] if e["id"]=="frame_accept_enable")
-    scopes={receipt["rtl_path"]:dict(registers=registers())}
+    scopes={c["contract"]["rtl_path"]:dict(registers=registers()) for c in target["children"] if "FrameReceipt" in c["contract"]["module"]}
     probe="task check; begin\nend endtask\n" + f'if (ones_7 !== 1\'h1 || zeros_7 !== 1\'h1) $fatal(1, "INACTIVE_ENDPOINT:{endpoint}");'
     generated=frame_receipt_probe(probe,manifest,scopes,directory)
     if "zeros_7 !== 1'h1" not in generated: raise AssertionError("Dynamic gate coverage was masked")
@@ -203,7 +303,7 @@ def actual_controls(directory, saved):
     # production baseline, with all other existing gates retained but unused.
     changed, count=re.subn(r"(\.frameAcceptEnable\s*\()gate_enabled(\))",r"\g<1>1'h1\g<2>",texts["top"])
     if count!=1:raise AssertionError("Enable pin shape")
-    changed=changed.replace("serviceClock & gate_enabled","serviceClock")
+    changed=changed.replace("serviceClock & gate_enabled","serviceClock").replace("gate_enabled & fabric_hostFrames_io_deq_ready", "fabric_hostFrames_io_deq_ready")
     record=validate_overlay("top",changed)
     if record["literal_enable_endpoint"]!=endpoint or record["gate"]!="1'b1":raise AssertionError("Literal endpoint binding missing")
     selected=(directory/paths["top"]).resolve()
@@ -223,11 +323,15 @@ if __name__=="__main__":
     parser.add_argument("--out",type=Path)
     args,unit_args=parser.parse_known_args()
     if bool(args.export)!=bool(args.out):parser.error("--export and --out must be supplied together")
+    evidence=PolicyRunEvidence(args.export, [Path(__file__).with_name(name) for name in
+                               ("test_frame_integration.py", "check_frame_integration.py",
+                                "test_frame_receipt.py", "check_frame_receipt.py")])
     run=unittest.main(argv=[sys.argv[0],*unit_args],exit=False)
     if not run.result.wasSuccessful():raise SystemExit(1)
     if args.export:
         results=[actual_controls(path,args.out.parent/(args.out.stem+"-mutants")/path.name) for path in args.export]
         report=dict(schema="riscay-frame-integration-policy-controls-v1",status="PASS",exports=results,
+                    attestation=evidence.finish(),
                     qualification="emitted RTL validator sensitivity only; no simulation or physical qualification")
         args.out.parent.mkdir(parents=True,exist_ok=True)
         args.out.write_text(json.dumps(report,indent=2)+"\n",encoding="utf-8")

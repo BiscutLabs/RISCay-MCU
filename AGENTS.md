@@ -17,7 +17,7 @@
   obtain a fresh independent agent review, address its findings, rerun affected
   checks, update its evidence/contracts, commit and push. Repeat this review loop
   for every item. Continue to the next item when the user has authorized it;
-  otherwise ask. Items 1-9, 10a, 10b1, 10b2a, 10b2b, 10b2c1, 10b2c2a, 10b2c2b, 10b2d1, 10b2d2 and 11a1 are digitally verified within their scopes.
+  otherwise ask. Items 1-9, 10a, 10b1, 10b2a, 10b2b, 10b2c1, 10b2c2a, 10b2c2b, 10b2d1, 10b2d2, 11a1 and 11a2a are digitally verified within their scopes.
   The user has authorized deeper migration under expanded items 10-16: native
   service coordination, observation reduction, publication, direct interconnect
   and physically justified boundary minimization. Audit every remaining clocked
@@ -168,12 +168,18 @@
   The 11a1 frame receipt keeps five POR-only clocked bits and no payload copy.
   ACK must coincide with actual work-clock mailbox capture. Qualify ready with
   the falling-edge gate's running state, retaining ungated pending-frame demand.
-  Follow `docs/frame-admission-contract.md`; the mailbox/count/debt still belongs
-  to item 11a2. Separate native payload/epoch ownership from the native logical
-  credit proof; any retained narrow count remains temporary. Keep the completed-
-  frame offer observable while full, even while an older bank finishes return.
-  Run FrameReceiptSpec, FrameAdmissionSpec and FrameWakeSpec, actual
-  337-bit source/273-bit mailbox capture controls, exact-fatal full-queue controls
+  Follow `docs/frame-admission-contract.md`; 11a2a's native payload/epoch storage
+  is digitally verified, with physical qualification still open. Four physical banks retain exactly two logical
+  admission credits. Preserve original O/A/ACK, per-bank Click phases and BD's
+  retained route through RTZ. At O prove complete bank availability and a new
+  capture ordinal, including identical payloads; copy equality alone is not proof.
+  Retain source epoch through D and compare against the coincident current epoch.
+  Queued descriptors awaiting head observation retain priority over CPU MMIO.
+  Keep native logical credit removal separate; narrow Q/descriptors, tail, busy
+  synchronization and four head receipts remain temporary for 11a2b/11b/14.
+  Run AsyncFrameStoreSpec, FrameReceiptSpec, FrameAdmissionSpec and FrameWakeSpec,
+  actual 337-bit source/bank and ControlCommand capture controls, all nine Click
+  trigger/pulse/distribution checks, and exact-fatal full-queue controls
   including simultaneous dequeue, and unchanged Stored-edge/context assertions.
   Keep native-bus aperture checks separate from physical synchronous-context hold.
   Strict exports must close receipt storage/reset, native publisher/data aliases,

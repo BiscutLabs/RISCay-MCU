@@ -7,14 +7,14 @@ import chisel3.util.experimental.InlineInstance
 import riscay._
 import riscay.soc._
 
-/** Two explicit register slots; no inferred RAM or unregistered Queue child. */
+/** Temporary two-credit descriptor ledger. Wide payload and epoch live in native banks. */
 private class ControlMailbox extends Module with InlineInstance {
   val io = IO(new Bundle {
-    val enq = Flipped(Decoupled(new ControlIngress)); val deq = Decoupled(new ControlIngress)
+    val enq = Flipped(Decoupled(new ControlDescriptor)); val deq = Decoupled(new ControlDescriptor)
     val count = Output(UInt(2.W))
   })
-  val first = RegInit(0.U.asTypeOf(new ControlIngress))
-  val second = RegInit(0.U.asTypeOf(new ControlIngress))
+  val first = RegInit(0.U.asTypeOf(new ControlDescriptor))
+  val second = RegInit(0.U.asTypeOf(new ControlDescriptor))
   val count = RegInit(0.U(2.W))
   io.count := count; io.enq.ready := count =/= 2.U; io.deq.valid := count =/= 0.U; io.deq.bits := first
   when(io.enq.fire && io.deq.fire) { first := io.enq.bits }
@@ -475,32 +475,36 @@ class ClickServices(p: SocParameters, boardFactory: SocParameters => BoardProfil
     (io.controlCommand.fire && io.controlCommand.bits.kind === ControlKind.Host.U &&
       io.controlCommand.bits.frame.bytes(0) >= 1.U && io.controlCommand.bits.frame.bytes(0) <= 6.U)
   io.hostFrameAccepted := hostFrames.io.enq.fire
-  hostFrames.io.enq.valid := io.i2c.frame.valid; hostFrames.io.enq.bits.frame := io.i2c.frame.bits.frame
+  hostFrames.io.enq.valid := io.i2c.frame.valid; hostFrames.io.enq.bits.bank := io.i2c.frameSlot
   hostFrames.io.enq.bits.resetActive := io.cpuResetActive || io.i2c.frame.bits.resetActive
   hostFrames.io.enq.bits.programBusy := io.i2c.frame.bits.programBusy || io.program.busy || loaderPending || loaderControlPending ||
     (io.controlCommand.fire && io.controlCommand.bits.kind === ControlKind.Host.U &&
       io.controlCommand.bits.frame.bytes(0) >= 1.U && io.controlCommand.bits.frame.bytes(0) <= 6.U)
   assert(!io.i2c.frame.valid || hostFrames.io.enq.ready, "CONTROL_HOST_MAILBOX_OVERFLOW")
-  // Mark exactly the frames already queued at reset; later explicit STARTs
-  // belong to the new application lifetime. No wrapping epoch counter.
-  val hostResetDebt = RegInit(0.U(2.W))
-  when(hostFrames.io.deq.fire && hostResetDebt =/= 0.U) { hostResetDebt := hostResetDebt - 1.U }
-  when(resetEdge) { hostResetDebt := hostFrames.io.count - hostFrames.io.deq.fire.asUInt }
+  // Preserve the original source epoch until D. A complete watchdog episode
+  // invalidates precisely older queued frames; a new explicit START stays fresh.
+  private val hostHead=io.i2c.heads(hostFrames.io.deq.bits.bank)
+  private val hostHeadValid=hostFrames.io.deq.valid && hostHead.valid
+  for(i <- 0 until 4) {
+    io.i2c.heads(i).ready:=io.clockRunning && hostFrames.io.deq.ready &&
+      hostFrames.io.deq.valid && hostFrames.io.deq.bits.bank === i.U
+  }
   // Reserve a bounded CPU admission turn before starting more background work.
   // A stalled Control computation still permits independent timer maintenance.
   val cpuTimingTurn=io.request.valid && nativeMmio && !bootWait && !eventWait && !io.cpuResetActive &&
     (!controlOutstanding || (mmioCurrent && io.controlReply.valid))
-  val mmioLaunch = io.request.valid && nativeMmio && cpuAvailable
+  // A queued Host retains priority while its native head receipt settles.
+  val mmioLaunch = io.request.valid && nativeMmio && cpuAvailable && !hostFrames.io.deq.valid
   controlBusy := controlOutstanding || io.programSource.stored.valid || mmioCommitPending || resetPending || haltPending || hostFrames.io.deq.valid
   io.controlCommand.valid := !controlOutstanding &&
-    (io.programSource.stored.valid || mmioCommitPending || resetPending || haltPending || hostFrames.io.deq.valid || mmioLaunch)
+    (io.programSource.stored.valid || mmioCommitPending || resetPending || haltPending || hostHeadValid || mmioLaunch)
   io.controlCommand.bits := 0.U.asTypeOf(new ControlCommand)
   io.controlCommand.bits.kind := Mux(io.programSource.stored.valid, ControlKind.Stored.U,
     Mux(mmioCommitPending, ControlKind.MmioCommit.U, Mux(resetPending, ControlKind.ResetApplication.U,
-      Mux(haltPending, ControlKind.Halt.U, Mux(hostFrames.io.deq.valid, ControlKind.Host.U, ControlKind.Mmio.U)))))
-  io.controlCommand.bits.frame := Mux(hostFrames.io.deq.valid, hostFrames.io.deq.bits.frame, 0.U.asTypeOf(new HostFrame))
+      Mux(haltPending, ControlKind.Halt.U, Mux(hostHeadValid, ControlKind.Host.U, ControlKind.Mmio.U)))))
+  io.controlCommand.bits.frame := Mux(hostFrames.io.deq.valid, hostHead.bits.ingress.frame, 0.U.asTypeOf(new HostFrame))
   io.controlCommand.bits.cpuResetActive := io.cpuResetActive ||
-    (hostFrames.io.deq.valid && (hostFrames.io.deq.bits.resetActive || hostResetDebt =/= 0.U))
+    (hostFrames.io.deq.valid && (hostFrames.io.deq.bits.resetActive || hostHead.bits.resetEpoch =/= io.i2c.currentEpoch))
   io.controlCommand.bits.programBusy := io.program.busy ||
     (hostFrames.io.deq.valid && hostFrames.io.deq.bits.programBusy)
   io.controlCommand.bits.memory := req

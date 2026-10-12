@@ -2,12 +2,38 @@
 package riscay
 
 import chisel3._
+import chisel3.util._
 import chisel3.util.experimental.BoringUtils
 import org.scalatest.funsuite.AnyFunSuite
 import riscay.soc._
 import java.util.zip.CRC32
 
-class BdProgramSourceFixture(p: SocParameters) extends SramCrossingFixture(p) {
+/** Test-only replacement for native payload retention at the direct A boundary.
+  * Capture and retirement keep the original injected acceptance/Stored edges.
+  * Real-wire fixtures do not instantiate this clocked stimulus storage.
+  */
+private class ProgramInjectedFrameBanks extends Module {
+  val io=IO(new Bundle {
+    val frame=Input(new I2cFrame); val accepted=Input(Bool())
+    val slot=Output(UInt(2.W)); val heads=Vec(4,Decoupled(new I2cFrame))
+  })
+  val payload=RegInit(VecInit(Seq.fill(4)(0.U.asTypeOf(new I2cFrame))))
+  val occupied=RegInit(VecInit(Seq.fill(4)(false.B)))
+  val nextSlot=RegInit(0.U(2.W))
+  io.slot:=nextSlot
+  for(i <- 0 until 4) {
+    io.heads(i).valid:=occupied(i); io.heads(i).bits:=payload(i)
+    when(io.heads(i).fire) { occupied(i):=false.B }
+    assert(!io.heads(i).ready || occupied(i),"PROGRAM_INJECTED_EMPTY_BANK_RETIRE")
+  }
+  assert(PopCount(io.heads.map(_.fire)) <= 1.U,"PROGRAM_INJECTED_MULTIPLE_BANK_RETIRE")
+  when(io.accepted) {
+    assert(!occupied(nextSlot),"PROGRAM_INJECTED_LIVE_BANK_OVERWRITE")
+    payload(nextSlot):=io.frame; occupied(nextSlot):=true.B; nextSlot:=nextSlot+1.U
+  }
+}
+
+class BdProgramSourceFixture(p: SocParameters, directIngress: Boolean = true) extends SramCrossingFixture(p) {
   val holdGrant=IO(Input(Bool())); val holdDecision=IO(Input(Bool()))
   val holdPublication=IO(Input(Bool())); val holdStored=IO(Input(Bool()))
   val holdCaptureReceipt=IO(Input(Bool())); val stopWorkClock=IO(Input(Bool()))
@@ -40,10 +66,21 @@ class BdProgramSourceFixture(p: SocParameters) extends SramCrossingFixture(p) {
   // Direct ingress controls acceptance-edge races; serial-host regressions run separately.
   val injectedValid=IO(Input(Bool())); val injectedLength=IO(Input(UInt(6.W)))
   val injectedBytes=IO(Input(UInt(264.W))); val injectedAccepted=IO(Output(Bool()))
-  fabric.io.i2c.frame.valid:=injectedValid
-  fabric.io.i2c.frame.bits:=0.U.asTypeOf(new ControlIngress)
-  fabric.io.i2c.frame.bits.frame.length:=injectedLength
-  for(i <- 0 until 33) fabric.io.i2c.frame.bits.frame.bytes(i):=injectedBytes(8*i+7,8*i)
+  if(directIngress) {
+    val injected=WireDefault(0.U.asTypeOf(new I2cFrame))
+    injected.ingress.frame.length:=injectedLength
+    for(i <- 0 until 33) injected.ingress.frame.bytes(i):=injectedBytes(8*i+7,8*i)
+    // A direct injection has no earlier native O: its source epoch is current at A.
+    injected.resetEpoch:=host.host.currentEpoch
+    val banks=withClockAndReset(workClock,reset) { Module(new ProgramInjectedFrameBanks) }
+    banks.io.frame:=injected; banks.io.accepted:=fabric.io.hostFrameAccepted
+    fabric.io.i2c.frame.valid:=injectedValid; fabric.io.i2c.frame.bits:=injected.ingress
+    fabric.io.i2c.frameSlot:=banks.io.slot; fabric.io.i2c.currentEpoch:=host.host.currentEpoch
+    for(i <- 0 until 4) {
+      fabric.io.i2c.heads(i) <> banks.io.heads(i)
+      host.host.heads(i).ready:=false.B
+    }
+  }
   injectedAccepted:=fabric.io.hostFrameAccepted
   val grantWaiting=IO(Output(Bool())); grantWaiting:=programGrant.out.valid
   val reserved=IO(Output(Bool())); reserved:=programReserve.in.fire
@@ -68,7 +105,7 @@ class BdProgramSourceFixture(p: SocParameters) extends SramCrossingFixture(p) {
   val lastError=IO(Output(UInt(8.W))); lastError:=stateView.lastError
 }
 
-class ClickProgramSourceFixture(p: SocParameters) extends ClickSramCrossingFixture(p) {
+class ClickProgramSourceFixture(p: SocParameters, directIngress: Boolean = true) extends ClickSramCrossingFixture(p) {
   val holdGrant=IO(Input(Bool())); val holdDecision=IO(Input(Bool()))
   val holdPublication=IO(Input(Bool())); val holdStored=IO(Input(Bool()))
   val holdCaptureReceipt=IO(Input(Bool())); val stopWorkClock=IO(Input(Bool()))
@@ -101,10 +138,21 @@ class ClickProgramSourceFixture(p: SocParameters) extends ClickSramCrossingFixtu
   // Direct ingress controls acceptance-edge races; serial-host regressions run separately.
   val injectedValid=IO(Input(Bool())); val injectedLength=IO(Input(UInt(6.W)))
   val injectedBytes=IO(Input(UInt(264.W))); val injectedAccepted=IO(Output(Bool()))
-  fabric.io.i2c.frame.valid:=injectedValid
-  fabric.io.i2c.frame.bits:=0.U.asTypeOf(new ControlIngress)
-  fabric.io.i2c.frame.bits.frame.length:=injectedLength
-  for(i <- 0 until 33) fabric.io.i2c.frame.bits.frame.bytes(i):=injectedBytes(8*i+7,8*i)
+  if(directIngress) {
+    val injected=WireDefault(0.U.asTypeOf(new I2cFrame))
+    injected.ingress.frame.length:=injectedLength
+    for(i <- 0 until 33) injected.ingress.frame.bytes(i):=injectedBytes(8*i+7,8*i)
+    // A direct injection has no earlier native O: its source epoch is current at A.
+    injected.resetEpoch:=host.host.currentEpoch
+    val banks=withClockAndReset(workClock,reset) { Module(new ProgramInjectedFrameBanks) }
+    banks.io.frame:=injected; banks.io.accepted:=fabric.io.hostFrameAccepted
+    fabric.io.i2c.frame.valid:=injectedValid; fabric.io.i2c.frame.bits:=injected.ingress
+    fabric.io.i2c.frameSlot:=banks.io.slot; fabric.io.i2c.currentEpoch:=host.host.currentEpoch
+    for(i <- 0 until 4) {
+      fabric.io.i2c.heads(i) <> banks.io.heads(i)
+      host.host.heads(i).ready:=false.B
+    }
+  }
   injectedAccepted:=fabric.io.hostFrameAccepted
   val grantWaiting=IO(Output(Bool())); grantWaiting:=programGrant.out.valid
   val reserved=IO(Output(Bool())); reserved:=programReserve.in.fire

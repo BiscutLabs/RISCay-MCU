@@ -416,7 +416,7 @@ when no next item has been chosen. Both implementations remain active throughout
       The 64-bit epoch rejects wrap; it is not an unbounded lifetime identity.
       Use the existing Control-command capture as the destination and remove
       the temporary receipt when its dispatcher becomes native in 11b/14.
-      - [ ] **11a2a. Native payload ownership and per-frame epoch.** Replace the
+      - [x] **11a2a. Native payload ownership and per-frame epoch.** Replace the
         two clocked payload banks with separate native, non-compacting retained
         banks. Retain each frame's original epoch through actual Host-command
         capture and remove queued reset debt. Keep the existing narrow logical
@@ -430,6 +430,23 @@ when no next item has been chosen. Both implementations remain active throughout
         Do not acknowledge the publisher before immutable payload retention is
         proved. Qualify each head's full return independently of the next head's
         selection.
+        The verified implementation uses four fixed native banks, two logical credits,
+        two four-bit descriptors and the unchanged original admission receipt.
+        It removes 516 periodic-clocked bits per variant after counting four
+        five-bit head receipts, the two-bit tail and two busy synchronizers.
+        Full digital qualification and fresh independent review pass; retained
+        evidence is under `build/async-host-admission-payload-migration/`.
+        Physical timing remains item 17; this step does not remove logical Q.
+        - [x] Prove complete bank availability at original O and by A_(i+3),
+          independent copy ordinals (including identical payloads), fixed bank
+          rotation, retained BD routing and independent per-bank Click phases.
+        - [x] Check every actual capture pin, all selected/unselected feedback,
+          all nine Click triggers, min/max skew and service-period breakpoints.
+        - [x] Preserve original A/ACK, exact two-credit overflow including D on
+          the same edge, D-time epoch classification, priority and sleep demand.
+        - [x] Freeze full regression, unchanged earliest wire/status deadlines,
+          strict exports, real RTL fault controls and independent review before
+          committing and pushing this substep.
       - [ ] **11a2b. Native logical credits and admission observation.** Remove
         the temporary occupancy count using separate retained admission/dispatch
         histories or an equivalently proved native owner. Keep the frame-offer
@@ -446,6 +463,40 @@ when no next item has been chosen. Both implementations remain active throughout
         at E3. Drive the control-release stimulus off active edges. Publisher
         reuse spacing does not constrain this independently delayed dispatch.
         Complete the native credit proof before closing 11a2.
+        - [ ] **11a2b1. Remove redundant clocked occupancy.** First replace only
+          the two-bit mailbox count, preserving both four-bit descriptors, the
+          admission tail and all original A/D events. Prove that accepted and
+          dispatched histories reproduce empty/full through modulo wrap without
+          adding credit. Click may reuse independent head-ACK phases; BD needs
+          rising-edge-only retirement history so an old falling return cannot
+          count as a new D. Cover old-return/new-D coincidence and lost, duplicate
+          or reordered events with independent ordinals. Count this as removal
+          of redundant clocked state, not completed native admission ownership.
+        - [ ] Qualify the complete D-to-next-edge decision path, including source
+          clock-to-Q, native logic, downstream descriptor/dispatch enables,
+          generated-clock skew and destination setup. Prove minimum contamination
+          and hold for both A and D through the same work-clock edge, and bound
+          binary-tail-to-Gray glitches. An early A-tail change must not redirect
+          an empty enqueue into descriptor two or falsely fault a one-to-two
+          admission. Include simultaneous-A/D busy-context capture in the cone.
+          Keep transient empty/full values away from asynchronous side effects.
+          A provisional 30 ns Click / 40 ns BD logic path alone is insufficient
+          evidence that the full 50 ns edge-to-edge requirement is met.
+          A single complete six-input decision transform may reduce that digital
+          target to 10 ns Click / 20 ns BD. Pin the entire expression and every
+          output polarity, preserve an independent integer occupancy oracle,
+          and qualify the remaining consumer cones before removing the count.
+          Neither target is a measured physical delay.
+        - [ ] **11a2b2. Native descriptor and order ownership.** Replace descriptor
+          movement and the retained admission tail with native owners. Reassess
+          every temporary receipt and count net state after new ownership is
+          included. Preserve source-context association through bank reuse,
+          simultaneous A/D, watchdog episodes and queued Host priority.
+        - [ ] **11a2b3. Remove the admission-context boundary.** Move remaining
+          A-time context and observation with their generating dispatcher in
+          11b/14. A delayed native observer must never resample live reset/busy
+          signals as if they were the original A-time values. Qualify the actual
+          capture aperture before removing the final held context packet.
     - [ ] Inventory the entire frame path, including native I2C publication,
       its clocked delivery copy, both mailbox slots and reset-debt count. Preserve
       effective capacity and the exact admission event across the replacement.
@@ -538,6 +589,13 @@ when no next item has been chosen. Both implementations remain active throughout
   - [ ] **15a. SRAM macro boundary.** Reduce clocked state to the pinned macro's
     required byte launch/capture and clock obligations. Move remaining word busy,
     sequencing, accounting and response presentation out of that boundary.
+    Separately evaluate whether the pinned macro can accept request-driven local
+    clock pulses instead of periodic service-clock access. Require the actual
+    macro's minimum high/low times, input setup/hold, read-data validity, recovery,
+    reset isolation and retained-supply behavior across all pinned corners.
+    Preserve the current service-clock implementation until that replacement is
+    qualified; renaming a clock or moving the same clocked controller is not a
+    native access sequencer or proof that periodic operation is necessary.
   - [ ] **15b. Sampled input boundaries.** Evaluate I2C/GPIO edge-driven capture
     against metastability, input filtering, minimum pulse widths, coherent slots,
     address-only wake and independent stuck-bus timeout. Retain periodic sampling
@@ -610,25 +668,25 @@ invariant-focused tests and a fresh independent review before completion.
 
 ## Preliminary residual-state inventory
 
-The 11a1 Groundlark, ADC-enabled, source-stopping low-power portable SoC
+The 11a2a Groundlark, ADC-enabled, source-stopping low-power portable SoC
 exports still contain substantial clocked state. The emitted declaration audit,
 baseline comparison and per-owner removal candidates are retained under
-`build/async-host-frame-migration/`; see the
+`build/async-host-admission-payload-migration/`; see the
 [remaining-state ledger](async-residual-state.md). These are RTL declarations,
 not mapped flop counts, area, power or proof of physical necessity.
 
 | Disjoint owner group | BD bits | Click bits | Follow-up |
 | --- | ---: | ---: | --- |
-| Flattened SoC/Services | 3,275 | 3,276 | Items 10–16 |
-| I2C wrapper | 941 | 941 | Items 11, 13–15 |
+| Flattened SoC/Services | 2,735 | 2,736 | Items 10–16 |
+| I2C wrapper | 945 | 945 | Items 11, 13–15 |
 | SPI wrapper | 175 | 175 | Items 12–15 |
 | Two SRAM access wrappers | 30 | 30 | Items 14–15 |
 | Elapsed ingress wrapper | 37 | 37 | Items 12, 14–15 |
-| 60 crossing/receipt owners | 3,808 | 3,808 | Remove with their clocked clients |
-| **Total: 66 owners** | **8,266** | **8,267** | Complete audit in item 16 |
+| 64 crossing/receipt owners | 3,828 | 3,828 | Remove with their clocked clients |
+| **Total: 70 owners** | **7,750** | **7,751** | Complete audit in item 16 |
 
 Each total includes one unchanged asynchronous SDA capture bit; periodic-clocked
-subsets are 8,265/8,266 bits. Async primitive storage, fixed SRAM arrays and
+subsets are 7,749/7,750 bits. Async primitive storage, fixed SRAM arrays and
 verification state are excluded. The generated chip wrapper, including its
 20-bit default reset hold, is outside these totals. Other supported configurations
 may add the legacy service-time divider, autonomous ADC interval counter or
@@ -636,8 +694,12 @@ generic application projections. Items 15e/16 require their separate inventories
 Program return removes 87 crossing bits and adds seven temporary receipt/idle
 bits, for a net reduction of 80 per variant relative to `60c5590`. The earlier
 RAM return step removed another 39. Frame receipt 11a1 removes 339 more relative
-to `d688255`, reducing I2C delivery crossings from 359 to 20 bits. The 550-bit
-mailbox/count/debt is unchanged. Temporary crossings and reset/debt policy
+to `d688255`, reducing I2C delivery crossings from 359 to 20 bits. Native frame
+payload/epoch ownership now replaces the old 550-bit mailbox/count/debt with ten
+descriptor/count bits and adds 24 temporary receipt/tail/busy bits, a net 516-bit
+periodic-clocked reduction relative to `a0e2d1a`. The four banks add 1,348 native
+payload bits plus native controls. Physical qualification remains open;
+these counts are not total storage, area or power savings. Temporary crossings and reset/debt policy
 remain removal candidates; neither those savings nor passing tests close the audit.
 
 An owner is retained only with a specific physical or interface obligation and

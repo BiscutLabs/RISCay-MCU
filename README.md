@@ -121,7 +121,14 @@ designs. Five-bit receipts acknowledge only an actual work-clock mailbox capture
 the native publisher retains the 337-bit frame. Emitted state falls by 339 clocked
 bits per variant with unchanged public ports. The audited 489-case verification
 cohort, two physical-policy cases, 329 Python tests, actual capture/fault controls
-and both strict exports pass. The mailbox and dispatcher remain clocked. See the
+and both strict exports pass. Substep 11a2a moves payload/epoch retention into
+four native banks in each design while preserving exactly two logical credits.
+The 507-case full regression, two physical-policy cases, final 68-case affected
+rerun, 364 Python controls and both production/standalone strict exports pass.
+Independent review and actual-RTL fault controls cover capture, priority and
+native return. The emitted audit confirms another 516 fewer periodically clocked
+bits per variant with unchanged public ports. Physical qualification remains open.
+Narrow descriptor/credit state and the dispatcher remain clocked. See the
 [frame-admission contract](docs/frame-admission-contract.md).
 See the [RAM return contract](docs/ram-return-contract.md),
 [program return contract](docs/program-return-contract.md) and

@@ -42,6 +42,11 @@ class I2cResult extends Bundle {
 /** Target-facing service boundary. The front clock owns publication only. */
 class I2cHostPort extends Bundle {
   val frame = Valid(new ControlIngress)
+  // A retains only this bank tag and service context. The native payload/epoch
+  // remains in the selected bank until actual Host Control-command dispatch D.
+  val frameSlot = Output(UInt(2.W))
+  val heads = Vec(4,Decoupled(new I2cFrame))
+  val currentEpoch = Output(UInt(64.W))
   val readStart = Output(Bool()); val wordIndex = Output(UInt(4.W))
   val readWord = Input(UInt(32.W))
   val resetActive = Input(Bool()); val programBusy = Input(Bool())

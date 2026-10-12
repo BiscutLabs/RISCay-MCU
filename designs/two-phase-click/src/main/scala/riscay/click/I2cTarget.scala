@@ -21,8 +21,31 @@ class I2cTarget(address: Int,idleCycles: Int,domain: ResetDomain) extends Clocke
   val frameAcceptEnable=IO(Input(Bool()))
   val native=asyncChild("native")(d => new ClickI2c(address,d))
   val frames=asyncChild("frame_bridge")(d => new ClickFrameReceipt(d))
+  val frameStore=asyncChild("frame_store")(d => new ClickFrameStore(d))
+  val frameHeads=Seq.tabulate(4)(i => asyncChild(s"frame_head${i}_bridge")(d => new ClickFrameReceipt(d)))
   val snapshots=asyncChild("snapshot_bridge")(d => new ClickToDecoupled(UInt(8.W),d))
   frames.clock:=clock; snapshots.clock:=clock
+  frameHeads.foreach(_.clock:=clock)
+  // Borrow the original publisher's retained frame without changing its A/ACK.
+  frameStore.in.req:=native.frame.req; frameStore.in.bits:=native.frame.bits
+  val frameSlot=withClockAndReset(clock,localReset) {
+    val tail=RegInit(0.U(2.W)); when(frames.out.fire) { tail:=tail+1.U }; tail
+  }
+  frameStore.slot:=frameSlot; host.frameSlot:=frameSlot
+  for(i <- 0 until 4) {
+    TwoPhase.connect(frameHeads(i).in,frameStore.banks(i))
+    host.heads(i) <> frameHeads(i).out
+    // Preserve the complete declared internal port ABI for strict export.
+    dontTouch(host.heads(i).bits.ingress.resetActive)
+    dontTouch(host.heads(i).bits.ingress.programBusy)
+  }
+  withClockAndReset(clock,localReset) {
+    when(frames.out.fire) {
+      assert(frameStore.in.ack === native.frame.req,"FRAME_STORE_COPY_NOT_READY_AT_A")
+      assert(VecInit(frameStore.banks.map(_.bits.asUInt))(frameSlot) === native.frame.bits.asUInt,
+        "FRAME_STORE_COPY_IDENTITY_AT_A")
+    }
+  }
   TwoPhase.connect(frames.in,native.frame); TwoPhase.connect(snapshots.in,native.snapshot)
   // Publish only after this POR-only service boundary has left reset.
   // ACK and mailbox enqueue must share a real work-clock edge. A held frame
@@ -32,6 +55,7 @@ class I2cTarget(address: Int,idleCycles: Int,domain: ResetDomain) extends Clocke
   host.frame.valid:=frames.out.fire; host.frame.bits:=frames.out.bits.ingress
   host.readStart:=snapshots.out.fire
   dontTouch(frames.out); dontTouch(snapshots.out)
+  dontTouch(host.frame.bits.frame)
   native.start:= !localReset.asBool
   // Preserve a complete watchdog episode while a completed frame is queued.
   // Epoch state and every transport slot are POR-only; coincident assertion
@@ -44,6 +68,8 @@ class I2cTarget(address: Int,idleCycles: Int,domain: ResetDomain) extends Clocke
   }
   host.frame.bits.resetActive:=frames.out.bits.ingress.resetActive || host.resetActive ||
     frames.out.bits.resetEpoch =/= resetEpoch
+  host.currentEpoch:=resetEpoch
+  val frameStoreBusy=synchronizedControl(frameStore.busy)
   val headGray=withClockAndReset(clock,localReset) {
     val first=RegNext(native.observed.headGray,0.U); RegNext(first,0.U)
   }
@@ -94,7 +120,7 @@ class I2cTarget(address: Int,idleCycles: Int,domain: ResetDomain) extends Clocke
     // Inactive foreign payload edges must not sustain clock demand. START/STOP
     // pulse the existing seven-edge drain guard; an accepted transaction and
     // held effects retain demand independently of the ring occupancy.
-    host.busy:=active || start || stop || effects || frames.out.valid || snapshots.out.valid
+    host.busy:=active || start || stop || effects || frames.out.valid || snapshots.out.valid || frameStoreBusy
     dontTouch(slots); dontTouch(tailGray)
   }
   contract.endpoint("frame_accept_enable",frameAcceptEnable)

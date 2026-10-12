@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
 """Independent controls for the MCU fabric export extension."""
 import copy
+import re
 from pathlib import Path
 import subprocess
 import tempfile
@@ -8,6 +9,132 @@ import unittest
 from check_export import (BD_FABRIC_PATH, CLICK_FABRIC_PATH, validate_fabric_path,
                           fabric_path_bindings, fabric_checker_source, validate_native_click,
                           validate_fabric_inventory, validate_click_fabric_controls)
+from check_export import control_background, frame_head_background
+
+
+class FrameHeadBackgroundTests(unittest.TestCase):
+    def fixture(self, click):
+        top = 'ClickSoc' if click else 'FourPhaseSoc'
+        family = 'Click' if click else 'FourPhase'
+        store = dict(module=family+'FrameStore', primitives=[dict(id='return_guard',
+            rtl_path=top+'.store.guard', model='ChiselAsyncControlGate_v1',
+            parameters=dict(WIDTH='4', OP='0', DELAY_FS='32000000', RESET_VALUE='0'),
+            ports=[dict(name='q', width=4, direction='output')])])
+        heads = [dict(module=family+'FrameReceipt_'+str(i+1), rtl_path=top+'.head'+str(i)) for i in range(4)]
+        manifest = dict(top=top, design=dict(children=[dict(id='i2c',contract=dict(children=[
+            dict(id='frame_store',contract=store), *[dict(id=f'frame_head{i}_bridge',contract=h) for i,h in enumerate(heads)]]))]))
+        scopes = {top:dict(registers=dict(gate_enabled=1, fabric_hostFrames_count=2, fabric_hostFrames_first_bank=2)),
+            **{h['rtl_path']:dict(registers=dict(requestSync=1)) for h in heads}}
+        drivers = {scope+'.'+name:width for scope,body in scopes.items() for name,width in body['registers'].items()}
+        if not click: drivers[top+'.store.guard.q']=4
+        source = 'initial begin\nforce '+top+".reset = 1'b1; #1;\n" + ''.join(
+            f"force {path} = {width}'h0;\n" for path,width in drivers.items())
+        source += '\n#1;\n#1; check;\nif (ones_0 !== 1\'h1) $fatal(1,"INACTIVE_ENDPOINT:sample");\n$display("CONTRACT_PROBES_PASS:1");\nend\n'
+        return manifest, scopes, source, store, heads
+
+    def test_selected_heads_and_complete_idle_keep_original_oracles(self):
+        for click in (False, True):
+            manifest, scopes, source, store, heads = self.fixture(click)
+            result, count = frame_head_background(source,manifest,scopes,1)
+            self.assertEqual(count,5 if click else 6)
+            self.assertTrue(result.startswith(source[:source.index('if (ones_0')]))
+            self.assertTrue(result.endswith(source[source.index('if (ones_0'):].replace(
+                'CONTRACT_PROBES_PASS:1',f'CONTRACT_PROBES_PASS:{count}')))
+            for i, head in enumerate(heads):
+                self.assertIn(f"force {head['rtl_path']}.requestSync = 1'h1;",result)
+                self.assertIn(f"force {manifest['top']}.fabric_hostFrames_first_bank = 2'h{i:x};",result)
+            guard = f"force {manifest['top']}.store.guard.q = 4'hf;"
+            self.assertEqual(guard in result, not click)
+            self.assertNotRegex(result,r'force [^;]*(?:out_ready|\.busy) =')
+            self.assertEqual(frame_head_background(source,{'top':'Standalone'},{},1),(source,1))
+
+    def test_return_guard_identity_and_catalogue_are_required(self):
+        for fault in ('model','width','delay','operation','reset','uncatalogued'):
+            manifest, scopes, source, store, _ = self.fixture(False)
+            guard = store['primitives'][0]
+            if fault=='model': guard['model']='UnqualifiedSource'
+            elif fault=='width': guard['ports'][0]['width']=3
+            elif fault=='delay': guard['parameters']['DELAY_FS']='0'
+            elif fault=='operation': guard['parameters']['OP']='1'
+            elif fault=='reset': guard['parameters']['RESET_VALUE']='15'
+            else: source=source.replace("force FourPhaseSoc.store.guard.q = 4'h0;\n",'')
+            with self.assertRaisesRegex(ValueError,'FRAME_HEAD_PROBE_'):
+                frame_head_background(source,manifest,scopes,1)
+
+    def test_ungated_configuration_and_present_gate_width(self):
+        for click in (False, True):
+            manifest, scopes, source, _, _ = self.fixture(click)
+            top=manifest['top']
+            scopes[top]['registers'].pop('gate_enabled')
+            source=source.replace(f"force {top}.gate_enabled = 1'h0;\n",'')
+            result,count=frame_head_background(source,manifest,scopes,1)
+            self.assertEqual(count,5 if click else 6)
+            self.assertNotIn('gate_enabled',result)
+            scopes[top]['registers']['gate_enabled']=2
+            with self.assertRaisesRegex(ValueError,'FRAME_HEAD_PROBE_DRIVER'):
+                frame_head_background(source,manifest,scopes,1)
+
+    def test_head_owner_and_actual_register_width_are_required(self):
+        for click in (False, True):
+            for fault in ('owner','width','uncatalogued'):
+                manifest, scopes, source, _, heads = self.fixture(click)
+                head=heads[2]
+                if fault=='owner': head['module']='EndpointAdapter'
+                elif fault=='width': scopes[head['rtl_path']]['registers']['requestSync']=2
+                else: source=source.replace(f"force {head['rtl_path']}.requestSync = 1'h0;\n",'')
+                with self.assertRaisesRegex(ValueError,'FRAME_HEAD_PROBE_'):
+                    frame_head_background(source,manifest,scopes,1)
+
+
+class NativeFrameControlProbeTests(unittest.TestCase):
+    def candidate(self, click):
+        top = 'ClickSoc' if click else 'FourPhaseSoc'
+        def cell(identity, path, width, model='ChiselAsyncEventRegister_v1'):
+            return dict(id=identity, rtl_path=path, model=model,
+                        ports=[dict(name='q', width=width, direction='output')])
+        join = dict(children=[dict(id=name, contract=dict(primitives=[cell('payload', top+'.'+name, width)]))
+            for name,width in [('left_storage' if click else 'left',337),('right_storage' if click else 'right',379)]])
+        banks = [cell('payload'+str(i) if click else 'payload', top+'.bank'+str(i),337,
+                      'ChiselAsyncEventRegister_v1' if click else 'ChiselAsyncClosingLatch_v1') for i in range(4)]
+        store = dict(module=('Click' if click else 'FourPhase')+'FrameStore',primitives=banks if click else [],
+            children=[] if click else [dict(id='storage'+str(i),contract=dict(primitives=[p])) for i,p in enumerate(banks)])
+        manifest = dict(top=top,design=dict(children=[
+            dict(id='control',contract=dict(module=('Click' if click else 'FourPhase')+'Control',children=[dict(id='join',contract=join)])),
+            dict(id='i2c',contract=dict(children=[dict(id='frame_store',contract=store)]))]))
+        registers={'ca_child_request_bridge.data_address':32,'fabric_housekeepingState_now':32,
+            'fabric_hostFrames_count':2,'fabric_hostFrames_first_bank':2,'fabric_mmioCommitPending':1,
+            'fabric_mmioCommit_applicationWritable':1}
+        drivers={top+'.'+name:width for name,width in registers.items()}
+        drivers.update({p['rtl_path']+'.q':337 for p in banks})
+        drivers.update({c['contract']['primitives'][0]['rtl_path']+'.q':c['contract']['primitives'][0]['ports'][0]['width'] for c in join['children']})
+        source='initial begin\nforce '+top+".reset = 1'b1; #1;\n"+''.join(f"force {p} = {w}'h0;\n" for p,w in drivers.items())
+        source+="\n#1;\nif (ones_0 !== 1'h1) $fatal(1,\"INACTIVE_ENDPOINT:sample\");\n$display(\"CONTRACT_PROBES_PASS:1\");\nend\n"
+        scopes={top:dict(registers={'fabric_housekeepingState_now':32}),top+'.ca_child_request_bridge':dict(registers={'data_address':32})}
+        return manifest,scopes,source,banks
+
+    def test_every_native_bank_and_all_337_retained_bits_are_exercised(self):
+        for click in (False,True):
+            manifest,scopes,source,banks=self.candidate(click)
+            result,count=control_background(source,manifest,scopes,1)
+            self.assertGreater(count,4*337*2)
+            self.assertNotIn('fabric_hostFrames_first_frame_',result)
+            for i,p in enumerate(banks):
+                self.assertIn(f"force {manifest['top']}.fabric_hostFrames_first_bank = 2'h{i:x};",result)
+                values={int(v,16) for v in re.findall(r'force '+re.escape(p['rtl_path'])+r"\.q = 337'h([0-9a-f]+);",result)}
+                self.assertTrue({0,(1<<337)-1}.issubset(values))
+                self.assertTrue(all((1<<bit) in values and ((1<<337)-1)^(1<<bit) in values for bit in range(337)))
+            tail='if (ones_0'+source.split('if (ones_0')[1]
+            self.assertTrue(result.endswith(tail.replace('CONTRACT_PROBES_PASS:1',f'CONTRACT_PROBES_PASS:{count}')))
+
+    def test_missing_or_wrong_native_storage_is_rejected(self):
+        for click in (False,True):
+            for fault in ('model','width','uncatalogued'):
+                manifest,scopes,source,banks=self.candidate(click)
+                if fault=='model':banks[2]['model']='CombinationalEndpoint'
+                elif fault=='width':banks[2]['ports'][0]['width']=336
+                else:source=source.replace(f"force {banks[2]['rtl_path']}.q = 337'h0;\n",'')
+                with self.assertRaisesRegex(ValueError,'CONTROL_PROBE_'):
+                    control_background(source,manifest,scopes,1)
 
 
 def fixture(click):
@@ -136,7 +263,7 @@ class FabricExportTest(unittest.TestCase):
                          lambda n: n["primitives"][2].update(model="ChiselAsyncClosingLatch_v1")):
             bad = copy.deepcopy(node); mutation(bad)
             parent = copy.deepcopy(node); parent["children"] = [{"id": "hidden", "contract": bad}]
-            for top in ("ClickSoc", "ClickTelemetry", "ClickSupervisor", "ClickSram"):
+            for top in ("ClickSoc", "ClickTelemetry", "ClickSupervisor", "ClickSram", "ClickFrameStore"):
                 with self.assertRaisesRegex(ValueError, "HAS_RTZ_IMPLEMENTATION"):
                     validate_native_click({"top": top, "design": parent})
 
@@ -149,8 +276,12 @@ class FabricExportTest(unittest.TestCase):
         original = layout + "\n" + guard + "\n" + anchor + "\n" + binding + "\nrequire(marker_ok, 'MARKER')\nrequire(budget_ok, 'BUDGET')\n" + fallback
         adapted = fabric_checker_source(original)
         self.assertIn('layouts["response_data"]', adapted)
+        self.assertIn('layouts["available"]', adapted)
+        self.assertIn('"lsb": i, "width": 1} for i in range(4)', adapted)
         self.assertIn('FourPhase(?:Ram|Program)Return', adapted)
         self.assertIn('native program return', adapted)
+        self.assertIn('temporary slot to retained native route; 10 ns complete data budget', adapted)
+        self.assertIn('full selected source/unselected retained data and phase muxes, including every feedback bit', adapted)
         for missing in (layout,guard):
             with self.assertRaisesRegex(ValueError, "RAM_RETURN_.*CHECKER_SHAPE"):
                 fabric_checker_source(original.replace(missing,""))
