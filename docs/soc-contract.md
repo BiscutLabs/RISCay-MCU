@@ -56,7 +56,10 @@ whole-word reply bridge and Services. POR retains the word and effect/publicatio
 history; qualified application reset revokes presentation permission. A temporary
 control-only receipt clears the clocked access active bit on acceptance. The
 drain proof excludes publication and native return occupancy to avoid a cycle;
-full busy includes both. Program/loader return still uses its clocked path.
+full busy includes both. Program/loader return now has separate native owners
+in both implementations (10b2d2, digitally verified). It captures retained
+CPU-role permission; loader publication/Stored remain POR-owned and never offer
+CPU completion. See [the program return contract](program-return-contract.md).
 See [the working-RAM return contract](ram-return-contract.md) for independent
 branch return, mixed reset lifetime, temporary state and timing obligations.
 Program-source ownership and Stored delivery now use separate native owners

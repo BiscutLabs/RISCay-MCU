@@ -42,19 +42,17 @@ abstract class FourPhasePlatform(p: SocParameters, board: SocParameters => Board
   // below continue their accepted work and suppress old-lifetime completions.
   protected val completion=asyncChild("completion")(d => new FourPhaseCompletion(d))
   val completionPlan=asyncChild("completion_plan_bridge")(d => new chiselasync.clocked.DecoupledToFourPhase(new CompletionPlan, 2,d))
-  val completionMemory=asyncChild("completion_memory_bridge")(d => new chiselasync.clocked.DecoupledToFourPhase(new MemoryResponse, 2,d))
   val completionTelemetry=asyncChild("completion_telemetry_bridge")(d => new chiselasync.clocked.DecoupledToFourPhase(Bool(), 2,d))
   val completionHousekeeping=asyncChild("completion_housekeeping_bridge")(d => new chiselasync.clocked.DecoupledToFourPhase(Bool(), 2,d))
-  Seq(completion,completionPlan,completionMemory,completionTelemetry,completionHousekeeping)
+  Seq(completion,completionPlan,completionTelemetry,completionHousekeeping)
     .foreach(_.reset:=fabric.io.cpuReset.asAsyncReset)
-  Seq(completionPlan,completionMemory,completionTelemetry,completionHousekeeping).foreach(_.clock:=workClock)
-  Seq(completionPlan,completionMemory,completionTelemetry,completionHousekeeping).foreach { bridge =>
+  Seq(completionPlan,completionTelemetry,completionHousekeeping).foreach(_.clock:=workClock)
+  Seq(completionPlan,completionTelemetry,completionHousekeeping).foreach { bridge =>
     dontTouch(bridge.in); dontTouch(bridge.out)
   }
-  completionPlan.in <> fabric.io.completionPlan; completionMemory.in <> fabric.io.completionMemory
+  completionPlan.in <> fabric.io.completionPlan
   completionTelemetry.in <> fabric.io.completionTelemetry; completionHousekeeping.in <> fabric.io.completionHousekeeping
   chiselasync.protocol.FourPhase.connect(completion.plan,completionPlan.out)
-  chiselasync.protocol.FourPhase.connect(completion.memory,completionMemory.out)
   chiselasync.protocol.FourPhase.connect(completion.telemetry,completionTelemetry.out)
   chiselasync.protocol.FourPhase.connect(completion.housekeeping,completionHousekeeping.out)
   protected val admission=asyncChild("admission")(d => new FourPhaseAdmission(d))
@@ -88,7 +86,8 @@ abstract class FourPhasePlatform(p: SocParameters, board: SocParameters => Board
   val host = asyncChild("i2c")(d => new I2cTarget(p.i2cAddress,p.i2cIdleCycles,d))
   host.clock := serviceClock; host.scl := scl; host.sda := sda
   fabric.io.i2c <> host.host; sdaLow := host.pullLow
-  val programAccess = asyncChild("program_access")(d => new SramAccess(d))
+  val programAccess = asyncChild("program_access")(d => new ProgramAccess(d))
+  val programReturn = asyncChild("program_return")(d => new FourPhaseProgramReturn(d))
   val ramAccess = asyncChild("ram_access")(d => new RamAccess(d))
   val ramReturn = asyncChild("ram_return")(d => new FourPhaseRamReturn(d))
   programAccess.clock := workClock; ramAccess.clock := workClock
@@ -143,9 +142,8 @@ abstract class FourPhasePlatform(p: SocParameters, board: SocParameters => Board
   val programReserve=asyncChild("program_reserve_bridge")(d => new chiselasync.clocked.DecoupledToFourPhase(Bool(),2,d))
   val programGrant=asyncChild("program_grant_bridge")(d => new chiselasync.clocked.FourPhaseToDecoupled(Bool(),2,d))
   val programDecision=asyncChild("program_decision_bridge")(d => new chiselasync.clocked.DecoupledToFourPhase(Bool(),2,d))
-  val programPublication=asyncChild("program_publication_bridge")(d => new chiselasync.clocked.DecoupledToFourPhase(Bool(),2,d))
   val programStored=asyncChild("program_stored_bridge")(d => new FourPhaseStoredReceipt(d))
-  Seq(programReserve,programDecision,programPublication).foreach { b =>
+  Seq(programReserve,programDecision).foreach { b =>
     b.clock:=workClock; dontTouch(b.in); dontTouch(b.out)
   }
   programGrant.clock:=workClock; dontTouch(programGrant.in); dontTouch(programGrant.out)
@@ -156,17 +154,26 @@ abstract class FourPhasePlatform(p: SocParameters, board: SocParameters => Board
   chiselasync.protocol.FourPhase.connect(programSource.reserve,programReserve.out)
   chiselasync.protocol.FourPhase.connect(programGrant.in,programSource.grant)
   chiselasync.protocol.FourPhase.connect(programSource.decision,programDecision.out)
-  chiselasync.protocol.FourPhase.connect(programSource.publication,programPublication.out)
+  chiselasync.protocol.FourPhase.connect(programSource.publication,programReturn.publication)
+  chiselasync.protocol.FourPhase.connect(programReturn.word,programAccess.word)
+  programAccess.captureRequest:=programReturn.captureRequest
+  programReturn.captureAcknowledge:=programAccess.captureAcknowledge
+  programAccess.returnIdle:=programReturn.idle
+  programReturn.applicationReset:=fabric.io.cpuReset.asAsyncReset
+  programReturn.eligible:=programSource.cpuPresentationPermit
+  completion.memory.req:=programReturn.response.req; completion.memory.bits:=programReturn.response.bits
+  programReturn.response.ack:=completion.memory.ack
   programReserve.in <> fabric.io.programSource.reserve; fabric.io.programSource.grant <> programGrant.out
-  programDecision.in <> fabric.io.programSource.decision; programPublication.in <> fabric.io.programSource.publication
+  programDecision.in <> fabric.io.programSource.decision
   programSource.applicationReset:=fabric.io.cpuReset.asAsyncReset
-  programSource.wordDrained:= !programAccess.io.busy // Excludes its own receipt bridges.
+  // Capture/effects and CPU settlement cannot wait for publication or Stored return.
+  programSource.wordDrained:=programAccess.effectsDrained && programReturn.presentationSettled
   fabric.io.programSource.eligible:=programSource.eligible
   val programOwnerIdle=withClockAndReset(workClock,reset) {
     val first=RegNext(programSource.idle,false.B); RegNext(first,false.B)
   }
   val programSourceEmpty=programOwnerIdle && !programAccess.io.busy && programReserve.in.ready &&
-    programDecision.in.ready && programPublication.in.ready && !programGrant.out.valid && !programStored.out.valid
+    programDecision.in.ready && !programGrant.out.valid && !programStored.out.valid
   val programResetDebt=withClockAndReset(workClock,fabric.io.cpuReset.asAsyncReset) {
     val debt=RegInit(true.B)
     // Restart the release history on EVERY raw pulse, even between clock edges.

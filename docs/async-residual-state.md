@@ -1,9 +1,11 @@
 # Remaining clocked-state audit
 
 The asynchronous migration has not reached its physically feasible limit.
-This preliminary ledger records the working-RAM return implementation at
-checklist step 10b2d1. It provides removal candidates for
+This preliminary ledger records the digitally verified program/loader return at
+checklist step 10b2d2. It provides removal candidates for
 [steps 10–17](async-soc-migration.md), not permission to retain existing clocks.
+The declaration/ABI audit and digital qualification of 10b2d2 pass. Counting
+emitted state does not establish physical timing or minimum synchronous state.
 
 ## Scope and complete reference totals
 
@@ -17,13 +19,13 @@ complete per-owner clock/reset resolution remain item 16 work.
 | Disjoint owner group | BD bits | Click bits |
 | --- | ---: | ---: |
 | Flattened SoC top | 3,275 | 3,276 |
-| 62 crossing/receipt owners | 4,229 | 4,229 |
-| Five clocked wrappers | 1,181 | 1,181 |
-| **Total: 68 owners** | **8,685** | **8,686** |
+| 60 crossing/receipt owners | 4,147 | 4,147 |
+| Five clocked wrappers | 1,183 | 1,183 |
+| **Total: 66 owners** | **8,605** | **8,606** |
 
 Each total includes one already-asynchronous SDA-edge capture bit. Periodic
-clocked subsets are therefore 8,684 and 8,685 bits. The wrappers contain I2C
-941, SPI 175, elapsed transport 37, RAM access 15 and program access 13 bits.
+clocked subsets are therefore 8,604 and 8,605 bits. The wrappers contain I2C
+941, SPI 175, elapsed transport 37, RAM access 15 and program access 15 bits.
 
 ## Removal ledger
 
@@ -49,17 +51,19 @@ need retained storage and can temporarily require new receipt/synchronizer bits.
 | Heartbeat/kick delivery | 4 / 4 | 15d |
 | ADC launch pending | 1 / 1 | 13b, 15c |
 
-First complete program/loader native return: its word reply, publication and
-Completion memory ingress contain 39 + 8 + 40 candidate bits. Preserve the
-five-bit Stored receipt's Control-acceptance meaning. Then migrate mailbox and
-dispatch ownership, independent observation histories, and coherent publication.
+Program/loader native return removes the word reply, publication and Completion
+memory ingress (39 + 8 + 40 bits). Its independent capture receipt and owner-idle
+observation add five plus two clocked bits, a net reduction of 80 per variant.
+Preserve the separate five-bit Stored receipt's Control-acceptance meaning.
+Next migrate mailbox and dispatch ownership, independent observation histories,
+and coherent publication.
 Remove their intermediate crossings as each pair of adjacent owners becomes
 native; preserve reset lifetimes and complete previous-token return.
 
 The eight clocked service command/reply owners account for 2,518 crossing bits;
 I2C delivery 359, elapsed delivery 205, SPI delivery 97, SRAM access crossings
-708, CPU/completion/admission crossings 185, and source/final receipts 157.
-Together they sum to 4,229. A bridge's current existence is not a physical reason
+674, CPU/completion/admission crossings 145, and source/final receipts 149.
+Together they sum to 4,147. A bridge's current existence is not a physical reason
 to keep its service-clock client.
 
 ## Timed boundaries still need individual justification
@@ -82,10 +86,12 @@ current counter widths and surrounding policy still require an owner-level audit
 The chip wrapper's default 20-bit reset-hold implementation is outside these
 totals and retains its continuous-good minimum hold requirement.
 
-The reproducible declaration scan, complete owner/register assignments, hashes
-and priority analysis are retained in `build/async-ram-return-migration/` as
-`residual-priority-audit.json`, `residual_priority_scan.py` and
-`residual-priority-audit.md`. Item 16 must cover other configurations and resolve
+The fresh declaration scan, owner/register assignments, source hashes and exact
+baseline deltas are retained in `build/async-program-return-migration/` as
+`compare_state_and_abi.py`, `clocked-state-comparison.json`, `state-inventory/`
+and `residual-register-candidates.json`. The unchanged top-level group assignment
+is retained in `build/async-ram-return-migration/residual-priority-audit.json`.
+Item 16 must cover other configurations and resolve
 all remaining clocks/resets. Item 17 must qualify characterized cells, complete
 paths and routed timing before any maximal-asynchrony claim. Older P&R does not
 qualify this implementation.

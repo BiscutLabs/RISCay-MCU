@@ -16,7 +16,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from check_ram_return_integration import close_error_aliases, mask_literal_zero
+from check_ram_return_integration import close_error_aliases, mask_literal_zero, apply_return_literal_obligations
 
 
 def clean(text):
@@ -288,6 +288,26 @@ class ConstantMaskTests(unittest.TestCase):
             self.assertIn(f"ones_7 !== {width}'h{full ^ (1 << bit):x}", result)
             self.assertIn(f"zeros_7 !== {width}'h{full:x}", result)
             self.assertEqual(result.count('$fatal'), 1)
+
+    def test_independent_ram_and_program_masks_share_one_closed_requirement(self):
+        for width,bits in ((103,(0,33)),(112,(9,42))):
+            full=(1<<width)-1
+            source=f'if (ones_7 !== {width}\'h{full:x} || zeros_7 !== {width}\'h{full:x}) $fatal(1, "INACTIVE_ENDPOINT:Soc.sources");'
+            obligations=[('Soc.sources',width,bit) for bit in bits]
+            result=apply_return_literal_obligations(source,obligations)
+            self.assertEqual(result,apply_return_literal_obligations(source,list(reversed(obligations))))
+            self.assertIn(f"ones_7 !== {width}'h{full ^ sum(1<<bit for bit in bits):x}",result)
+            self.assertIn(f"zeros_7 !== {width}'h{full:x}",result)
+            self.assertEqual(result.count('$fatal'),1)
+            self.assertEqual(source.count('$fatal'),result.count('$fatal'))
+            for malformed in (obligations+[obligations[0]], obligations+[('Soc.sources',33,0)]):
+                with self.assertRaisesRegex(ValueError,'CONSTANT_MASK_DUPLICATE_OR_WIDTH'):
+                    apply_return_literal_obligations(source,malformed)
+            with self.assertRaisesRegex(ValueError,'CONSTANT_COVERAGE_SHAPE'):
+                apply_return_literal_obligations(result,obligations)
+        for width,bit in ((0,0),(1,-1),(1,1),(1,'0'),('1',0)):
+            with self.assertRaisesRegex(ValueError,'CONSTANT_MASK_RANGE'):
+                apply_return_literal_obligations('',[('Soc.sources',width,bit)])
 
     def test_missing_or_duplicated_coverage_check_fails_closed(self):
         source = 'if (ones_1 !== 1\'h1 || zeros_1 !== 1\'h1) $fatal(1, "INACTIVE_ENDPOINT:Soc.alias");'

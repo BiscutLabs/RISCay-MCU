@@ -32,9 +32,9 @@ class SramCrossingFixture(p: SocParameters) extends MemoryResetFixture(p) {
   byteWaiting := fabric.io.ram.completions(heldLane).valid
   val holdProgramWord = IO(Input(Bool())); val programWordWaiting = IO(Output(Bool()))
   val sleepEligible = IO(Output(Bool())); sleepEligible := fabric.io.canSleep
-  fabric.io.program.response.valid := programAccess.io.response.valid && !holdProgramWord
-  programAccess.io.response.ready := fabric.io.program.response.ready && !holdProgramWord
-  programWordWaiting := programAccess.io.response.valid
+  programReturn.word.req := programAccess.word.req && !holdProgramWord
+  programAccess.word.ack := programReturn.word.ack && !holdProgramWord
+  programWordWaiting := programAccess.word.req || programReturn.publication.req
   wordWaiting := ramAccess.word.req || ramReturn.publication.req
   memoryBusy := ramAccess.io.busy || programAccess.io.busy
 }
@@ -53,9 +53,10 @@ class ClickSramCrossingFixture(p: SocParameters) extends ClickMemoryResetFixture
   byteWaiting := fabric.io.ram.completions(heldLane).valid
   val holdProgramWord = IO(Input(Bool())); val programWordWaiting = IO(Output(Bool()))
   val sleepEligible = IO(Output(Bool())); sleepEligible := fabric.io.canSleep
-  fabric.io.program.response.valid := programAccess.io.response.valid && !holdProgramWord
-  programAccess.io.response.ready := fabric.io.program.response.ready && !holdProgramWord
-  programWordWaiting := programAccess.io.response.valid
+  programReturn.word.req := Mux(holdProgramWord,programReturn.word.ack,programAccess.word.req)
+  programAccess.word.ack := programReturn.word.ack
+  programWordWaiting := (programAccess.word.req =/= programAccess.word.ack) ||
+    (programReturn.publication.req =/= programReturn.publication.ack)
   wordWaiting := (ramAccess.word.req =/= ramAccess.word.ack) ||
     (ramReturn.publication.req =/= ramReturn.publication.ack)
   memoryBusy := ramAccess.io.busy || programAccess.io.busy

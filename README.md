@@ -109,9 +109,16 @@ Passing digital checks does not establish physical timing or minimum synchronous
 state. Substep 10b2d1 connects separate native RAM return owners to SRAM, source
 publication and Completion. Fresh review, all 415 verification cases across
 44 suites, two physical-policy cases, 217 Python controls and both strict
-SoC exports pass. It removes 39 net clocked RTL bits per variant; program/loader
-word crossings remain. See the [RAM return contract](docs/ram-return-contract.md)
-and [remaining-state ledger](docs/async-residual-state.md).
+SoC exports pass. It removes 39 net clocked RTL bits per variant. Program/loader
+return (10b2d2) is also digitally verified: three clocked word/publication/completion
+crossings are removed, reducing clocked RTL by another 80 bits per variant.
+Fresh review, all 461 verification cases across 45 suites in an audited split
+regression, two physical-policy cases, 301 Python tests and both strict exports
+pass. The strengthened final loader-source recheck passes all 16 cases.
+Host admission, dispatch and the remaining ledger still require migration.
+See the [RAM return contract](docs/ram-return-contract.md),
+[program return contract](docs/program-return-contract.md) and
+[remaining-state ledger](docs/async-residual-state.md).
 The independent LF timebase/watchdog remains necessary. See the [migration checklist](docs/async-soc-migration.md). A permanent
 Groundlark controller supervises power before upload and during application
 stalls. Its state, safety sample record and confirmation counters now reside

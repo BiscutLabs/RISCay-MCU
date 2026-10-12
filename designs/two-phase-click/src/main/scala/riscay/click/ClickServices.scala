@@ -46,7 +46,6 @@ class ClickServices(p: SocParameters, boardFactory: SocParameters => BoardProfil
     request.valid := false.B
     request.bits := 0.U.asTypeOf(new SramWordRequest)
   }
-  io.program.response.ready := true.B
   // Native state owns decisions; this is a coherent clock-domain snapshot.
   val controlState = RegInit(ControlState.initial)
   val controlOutstanding = RegInit(false.B)
@@ -278,10 +277,9 @@ class ClickServices(p: SocParameters, boardFactory: SocParameters => BoardProfil
   io.completionPlan.bits.ram := waitRam
   io.completionPlan.bits.telemetry := telemetryAccepted
   io.completionPlan.bits.housekeeping := housekeepingAction.cpuCompletion
-  io.completionMemory.valid := false.B; io.completionMemory.bits := 0.U.asTypeOf(new MemoryResponse)
   io.completionTelemetry.valid := false.B; io.completionTelemetry.bits := true.B
   io.completionHousekeeping.valid := false.B; io.completionHousekeeping.bits := true.B
-  val completionAvailable = io.completionIdle && io.completionPlan.ready && io.completionMemory.ready &&
+  val completionAvailable = io.completionIdle && io.completionPlan.ready &&
     io.completionTelemetry.ready && io.completionHousekeeping.ready
   val req = io.request.bits
   val isRead = req.operation === Operation.Read.U
@@ -332,9 +330,6 @@ class ClickServices(p: SocParameters, boardFactory: SocParameters => BoardProfil
     (programCpuCommit || programLoaderCommit || programCancel)
   io.programSource.decision.valid := io.programSource.grant.fire
   io.programSource.decision.bits := programCpuCommit || programLoaderCommit
-  io.program.response.ready := io.programSource.publication.ready
-  io.programSource.publication.valid := io.program.response.valid
-  io.programSource.publication.bits := io.program.response.bits(0)
   val programLoaderReady = io.programSource.grant.valid && io.programSource.grant.bits &&
     io.programSource.decision.ready && io.program.request.ready
   io.programSource.stored.ready := io.controlCommand.fire && io.controlCommand.bits.kind === ControlKind.Stored.U
@@ -415,15 +410,6 @@ class ClickServices(p: SocParameters, boardFactory: SocParameters => BoardProfil
     (!ramOperation || ramAdmission) && (!programCpuOperation || programAdmission)
 
   io.commit.valid := io.request.fire; io.commit.bits := req
-  // Accepted stores finish through a watchdog reset, but their CPU completion
-  // is discarded. POR may abort a partial word; neither reset clears SRAM bits.
-  when(io.program.response.fire && !io.programSource.ownerLoader && io.programSource.eligible &&
-      !io.programSource.resetDebt && !io.cpuResetActive) {
-    io.completionMemory.valid := true.B
-    io.completionMemory.bits.error := false.B
-    io.completionMemory.bits.data := io.program.response.bits
-    assert(io.completionMemory.ready,"COMPLETION_MEMORY_OVERFLOW")
-  }
   when(io.request.fire) {
     when(waitingRead) { housekeepingAction.waitAccepted := true.B }
     when(nativeMmio && housekeepingWriteRequired && req.address(6,0) =/= 64.U) { housekeepingAction.write := true.B }

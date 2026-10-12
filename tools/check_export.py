@@ -5,7 +5,7 @@ The library defaults to 60 seconds, which its small component probes fit. This
 adapter extends the contract probe's compilation and simulation limits. With
 --soc it checks CPU child resets against the generated system-reset endpoint and
 the named persistent Control children against POR. Endpoint/timing checks and
-all dynamic polarity coverage are retained. Three literal completion bridge
+all dynamic polarity coverage are retained. Two literal completion bridge
 input leaves have exact binding obligations instead of impossible polarity walks.
 The library checkout is an explicit development dependency.
 """
@@ -21,10 +21,13 @@ import json
 import hashlib
 from check_completion_export import (BD_COMPLETION_PATH, CLICK_COMPLETION_PATH,
                                      validate_completion, completion_bindings)
-from check_completion_integration import completion_background, completion_constants_probe
+from check_completion_integration import completion_background, completion_constants_probe, native_return_cell
 from check_admission_export import validate_admission, literal_nets, admission_probe
 from check_ram_return_contract import PATHS as RAM_RETURN_PATHS, validate_ram_return, ram_return_bindings, policy as ram_return_policy
-from check_ram_return_integration import ram_return_probe
+from check_ram_return_integration import ram_return_probe, apply_return_literal_obligations
+from check_program_return_contract import (PATHS as PROGRAM_RETURN_PATHS, validate_program_return,
+                                         program_return_bindings, policy as program_return_policy)
+from check_program_return_integration import program_return_probe
 from check_application_reset import validate_application_reset, persistent_reset_children
 from check_ram_source_export import ARM_PATH, RETIRE_PATH, validate_ram_source, ram_source_bindings, ram_source_probe
 from check_program_source_export import PROGRAM_PATHS, validate_program_source, program_source_bindings, program_source_probe, validate_program_receipts
@@ -402,7 +405,7 @@ def sram_background(source: str, manifest: dict, scopes: dict, checks: int):
     if not owners:
         return source, checks
     if (set(owners) != {"program_access", "ram_access"} or
-            any(not re.fullmatch((r"SramAccess" if k=="program_access" else r"RamAccess")+r"(?:_[0-9]+)?", n["module"]) for k,n in owners.items())):
+            any(not re.fullmatch((r"ProgramAccess" if k=="program_access" else r"RamAccess")+r"(?:_[0-9]+)?", n["module"]) for k,n in owners.items())):
         raise ValueError("SRAM_PROBE_OWNER_MISMATCH")
     top = manifest["top"]
     anchor = f"initial begin\nforce {top}.reset = 1'b1; #1;\n"
@@ -443,8 +446,7 @@ def sram_background(source: str, manifest: dict, scopes: dict, checks: int):
                           "bytesReturned_stages_2", "bytesReturned_stages_3"):
                 for stage in (0, 1):
                     force(node["rtl_path"] + f".{group}_{stage}", 1, 1)
-            if node is owners["ram_access"]:
-                for stage in (0,1):force(node["rtl_path"]+f".ownerReturned_stages_{stage}",1,1)
+            for stage in (0,1):force(node["rtl_path"]+f".ownerReturned_stages_{stage}",1,1)
         check()
 
     idle()
@@ -473,16 +475,13 @@ def sram_background(source: str, manifest: dict, scopes: dict, checks: int):
     # Invalid addresses exercise the offered payload, never admitted effects.
     for value in walk(32):
         force(request + ".data_address", 32, (0x20000000 + value) & 0xffffffff); check()
-    # A retained word publishes only when ownership and the reply crossing agree.
-    # Generic all-high backgrounds also assert the crossing's local reset, while
-    # individual driver walks cannot combine active=1 with reply state=2.
-    # RAM already receives the same coherent publication walk in completion_background.
+    # The retained native word drives publication directly. Walk the actual
+    # storage output; the obsolete clocked word reply must not survive this item.
     idle()
-    owner = owners["program_access"]["rtl_path"]
-    force(owner + ".active", 1, 1)
-    force(owner + ".ca_child_reply_bridge.state", 2, 2)
+    payload=native_return_cell(manifest,scopes,header,'program','payload','ca_primitive_payload',
+        'ChiselAsyncEventRegister_v1',dict(WIDTH='32',DELAY_FS='1000000',RESET_VALUE='0'),32)
     for value in walk(32):
-        force(owner + ".ca_child_reply_bridge.data", 32, value); check()
+        extra.append(f"force {payload} = 32'h{value:x};\n");check()
     extra.append(header)
     for bank in ("program", "ram"):
         force(top + f".fabric_{bank}_state", 2, 3)
@@ -753,6 +752,8 @@ def validate_fabric_inventory(manifest):
     """Required obligations cannot vanish along with their passive markers."""
     def visit(node):
         module = node["module"]
+        if re.fullmatch(r"(?:FourPhase|Click)ProgramReturn(?:_[0-9]+)?", module):
+            validate_program_return(node)
         if re.fullmatch(r"(?:FourPhase|Click)RamReturn(?:_[0-9]+)?", module):
             validate_ram_return(node)
         if re.fullmatch(r"(?:FourPhase|Click)RecoveryReturn(?:_[0-9]+)?", module):
@@ -828,6 +829,9 @@ def validate_fabric_path(node, timing):
     primitive, elaborated pin, endpoint mapping and endpoint activity afterwards.
     """
     logic = timing.get("logic")
+    if logic in PROGRAM_RETURN_PATHS:
+        validate_program_return(node,resolved=True)
+        return
     if logic in RAM_RETURN_PATHS:
         validate_ram_return(node,resolved=True)
         return
@@ -958,6 +962,8 @@ def spi_program_probe(source, manifest, scopes):
 
 def fabric_path_bindings(node, timing):
     """Actual mux/storage pin comparisons added to the unchanged library probe."""
+    if timing.get("logic") in PROGRAM_RETURN_PATHS:
+        return program_return_bindings(node,resolved=True)
     if timing.get("logic") in RAM_RETURN_PATHS:
         return ram_return_bindings(node,resolved=True)
     if timing.get("logic") in RECOVERY_RETURN_PATHS:
@@ -1019,14 +1025,15 @@ def fabric_checker_source(source):
              + ','.join(f'{logic!r}: ([], {delay!r}, {src!r}, {sink!r})' for _,logic,src,sink,delay in PUBLICATION_PATH_TABLE+RECOVERY_RETURN_PATH_TABLE)+','
              + ','.join(f'{t["logic"]!r}: ([], {t["delay_cell"]!r}, '+
                  ("('input_sources' if node['module'].startswith('Click') else 'word_data')" if t['source']=='input_sources' else repr(t['source']))+
-                 f', {t["sink"]!r})' for t in ram_return_policy('click')['timings'] if t['kind']=='bundled-data-path-v1')+'}'
+                 f', {t["sink"]!r})' for policy in (ram_return_policy,program_return_policy)
+                 for t in policy('click')['timings'] if t['kind']=='bundled-data-path-v1')+'}'
              + "\n                validate_fabric_path(node, timing)")
     source = source.replace(anchor, extra)
     anchor = 'if timing["logic"] in ("exclusive-merge-input-mux", "controlled-multiplexer-input-mux"):'
     if source.count(anchor) != 1:
         raise ValueError("MCU_FABRIC_CHECKER_SHAPE_CHANGED")
     source = source.replace(anchor,
-        f'if timing["logic"] in ({BD_FABRIC_PATH!r}, {CLICK_FABRIC_PATH!r}, {I2C_PROJECTION_PATH!r}, {BD_COMPLETION_PATH!r}, {CLICK_COMPLETION_PATH!r}, {ARM_PATH!r}, {RETIRE_PATH!r}, {PROGRAM_PATHS[0]!r}, {PROGRAM_PATHS[1]!r}, {PROGRAM_PATHS[2]!r},'+','.join(map(repr,PUBLICATION_PATHS+RECOVERY_RETURN_PATHS+RAM_RETURN_PATHS))+'):\n'
+        f'if timing["logic"] in ({BD_FABRIC_PATH!r}, {CLICK_FABRIC_PATH!r}, {I2C_PROJECTION_PATH!r}, {BD_COMPLETION_PATH!r}, {CLICK_COMPLETION_PATH!r}, {ARM_PATH!r}, {RETIRE_PATH!r}, {PROGRAM_PATHS[0]!r}, {PROGRAM_PATHS[1]!r}, {PROGRAM_PATHS[2]!r},'+','.join(map(repr,PUBLICATION_PATHS+RECOVERY_RETURN_PATHS+RAM_RETURN_PATHS+PROGRAM_RETURN_PATHS))+'):\n'
         '                    pairs = fabric_path_bindings(node, timing)\n'
         '                el' + anchor)
     # A mixed-reset raw response is not a same-reset library channel. Its
@@ -1035,7 +1042,7 @@ def fabric_checker_source(source):
     anchor = '        for endpoint in node["endpoints"]:\n            fields = layouts.get'
     if source.count(anchor) != 1:raise ValueError("RAM_RETURN_LAYOUT_CHECKER_SHAPE")
     source = source.replace(anchor,
-        '        if re.fullmatch(r"(?:FourPhase|Click)RamReturn(?:_[0-9]+)?", node["module"]):\n'
+        '        if re.fullmatch(r"(?:FourPhase|Click)(?:Ram|Program)Return(?:_[0-9]+)?", node["module"]):\n'
         '            value = endpoint_by_id["response_data"]["source"]\n'
         '            layouts["response_data"] = [{"source": value+".error", "lsb": 0, "width": 1}, {"source": value+".data", "lsb": 1, "width": 32}]\n' + anchor)
     # BD's captured-word arm uses the explicitly checked request_guard. Keep
@@ -1044,7 +1051,7 @@ def fabric_checker_source(source):
     if source.count(anchor) != 1:raise ValueError("RAM_RETURN_GUARD_CHECKER_SHAPE")
     source = source.replace(anchor,
         'request = next((p for p in budget_owner["primitives"] if p["id"] == '
-        '("request_guard" if re.fullmatch(r"FourPhaseRamReturn(?:_[0-9]+)?", budget_owner["module"]) else "request_delay")), None)')
+        '("request_guard" if re.fullmatch(r"FourPhase(?:Ram|Program)Return(?:_[0-9]+)?", budget_owner["module"]) else "request_delay")), None)')
     anchor = '    if "INACTIVE_ENDPOINT:" in simulation.stdout:'
     if source.count(anchor) != 1:
         raise ValueError("MCU_FABRIC_CHECKER_SHAPE_CHANGED")
@@ -1239,7 +1246,10 @@ def main() -> None:
             (args.directory / (manifest["top"]+".sv")).read_text(encoding="utf-8"))
         source = admission_probe(source, manifest, scopes)
         source = ram_source_probe(source, manifest, scopes)
-        source = ram_return_probe(source, manifest, scopes, args.directory)
+        literal_obligations=[]
+        source = ram_return_probe(source, manifest, scopes, args.directory,literal_obligations=literal_obligations)
+        source = program_return_probe(source, manifest, scopes, args.directory,literal_obligations=literal_obligations)
+        source = apply_return_literal_obligations(source,literal_obligations)
         source = program_source_probe(source, manifest, scopes)
         source = publication_source_probe(source, manifest, scopes)
         if args.vector_coverage:

@@ -10,6 +10,13 @@ import java.util.zip.CRC32
 class BdProgramSourceFixture(p: SocParameters) extends SramCrossingFixture(p) {
   val holdGrant=IO(Input(Bool())); val holdDecision=IO(Input(Bool()))
   val holdPublication=IO(Input(Bool())); val holdStored=IO(Input(Bool()))
+  val holdCaptureReceipt=IO(Input(Bool())); val stopWorkClock=IO(Input(Bool()))
+  workClock:=(serviceClock.asBool && !stopWorkClock).asClock
+  fabric.io.clockRunning:= !stopWorkClock
+  val observedWorkClock=IO(Output(Clock())); observedWorkClock:=workClock
+  val captureWaiting=IO(Output(Bool())); captureWaiting:=programReturn.captureRequest =/= programReturn.captureAcknowledge
+  programAccess.captureRequest:=programReturn.captureRequest && !holdCaptureReceipt
+
   val holdStoredReply=IO(Input(Bool())); val holdProgramByte=IO(Input(Bool()))
   val programLane=IO(Input(UInt(2.W))); val programByteWaiting=IO(Output(Bool()))
   for(i <- 0 until 4) {
@@ -22,8 +29,9 @@ class BdProgramSourceFixture(p: SocParameters) extends SramCrossingFixture(p) {
   programGrant.out.ready:=fabric.io.programSource.grant.ready && !holdGrant
   programDecision.in.valid:=fabric.io.programSource.decision.valid && !holdDecision
   fabric.io.programSource.decision.ready:=programDecision.in.ready && !holdDecision
-  programPublication.in.valid:=fabric.io.programSource.publication.valid && !holdPublication
-  fabric.io.programSource.publication.ready:=programPublication.in.ready && !holdPublication
+  programSource.publication.req:=programReturn.publication.req && !holdPublication
+  programReturn.publication.ack:=programSource.publication.ack && !holdPublication
+  val nativeClick=IO(Output(Bool())); nativeClick:=false.B
   fabric.io.programSource.stored.valid:=programStored.out.valid && !holdStored
   programStored.out.ready:=fabric.io.programSource.stored.ready && !holdStored
   val blockReply=holdStoredReply && controlReplyBridge.out.bits.kind === ControlKind.Stored.U
@@ -42,7 +50,8 @@ class BdProgramSourceFixture(p: SocParameters) extends SramCrossingFixture(p) {
   val sourceDebt=IO(Output(Bool())); sourceDebt:=programResetDebt
   val sourceDraining=IO(Output(Bool())); sourceDraining:=fabric.io.programSource.draining
   val wordAccepted=IO(Output(Bool())); wordAccepted:=programAccess.io.request.fire
-  val publicationAccepted=IO(Output(Bool())); publicationAccepted:=programPublication.in.fire
+  val nativeResponsePhase=IO(Output(Bool())); nativeResponsePhase:=programReturn.response.req
+  val publicationAccepted=IO(Output(Bool())); publicationAccepted:=programReturn.publication.ack
   val cancelled=IO(Output(Bool())); cancelled:=programDecision.in.fire && !programDecision.in.bits
   val storedWaiting=IO(Output(Bool())); storedWaiting:=programStored.out.valid
   val storedAccepted=IO(Output(Bool())); storedAccepted:=programStored.out.fire
@@ -62,6 +71,13 @@ class BdProgramSourceFixture(p: SocParameters) extends SramCrossingFixture(p) {
 class ClickProgramSourceFixture(p: SocParameters) extends ClickSramCrossingFixture(p) {
   val holdGrant=IO(Input(Bool())); val holdDecision=IO(Input(Bool()))
   val holdPublication=IO(Input(Bool())); val holdStored=IO(Input(Bool()))
+  val holdCaptureReceipt=IO(Input(Bool())); val stopWorkClock=IO(Input(Bool()))
+  workClock:=(serviceClock.asBool && !stopWorkClock).asClock
+  fabric.io.clockRunning:= !stopWorkClock
+  val observedWorkClock=IO(Output(Clock())); observedWorkClock:=workClock
+  val captureWaiting=IO(Output(Bool())); captureWaiting:=programReturn.captureRequest =/= programReturn.captureAcknowledge
+  programAccess.captureRequest:=Mux(holdCaptureReceipt,programReturn.captureAcknowledge,programReturn.captureRequest)
+
   val holdStoredReply=IO(Input(Bool())); val holdProgramByte=IO(Input(Bool()))
   val programLane=IO(Input(UInt(2.W))); val programByteWaiting=IO(Output(Bool()))
   for(i <- 0 until 4) {
@@ -74,8 +90,9 @@ class ClickProgramSourceFixture(p: SocParameters) extends ClickSramCrossingFixtu
   programGrant.out.ready:=fabric.io.programSource.grant.ready && !holdGrant
   programDecision.in.valid:=fabric.io.programSource.decision.valid && !holdDecision
   fabric.io.programSource.decision.ready:=programDecision.in.ready && !holdDecision
-  programPublication.in.valid:=fabric.io.programSource.publication.valid && !holdPublication
-  fabric.io.programSource.publication.ready:=programPublication.in.ready && !holdPublication
+  programSource.publication.req:=Mux(holdPublication,programSource.publication.ack,programReturn.publication.req)
+  programReturn.publication.ack:=programSource.publication.ack
+  val nativeClick=IO(Output(Bool())); nativeClick:=true.B
   fabric.io.programSource.stored.valid:=programStored.out.valid && !holdStored
   programStored.out.ready:=fabric.io.programSource.stored.ready && !holdStored
   val blockReply=holdStoredReply && controlReplyBridge.out.bits.kind === ControlKind.Stored.U
@@ -94,7 +111,8 @@ class ClickProgramSourceFixture(p: SocParameters) extends ClickSramCrossingFixtu
   val sourceDebt=IO(Output(Bool())); sourceDebt:=programResetDebt
   val sourceDraining=IO(Output(Bool())); sourceDraining:=fabric.io.programSource.draining
   val wordAccepted=IO(Output(Bool())); wordAccepted:=programAccess.io.request.fire
-  val publicationAccepted=IO(Output(Bool())); publicationAccepted:=programPublication.in.fire
+  val nativeResponsePhase=IO(Output(Bool())); nativeResponsePhase:=programReturn.response.req
+  val publicationAccepted=IO(Output(Bool())); publicationAccepted:=programReturn.publication.ack
   val cancelled=IO(Output(Bool())); cancelled:=programDecision.in.fire && !programDecision.in.bits
   val storedWaiting=IO(Output(Bool())); storedWaiting:=programStored.out.valid
   val storedAccepted=IO(Output(Bool())); storedAccepted:=programStored.out.fire
@@ -120,18 +138,31 @@ class ProgramSourceSpec extends AnyFunSuite {
   }
   private val word=0x89abcdefL
   private val tasks="""
+    wire captureAccepted=dut.ca_child_program_access.ca_child_capture_receipt.accepted;
+    wire accessActive=dut.ca_child_program_access.ca_child_capture_receipt.accept;
+    reg loaderWordPending=0;
+    integer captures=0,beforeCaptures,cpuOffers=0,beforeOffers,j,progressWait;
+    reg priorPhase;
     integer accepted=0,words=0,writes=0,published=0,cancelledCount=0,storedCount=0,storedReplies=0;
     integer n,beforeAccepted,beforeWords,beforeWrites,beforePublished,beforeCancel,beforeStored;
-    always @(posedge serviceClock) if(!reset) begin
+    always @(posedge observedWorkClock) if(!reset) begin
+      if(captureAccepted) captures=captures+1;
       if(request_valid && request_ready) accepted=accepted+1;
       if(wordAccepted) words=words+1;
-      if(publicationAccepted) published=published+1;
       if(cancelled) cancelledCount=cancelledCount+1;
       if(storedAccepted) storedCount=storedCount+1;
       if(storedReplyAccepted) storedReplies=storedReplies+1;
-      if(!dut.fabric_program_macros_0.CEN && !dut.fabric_program_macros_0.GWEN) writes=writes+1;
       if(sourceDraining && sleepEligible) $fatal(1,"PROGRAM_SOURCE_DRAIN_SLEPT");
     end
+    always @(posedge dut.fabric_program_macros_0.CLK)
+      if(!reset && !dut.fabric_program_macros_0.CEN && !dut.fabric_program_macros_0.GWEN) writes=writes+1;
+    // Classify role from the independent host/CPU driver, not projected DUT state.
+    always @(nativeResponsePhase) if(!reset && !systemReset && (nativeClick || nativeResponsePhase)) begin
+      if(loaderWordPending) $fatal(1,"PROGRAM_LOADER_UNSOLICITED_CPU_RESPONSE");
+      cpuOffers=cpuOffers+1;
+    end
+    // Observe real native acceptance, including both Click phase polarities.
+    always @(publicationAccepted) if(!reset && (nativeClick || publicationAccepted)) published=published+1;
     task send_host; begin
       @(negedge serviceClock); injectedValid=1;
       @(posedge serviceClock); while(!injectedAccepted) @(posedge serviceClock);
@@ -155,6 +186,7 @@ class ProgramSourceSpec extends AnyFunSuite {
         $fatal(1,"PROGRAM_SOURCE_BEGIN mode=%d received=%d crc=%h err=%d",mode,received,crc,lastError);
     end endtask
     task host_write(input [31:0] value); begin
+      loaderWordPending=1;
       injectedBytes=0; injectedBytes[0+:8]=2; injectedBytes[40+:32]=value;
       injectedLength=9; send_host();
     end endtask
@@ -173,6 +205,7 @@ class ProgramSourceSpec extends AnyFunSuite {
       if(response_valid) $fatal(1,"PROGRAM_SOURCE_STALE_REPLY");
     end endtask
     task offer_read; begin
+      loaderWordPending=0;
       @(negedge serviceClock); request_valid=1; request_bits_operation=0;
       request_bits_address=32'h10000000; request_bits_data=0; request_bits_mask=15;
     end endtask
@@ -262,6 +295,96 @@ class ProgramSourceSpec extends AnyFunSuite {
         end
       """,tasks,serviceHalfPeriodNs=25,deadlineNs=2000000,maximumDelaySubtree=Some("ca_child_program_source"))
     }
+    test(s"$name program return: loader never offers native CPU response across role and phase alternation without reset") {
+      ClockedSimulation.run(fixture,name+"-program-role-phase-alternation",s"""
+        for(n=0;n<4;n=n+1) begin
+          idle_check();host_begin(32'h${crc(word).toHexString});
+          beforeOffers=cpuOffers;beforeWords=words;beforeWrites=writes;
+          beforePublished=published;beforeStored=storedCount;priorPhase=nativeResponsePhase;
+          holdPublication=1;holdStored=1;host_write(32'h${word.toHexString});
+          wait(programWordWaiting);repeat(40) @(negedge serviceClock);
+          if(cpuOffers!=beforeOffers || nativeResponsePhase!==priorPhase || storedCount!=beforeStored || received!==0)
+            $$fatal(1,"PROGRAM_LOADER_ROLE_BEFORE_PUBLICATION");
+          holdPublication=0;wait(storedWaiting);repeat(40) @(negedge serviceClock);
+          if(cpuOffers!=beforeOffers || nativeResponsePhase!==priorPhase || storedCount!=beforeStored || received!==0)
+            $$fatal(1,"PROGRAM_LOADER_ROLE_BEFORE_STORED");
+          holdStored=0;idle_check();
+          if(cpuOffers!=beforeOffers || nativeResponsePhase!==priorPhase || words-beforeWords!=1 ||
+             writes-beforeWrites!=4 || published-beforePublished!=1 || storedCount-beforeStored!=1 ||
+             received!==4 || crc!==32'h${(crc(word)^0xffffffffL).toHexString})
+            $$fatal(1,"PROGRAM_LOADER_ROLE_COMPLETED");
+          host_command(3);control_done();
+          // One, two, one, two reads put loader words at both retained CPU phases.
+          for(j=0;j<(n%2+1);j=j+1) begin
+            offer_read();admitted();answer(32'h${word.toHexString},0);idle_check();
+          end
+          if(cpuOffers-beforeOffers!=(n%2+1) || words-beforeWords!=(n%2+2) ||
+             published-beforePublished!=(n%2+2) || storedCount-beforeStored!=1 || writes-beforeWrites!=4)
+            $$fatal(1,"PROGRAM_CPU_LOADER_PHASE_COUNTS");
+        end
+      """,tasks,serviceHalfPeriodNs=25,deadlineNs=2000000,maximumDelaySubtree=Some("ca_child_program_return"))
+    }
+    test(s"$name program capture receipt: loader remains POR-owned through reset release and stopped work clock") {
+      ClockedSimulation.run(fixture,name+"-program-loader-capture-reset",s"""
+        for(n=0;n<4;n=n+1) begin
+          idle_check();host_begin(32'h${crc(word).toHexString});
+          beforeWords=words;beforeWrites=writes;beforePublished=published;
+          beforeStored=storedCount;beforeCaptures=captures;
+          holdCaptureReceipt=(n%2==0);host_write(32'h${word.toHexString});
+          wait(captureWaiting);@(negedge serviceClock);
+          if(n%2==1) stopWorkClock=1;
+          two_short_resets();wait(!systemReset);
+          repeat(20) begin @(negedge serviceClock);
+            if(!accessActive || !memoryBusy || !sourceDebt || request_ready || response_valid ||
+              captures!=beforeCaptures || words-beforeWords!=1 || writes-beforeWrites!=4 || published!=beforePublished)
+              $$fatal(1,"PROGRAM_LOADER_CAPTURE_FENCE_OR_EFFECT_COUNT");
+          end
+          // Prove independent Stored progress, rather than merely permitting it.
+          // The stopped-clock case cannot consume a clocked Control command yet.
+          if(n%2==0) begin
+            progressWait=0;
+            while((storedCount-beforeStored!=1 || storedReplies!=storedCount || received!==4) && progressWait<500) begin
+              @(negedge serviceClock);progressWait=progressWait+1;
+            end
+            if(storedCount-beforeStored!=1 || storedReplies!=storedCount || received!==4 ||
+               crc!==32'h${(crc(word)^0xffffffffL).toHexString} || captures!=beforeCaptures ||
+               published!=beforePublished || !memoryBusy || !accessActive || response_valid)
+              $$fatal(1,"PROGRAM_STORED_DEPENDS_ON_CAPTURE_RETURN");
+          end
+          holdCaptureReceipt=0;stopWorkClock=0;idle_check();
+          if(words-beforeWords!=1 || writes-beforeWrites!=4 || captures-beforeCaptures!=1 ||
+             published-beforePublished!=1 || storedCount-beforeStored!=1 || received!==4 ||
+             crc!==32'h${(crc(word)^0xffffffffL).toHexString})
+            $$fatal(1,"PROGRAM_LOADER_CAPTURE_RETURN_COUNTS");
+          host_command(3);control_done();offer_read();admitted();answer(32'h${word.toHexString},0);
+          idle_check();
+          if(captures-beforeCaptures!=2 || published-beforePublished!=2 || storedCount-beforeStored!=1)
+            $$fatal(1,"PROGRAM_LOADER_CPU_PHASE_ATTRIBUTION");
+        end
+      """,tasks,serviceHalfPeriodNs=25,deadlineNs=2000000,maximumDelaySubtree=Some("ca_child_program_return"))
+    }
+    test(s"$name program capture receipt: cancelled CPU word fences fresh read after stopped clock and repeated reset") {
+      ClockedSimulation.run(fixture,name+"-program-cpu-capture-reset",upload+"""
+        for(n=0;n<4;n=n+1) begin
+          idle_check();beforeWords=words;beforeWrites=writes;beforePublished=published;
+          beforeStored=storedCount;beforeCaptures=captures;
+          holdCaptureReceipt=(n%2==0);offer_read();admitted();
+          wait(captureWaiting);@(negedge serviceClock);
+          if(n%2==1) stopWorkClock=1;
+          two_short_resets();wait(!systemReset);offer_read();
+          repeat(20) begin @(negedge serviceClock);
+            if(!accessActive || !memoryBusy || !sourceDebt || request_ready || response_valid ||
+              captures!=beforeCaptures || words-beforeWords!=1 || writes!=beforeWrites || published!=beforePublished)
+              $fatal(1,"PROGRAM_CPU_CAPTURE_FENCE_OR_EFFECT_COUNT");
+          end
+          two_short_resets();holdCaptureReceipt=0;stopWorkClock=0;
+          admitted();answer(32'h89abcdef,0);idle_check();
+          if(words-beforeWords!=2 || writes!=beforeWrites || captures-beforeCaptures!=2 ||
+             published-beforePublished!=2 || storedCount!=beforeStored)
+            $fatal(1,"PROGRAM_CPU_CAPTURE_RETURN_COUNTS");
+        end
+      """,tasks,serviceHalfPeriodNs=25,deadlineNs=2000000,maximumDelaySubtree=Some("ca_child_program_return"))
+    }
     test(s"$name program source: WRITE and VERIFY retain busy history on Stored command and reply edges") {
       ClockedSimulation.run(fixture,name+"-program-stored-busy-history",s"""
         for(n=0;n<6;n=n+1) begin
@@ -282,6 +405,13 @@ class ProgramSourceSpec extends AnyFunSuite {
             holdStored=0; wait(storedReplyWaiting);
             send_host();
             repeat(4) @(negedge serviceClock);
+            // Keep the reply held until physical access is quiet. This isolates
+            // admission-time busy history from the independent live busy guard.
+            progressWait=0;
+            while(memoryBusy && progressWait<500) begin
+              @(negedge serviceClock);progressWait=progressWait+1;
+            end
+            if(memoryBusy) $$fatal(1,"PROGRAM_SOURCE_ACCESS_WAITED_FOR_STORED_REPLY");
             if(!storedReplyWaiting || received !== 0) $$fatal(1,"PROGRAM_SOURCE_STORED_REPLY_NOT_HELD");
             holdStoredReply=0;
           end else begin

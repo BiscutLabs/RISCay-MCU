@@ -7,13 +7,35 @@ from check_ram_capture_receipt import validate_ram_access
 
 
 def mask_literal_zero(source,endpoint,width,bit):
+    return apply_return_literal_obligations(source,[(endpoint,width,bit)])
+
+
+def apply_return_literal_obligations(source,obligations):
+    """Apply exact, independently proved zero bits once per packed endpoint.
+
+    Begin only from untouched all-polarity requirements. Two return owners may
+    prove different bits of Completion.result_sources; neither may inherit a
+    partially relaxed mask as evidence that the other's aliases were checked.
+    """
+    grouped={}
+    for endpoint,width,bit in obligations:
+        require(type(width) is int and width>0 and type(bit) is int and 0<=bit<width,'CONSTANT_MASK_RANGE')
+        old_width,bits=grouped.setdefault(endpoint,(width,set()))
+        require(old_width==width and bit not in bits,'CONSTANT_MASK_DUPLICATE_OR_WIDTH:'+endpoint)
+        bits.add(bit)
+    for endpoint,(width,bits) in grouped.items():
+        source=_mask_literal_zeros(source,endpoint,width,bits)
+    return source
+
+
+def _mask_literal_zeros(source,endpoint,width,bits):
     full=(1<<width)-1
     pattern=(r"^if \(ones_(\d+) !== "+str(width)+"'h"+f"{full:x}"+
         r" \|\| zeros_\1 !== "+str(width)+"'h"+f"{full:x}"+
         r'\) \$fatal\(1, "INACTIVE_ENDPOINT:'+re.escape(endpoint)+r'"\);$')
     matches=list(re.finditer(pattern,source,re.M));require(len(matches)==1,'CONSTANT_COVERAGE_SHAPE:'+endpoint)
     m=matches[0]
-    replacement=(f"if (ones_{m[1]} !== {width}'h{full^(1<<bit):x} || zeros_{m[1]} !== {width}'h{full:x}) "
+    replacement=(f"if (ones_{m[1]} !== {width}'h{full^sum(1<<bit for bit in bits):x} || zeros_{m[1]} !== {width}'h{full:x}) "
         f'$fatal(1, "INACTIVE_ENDPOINT:{endpoint}");')
     return source[:m.start()]+replacement+source[m.end():]
 
@@ -126,7 +148,7 @@ def close_error_aliases(node,completion,top,scopes,directory):
         consumer=completion['rtl_path']+'.ram_bits_error',packing_checked=['ram_data','result_sources'])
 
 
-def ram_return_probe(source,manifest,scopes,directory):
+def ram_return_probe(source,manifest,scopes,directory,literal_obligations=None):
     root=manifest['design'];top=manifest['top'];directory=Path(directory)
     children={c['id']:c['contract'] for c in root.get('children',[])}
     standalone=re.fullmatch(r'(?:FourPhase|Click)RamReturn(?:_[0-9]+)?',root['module'])
@@ -189,6 +211,9 @@ def ram_return_probe(source,manifest,scopes,directory):
     for endpoint,width,bit in constants:
         require(any(x['rtl_path']==endpoint and x['width']==width for n in (node,children.get('completion',{}))
             for x in n.get('endpoints',[])),'CONSTANT_SCHEMA')
-        source=mask_literal_zero(source,endpoint,width,bit)
+    if literal_obligations is None:
+        source=apply_return_literal_obligations(source,constants)
+    else:
+        literal_obligations.extend(constants)
     (directory/'ram-return-reset-boundary.json').write_text(json.dumps(record,indent=2)+'\n')
     return source.replace('task check; begin','task check; begin\n'+checks)

@@ -74,8 +74,10 @@ the word-command crossing, synchronized idle/debt qualification, RamAccess.activ
 a temporary five-bit capture receipt and synchronous byte boundaries remain.
 The receipt clears active independently of publication; effectsDrained excludes
 return-owner occupancy while full busy includes it. See
-[the working-RAM return contract](ram-return-contract.md). Program/loader retains
-the existing round trip until 10b2d2.
+[the working-RAM return contract](ram-return-contract.md). Digitally verified
+10b2d2 also removes program/loader's whole-word round trip. Its independent
+native return captures retained CPU-role permission and preserves POR Stored
+accounting; see [the program return contract](program-return-contract.md).
 No reset, bundled-path, CDC or physical macro timing closure is claimed.
 
 ## Native program source reservation (10b2b; digitally verified)

@@ -19,6 +19,7 @@ class FourPhaseProgramSource(domain: ResetDomain) extends AsyncModule(domain) {
   val publication=fourPhaseInput("publication",Bool())
   val stored=fourPhaseOutput("stored",Bool())
   val ownerLoader=IO(Output(Bool()))
+  val cpuPresentationPermit=IO(Output(Bool()))
   val wordDrained=IO(Input(Bool()))
   val applicationReset=IO(Input(AsyncReset()))
   val eligible=IO(Output(Bool())); val idle=IO(Output(Bool()))
@@ -63,6 +64,8 @@ class FourPhaseProgramSource(domain: ResetDomain) extends AsyncModule(domain) {
   grant.req:=gate("output_guard",GateOperation.Buffer,reservation.out.req,delay=guard)
   grant.bits:=reservation.out.bits; reservation.out.ack:=grant.ack
   ownerLoader:=reservation.out.bits
+  // The role belongs to this retained slot; loader words never present to CPU.
+  cpuPresentationPermit:=reserved && !ownerLoader && eligible
   private val decisionReady=gate("request_guard",GateOperation.Buffer,decision.req,delay=guard)
   // Stored uses the retained owner tag; publication data may change once
   // its own receipt returns. This slot cannot be reused until Stored fully RTZs.
@@ -91,6 +94,7 @@ class FourPhaseProgramSource(domain: ResetDomain) extends AsyncModule(domain) {
     !publication.req && !publication.ack && !grant.req && !grant.ack && !reservation.in.ack &&
     !storedBuffer.in.ack && !stored.req && !stored.ack && !storedAccepted.q
   contract.endpoint("owner_loader",ownerLoader)
+  dontTouch(cpuPresentationPermit); contract.endpoint("cpu_presentation_permit",cpuPresentationPermit)
   contract.endpoint("application_reset",applicationReset)
   contract.endpoint("word_drained",wordDrained); contract.endpoint("eligible",eligible)
   contract.endpoint("idle",idle); contract.endpoint("reserved",reserved)

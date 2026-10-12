@@ -1,10 +1,64 @@
 # Build and test
 
+## Program/loader native return — digitally verified 2026-10-12
+
+Substep 10b2d2 removes the program word-reply, publication and Completion-memory
+crossings. Separate native BD/Click return owners capture retained CPU-role
+permission; loader publication and Stored remain POR-owned. A temporary five-bit
+capture receipt clears ProgramAccess.active independently of publication, Stored
+and return occupancy. Two owner-idle synchronizers complete a net reduction of
+80 clocked RTL bits per variant. All 34 public schemas and emitted port declarations
+match `60c5590`. See [the contract](program-return-contract.md) and
+[remaining-state ledger](async-residual-state.md); physical timing remains open.
+
+Evidence is retained in `build/async-program-return-migration/qualification-evidence.json`.
+The complete regression comprises **461 cases / 45 suites**: 42 suites / 448 cases
+completed before a host interruption, then the three missing suites / 13 cases
+passed in a separate serial invocation. The original run is explicitly incomplete,
+not reported as one full-run pass. Frozen XMLs and logs retain every testcase,
+invocation, timestamp and hash. Both physical-policy cases pass. Coverage includes
+both independent core references, firmware, full SRAM capacity, reset and sleep.
+The strengthened final ProgramSource recheck passes all 16 cases; focused runs
+also passed 85 and 16 cases. All 301 Python tests and 11 pinned SRAM assets pass.
+
+Unchanged native-return functional oracles pass 41 positive replays and reject
+36 actual RTL faults. Actual capture-pin checks pass 1,117 replays, reject 45
+defects and satisfy 28 reset-release overlap obligations. Composed CPU/loader
+role checks pass 57 replays and reject 47 faults with opposing source/return
+skew, independent committed role, actual register pins and per-register reset
+exemptions. Program-source controls pass 18 positives and reject 34 RTL faults;
+its six custom Click registers pass 127 captures and reject ten timing faults.
+Static receipt checks reject 223 RTL/metadata/scope faults. Program and RAM
+constant-error aliases are independently validated before combining masks;
+actual production alias substitutions are covered for both variants.
+
+Both full strict exports pass on their attested original probes. All dynamic
+polarity requirements remain. Production wiring campaigns reject 42 program and
+40 RAM faults at exact, unchanged fatal assertions in the executed positive probe.
+
+| Strict export | Endpoints | Mapping checks |
+| --- | ---: | ---: |
+| four-phase | 2,504 | 736,273,656 |
+| click | 2,276 | 645,143,580 |
+
+Actual failed attempts remain recorded. An early premature-publication mutant
+lost a short request and timed out; the corrected fault uses the retained request.
+A busy-history mutant initially survived because longer physical busy masked it.
+The test now holds the Stored reply until physical busy drains within its existing
+bounded fixture, retaining the original received/error/count oracles. Both faults
+are detected in the final campaign. The first program wiring catalogue rejected
+four genuine earlier equality failures; the corrected catalogue accepts only the
+two exact directions of that same connection, excluding unrelated assertions.
+No RTL or strict-probe predicate was changed for this correction. The interrupted
+regression and a report-freezer namespace error are preserved as evidence failures,
+not test passes. Fresh independent implementation and qualification reviews are
+resolved; the collector's 18 self-tests reject stale/misattributed evidence.
+
 ## Working-RAM native return — digitally verified 2026-10-11
 
 Substep 10b2d1 removes working RAM's clocked whole-word reply/publication path
 and connects retained native word capture to source publication and a separately
-selected Completion RAM input. Program/loader return remains clocked. The
+selected Completion RAM input. Program/loader return was clocked at this step. The
 temporary five-bit capture receipt acknowledges the same edge that clears
 RamAccess.active; full return-idle observation adds two temporary clocked bits.
 The emitted comparison removes 47 crossing bits and adds those seven bits plus

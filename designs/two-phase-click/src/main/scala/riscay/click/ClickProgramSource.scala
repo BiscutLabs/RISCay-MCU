@@ -18,6 +18,7 @@ class ClickProgramSource(domain: ResetDomain) extends AsyncModule(domain) {
   val publication=twoPhaseInput("publication",Bool())
   val stored=twoPhaseOutput("stored",Bool())
   val ownerLoader=IO(Output(Bool()))
+  val cpuPresentationPermit=IO(Output(Bool()))
   val wordDrained=IO(Input(Bool()))
   val applicationReset=IO(Input(AsyncReset()))
   val eligible=IO(Output(Bool())); val idle=IO(Output(Bool()))
@@ -76,6 +77,8 @@ class ClickProgramSource(domain: ResetDomain) extends AsyncModule(domain) {
   private val decided=phase("decision_phase")
   private val published=phase("publication_phase")
   private val owned=xor("owned",reservation.in.ack,retired.q.asBool)
+  // POR slot/arm identity and immutable role qualify application presentation.
+  cpuPresentationPermit:=owned && armed.q(0) === reservation.in.ack && !ownerLoader && eligible
   // A commit changes the default cancel selector while its phase arrives. The
   // selection cone must settle before that phase can enable retirement: data
   // max + requestDelay + nine fire maxima + skew/hold = 111.2 ns, below guard.
@@ -128,6 +131,7 @@ class ClickProgramSource(domain: ResetDomain) extends AsyncModule(domain) {
     grant.req === grant.ack && !capture && !armEvent && !storedFire &&
     storedBuffer.in.req === storedBuffer.in.ack && stored.req === stored.ack
   contract.endpoint("owner_loader",ownerLoader)
+  dontTouch(cpuPresentationPermit); contract.endpoint("cpu_presentation_permit",cpuPresentationPermit)
   contract.endpoint("application_reset",applicationReset)
   contract.endpoint("word_drained",wordDrained); contract.endpoint("eligible",eligible)
   contract.endpoint("idle",idle); contract.endpoint("reserved",reserved)

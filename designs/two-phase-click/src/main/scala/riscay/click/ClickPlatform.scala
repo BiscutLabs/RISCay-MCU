@@ -42,19 +42,17 @@ abstract class ClickPlatform(p: SocParameters, board: SocParameters => BoardProf
   // below continue their accepted work and suppress old-lifetime completions.
   protected val completion=asyncChild("completion")(d => new ClickCompletion(d))
   val completionPlan=asyncChild("completion_plan_bridge")(d => new DecoupledToClick(new CompletionPlan,d))
-  val completionMemory=asyncChild("completion_memory_bridge")(d => new DecoupledToClick(new MemoryResponse,d))
   val completionTelemetry=asyncChild("completion_telemetry_bridge")(d => new DecoupledToClick(Bool(),d))
   val completionHousekeeping=asyncChild("completion_housekeeping_bridge")(d => new DecoupledToClick(Bool(),d))
-  Seq(completion,completionPlan,completionMemory,completionTelemetry,completionHousekeeping)
+  Seq(completion,completionPlan,completionTelemetry,completionHousekeeping)
     .foreach(_.reset:=fabric.io.cpuReset.asAsyncReset)
-  Seq(completionPlan,completionMemory,completionTelemetry,completionHousekeeping).foreach(_.clock:=workClock)
-  Seq(completionPlan,completionMemory,completionTelemetry,completionHousekeeping).foreach { bridge =>
+  Seq(completionPlan,completionTelemetry,completionHousekeeping).foreach(_.clock:=workClock)
+  Seq(completionPlan,completionTelemetry,completionHousekeeping).foreach { bridge =>
     dontTouch(bridge.in); dontTouch(bridge.out)
   }
-  completionPlan.in <> fabric.io.completionPlan; completionMemory.in <> fabric.io.completionMemory
+  completionPlan.in <> fabric.io.completionPlan
   completionTelemetry.in <> fabric.io.completionTelemetry; completionHousekeeping.in <> fabric.io.completionHousekeeping
   chiselasync.protocol.TwoPhase.connect(completion.plan,completionPlan.out)
-  chiselasync.protocol.TwoPhase.connect(completion.memory,completionMemory.out)
   chiselasync.protocol.TwoPhase.connect(completion.telemetry,completionTelemetry.out)
   chiselasync.protocol.TwoPhase.connect(completion.housekeeping,completionHousekeeping.out)
   protected val admission=asyncChild("admission")(d => new ClickAdmission(d))
@@ -91,7 +89,8 @@ abstract class ClickPlatform(p: SocParameters, board: SocParameters => BoardProf
   val host = asyncChild("i2c")(d => new I2cTarget(p.i2cAddress,p.i2cIdleCycles,d))
   host.clock := serviceClock; host.scl := scl; host.sda := sda
   fabric.io.i2c <> host.host; sdaLow := host.pullLow
-  val programAccess = asyncChild("program_access")(d => new SramAccess(d))
+  val programAccess = asyncChild("program_access")(d => new ProgramAccess(d))
+  val programReturn = asyncChild("program_return")(d => new ClickProgramReturn(d))
   val ramAccess = asyncChild("ram_access")(d => new RamAccess(d))
   val ramReturn = asyncChild("ram_return")(d => new ClickRamReturn(d))
   programAccess.clock := workClock; ramAccess.clock := workClock
@@ -144,9 +143,8 @@ abstract class ClickPlatform(p: SocParameters, board: SocParameters => BoardProf
   val programReserve=asyncChild("program_reserve_bridge")(d => new DecoupledToClick(Bool(),d))
   val programGrant=asyncChild("program_grant_bridge")(d => new ClickToDecoupled(Bool(),d))
   val programDecision=asyncChild("program_decision_bridge")(d => new DecoupledToClick(Bool(),d))
-  val programPublication=asyncChild("program_publication_bridge")(d => new DecoupledToClick(Bool(),d))
   val programStored=asyncChild("program_stored_bridge")(d => new ClickStoredReceipt(d))
-  Seq(programReserve,programDecision,programPublication).foreach { b =>
+  Seq(programReserve,programDecision).foreach { b =>
     b.clock:=workClock; dontTouch(b.in); dontTouch(b.out)
   }
   programGrant.clock:=workClock; dontTouch(programGrant.in); dontTouch(programGrant.out)
@@ -157,17 +155,26 @@ abstract class ClickPlatform(p: SocParameters, board: SocParameters => BoardProf
   chiselasync.protocol.TwoPhase.connect(programSource.reserve,programReserve.out)
   chiselasync.protocol.TwoPhase.connect(programGrant.in,programSource.grant)
   chiselasync.protocol.TwoPhase.connect(programSource.decision,programDecision.out)
-  chiselasync.protocol.TwoPhase.connect(programSource.publication,programPublication.out)
+  chiselasync.protocol.TwoPhase.connect(programSource.publication,programReturn.publication)
+  chiselasync.protocol.TwoPhase.connect(programReturn.word,programAccess.word)
+  programAccess.captureRequest:=programReturn.captureRequest
+  programReturn.captureAcknowledge:=programAccess.captureAcknowledge
+  programAccess.returnIdle:=programReturn.idle
+  programReturn.applicationReset:=fabric.io.cpuReset.asAsyncReset
+  programReturn.eligible:=programSource.cpuPresentationPermit
+  completion.memory.req:=programReturn.response.req; completion.memory.bits:=programReturn.response.bits
+  programReturn.response.ack:=completion.memory.ack
   programReserve.in <> fabric.io.programSource.reserve; fabric.io.programSource.grant <> programGrant.out
-  programDecision.in <> fabric.io.programSource.decision; programPublication.in <> fabric.io.programSource.publication
+  programDecision.in <> fabric.io.programSource.decision
   programSource.applicationReset:=fabric.io.cpuReset.asAsyncReset
-  programSource.wordDrained:= !programAccess.io.busy // Excludes its own receipt bridges.
+  // Capture/effects and CPU settlement cannot wait for publication or Stored return.
+  programSource.wordDrained:=programAccess.effectsDrained && programReturn.presentationSettled
   fabric.io.programSource.eligible:=programSource.eligible
   val programOwnerIdle=withClockAndReset(workClock,reset) {
     val first=RegNext(programSource.idle,false.B); RegNext(first,false.B)
   }
   val programSourceEmpty=programOwnerIdle && !programAccess.io.busy && programReserve.in.ready &&
-    programDecision.in.ready && programPublication.in.ready && !programGrant.out.valid && !programStored.out.valid
+    programDecision.in.ready && !programGrant.out.valid && !programStored.out.valid
   val programResetDebt=withClockAndReset(workClock,fabric.io.cpuReset.asAsyncReset) {
     val debt=RegInit(true.B)
     // Restart the release history on EVERY raw pulse, even between clock edges.

@@ -117,22 +117,29 @@ $display("CONTRACT_PROBES_PASS:1"); $finish; end endmodule
                            top+".ca_child_program_grant_bridge": dict(state=2,data=1)}
             for bank in ("program", "ram"):
                 inventories[top+f".ca_child_{bank}_access"] = dict(sync)
-                if bank=="ram":inventories[top+f".ca_child_{bank}_access"].update({f"ownerReturned_stages_{i}":1 for i in (0,1)})
-                if bank=="program":inventories[top+f".ca_child_{bank}_access.ca_child_reply_bridge"] = dict(state=2,data=32)
+                inventories[top+f".ca_child_{bank}_access"].update({f"ownerReturned_stages_{i}":1 for i in (0,1)})
             scopes = {path: {"registers": regs} for path, regs in inventories.items()}
             manifest = {"top": top, "design": {"children": [{"id": bank+"_access", "contract": {
-                "module": "SramAccess" if bank=="program" else "RamAccess", "rtl_path": top+f".ca_child_{bank}_access"}} for bank in ("program", "ram")]}}
+                "module": "ProgramAccess" if bank=="program" else "RamAccess", "rtl_path": top+f".ca_child_{bank}_access"}} for bank in ("program", "ram")]}}
+            owner=top+'.ca_child_program_return';payload=owner+'.ca_primitive_payload'
+            q=dict(name='q',width=32,direction='output');parameters=dict(WIDTH='32',DELAY_FS='1000000',RESET_VALUE='0')
+            scopes[payload]=dict(model='ChiselAsyncEventRegister_v1',parameters=parameters,ports=dict(q=q))
+            inventories[payload]=dict(q=32)
+            manifest['design']['children'].append(dict(id='program_return',contract=dict(
+                module=('Click' if top=='ClickSoc' else 'FourPhase')+'ProgramReturn',rtl_path=owner,primitives=[
+                    dict(id='payload',rtl_path=payload,model='ChiselAsyncEventRegister_v1',parameters=parameters,
+                         ports=[q],reset='reset',reset_domain='root')])) )
             def declarations(regs):
                 return "\n".join(f"reg [{width-1}:0] {name};" for name,width in regs.items())
-            rtl = "module WordReply; reg [1:0] state; reg [31:0] data; endmodule\n"
-            rtl += "module Access; WordReply ca_child_reply_bridge();\n"+declarations(sync)+"\nwire idle = !active && " + " && ".join(
-                name for name in sync if name.endswith("_1")) + "; endmodule\n"
+            rtl = "module Payload; reg [31:0] q; endmodule\nmodule Return; Payload ca_primitive_payload(); endmodule\n"
+            rtl += "module Access;\n"+declarations(inventories[top+".ca_child_program_access"])+"\nwire idle = !active && " + " && ".join(
+                name for name in inventories[top+".ca_child_program_access"] if name.endswith("_1")) + "; endmodule\n"
             rtl += "module RamNativeAccess;\n"+declarations(inventories[top+".ca_child_ram_access"])+"\nwire idle = !active && "+" && ".join(n for n in inventories[top+".ca_child_ram_access"] if n.endswith("_1"))+"; endmodule\n"
             rtl += "module Reply;\n"+declarations(reply)+"\nendmodule\n"
             rtl += "module Request;\n"+declarations(request)+"\nendmodule\n"
             rtl += "module Grant; reg [1:0] state; reg data; endmodule\n"
             rtl += f"module {top}; reg reset;\n"+declarations(root)+"""
-Access ca_child_program_access(); RamNativeAccess ca_child_ram_access();
+Access ca_child_program_access(); RamNativeAccess ca_child_ram_access(); Return ca_child_program_return();
 Reply ca_child_control_reply_bridge(); Request ca_child_request_bridge();
 Grant ca_child_program_grant_bridge();
 wire program_valid = ca_child_program_access.idle && gate_enabled && fabric_controlOutstanding &&
@@ -142,7 +149,7 @@ wire ram_valid = ca_child_ram_access.idle && gate_enabled && ca_child_request_br
     ca_child_request_bridge.data_operation == 2 && ca_child_request_bridge.data_address == 32'h20000000;
 wire [7:0] lanes = { (4'b1 << fabric_program_tag) & {4{fabric_program_state == 3}},
                      (4'b1 << fabric_ram_tag) & {4{fabric_ram_state == 3}} };
-wire program_published = ca_child_program_access.active && ca_child_program_access.ca_child_reply_bridge.state == 2;
+wire program_published = ca_child_program_return.ca_primitive_payload.q[0];
 wire [10:0] expected = {program_published, program_valid, ram_valid, lanes};
 wire [10:0] observed = expected;
 endmodule
@@ -176,10 +183,9 @@ $display("CONTRACT_PROBES_PASS:1"); $finish; end endmodule
                                           f"force {top}.ca_child_program_grant_bridge.data = 1'h0;"),rtl,"INACTIVE_ENDPOINT"),
                         (extended.replace(f"force {top}.ca_child_program_grant_bridge.state = 2'h2;",
                                           f"force {top}.ca_child_program_grant_bridge.state = 2'h0;"),rtl,"INACTIVE_ENDPOINT"),
-                        (extended.replace(f"force {top}.ca_child_program_access.active = 1'h1;",
-                                          f"force {top}.ca_child_program_access.active = 1'h0;"),rtl,"INACTIVE_ENDPOINT"),
-                        (extended.replace(f"force {top}.ca_child_program_access.ca_child_reply_bridge.state = 2'h2;",
-                                          f"force {top}.ca_child_program_access.ca_child_reply_bridge.state = 2'h0;"),rtl,"INACTIVE_ENDPOINT"),
+                        (extended.replace(f"force {top}.ca_child_program_access.ownerReturned_stages_1 = 1'h1;",
+                                          f"force {top}.ca_child_program_access.ownerReturned_stages_1 = 1'h0;"),rtl,"INACTIVE_ENDPOINT"),
+                        (extended,re.sub(r'(wire program_published = )[^;]+;',r"\g<1>1'b0;",rtl),"INACTIVE_ENDPOINT"),
                         (extended,rtl.replace("observed = expected;", "observed = expected ^ 11'b1;"),"BINDING_MISMATCH")):
                     (path/"test.sv").write_text(model+stimulus)
                     built = subprocess.run(["iverilog","-g2012","-s",top,"-s","ContractProbe","-o","sim.vvp","test.sv"],
@@ -195,9 +201,13 @@ $display("CONTRACT_PROBES_PASS:1"); $finish; end endmodule
                 else: registers["returned_stages_1"]=width
                 with self.assertRaisesRegex(ValueError,"SRAM_PROBE_DRIVER_MISMATCH"):
                     sram_background(source,manifest,bad,1)
-            bad=copy.deepcopy(manifest);bad["design"]["children"].pop()
-            with self.assertRaisesRegex(ValueError,"SRAM_PROBE_OWNER_MISMATCH"):
-                sram_background(source,bad,scopes,1)
+            for name,diagnostic in (("program_return","COMPLETION_NATIVE_RETURN_OWNER"),
+                                    ("program_access","SRAM_PROBE_OWNER_MISMATCH"),
+                                    ("ram_access","SRAM_PROBE_OWNER_MISMATCH")):
+                bad=copy.deepcopy(manifest)
+                bad["design"]["children"]=[c for c in bad["design"]["children"] if c["id"]!=name]
+                with self.assertRaisesRegex(ValueError,diagnostic):
+                    sram_background(source,bad,scopes,1)
             for name in ("state","data"):
                 bad=copy.deepcopy(scopes)
                 del bad[top+".ca_child_program_grant_bridge"]["registers"][name]
@@ -612,16 +622,18 @@ Child supervisor_command_bridge(.reset(%s)); Child supervisor_reply_bridge(.rese
         for top in ("FourPhaseSoc", "ClickSoc"):
             manifest = copy.deepcopy(self.manifest)
             manifest = json.loads(json.dumps(manifest).replace("FourPhaseSoc", top))
-            descendants = ["native", "command_bridge", "reply_bridge"] + [
+            descendants = ["native", "command_bridge", "capture_receipt"] + [
                 f"byte_{kind}_{lane}" for kind in ("request", "reply") for lane in range(4)]
             for name in ("program_access", "ram_access"):
                 manifest["design"]["children"].append({"id": name, "contract": {
-                    "rtl_path": f"{top}.{name}", "module": "SramAccess" if name=="program_access" else "RamAccess", "children": [
+                    "rtl_path": f"{top}.{name}", "module": "ProgramAccess" if name=="program_access" else "RamAccess", "children": [
                         {"id": part, "contract": {"rtl_path": f"{top}.{name}.{part}", "module": "Child", "children": []}}
                         for part in descendants]}})
             manifest["design"]["children"].append({"id":"ram_return","contract":{
                 "rtl_path":top+".ram_return","module":"ClickRamReturn" if top=="ClickSoc" else "FourPhaseRamReturn","children":[]}})
-            paths = ["core","ram_return"] + [name + suffix for name in ("program_access", "ram_access")
+            manifest["design"]["children"].append({"id":"program_return","contract":{
+                "rtl_path":top+".program_return","module":"ClickProgramReturn" if top=="ClickSoc" else "FourPhaseProgramReturn","children":[]}})
+            paths = ["core","ram_return","program_return"] + [name + suffix for name in ("program_access", "ram_access")
                                 for suffix in [""] + ["." + part for part in descendants]]
             checks = "\n".join(f'if ({top}.{p}.reset !== {top}.reset) $fatal(1, "RESET_BINDING_MISMATCH");' for p in paths)
             probe = generated_reset_probe("module ContractProbe; task check; begin\n" + checks + f'''
@@ -644,6 +656,7 @@ module {top};
 reg reset=0, watchdog=0; wire systemReset=reset|watchdog;
 Child core(.reset({pin("core")}));
 Child ram_return(.reset({pin("ram_return")}));
+Child program_return(.reset({pin("program_return")}));
 program_access_model program_access(.reset({pin("program_access")}),.systemReset(systemReset));
 ram_access_model ram_access(.reset({pin("ram_access")}),.systemReset(systemReset));
 endmodule

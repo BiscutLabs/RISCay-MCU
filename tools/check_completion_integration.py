@@ -3,12 +3,73 @@
 import re
 
 
+def native_return_cell(manifest, scopes, header, bank, identity, suffix, model, parameters, width=1):
+    """Resolve one exact return-owner cell; never infer a source from a net name."""
+    top=manifest['top'];root=top+'.ca_child_'+bank+'_return'
+    owners=[c['contract'] for c in manifest['design']['children'] if c['id']==bank+'_return']
+    prefix='Click' if top=='ClickSoc' else 'FourPhase'
+    if (bank not in ('ram','program') or len(owners)!=1 or owners[0].get('rtl_path')!=root or
+            not re.fullmatch(prefix+bank.title()+r'Return(?:_[0-9]+)?',owners[0].get('module',''))):
+        raise ValueError('COMPLETION_NATIVE_RETURN_OWNER:'+bank)
+    cells=[p for p in owners[0].get('primitives',[]) if p['id']==identity]
+    path=root+'.'+suffix;q=dict(name='q',width=width,direction='output')
+    if (len(cells)!=1 or cells[0].get('rtl_path')!=path or cells[0].get('model')!=model or
+            cells[0].get('parameters')!=parameters or cells[0].get('reset')!='reset' or
+            cells[0].get('reset_domain')!='root' or
+            [p for p in cells[0].get('ports',[]) if p.get('name')=='q']!=[q] or
+            scopes.get(path,{}).get('model')!=model or scopes[path].get('ports',{}).get('q')!=q or
+            scopes[path].get('parameters')!=parameters or f"force {path}.q = {width}'h0;" not in header):
+        raise ValueError('COMPLETION_NATIVE_RETURN_CELL:'+bank+'.'+identity)
+    return path+'.q'
+
+
+def program_permission_sources(manifest,scopes,header):
+    """Only retained native state may supply the CPU/loader permit truth table."""
+    top=manifest['top'];click=top=='ClickSoc';prefix='Click' if click else 'FourPhase'
+    path=top+'.ca_child_program_source'
+    owners=[c['contract'] for c in manifest['design']['children'] if c['id']=='program_source']
+    if (len(owners)!=1 or owners[0].get('rtl_path')!=path or
+            not re.fullmatch(prefix+r'ProgramSource(?:_[0-9]+)?',owners[0].get('module',''))):
+        raise ValueError('COMPLETION_PROGRAM_PERMISSION_OWNER')
+    owner=owners[0];buffers=[c['contract'] for c in owner.get('children',[]) if c['id']=='reservation']
+    if (len(buffers)!=1 or buffers[0].get('rtl_path')!=path+'.ca_child_reservation' or
+            not re.fullmatch(('ClickBuffer' if click else 'LongHoldBuffer')+r'(?:_[0-9]+)?',buffers[0].get('module',''))):
+        raise ValueError('COMPLETION_PROGRAM_PERMISSION_RESERVATION')
+    reservation=buffers[0]
+    def cell(node,name,model,parameters,width=1,reset='reset',suffix=None):
+        cells=[p for p in node.get('primitives',[]) if p['id']==name]
+        base=node['rtl_path']+'.'+(suffix or 'ca_primitive_'+name);q=dict(name='q',width=width,direction='output')
+        if (len(cells)!=1 or cells[0].get('rtl_path')!=base or cells[0].get('model')!=model or
+                cells[0].get('parameters')!=parameters or cells[0].get('reset')!=reset or cells[0].get('reset_domain')!='root' or
+                [p for p in cells[0].get('ports',[]) if p.get('name')=='q']!=[q] or
+                scopes.get(base,{}).get('model')!=model or scopes[base].get('parameters')!=parameters or
+                scopes[base].get('ports',{}).get('q')!=q or f"force {base}.q = {width}'h0;" not in header):
+            raise ValueError('COMPLETION_PROGRAM_PERMISSION_CELL:'+name)
+        return base+'.q'
+    event=lambda width:dict(WIDTH=str(width),DELAY_FS='1000000',RESET_VALUE='0')
+    result=dict(eligibility=cell(owner,'eligibility','ChiselAsyncEventRegister_v1',event(1),reset='eligibility_reset'))
+    result['loader']=cell(reservation,'payload','ChiselAsyncEventRegister_v1' if click else 'ChiselAsyncClosingLatch_v1',
+        event(1) if click else dict(WIDTH='1',DELAY_FS='1000000'))
+    if click:
+        result.update(reserved=cell(reservation,'input_phase','ChiselAsyncPhaseRegister_v1',dict(DELAY_FS='1000000',RESET_VALUE='0')),
+            armed=cell(owner,'armed_phase','ChiselAsyncEventRegister_v1',event(2),2),
+            retired=cell(owner,'retired_phase','ChiselAsyncEventRegister_v1',event(1)),
+            owned=cell(owner,'owned','ChiselAsyncXor_v1',dict(DELAY_FS='1000000'),suffix='owned_ca_primitive_owned'),
+            reserved_guard=cell(reservation,'acknowledge_guard','ChiselAsyncControlGate_v1',dict(DELAY_FS='32000000',OP='0',RESET_VALUE='0',WIDTH='1')))
+    else:
+        result['reserved']=cell(reservation,'acknowledge','ChiselAsyncAsymmetricC_v1',
+            dict(COMMON='1',COMMON_INVERT='1',DELAY_FS='1000000',FALLING='1',FALLING_INVERT='0',RESET_VALUE='0',RISING='1',RISING_INVERT='0'))
+    return result
+
+
 def completion_bridges(manifest):
     top = manifest.get("top")
     if top not in ("FourPhaseSoc", "ClickSoc"):
         return {}
     children = {c["id"]: c["contract"] for c in manifest["design"].get("children", [])}
-    names = {"completion_"+n+"_bridge" for n in ("plan", "memory", "telemetry", "housekeeping")}
+    names = {"completion_"+n+"_bridge" for n in ("plan", "telemetry", "housekeeping")}
+    if 'completion_memory_bridge' in children:
+        raise ValueError("COMPLETION_OBSOLETE_MEMORY_BRIDGE")
     found = names & children.keys()
     if not found:
         return {}
@@ -27,7 +88,7 @@ def completion_bridges(manifest):
 
 
 def completion_constants_probe(source, manifest, scopes, top_rtl):
-    """Replace impossible polarity coverage ONLY for three literal input leaves.
+    """Replace impossible polarity coverage ONLY for two literal effect leaves.
 
     Require their exact values on every check. All dynamic bits keep both-polarity
     coverage; storage outputs, native inputs, comparisons and drivers are untouched.
@@ -38,7 +99,6 @@ def completion_constants_probe(source, manifest, scopes, top_rtl):
         return source
     comparisons = []
     for name, width, pin, value, layout in (
-            ("memory", 33, "in_bits_error", 0, [("bits.error", 0, 1), ("bits.data", 1, 32)]),
             ("telemetry", 1, "in_bits", 1, [("bits", 0, 1)]),
             ("housekeeping", 1, "in_bits", 1, [("bits", 0, 1)])):
         node = bridges["completion_"+name+"_bridge"]
@@ -131,56 +191,34 @@ def completion_background(source, manifest, scopes, checks):
     # Native return occupancy and presentation are independent of effects
     # drainage. Put their two distinguishing combinations before the expensive
     # generic sweep so wiring controls fail promptly at the original assertions.
-    owners = [c["contract"] for c in manifest["design"]["children"] if c["id"]=="ram_return"]
-    root = top+".ca_child_ram_return"
-    if (len(owners)!=1 or owners[0].get("rtl_path")!=root or
-            owners[0].get("module")!=("ClickRamReturn" if top=="ClickSoc" else "FourPhaseRamReturn")):
-        raise ValueError("COMPLETION_RAM_DRAIN_OWNER")
-
-    def native_cell(identity, suffix, model, parameters):
-        cells = [p for p in owners[0].get("primitives", []) if p["id"]==identity]
-        path = root+"."+suffix
-        q = dict(name="q", width=1, direction="output")
-        if (len(cells)!=1 or cells[0].get("rtl_path")!=path or cells[0].get("model")!=model or
-                cells[0].get("parameters")!=parameters or cells[0].get("reset")!="reset" or
-                cells[0].get("reset_domain")!="root" or
-                [p for p in cells[0].get("ports", []) if p.get("name")=="q"]!=[q] or
-                scopes.get(path, {}).get("model")!=model or scopes[path].get("ports", {}).get("q")!=q or
-                scopes[path].get("parameters")!=parameters or
-                f"force {path}.q = 1'h0;" not in header):
-            raise ValueError("COMPLETION_RAM_DRAIN_CELL:"+identity)
-        return path+".q"
-
-    if top=="ClickSoc":
-        owned = native_cell("owned", "pending_ca_primitive_owned", "ChiselAsyncXor_v1", dict(DELAY_FS="1000000"))
-        completed_guard = native_cell("acknowledge_guard", "completedDelayed_ca_primitive_acknowledge_guard",
-            "ChiselAsyncControlGate_v1", dict(DELAY_FS="200000000", OP="0", RESET_VALUE="0", WIDTH="1"))
-        phases = [native_cell(name, "ca_primitive_"+name, "ChiselAsyncEventRegister_v1",
-            dict(WIDTH="1", DELAY_FS="1000000", RESET_VALUE="0")) for name in ("received_phase", "completed_phase")]
-        # These are combinational: release their existing generic source forces.
-        # The two retained phase-register outputs produce ownership through the
-        # 200 ns completion guard plus 1 ns XOR; mapping's usual 1 fs is too short.
-        extra.append(f"release {completed_guard};\nrelease {owned};\n")
-        force(phases[0], 1, 1, primitive=True)
-        force(phases[1], 1, 0, primitive=True)
-    else:
-        pending = native_cell("pending", "ca_primitive_pending", "ChiselAsyncAsymmetricC_v1",
-            dict(COMMON="1", COMMON_INVERT="1", DELAY_FS="1000000", FALLING="0", FALLING_INVERT="0",
-                 RESET_VALUE="0", RISING="2", RISING_INVERT="0"))
-        force(pending, 1, 1, primitive=True)
-    ram = top+".ca_child_ram_access"
-    force(top+".gate_enabled", 1, 1)
-    for group in ("returned_stages", "bytesReturned_stages", "bytesReturned_stages_1",
-                  "bytesReturned_stages_2", "bytesReturned_stages_3", "ownerReturned_stages"):
-        for stage in (0, 1):
-            force(ram+f".{group}_{stage}", 1, 1)
-    settle = 201000001 if top=="ClickSoc" else 1
-    check(settle)  # effectsDrained=1, presentationSettled=0
-    force(phases[0] if top=="ClickSoc" else pending, 1, 0, primitive=True)
-    for stage in (0, 1):
-        force(ram+f".ownerReturned_stages_{stage}", 1, 0)
-    check(settle)  # effectsDrained=1, presentationSettled=1, full busy=1
-    prelude = "".join(extra)+header
+    for bank in ('ram','program'):
+        extra.append(header)
+        def native_cell(identity,suffix,model,parameters,width=1):
+            return native_return_cell(manifest,scopes,header,bank,identity,suffix,model,parameters,width)
+        if top=='ClickSoc':
+            owned=native_cell('owned','pending_ca_primitive_owned','ChiselAsyncXor_v1',dict(DELAY_FS='1000000'))
+            guard=native_cell('acknowledge_guard','completedDelayed_ca_primitive_acknowledge_guard',
+                'ChiselAsyncControlGate_v1',dict(DELAY_FS='200000000',OP='0',RESET_VALUE='0',WIDTH='1'))
+            phases=[native_cell(n,'ca_primitive_'+n,'ChiselAsyncEventRegister_v1',
+                dict(WIDTH='1',DELAY_FS='1000000',RESET_VALUE='0')) for n in ('received_phase','completed_phase')]
+            extra.append(f'release {guard};\nrelease {owned};\n')
+            force(phases[0],1,1,primitive=True);force(phases[1],1,0,primitive=True)
+        else:
+            pending=native_cell('pending','ca_primitive_pending','ChiselAsyncAsymmetricC_v1',
+                dict(COMMON='1',COMMON_INVERT='1',DELAY_FS='1000000',FALLING='0',FALLING_INVERT='0',
+                     RESET_VALUE='0',RISING='2',RISING_INVERT='0'))
+            force(pending,1,1,primitive=True)
+        access=top+'.ca_child_'+bank+'_access'
+        force(top+'.gate_enabled',1,1)
+        for group in ('returned_stages','bytesReturned_stages','bytesReturned_stages_1',
+                      'bytesReturned_stages_2','bytesReturned_stages_3','ownerReturned_stages'):
+            for stage in (0,1):force(access+f'.{group}_{stage}',1,1)
+        settle=201000001 if top=='ClickSoc' else 1
+        check(settle)
+        force(phases[0] if top=='ClickSoc' else pending,1,0,primitive=True)
+        for stage in (0,1):force(access+f'.ownerReturned_stages_{stage}',1,0)
+        check(settle)
+    prelude=''.join(extra)+header
     extra.clear()
 
     if top == "ClickSoc":
@@ -204,7 +242,8 @@ def completion_background(source, manifest, scopes, checks):
                           "bytesReturned_stages_2", "bytesReturned_stages_3"):
                 for stage in (0, 1):
                     force(top+f".ca_child_{bank}_access.{group}_{stage}", 1, 1)
-        for stage in (0,1):force(top+f".ca_child_ram_access.ownerReturned_stages_{stage}",1,1)
+        for bank in ("program","ram"):
+            for stage in (0,1):force(top+f".ca_child_{bank}_access.ownerReturned_stages_{stage}",1,1)
         force(request+".state", 2, 2)
         force(request+".data_mask", 4, 15)
         force(request+".data_operation", 2, operation)
@@ -235,40 +274,48 @@ def completion_background(source, manifest, scopes, checks):
     plan(1, 0x10000000)
     plan(1, 0x20000000)
     plan(2, 0x30000008, True)
+    # CPU permission is immutable reservation role plus native ownership and
+    # application eligibility. Exercise every source combination, including
+    # Click's arm identity, without forcing the permit or ownership XOR.
+    permission=program_permission_sources(manifest,scopes,header)
+    extra.append(header)
+    if top=='ClickSoc':
+        extra.append(f"release {permission['reserved_guard']};\nrelease {permission['owned']};\n")
+    for reserved in (0,1):
+        for loader in (0,1):
+            for eligible in (0,1):
+                force(permission['reserved'],1,reserved,primitive=True)
+                force(permission['loader'],1,loader,primitive=True)
+                force(permission['eligibility'],1,eligible,primitive=True)
+                if top=='ClickSoc':
+                    for retired in (0,1):
+                        for armed in range(4):
+                            force(permission['retired'],1,retired,primitive=True)
+                            force(permission['armed'],2,armed,primitive=True);check(33000001)
+                else:check()
     # The capture receipt accepts only a pending synchronized request while
     # the access owns a word. Generic independent bit walks cannot combine
     # those source states with released reset. Exercise the complete three-bit
     # truth table, including both Click phase directions and BD return-to-zero.
     # Coherent return stages also expose effectsDrained/full busy/admission;
     # none of those derived signals, or the receipt acceptance, is forced.
-    ram = top+".ca_child_ram_access"
-    receipt = ram+".ca_child_capture_receipt"
-    extra.append(header)
-    force(top+".gate_enabled", 1, 1)
-    for group in ("returned_stages", "bytesReturned_stages", "bytesReturned_stages_1",
-                  "bytesReturned_stages_2", "bytesReturned_stages_3", "ownerReturned_stages"):
-        for stage in (0, 1):
-            force(ram+f".{group}_{stage}", 1, 1)
-    for active in (0, 1):
-        for request_sync in (0, 1):
-            for phase in (0, 1):
-                force(ram+".active", 1, active)
-                force(receipt+".requestSync", 1, request_sync)
-                force(receipt+".phase", 1, phase)
-                check()
-    extra.append(header)
-    # Only program replies still cross through Services. Exercise its actual
-    # retained source eligibility and clocked result, never derived endpoints.
-    owner=next(c["contract"] for c in manifest["design"]["children"] if c["id"]=="program_source")
-    cell=next(p for p in owner["primitives"] if p["id"]=="eligibility")
-    if cell["model"]!="ChiselAsyncEventRegister_v1" or cell["parameters"].get("WIDTH")!="1":
-        raise ValueError("COMPLETION_PROGRAM_ELIGIBILITY_OWNER")
-    force(cell["rtl_path"]+".q", 1, 1, primitive=True)
-    force(top+".ca_child_program_access.active", 1, 1)
-    memory = top+".ca_child_program_access.ca_child_reply_bridge"
-    force(memory+".state", 2, 2)
-    for value in walk(32):
-        force(memory+".data", 32, value); check()
+    for bank in ('ram','program'):
+        access=top+'.ca_child_'+bank+'_access';receipt=access+'.ca_child_capture_receipt'
+        extra.append(header);force(top+'.gate_enabled',1,1)
+        for group in ('returned_stages','bytesReturned_stages','bytesReturned_stages_1',
+                      'bytesReturned_stages_2','bytesReturned_stages_3','ownerReturned_stages'):
+            for stage in (0,1):force(access+f'.{group}_{stage}',1,1)
+        for active in (0,1):
+            for request_sync in (0,1):
+                for phase in (0,1):
+                    force(access+'.active',1,active);force(receipt+'.requestSync',1,request_sync)
+                    force(receipt+'.phase',1,phase);check()
+        # Native retained payload drives publication and the independent memory
+        # input. No clocked reply or derived response endpoint is forced.
+        extra.append(header)
+        payload=native_return_cell(manifest,scopes,header,bank,'payload','ca_primitive_payload',
+            'ChiselAsyncEventRegister_v1',dict(WIDTH='32',DELAY_FS='1000000',RESET_VALUE='0'),32)
+        for value in walk(32):force(payload,32,value,primitive=True);check()
     for name, field, width in (("telemetry", "data_kind", 2), ("housekeeping", "data_cpuCompletion", 1)):
         extra.append(header)
         force(top+f".fabric_{name}Outstanding", 1, 1)

@@ -119,7 +119,9 @@ def main():
             simulate('click-stored-phase-reset',s['mixed'],True,lambda t,m:pin(t,m,'stored_phase','reset','reset | applicationReset'))
         simulate(variant+'-effects-baseline',s['effects'],False)
         simulate(variant+'-premature-publication',s['effects'],False,
-            lambda t,m:replace_pin(t,'ca_child_program_publication_bridge','in_valid','wordAccepted'))
+            # Reserve persists through source retirement; it forges publication before
+            # any word effect without reducing the fault to a transient lost pulse.
+            lambda t,m:replace_pin(t,'ca_child_program_source','publication_req','ca_child_program_reserve_bridge.out_req'))
         simulate(variant+'-late-baseline',s['late'],False)
         simulate(variant+'-stored-ack-bypass',s['late'],False,
             lambda t,m:replace_pin(t,'ca_child_program_stored_bridge','out_ready',"1'b1"))

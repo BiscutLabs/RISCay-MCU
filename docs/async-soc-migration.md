@@ -287,7 +287,7 @@ when no next item has been chosen. Both implementations remain active throughout
             reset-overlap fixtures. Fresh independent reviews and fixes are in
             `build/async-recovery-return-migration/qualification-evidence.json`
             and `review-notes.md`; actual failures and interruptions are retained.
-      - [ ] **10b2d. Remove whole-word response round trips.** Use the verified
+      - [x] **10b2d. Remove whole-word response round trips — digitally verified.** Use the verified
         ownership/isolation contract to connect native completion paths directly
         and remove superseded pending flags and crossings.
         - [x] **10b2d1. Working-RAM native return and presentation isolation.**
@@ -328,7 +328,7 @@ when no next item has been chosen. Both implementations remain active throughout
           POR monitors active and add a complete application-reset monitor.
           Click's saved application target resets with permission/output phase;
           POR issue identity must never sample an asynchronously reset phase.
-        - [ ] **10b2d2. Program/loader native return and Stored attribution.**
+        - [x] **10b2d2. Program/loader native return and Stored attribution — digitally verified, 2026-10-12.**
           Reuse only interface/verification contracts; each design owns its
           implementation. Preserve retained loader/CPU role and separate selected
           program/RAM Completion inputs with immutable plan selection. Loader
@@ -343,12 +343,32 @@ when no next item has been chosen. Both implementations remain active throughout
           repeated reset with held old replies, and exact received/CRC/write counts.
           Remove the old wide memory ingress only after both banks qualify;
           preserve the Completion return barrier and complete capture aperture.
-          The current inventory identifies a 39-bit program word reply bridge,
-          eight-bit publication bridge and 40-bit Completion memory ingress as
-          removal candidates. Account for every replacement receipt, reset and
-          idle synchronizer in the net change. Keep the existing five-bit Stored
+          This step removes the 39-bit program word reply bridge, eight-bit
+          publication bridge and 40-bit Completion memory ingress. Account for
+          every replacement receipt, reset and idle synchronizer in the net
+          change. Keep the existing five-bit Stored
           receipt until its Control consumer is native; a loader completion must
           remain live while application reset is held.
+          Fresh review and qualification pass under
+          `build/async-program-return-migration/qualification-evidence.json`: all
+          461 verification cases / 45 suites in an explicitly split regression,
+          both physical-policy cases, the final strengthened 16-case loader-source
+          recheck, 301 Python tests and both strict SoC exports. The original
+          interrupted invocation remains recorded as incomplete. Actual program/
+          RAM production wiring controls reject all 42/40 faults. The public
+          34-port ABI is unchanged; net clocked state falls by 80 bits per variant.
+          Physical timing remains open; no maximal-asynchrony claim is made.
+          - [x] Connect separate native ProgramReturn/ProgramAccess owners and
+            remove all three obsolete crossings from production.
+          - [x] Close retained CPU-role permission, independent capture receipt,
+            POR publication and application-reset presentation contracts.
+          - [x] Preserve original loader/CPU effect oracles; add capture stalls,
+            work-clock stops, role/phase alternation and early Stored visibility.
+          - [x] Qualify actual capture pins, opposing skew/reset edges and
+            production wiring faults against attested strict positive runs.
+          - [x] Recount clocked state and public ABI; finish core/reference,
+            firmware/sleep, Python and strict-export checks, then fresh review,
+            fixes, documentation, commit and push.
         Both steps require closed strict-export bindings, independent references,
         unchanged external ABI, fresh review and updated crossing/state counts.
         Wrappers are temporary implementation choices, not physical necessities.
@@ -368,6 +388,26 @@ when no next item has been chosen. Both implementations remain active throughout
   and unqualified MUTEX model cannot satisfy native Click or physical signoff.
   - [ ] **11a. Host admission storage.** Replace mailbox/reset-debt storage while
     preserving each frame's admission-time reset/busy context and overflow proof.
+    - [ ] Inventory the entire frame path, including native I2C publication,
+      its clocked delivery copy, both mailbox slots and reset-debt count. Preserve
+      effective capacity and the exact admission event across the replacement.
+    - [ ] Retain frame payload and occupancy in separate native BD/Click owners.
+      Connect adjacent native producers directly where their lifetimes permit;
+      account for every remaining payload copy and temporary clocked receipt.
+    - [ ] Replace queued reset debt with non-wrapping, per-frame lifetime history.
+      Preserve frames already queued when reset asserts, frames admitted during
+      reset, and explicit commands admitted after reset. Cancellation must mark
+      the command's context without discarding persistent loader effects.
+    - [ ] Preserve admission-time busy history, including a new frame coincident
+      with loader-command acceptance and a Stored reply held after SRAM drains.
+      A later idle observation must never reclassify the earlier frame.
+    - [ ] Verify simultaneous enqueue/dequeue, full/empty transitions, prolonged
+      consumer stalls, repeated resets and overflow faults with independent
+      payload/order oracles and real I2C transactions. Qualify capture apertures,
+      reset crossings and both native return protocols before removing copies.
+    - [ ] Audit net clocked storage, ABI and permanent-supervisor progress;
+      complete strict exports, actual RTL fault controls and fresh review,
+      address findings, update contracts, then commit and push.
   - [ ] **11b. Dispatch ownership.** Move Control outstanding, reset, HALT and
     MMIO-commit scheduling into native retained tokens; preserve completion-first
     priority and the offered-request event-clear window.
@@ -417,7 +457,10 @@ when no next item has been chosen. Both implementations remain active throughout
   - [ ] Remove each temporary source reservation/grant/decision/publication/drain
     crossing only when both adjacent owners use the same native protocol.
     Include the temporary final-return receipts introduced by 10b2c2b and
-    working-RAM capture receipt/return-idle synchronization introduced by 10b2d1.
+    working-RAM and program capture receipts/return-idle synchronization from
+    10b2d1/d2. Replace RAM/program clocked reset-debt/previous-safe policy with
+    retained native cancellation/return proof; idle alone cannot release debt.
+    The specialized Stored receipt remains until Control acceptance is native.
   - [ ] Connect command/reply, I2C frame/snapshot and SRAM word paths directly;
     retain explicit lifetime isolation between POR and application-reset owners.
   - [ ] Reconcile the emitted crossing inventory and gate demand after every
@@ -507,34 +550,33 @@ invariant-focused tests and a fresh independent review before completion.
 
 ## Preliminary residual-state inventory
 
-The current 10b2c2b Groundlark, ADC-enabled, source-stopping low-power portable
-SoC exports still contain substantial clocked state.
-The candidate inventory is retained in
-`build/async-recovery-return-migration/residual-register-candidates.json` with
-each register's width and local event control. It excludes fixed async primitive
-state, probe state and SRAM arrays. These are elaborated declarations, not mapped
-flop counts, area, power or proof that a boundary is physically necessary.
-The table excludes the generated chip wrapper, including its 20-bit default
-reset hold. It also excludes state elaborated only in other supported
-configurations, such as the legacy service-time divider, autonomous ADC interval
-counter and generic application-word projections. Items 15e and 16 require the
-separate chip ledger and configuration matrix before whole-chip conclusions.
+The 10b2d2 Groundlark, ADC-enabled, source-stopping low-power portable SoC
+exports still contain substantial clocked state. The emitted declaration audit,
+baseline comparison and per-owner removal candidates are retained under
+`build/async-program-return-migration/`; see the
+[remaining-state ledger](async-residual-state.md). These are RTL declarations,
+not mapped flop counts, area, power or proof of physical necessity.
 
-Compared with 10b2c2a, native full-return proof removes four clocked fence/previous-
-safe bits but introduces two temporary five-bit control receipts. The net
-candidate inventory increases by six declarations / six bits per variant. These
-receipts join the ten temporary client crossings added by publication ownership;
-the direct-connection items must remove crossings as their clients migrate.
-
-| Candidate group | BD registers / bits | Click registers / bits | Follow-up |
+| Disjoint owner group | BD bits | Click bits | Follow-up |
 | --- | ---: | ---: | --- |
-| Flattened SoC/Services state | 294 / 3,275 | 293 / 3,276 | Split ownership across items 10-16 |
-| I2C sampling, capture and projection | 101 / 941 | 101 / 941 | Items 13-15 |
-| SPI waveform/capture boundary | 18 / 175 | 18 / 175 | Items 12-15 |
-| Two SRAM access wrappers | 26 / 26 | 26 / 26 | Items 10b2d, 14-15 |
-| Elapsed ingress wrapper | 6 / 37 | 6 / 37 | Items 12, 14-15 |
-| 63 explicit clocked bridge instances | 705 / 4,270 | 705 / 4,270 | Remove as their clocked clients migrate |
-| Total candidates in 69 emitted owners | 1,150 / 8,724 | 1,149 / 8,725 | Item 16 must account for every owner |
+| Flattened SoC/Services | 3,275 | 3,276 | Items 10–16 |
+| I2C wrapper | 941 | 941 | Items 11, 13–15 |
+| SPI wrapper | 175 | 175 | Items 12–15 |
+| Two SRAM access wrappers | 30 | 30 | Items 14–15 |
+| Elapsed ingress wrapper | 37 | 37 | Items 12, 14–15 |
+| 60 crossing/receipt owners | 4,147 | 4,147 | Remove with their clocked clients |
+| **Total: 66 owners** | **8,605** | **8,606** | Complete audit in item 16 |
+
+Each total includes one unchanged asynchronous SDA capture bit; periodic-clocked
+subsets are 8,604/8,605 bits. Async primitive storage, fixed SRAM arrays and
+verification state are excluded. The generated chip wrapper, including its
+20-bit default reset hold, is outside these totals. Other supported configurations
+may add the legacy service-time divider, autonomous ADC interval counter or
+generic application projections. Items 15e/16 require their separate inventories.
+Program return removes 87 crossing bits and adds seven temporary receipt/idle
+bits, for a net reduction of 80 per variant relative to `60c5590`. The earlier
+RAM return step removed another 39. Temporary crossings and reset/debt policy
+remain removal candidates; neither those savings nor passing tests close the audit.
 
 An owner is retained only with a specific physical or interface obligation and
 supporting evidence. Independent time/watchdog operation and the pinned synchronous

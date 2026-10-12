@@ -16,7 +16,7 @@ object MemoryMap {
 /** Shared port schema only; each variant owns its service implementation. */
 abstract class ServiceEndpoint extends Module with InlineInstance {
   val io = IO(new Bundle {
-    val program = new SramAccessPort
+    val program = new ProgramAccessPort
     val ram = new RamAccessPort
     val ramSource = new RamSourceBoundaryPort
     val programSource = new ProgramSourceBoundaryPort
@@ -29,7 +29,6 @@ abstract class ServiceEndpoint extends Module with InlineInstance {
     val request = Flipped(Decoupled(new MemoryRequest))
     val response = Decoupled(new MemoryResponse)
     val completionPlan = Decoupled(new CompletionPlan)
-    val completionMemory = Decoupled(new MemoryResponse)
     val completionTelemetry = Decoupled(Bool())
     val completionHousekeeping = Decoupled(Bool())
     val completionResponse = Flipped(Decoupled(new MemoryResponse))

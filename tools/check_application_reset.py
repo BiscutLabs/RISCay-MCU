@@ -21,8 +21,10 @@ def validate_application_reset(manifest,scopes,rtl):
         compact.count("assignsystemReset=_systemReset_output;")!=1):
         raise ValueError("APPLICATION_RESET_HOLD_LOGIC")
     children={c["id"]:c["contract"] for c in manifest["design"]["children"]}
-    application={"core","transactions","request_bridge","completion","admission","admission_grant_bridge"} | {"completion_"+n+"_bridge" for n in ("plan","memory","telemetry","housekeeping")}
+    application={"core","transactions","request_bridge","completion","admission","admission_grant_bridge"} | {"completion_"+n+"_bridge" for n in ("plan","telemetry","housekeeping")}
     if not application<=children.keys():raise ValueError("APPLICATION_RESET_ISLAND_INVENTORY")
+    if {'completion_memory_bridge','program_publication_bridge'} & children.keys():
+        raise ValueError("OBSOLETE_PROGRAM_RETURN_BRIDGE")
     def audit(value):
         if isinstance(value,dict):
             for key,item in value.items():
@@ -71,7 +73,9 @@ def persistent_reset_children(manifest):
     if present and present != housekeeping.keys():
         raise ValueError("SOC_PERSISTENT_RESET_INVENTORY")
     persistent.update(housekeeping)
-    sram = {"program_access": "SramAccess", "ram_access": "RamAccess", "ram_return": "ClickRamReturn" if top == "ClickSoc" else "FourPhaseRamReturn"}
+    sram = {"program_access": "ProgramAccess", "ram_access": "RamAccess",
+            "ram_return": "ClickRamReturn" if top == "ClickSoc" else "FourPhaseRamReturn",
+            "program_return": "ClickProgramReturn" if top == "ClickSoc" else "FourPhaseProgramReturn"}
     present = {c.get("id") for c in root["children"]} & sram.keys()
     if present and present != sram.keys():
         raise ValueError("SOC_PERSISTENT_RESET_INVENTORY")
@@ -88,7 +92,7 @@ def persistent_reset_children(manifest):
     program_source["program_grant_bridge"] = "ClickToDecoupled" if top == "ClickSoc" else "FourPhaseToDecoupled"
     program_source["program_stored_bridge"] = "ClickStoredReceipt" if top == "ClickSoc" else "FourPhaseStoredReceipt"
     program_source.update({"program_"+n+"_bridge": "DecoupledToClick" if top == "ClickSoc" else "DecoupledToFourPhase"
-                           for n in ("reserve", "decision", "publication")})
+                           for n in ("reserve", "decision")})
     present = {c.get("id") for c in root["children"]} & program_source.keys()
     if present and present != program_source.keys():
         raise ValueError("SOC_PROGRAM_SOURCE_RESET_INVENTORY")

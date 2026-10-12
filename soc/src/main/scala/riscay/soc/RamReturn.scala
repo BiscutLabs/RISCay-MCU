@@ -14,3 +14,6 @@ class RamReturnResponse extends Bundle {
   val ack = Input(Bool())
   val bits = Output(new MemoryResponse)
 }
+
+/** Program and working RAM share only this reset-boundary port schema. */
+class ProgramReturnResponse extends RamReturnResponse

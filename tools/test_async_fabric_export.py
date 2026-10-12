@@ -149,7 +149,8 @@ class FabricExportTest(unittest.TestCase):
         original = layout + "\n" + guard + "\n" + anchor + "\n" + binding + "\nrequire(marker_ok, 'MARKER')\nrequire(budget_ok, 'BUDGET')\n" + fallback
         adapted = fabric_checker_source(original)
         self.assertIn('layouts["response_data"]', adapted)
-        self.assertIn('FourPhaseRamReturn', adapted)
+        self.assertIn('FourPhase(?:Ram|Program)Return', adapted)
+        self.assertIn('native program return', adapted)
         for missing in (layout,guard):
             with self.assertRaisesRegex(ValueError, "RAM_RETURN_.*CHECKER_SHAPE"):
                 fabric_checker_source(original.replace(missing,""))

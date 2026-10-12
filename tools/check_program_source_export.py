@@ -121,7 +121,7 @@ def validate_program_source(node):
             or c["contract"]["capacity"] != 1 for c in node["children"])):
         raise ValueError("PROGRAM_SOURCE_STORAGE")
     widths={n+"_"+f:1 for n in CHANNELS for f in ("request","data","acknowledge")}
-    widths.update({n:1 for n in ("reset","eligibility_reset","application_reset","word_drained","eligible","idle","reserved","owner_loader")})
+    widths.update({n:1 for n in ("reset","eligibility_reset","application_reset","word_drained","eligible","idle","reserved","owner_loader","cpu_presentation_permit")})
     if click:
         widths.update(arm_data=2,arm_event=1,armed=2,arm_sources=2,retire_sources=5,register_data=3,
             capture_event=1,captured=3,stored_target=1,stored_phase_data=1,stored_event=1,stored_issued=1)
@@ -198,6 +198,8 @@ def program_source_bindings(node):
         (e["grant_request"],c["output_guard"]+".q"),(r["out_request"],c["output_guard"]+".a"),
         (s["in_data"],r["out_data"])]
     pairs += [(e["stored_"+f],s["out_"+f]) for f in ("request","data","acknowledge")]
+    owned = f"({c['owned']}.q && ({c['armed_phase']}.q[0] == {e['reserved']}))" if click else e['reserved']
+    pairs.append((e['cpu_presentation_permit'],f"({owned} && !{e['owner_loader']} && {e['eligible']})"))
     ands=[]
     def and_inputs(name,a,b):
         ands.append(name);pairs.extend([(a,c[name+"_na"]+".a"),(b,c[name+"_nb"]+".a")])
@@ -290,13 +292,14 @@ def program_source_probe(source,manifest,scopes):
     top=manifest["top"]
     if top in ("FourPhaseSoc","ClickSoc"):
         cs={c["id"]:c["contract"] for c in manifest["design"]["children"]}
-        names={"program_source"}|{"program_"+n+"_bridge" for n in CHANNELS}
-        if not names<=cs.keys():raise ValueError("PROGRAM_SOURCE_SOC_INVENTORY")
+        names={"program_source","program_return","program_access"}|{"program_"+n+"_bridge" for n in CHANNELS if n!='publication'}
+        if not names<=cs.keys() or 'program_publication_bridge' in cs or 'completion_memory_bridge' in cs:
+            raise ValueError("PROGRAM_SOURCE_SOC_INVENTORY")
         click=top=="ClickSoc";prefix="Click" if click else "FourPhase"
         if not re.fullmatch(prefix+r"ProgramSource(?:_[0-9]+)?",cs["program_source"]["module"]):raise ValueError("PROGRAM_SOURCE_SOC_OWNER")
         e={x["id"]:x["rtl_path"] for x in cs["program_source"]["endpoints"]}
         consumer_clock=next(x["rtl_path"] for x in cs["control_command_bridge"]["endpoints"] if x["id"]=="in_clock")
-        for name in CHANNELS:
+        for name in (n for n in CHANNELS if n!='publication'):
             node=cs["program_"+name+"_bridge"];output=name in ("grant","stored")
             model=("ClickToDecoupled" if click else "FourPhaseToDecoupled") if output else ("DecoupledToClick" if click else "DecoupledToFourPhase")
             if name=="stored":model=prefix+"StoredReceipt"
@@ -309,7 +312,12 @@ def program_source_probe(source,manifest,scopes):
             b={x["id"]:x["rtl_path"] for x in node["endpoints"]}
             pairs += [(e[name+"_"+f],b[("in_" if output else "out_")+f]) for f in ("request","data","acknowledge")]
             pairs.append((b["out_clock" if output else "in_clock"],consumer_clock))
-        pairs += [(e["application_reset"],top+".systemReset"),(e["word_drained"],"!"+cs["program_access"]["rtl_path"]+".io_busy")]
+        ret={x['id']:x['rtl_path'] for x in cs['program_return']['endpoints']}
+        access={x['id']:x['rtl_path'] for x in cs['program_access']['endpoints']}
+        pairs += [(e['publication_'+f],ret['publication_'+f]) for f in ('request','data','acknowledge')]
+        pairs += [(e["application_reset"],top+".systemReset"),
+            (e['cpu_presentation_permit'],ret['eligible']),
+            (e['word_drained'],'('+access['effects_drained']+' && '+ret['presentation_settled']+')')]
     anchor="task check; begin"
     if source.count(anchor)!=1:raise ValueError("PROGRAM_SOURCE_PROBE_SHAPE")
     comparisons=[f'if ({a} !== {b}) $fatal(1,"PROGRAM_SOURCE_BINDING:{a}");' for a,b in pairs]

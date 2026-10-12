@@ -17,7 +17,7 @@
   obtain a fresh independent agent review, address its findings, rerun affected
   checks, update its evidence/contracts, commit and push. Repeat this review loop
   for every item. Continue to the next item when the user has authorized it;
-  otherwise ask. Items 1-9, 10a, 10b1, 10b2a, 10b2b, 10b2c1, 10b2c2a, 10b2c2b and 10b2d1 are digitally verified within their scopes.
+  otherwise ask. Items 1-9, 10a, 10b1, 10b2a, 10b2b, 10b2c1, 10b2c2a, 10b2c2b, 10b2d1 and 10b2d2 are digitally verified within their scopes.
   The user has authorized deeper migration under expanded items 10-16: native
   service coordination, observation reduction, publication, direct interconnect
   and physically justified boundary minimization. Audit every remaining clocked
@@ -74,6 +74,16 @@
   Bind production wiring controls to the actual executed strict probe and
   compiled binary. Reject stale evidence and require each mutant's exact fatal
   assertion location; unrelated failures and matching display text do not count.
+  Program/loader return substep 10b2d2 is digitally verified. Follow
+  `docs/program-return-contract.md`; preserve its native role/capture contracts
+  and qualification gates. Capture ProgramSource.cpuPresentationPermit with the
+  word; raw eligible alone admits loader words to CPU. Preserve Stored progress while
+  capture receipt/full access busy is held, and monitor native response offers.
+  Run composed program role/capture controls on both variants' integrated
+  fixtures. Use independent committed CPU/loader identity, actual capture pins,
+  per-register reset exemptions and opposing source/return delays. Preserve
+  fixed guards, data budgets and all original assertions. Exercise actual
+  production program/RAM alias faults before accepting their constant masks.
   Native program ownership tags each slot CPU-read or loader-write. Late Control
   work may cancel an unaccepted CPU slot; revalidate image permissions after
   BEGIN and fault invalid reads without a word effect. Loader reserve, grant,

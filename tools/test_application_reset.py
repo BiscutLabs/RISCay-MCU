@@ -7,7 +7,7 @@ from check_application_reset import validate_application_reset
 class ApplicationResetTest(unittest.TestCase):
     def fixture(self,top):
         names=["core","transactions","request_bridge","completion","admission","admission_grant_bridge"]+[
-            "completion_"+n+"_bridge" for n in ("plan","memory","telemetry","housekeeping")]
+            "completion_"+n+"_bridge" for n in ("plan","telemetry","housekeeping")]
         m=dict(top=top,design=dict(children=[dict(id=n,contract=dict(primitives=[
             dict(parameters=dict(DELAY_FS="210200001"))],timing=[dict(budget=dict(max_fs="10000000"))])) for n in names]))
         s={top:dict(registers=dict(release_0=8))}
@@ -45,6 +45,14 @@ end
                 bad=copy.deepcopy(m);bad["design"]["children"][i]["contract"]["children"]=[dict(contract={key:"250000001"})]
                 with self.assertRaisesRegex(ValueError,"APPLICATION_RESET_SETTLEMENT_BUDGET"):
                     validate_application_reset(bad,s,rtl)
+
+    def test_obsolete_program_return_bridges_are_rejected(self):
+        for top in ('FourPhaseSoc','ClickSoc'):
+            for name in ('completion_memory_bridge','program_publication_bridge'):
+                m,s,rtl=self.fixture(top)
+                m['design']['children'].append(dict(id=name,contract=dict(children=[])))
+                with self.assertRaisesRegex(ValueError,'OBSOLETE_PROGRAM_RETURN_BRIDGE'):
+                    validate_application_reset(m,s,rtl)
 
     def test_additional_application_children_cannot_escape_the_budget(self):
         for top in ("FourPhaseSoc","ClickSoc"):
