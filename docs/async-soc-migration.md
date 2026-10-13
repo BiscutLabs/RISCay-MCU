@@ -21,6 +21,68 @@ when no next item has been chosen. Both implementations remain active throughout
   Groundlark power supervision. Keep an independent timebase/watchdog even as
   service-clock work is removed. Never relax tests to accept implementation bugs.
 
+## Corrective gates from the independent review of `c4b7f44`
+
+The user supplied a code-only review on 2026-10-12. Its environment could not run
+the dependencies, so its findings require local reproduction and independent
+verification. Complete the already-started supported-export prerequisite (17a2a),
+then resolve the following gates before further clocked-state removal. Earlier
+digital passes remain evidence of their tested scope, not RDC or physical proof.
+
+- [ ] **R1. Close reset-domain crossings in both implementations.** Inventory
+  raw-reset state and native levels reaching POR-owned clocked acceptance,
+  reservation, commit/cancel and payload state. Include request bridges,
+  application projections, return fences, recovery debt and retained role levels.
+  Synchronize or isolate each crossing with an explicit stability/handshake
+  contract. Delaying a bridge reset alone is insufficient if its native source
+  drops phase or payload immediately. Preserve accepted effects and prevent old
+  requests from acquiring new-lifetime credit. Add structural rejection controls
+  and adversarial reset/capture tests; simulation cannot prove metastability safe.
+- [ ] **R2. Reconcile reset release with measured propagation.** The current
+  eight-edge hold and 250 ns settlement assumption do not cover the measured
+  long-guard reset paths (up to approximately 1.55 us before wiring). Derive the
+  complete worst-case reset/recovery envelope, then use a proved completion or
+  bounded hold mechanism. A guessed larger counter is not physical closure.
+  Retain the original short-pulse/accepted-effect tests and add boundary cases;
+  never stretch their stimulus to conceal lost recovery.
+- [ ] **R3. Remove the unacknowledged frame-copy timing race.** Original receipt
+  acceptance can precede physical bank copy completion. Review a native join of
+  original receipt and bank-copy completion, with safe route/payload retention
+  through BD RTZ and independent Click phase ownership. Explicitly revise the
+  old no-wait-for-copy contract if required. Keep exactly two logical credits,
+  original-offer overflow observability and immutable reset/busy admission
+  context; delaying ACK must not conceal a third offer or resample its context.
+  Exercise copies slower than two service periods, stalls, identical payloads,
+  reset and all bank wraps with independent offer/capture/dispatch ordinals.
+- [ ] **R4. Refresh cost and wake evidence before further migration.** Re-run
+  the current enabled-policy workload and report service/work edges per wake.
+  Account for actual mapped guards, native storage, bridges, logic and all three
+  SRAM macros in area and state-dependent standby leakage. Repair the historical
+  estimator's flip-flop-memory assumptions rather than applying old estimates.
+  Separate measured activity, library estimates and missing analog/pad/route
+  costs. Fewer periodic-clocked bits alone is not an area or power improvement.
+  The [current candidate estimate](gf180-estimates.md) now records actual mapped
+  area/leakage and unchanged-workload wake counts, independently reproduced under
+  `build/review-c4b7f44/`. This gate remains open for repetition after R1–R3;
+  native-model activity is not mapped timing or measured power.
+- [ ] **R5. Replace avoidable guard delays and epoch state.** Inventory the
+  200–241 ns guard/cleanup owners and their actual area, leakage and critical
+  paths. Prefer native completion where it proves the same ordering/reset
+  invariant. Evaluate per-descriptor stale history against the entire O-to-D
+  reset window, including resets before admission and repeated episodes, before
+  replacing the 64-bit epochs. Do not trade a race for a smaller register count.
+- [ ] **R6. Repair public primitive use and maintenance surfaces.** Replace the
+  private frame-route AND bindings with supported public primitives, preserving
+  atomic semantics, metadata and timing controls. Condense README status and
+  keep detailed migration evidence here. Keep separate design implementations
+  as originally requested; use shared verification to detect asymmetric fixes.
+  Plan supported upstream probe hooks to replace fragile generated-testbench
+  rewriting without discarding current mutation oracles.
+
+Each correction requires the same fresh review, fixes, verification, documentation
+and separate commit/push loop. R1–R3 and current cost evidence are prerequisites
+for resuming the deeper migration; full physical qualification remains item 17.
+
 ## Items
 
 - [x] **1. SocFabric routing - digitally verified, 2026-10-08.** Native request/response routing,
@@ -675,6 +737,30 @@ when no next item has been chosen. Both implementations remain active throughout
       reconcile extracted verification sources without admitting arbitrary RTL.
       Replace stale hierarchy names and broad false paths that hide related-
       clock credit consumers. Preserve all original source and mapping checks.
+      - [x] **17a2a. Supported physical export restored and digitally verified, 2026-10-12.** Export both
+        current native controller contracts with the enabled evaluation board
+        policy, retaining the unsupported Click-policy rejection. Keep assertions
+        inline without admitting arbitrary verification sources. Hash-bind the
+        actual contract and port schemas, label every result unqualified, and
+        remove obsolete global timing claims that do not describe the controllers.
+        Verify strict exports, source inventory, exact primitive mapping and
+        rejection of stale policies before committing this prerequisite.
+        Four physical tests, 378 Python tests, 3,620 actual frame-source mutation
+        controls and 124 return integration tests pass. Both strict exports pass:
+        815,242,320 BD and 706,764,240 Click mapping checks, with identical public
+        port schemas and exact executed-probe/binary binding. Cell functional
+        checks and synthesized connection audits retain all three SRAMs and
+        preserved async cells. Fresh review closed a disabled-assertion hole;
+        the final helper generation/compile matches the executed probe exactly.
+        Evidence: `build/async-physical-export-migration/qualification-evidence.json`.
+        No controller RTL, state ownership or delay budget changed. R1–R3,
+        current related-clock constraints and physical qualification remain open.
+      - [ ] **17a2b. Rebind clocks, reset and crossing constraints.** Use the
+        current mapped hierarchy and actual source/consumer pins. Distinguish
+        truly asynchronous first stages from related work/service-clock paths;
+        cover every custom event clock and reject missing or ambiguous objects.
+        Retain negative controls for stale names and false paths that hide the
+        credit cone. This remains separate from complete 17a3 timing closure.
     - [ ] **17a3. Measure every custom timing obligation.** Canonical payload-stage
       reports do not cover the migrated controllers' custom transform, trigger,
       feedback, distribution and return paths. Require a complete per-obligation

@@ -202,6 +202,20 @@ def guard_floor(pdk):
     if value<=0: raise ValueError("INVALID_BUFFER_FLOOR")
     return value * 0.8 # additional headroom for the sub-20 ps input-slew boundary
 
+def physical_policy(export, manifest):
+    policy=json.loads((export/"physical-policy.json").read_text())
+    if policy.get("schema")!="riscay-physical-policy-v2": raise ValueError("PHYSICAL_POLICY_REEXPORT_REQUIRED")
+    if policy.get("policy_enabled") is not True: raise ValueError("DISABLED_ESTIMATE_POLICY")
+    if (policy.get("timing_policy")!="current-supported-digital" or
+        policy.get("qualification")!="unqualified" or policy.get("verification_layers")!="inline" or
+        policy.get("timing_intent")!="contract.json"):
+        raise ValueError("UNSUPPORTED_PHYSICAL_EXPORT_POLICY")
+    if {"bd":"FourPhaseSoc","click":"ClickSoc"}.get(policy.get("variant"))!=manifest["top"]:
+        raise ValueError("PHYSICAL_POLICY_TOP_MISMATCH")
+    if policy.get("contract_sha256")!=sha(export/"contract.json") or policy.get("ports_sha256")!=sha(export/"ports.json"):
+        raise ValueError("STALE_PHYSICAL_EXPORT_POLICY")
+    return policy
+
 def prepare(export,out,pdk):
     if out.exists(): raise ValueError("OUTPUT_ALREADY_EXISTS")
     pdk_verify(pdk)
@@ -213,8 +227,7 @@ def prepare(export,out,pdk):
         verify((ROOT/".tools/gf180-sram"/name).read_bytes(),asset["sha256"])
     manifest,sources,groups=inventory(export)
     roles=resolve_roles(manifest["design"])
-    policy=json.loads((export/"physical-policy.json").read_text())
-    if policy["policy_enabled"] is not True: raise ValueError("DISABLED_ESTIMATE_POLICY")
+    policy=physical_policy(export,manifest)
     floor=guard_floor(pdk)
     out.mkdir(parents=True)
     bindings=[]; circuits=[]; filelist=[]

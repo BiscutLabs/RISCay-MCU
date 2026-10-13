@@ -2,7 +2,8 @@
 package riscay.physical
 
 import chiselasync.metadata._
-import java.nio.file.{Files, Paths}
+import java.nio.file.{Files, Path, Paths}
+import java.security.MessageDigest
 import riscay.bd.FourPhaseSoc
 import riscay.click.ClickSoc
 import riscay.profiles._
@@ -24,33 +25,48 @@ object PhysicalTiming {
     ns(5), ns(1), ModelTime.ps(1800), ns(2), ModelTime.ps(2500))
 }
 
-object EmitPhysical extends App {
-  require(args.length == 1, "Usage: EmitPhysical new-output-directory")
-  val root = Paths.get(args(0)).toAbsolutePath
-  require(!Files.exists(root), "PHYSICAL_EXPORT_ALREADY_EXISTS")
-  val p = SocParameters(Groundlark.configuration, staleMs=3000, watchdogCycles=32,
+/** Export the controllers whose digital contracts are actually supported.
+  * PhysicalTiming above remains a standalone core experiment; applying it to
+  * the composed Click fabric is deliberately rejected by that fabric.
+  * This export is physical-flow input, never a characterized timing policy.
+  */
+object PhysicalSocExport {
+  val parameters = SocParameters(Groundlark.configuration, staleMs=3000, watchdogCycles=32,
     watchdogHoldCycles=2, adc=Some(AdcParameters(intervalCycles=10000000)),
     lowPower=Some(LowPowerParameters.gf180Slow))
   // Preserve the complete supervisor in implementation experiments. These
   // defaults are deliberately NOT a board-qualified battery/tapeout policy.
-  def board(p: SocParameters) = new GroundlarkBoard(p,PowerPolicy(enabled=true))
-  Seq("bd", "click").foreach { variant =>
-    val out = root.resolve(variant)
-    if(variant == "bd") ExportDesign.emit(new FourPhaseSoc(p,board,
-      PhysicalTiming.bd(20),PhysicalTiming.bd(180)),out)
-    else ExportDesign.emit(new ClickSoc(p,board,PhysicalTiming.click,PhysicalTiming.executeData),out)
-    SramInventory.write(out,p.config)
-    ChipWrapper.write(out,p.lowPower.get)
-    Files.writeString(out.resolve("physical-policy.json"),ujson.write(ujson.Obj(
-      "schema" -> "riscay-physical-policy-v1", "variant" -> variant,
-      "purpose" -> "enabled evaluation fixture; not qualified for a battery or tapeout",
-      "policy_enabled" -> true, "gpio_count" -> p.config.gpioCount,
-      "service_max_hz" -> 20000000, "lf_max_hz" -> 12,
-      "control_min_ns" -> (if(variant=="click") 1.5 else 1.0), "control_max_ns" -> 10,
-      "data_max_ns" -> 20, "execute_data_max_ns" -> 180,
-      "register_writeback_guard_ns" -> 31,
-      "latch_setup_ns" -> 8, "click_setup_ns" -> 5,
-      "click_hold_ns" -> 1, "click_high_ns" -> 1.8,
-      "click_low_ns" -> 2, "click_clock_skew_ns" -> 2.5),indent=2)+"\n")
+  private def board(p: SocParameters) = new GroundlarkBoard(p,PowerPolicy(enabled=true))
+  private def sha(path: Path): String = MessageDigest.getInstance("SHA-256")
+    .digest(Files.readAllBytes(path)).map(b => f"${b & 0xff}%02x").mkString
+
+  def emit(root: Path): Unit = {
+    require(!Files.exists(root), "PHYSICAL_EXPORT_ALREADY_EXISTS")
+    val p = parameters
+    Seq("bd", "click").foreach { variant =>
+      val out = root.resolve(variant)
+      // Keep verification bodies in their owning module. The mapper still
+      // rejects arbitrary/extracted sources; SYNTHESIS removes assertions.
+      ExportDesign.emit(chisel3.layer.elideBlocks {
+        if(variant == "bd") new FourPhaseSoc(p,board)
+        else new ClickSoc(p,board)
+      },out)
+      SramInventory.write(out,p.config)
+      ChipWrapper.write(out,p.lowPower.get)
+      Files.writeString(out.resolve("physical-policy.json"),ujson.write(ujson.Obj(
+        "schema" -> "riscay-physical-policy-v2", "variant" -> variant,
+        "purpose" -> "enabled evaluation fixture; not qualified for a battery or tapeout",
+        "policy_enabled" -> true, "gpio_count" -> p.config.gpioCount,
+        "service_max_hz" -> ApplicationResetContract.maximumServiceHz, "lf_max_hz" -> 12,
+        "timing_policy" -> "current-supported-digital", "qualification" -> "unqualified",
+        "timing_intent" -> "contract.json", "contract_sha256" -> sha(out.resolve("contract.json")),
+        "ports_sha256" -> sha(out.resolve("ports.json")), "verification_layers" -> "inline",
+        "native_reset_settlement_fs" -> ApplicationResetContract.nativeSettleFs.toString),indent=2)+"\n")
+    }
   }
+}
+
+object EmitPhysical extends App {
+  require(args.length == 1, "Usage: EmitPhysical new-output-directory")
+  PhysicalSocExport.emit(Paths.get(args(0)).toAbsolutePath)
 }

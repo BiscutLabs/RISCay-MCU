@@ -11,16 +11,53 @@ import json
 from pathlib import Path
 import re
 import sys
+import tempfile
 import unittest
 from unittest.mock import patch
 
 from check_frame_integration import (child, clean, compact, driver, initial_policy,
                                      pins, projected_tree, statement_tree,
-                                     validate_frame_integration, frame_receipt_probe)
+                                     validate_frame_integration, frame_receipt_probe, top_spelling,
+                                     validated_service_clock)
 from test_frame_receipt import PolicyRunEvidence, receipt_node, registers
 
 
 class FrameIntegrationTests(unittest.TestCase):
+    def test_service_clock_forms_have_independent_closed_equations(self):
+        root = dict(module="Top", rtl_path="Top", children=[dict(id="i2c", contract=dict(
+            module="I2cTarget", rtl_path="Top.ca_child_i2c"))])
+        for inline in (False, True):
+            for gated in (False, True):
+                with self.subTest(inline=inline, gated=gated), tempfile.TemporaryDirectory() as temp:
+                    directory = Path(temp)
+                    if not inline:
+                        path = directory / "verification/assert/I2cTarget_Verification_Assert.sv"
+                        path.parent.mkdir(parents=True); path.write_text("// form marker\n")
+                    name = "gate_io_clockOut" if inline else "fabric_clock"
+                    other = "fabric_clock" if inline else "gate_io_clockOut"
+                    expression = "serviceClock & gate_enabled" if gated else "serviceClock"
+                    pin = "gate_enabled" if gated else "1'h1"
+                    good = f"module Top(); wire {name} = {expression}; I2cTarget ca_child_i2c (.frameAcceptEnable({pin})); endmodule"
+                    source = directory / "Top.sv"
+                    source.write_text(good)
+                    self.assertEqual(validated_service_clock(root, directory), "Top." + name)
+                    faults = [good.replace(expression + ";", "wrongClock;"),
+                              good.replace("endmodule", f"wire {other} = serviceClock; endmodule"),
+                              good.replace("endmodule", f"always_comb {name} = serviceClock; endmodule"),
+                              good.replace("endmodule", f"assign {name}[0] = 1'b0; endmodule"),
+                              good.replace("endmodule", f"initial force {name} = 0; endmodule"),
+                              good.replace(f"wire {name}", f"wire [1:0] {name}"),
+                              good.replace(f"wire {name}", f"wire signed {name}"),
+                              good.replace("endmodule", f"wire {name}; endmodule"),
+                              good.replace("endmodule", f"wire unrelated = 1'b0, {name}; endmodule"),
+                              good.replace(f"({pin})", "(corrupt)"), good.replace(name, other)]
+                    if gated:
+                        faults.append(good.replace(expression + ";", "serviceClock;"))
+                    for faulty in faults:
+                        source.write_text(faulty)
+                        with self.assertRaisesRegex(ValueError, "^FRAME_INTEGRATION_"):
+                            validated_service_clock(root, directory)
+
     def test_driver_rejects_additional_scalar_partial_and_force_writers(self):
         good = "wire [7:0] value = source;"
         self.assertEqual(driver(good, "value", "source"), "value")
@@ -100,12 +137,18 @@ def actual_controls(directory, saved):
              "bind":Path("verification/assert") / ("layers-" + target["module"] + "-Verification-Assert.sv"),
              "top_assertion":Path("verification/assert") / (top["module"] + "_Verification_Assert.sv"),
              "top_bind":Path("verification/assert") / ("layers-" + top["module"] + "-Verification-Assert.sv")}
+    inline = not (directory / paths["assertion"]).is_file()
+    if inline:
+        paths["assertion"] = paths["target"]
+        paths["top_assertion"] = paths["top"]
+        del paths["bind"], paths["top_bind"]
+    spell = top_spelling(inline)
     texts = {key:(directory / path).read_text(encoding="utf-8") for key,path in paths.items()}
     original_bytes = {key:(directory / path).read_bytes() for key,path in paths.items()}
     baseline = validate_frame_integration(manifest, {}, directory)
     if len(baseline["slots"]["first"]) != 3 or sum(x["width"] for x in baseline["slots"]["second"]) != 4:
         raise AssertionError("Independent slot shape mismatch")
-    result = dict(directory=str(directory), baseline="PASS", bindings=len(baseline["pairs"]),
+    result = dict(directory=str(directory), assertion_form="inline" if inline else "extracted", baseline="PASS", bindings=len(baseline["pairs"]),
                   files={str(paths[k]):hashlib.sha256(v).hexdigest() for k,v in original_bytes.items()},
                   contract_sha256=hashlib.sha256(manifest_path.read_bytes()).hexdigest(), cases={})
     real_read = Path.read_text
@@ -118,6 +161,7 @@ def actual_controls(directory, saved):
             return validate_frame_integration(changed_manifest or manifest, {}, directory)
 
     def check(label, key, text, expected):
+        if key in ("top", "top_assertion"): expected = spell(expected)
         if text == texts[key]: raise AssertionError("Mutation not applied: " + label)
         try: validate_overlay(key, text)
         except ValueError as error:
@@ -130,6 +174,8 @@ def actual_controls(directory, saved):
                                      source=str(dest), sha256=hashlib.sha256(dest.read_bytes()).hexdigest())
 
     def replace(label, key, old, new, expected, count=1):
+        if key in ("top", "top_assertion"):
+            old, new = spell(old), spell(new)
         if texts[key].count(old) != count: raise AssertionError((label,"shape",texts[key].count(old),count))
         check(label,key,texts[key].replace(old,new),expected)
 
@@ -218,15 +264,16 @@ def actual_controls(directory, saved):
     entries = [
         ("epoch-increment-removed","target","resetEpoch_epoch <= resetEpoch_epoch + 64'h1","resetEpoch_epoch <= resetEpoch_epoch","STATE_TRANSITIONS:resetEpoch_epoch"),
         ("epoch-previous-live-zero","target","resetEpoch_previous <= host_resetActive","resetEpoch_previous <= 1'h0","STATE_TRANSITIONS:resetEpoch_epoch"),
-        ("epoch-clock-changed","target","posedge clock or posedge localReset_layerCapture","posedge otherClock or posedge localReset_layerCapture","STATE_CLOCK_RESET:resetEpoch_epoch"),
-        ("ready-reset-removed","target","~_resetEpoch_T_2_layerCapture & frameAcceptEnable","frameAcceptEnable","DRIVER:ca_child_frame_bridge_out_ready"),
+        ("epoch-clock-changed","target","posedge clock or posedge " + ("localReset_release_1" if inline else "localReset_layerCapture"),"posedge otherClock or posedge " + ("localReset_release_1" if inline else "localReset_layerCapture"),"STATE_CLOCK_RESET:resetEpoch_epoch"),
+        ("ready-reset-removed","target","~" + ("localReset_release_1" if inline else "_resetEpoch_T_2_layerCapture") + " & frameAcceptEnable","frameAcceptEnable","DRIVER:ca_child_frame_bridge_out_ready"),
 
         ("gate-clock-inverted","top","serviceClock & gate_enabled","serviceClock | gate_enabled","DRIVER:fabric_clock"),
         ("gate-extra-high-edge","top","posedge gate__enabled_T_3 or posedge reset","posedge serviceClock or posedge reset","WORK_GATE_STATE"),
-        ("wrap-upper-bit-lost","assertion","(&I2cTarget.resetEpoch_epoch)","(&I2cTarget.resetEpoch_epoch[31:0])","EPOCH_ASSERTION_LOGIC"),
-        ("wrap-clock-changed","assertion","always @(posedge I2cTarget.clock) begin","always @(negedge I2cTarget.clock) begin","EPOCH_ASSERTION_LOGIC"),
-        ("wrap-bind-disabled","bind","bind I2cTarget I2cTarget_Verification_Assert","bind Unrelated I2cTarget_Verification_Assert","EPOCH_ASSERTION_BIND"),
-        ("wrap-stop-macro-disabled","assertion","`define STOP_COND_ 1","`define STOP_COND_ 0","EPOCH_ASSERTION_MACRO")]
+        ("wrap-upper-bit-lost","assertion","(&" + ("" if inline else "I2cTarget.") + "resetEpoch_epoch)","(&" + ("" if inline else "I2cTarget.") + "resetEpoch_epoch[31:0])","EPOCH_ASSERTION_LOGIC"),
+        ("wrap-clock-changed","assertion","always @(posedge " + ("" if inline else "I2cTarget.") + "clock) begin","always @(negedge " + ("" if inline else "I2cTarget.") + "clock) begin","EPOCH_ASSERTION_LOGIC"),
+        ("wrap-stop-macro-disabled","assertion","`define STOP_COND_ 1","`define STOP_COND_ 0","EPOCH_ASSERTION_HEADER" if inline else "EPOCH_ASSERTION_MACRO")]
+    if not inline:
+        entries.append(("wrap-bind-disabled","bind","bind I2cTarget I2cTarget_Verification_Assert","bind Unrelated I2cTarget_Verification_Assert","EPOCH_ASSERTION_BIND"))
     for row in entries: replace(*row)
     replace("wrap-disabled","assertion","$fatal;",";","EPOCH_ASSERTION_LOGIC",4)
     for name in ("fabric_hostFrames_io_enq_bits_resetActive", "fabric_hostFrames_io_enq_bits_programBusy",
@@ -255,7 +302,7 @@ def actual_controls(directory, saved):
             ("force",f"initial force {name} = 0;", "ALIAS_WRITER_CONSTRUCT")):
             inject(name + "-" + suffix,key,extra,error)
     for key,name in (("target","ca_child_frame_bridge_out_ready"),("target","resetEpoch"),("top","fabric_clock")):
-        inject("alias-procedural-"+name,key,f"always_comb {name} = 0;","ALIAS_WRITERS:"+name)
+        inject("alias-procedural-"+name,key,f"always_comb {spell(name) if key == 'top' else name} = 0;","ALIAS_WRITERS:"+name)
     for field in ("bank","resetActive","programBusy"):
         net = "fabric_hostFrames_first_" + field
         inject("mailbox-extra-clocked-"+field,"top",f"always @(negedge serviceClock) {net} <= 0;","MAILBOX_WRITERS:"+net)
@@ -268,18 +315,26 @@ def actual_controls(directory, saved):
         ("tail-starts-wrong-bank", "frameSlot <= 2'h0", "frameSlot <= 2'h1", "STATE_TRANSITIONS:frameSlot"),
         ("busy-sync-bypass", "frameStoreBusy_stages_1 <= frameStoreBusy_stages_0", "frameStoreBusy_stages_1 <= _ca_child_frame_store_busy", "STATE_TRANSITIONS:frameStoreBusy_stages_0")):
         replace(label, "target", old, new, diagnostic)
-    replace("copy-ACK-assertion-disabled", "assertion", "_GEN\n          & I2cTarget.ca_child_frame_store_in_ack_layerCapture", "1'b0\n          & I2cTarget.ca_child_frame_store_in_ack_layerCapture", "EPOCH_ASSERTION_LOGIC")
-    replace("copy-full-width-assertion-corrupt", "assertion", "_GEN_0[I2cTarget.frameSlot]", "_GEN_0[2'h0]", "EPOCH_ASSERTION_LOGIC")
+    copy_ack = " & _ca_child_frame_store_in_ack" if inline else "\n          & I2cTarget.ca_child_frame_store_in_ack_layerCapture"
+    replace("copy-ACK-assertion-disabled", "assertion", "_GEN" + copy_ack, "1'b0" + copy_ack, "EPOCH_ASSERTION_LOGIC")
+    replace("copy-full-width-assertion-corrupt", "assertion", "_GEN_0[" + ("" if inline else "I2cTarget.") + "frameSlot]", "_GEN_0[2'h0]", "EPOCH_ASSERTION_LOGIC")
     top_name = top["module"]
-    replace("overflow-offer-masked", "top_assertion", "~" + top_name + ".fabric_io_i2c_frame_valid", "1'b1", "OVERFLOW_ASSERTION_LOGIC")
-    replace("overflow-capacity-masked", "top_assertion", top_name + ".fabric_hostFrames_io_enq_ready", "1'b1", "OVERFLOW_ASSERTION_LOGIC")
+    assert_prefix = "" if inline else top_name + "."
+    replace("overflow-offer-masked", "top_assertion", "~" + assert_prefix + "fabric_io_i2c_frame_valid", "1'b1", "OVERFLOW_ASSERTION_LOGIC")
+    if inline:
+        # Only the assertion operand changes; the source's real enqueue driver
+        # and its other users remain present and unchanged.
+        replace("overflow-capacity-masked", "top_assertion", "~_ca_child_i2c_host_frame_valid | fabric_hostFrames_io_enq_ready", "~_ca_child_i2c_host_frame_valid | 1'b1", "OVERFLOW_ASSERTION_LOGIC")
+    else:
+        replace("overflow-capacity-masked", "top_assertion", top_name + ".fabric_hostFrames_io_enq_ready", "1'b1", "OVERFLOW_ASSERTION_LOGIC")
     # Changing only the mailbox failure action must fail independently of every other assertion.
     old = '$error("Assertion failed: CONTROL_HOST_MAILBOX_OVERFLOW\\n");'
     replace("overflow-message-removed", "top_assertion", old, '$error("UNRELATED_FAILURE");', "OVERFLOW_ASSERTION_COUNT")
-    replace("overflow-bind-disabled", "top_bind", "bind " + top_name + " ", "bind Unrelated ", "OVERFLOW_ASSERTION_BIND")
-    replace("overflow-child-bind-removed", "top_bind", '`include "layers-I2cTarget-Verification-Assert.sv"', "", "OVERFLOW_ASSERTION_BIND")
+    if not inline:
+        replace("overflow-bind-disabled", "top_bind", "bind " + top_name + " ", "bind Unrelated ", "OVERFLOW_ASSERTION_BIND")
+        replace("overflow-child-bind-removed", "top_bind", '`include "layers-I2cTarget-Verification-Assert.sv"', "", "OVERFLOW_ASSERTION_BIND")
     for key, diagnostic, model in (("assertion", "EPOCH_ASSERTION", target["module"]), ("top_assertion", "OVERFLOW_ASSERTION", top_name)):
-        module_header = "module " + model + "_Verification_Assert();"
+        module_header = "module " + model + ("(" if inline else "_Verification_Assert();")
         replace(key + "-extra-header-macro", key, module_header, "`define SYNTHESIS\n" + module_header, diagnostic + "_HEADER")
         if key == "top_assertion":
             # Restrict mutations to the executable module, preserving the separate
@@ -290,7 +345,42 @@ def actual_controls(directory, saved):
             check("overflow-extra-disabled-wrapper", key, head + body.replace("`ifndef SYNTHESIS", "`ifdef NEVER_EXECUTE\n`ifndef SYNTHESIS", 1).replace("endmodule", "`endif\nendmodule"), diagnostic + "_WRAPPER")
             check("overflow-inner-disabled-wrapper", key, head + body.replace("`ifndef SYNTHESIS", "`ifndef SYNTHESIS\n`ifdef NEVER_EXECUTE", 1).replace("endmodule", "`endif\nendmodule"), diagnostic + "_WRAPPER")
             replace("overflow-stop-macro-disabled", key, "`define STOP_COND_ 1", "`define STOP_COND_ 0", diagnostic + "_HEADER")
-    replace("overflow-bind-directives-joined", "top_bind", "`ifndef layers_" + top_name + "_Verification_Assert", "`ifndef layers_" + top_name + "_Verification_Assert `define DISABLED", "OVERFLOW_ASSERTION_BIND")
+    if not inline:
+        replace("overflow-bind-directives-joined", "top_bind", "`ifndef layers_" + top_name + "_Verification_Assert", "`ifndef layers_" + top_name + "_Verification_Assert `define DISABLED", "OVERFLOW_ASSERTION_BIND")
+    # A literal assertion inside a dead lexical scope is not executable proof.
+    # Exercise these against both real emitted forms, including the reviewer's
+    # false-generate counterexample and an implicit generate without the keyword.
+    raw = texts["top_assertion"]
+    module_start = raw.index("module " + top_name)
+    guard = re.search(r"`ifndef SYNTHESIS[^\n]*\n", raw[module_start:])
+    if guard is None: raise AssertionError("Missing original assertion guard")
+    begin = module_start + guard.end()
+    end = raw.index("`endif // not def SYNTHESIS", begin)
+    for name, prefix, suffix in (
+            ("false-generate", "generate if (1'b0) begin : unreachable_assertions\n", "end endgenerate\n"),
+            ("implicit-false-generate", "if (1'b0) begin : unreachable_assertions\n", "end\n"),
+            ("uninstantiated-module", "endmodule\nmodule Uninstantiated();\n", "endmodule\nmodule Continuation();\n"),
+            ("uninvoked-task", "task never_called; begin\n", "end endtask\n"),
+            ("uninvoked-function", "function never_called; begin\n", "end endfunction\n")):
+        changed = raw[:begin] + prefix + raw[begin:end] + suffix + raw[end:]
+        diagnostic = "UNEXPECTED_WRITER_CONSTRUCT" if inline and name in ("uninvoked-task", "uninvoked-function") else "OVERFLOW_ASSERTION_OWNERSHIP"
+        check("overflow-" + name, "top_assertion", changed, diagnostic)
+    # The surrounding module scope must also remain direct (outside the guard).
+    changed = raw[:module_start + guard.start()] + "if (1'b0) begin : disabled_outer\n" + raw[module_start + guard.start():end] + "\nend\n" + raw[end:]
+    check("overflow-outer-false-generate", "top_assertion", changed, "OVERFLOW_ASSERTION_OWNERSHIP")
+    if inline:
+        changed = raw[:begin] + "wire hidden; `define STOP_COND_ 0\n" + raw[begin:]
+        check("overflow-same-line-macro", "top_assertion", changed, "OVERFLOW_ASSERTION_WRAPPER")
+        clock = spell("fabric_clock")
+        fragment = raw[begin:end]
+        changed = fragment.replace("always @(posedge " + clock + ")", "always @(negedge " + clock + ")")
+        if changed == fragment: raise AssertionError("Overflow clock mutation missing")
+        check("overflow-clock-inverted", "top_assertion", raw[:begin] + changed + raw[end:], "OVERFLOW_ASSERTION_CLOCK")
+    for role in ("fabric__5", "fabric__6", "fabric__27"):
+        name = spell(role)
+        changed, count = re.subn(r"(\bwire\s+" + name + r"\s*=)[^;]+;", r"\g<1> 1'h0;", texts["top"])
+        if count != 1: raise AssertionError((name, "fire/select driver shape", count))
+        check("fire-or-select-driver-" + role, "top", changed, "DRIVER:" + role)
     inject("descriptor-hidden-register", "top", "reg fabric_hostFrames_shadow;", "MAILBOX_REGISTER_INVENTORY")
     inject("descriptor-hidden-memory", "top", "reg [336:0] fabric_hostFrames_shadow[0:1];", "MAILBOX_REGISTER_INVENTORY")
     # Dynamic enable cannot be changed to a literal by metadata or probe alone.

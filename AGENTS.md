@@ -294,6 +294,12 @@
   `docs/physical-control-guard-contract.md`; local adapter measurements do not
   close complete custom transforms or controller envelopes. Feed actual guard
   maxima back into those envelopes without relaxing functional timing oracles.
+  Physical exports use current supported SoC timing and an enabled evaluation
+  board policy, with inline assertions and v2 contract/port hash binding. Keep
+  the composed Click-policy rejection and exact source inventory. Follow
+  `docs/physical-export-contract.md`; old v1 exports require regeneration.
+  Standalone PhysicalTiming core tests do not authorize that policy for every
+  controller. Constraint coverage and complete physical envelopes remain open.
 - Keep generated RTL, tools, simulator logs and test evidence under ignored
   `.tools/`, `build/` or `target/` directories. Pin dependencies and record limits.
 - Firmware and memory budgets live in `firmware/`; run FirmwareSpec and the

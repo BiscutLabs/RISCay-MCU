@@ -1,12 +1,5 @@
 # RISCay-MCU
 
-Migration items use a fresh independent agent review, fixes, affected verification,
-and a commit/push before completion. Items 1–9, native response assembly (10a),
-admission credit (10b1), RAM/program ownership (10b2a/b) and publication receipts
-(10b2c1) are digitally verified within their documented scopes. See the
-[migration checklist](docs/async-soc-migration.md)
-for the remaining clocked state and physical qualification work.
-
 A tiny reusable RISC-V SoC, built in Chisel with
 [chisel-async](https://github.com/BiscutLabs/chisel-async).
 
@@ -49,113 +42,37 @@ state. Programming lock lasts until full MCU reset or power loss; status and
 telemetry remain readable when locked. See the
 [host status, telemetry and lock contract](docs/loader-status-and-lock.md).
 
-**Status: asynchronous SoC migration in progress.** The expanded checklist now
-includes the remaining service scheduler, completion coordination, observation
-processing, host publication and unnecessary clock crossings. Earlier functional
-migration passes do not establish minimum synchronous logic; each remaining
-clocked owner must have a documented physical or interface reason before physical
-requalification.
+**Status: asynchronous SoC migration in progress; physical timing is unqualified.**
+Both design folders own independent native implementations of CPU/fabric routing,
+MMIO and loader state, telemetry/events, arithmetic, permanent supervision,
+SRAM word sequencing, I2C/SPI protocol and housekeeping. Click remains native
+two-phase. Digital verification covers the documented scopes in the
+[migration checklist](docs/async-soc-migration.md).
 
-Each design owns a separate
-SoC implementation. SocFabric, MMIO/loader, GPIO/events/telemetry, scaling/CRC,
-permanent supervision, SRAM word sequencing, I2C and SPI ADC protocol state are digitally verified.
-Separate native pipelines now own fractional elapsed-time
-and ADC arithmetic, with CRC byte stages in each Control feedback loop.
-Native fabrics route ROM and static access faults without a
-service clock; stateful accesses use explicit endpoint bridges. Separate native
-Control modules own loader state and MMIO validation/producer selectors.
-Separate native Telemetry loops now own software GPIO/application words, pending
-flags and host sample records; both variants pass regressions and strict exports. Clocked
-ingress, snapshots, reset projections, GPIO sampling, independent LF/watchdog logic,
-supervisor input/output and scaling request/publication boundaries remain explicit.
-Separate native SRAM controllers retain word ownership, sequence bytes and assemble
-reads around explicit synchronous macro boundaries. Separate native I2C controllers
-pass digital verification; wire sampling, timeout and host publication remain clocked.
-Separate native SPI ADC controllers now define frames, own conversion credit, assemble
-samples, discard the first complete frame and retire scaled results. An explicit
-clocked player preserves exact pin timing and buffers every MISO observation;
-launch/admission, active/pending state, age accumulation and publication remain
-clocked. Item 8 passes independent review,
-digital regressions, emitted-RTL mutation controls and both strict SoC exports.
-Separate native Housekeeping loops now own time, deadline/lease/wake-mask state,
-kick authorization and low-power cadence; clocked observation ingress and LF
-heartbeat delivery remain explicit. Item 9 passes independent review, all 227
-verification cases, both core policy cases, 84 Python controls and strict exports.
-Native completion assembly replaces clocked CPU response storage and
-joins selected memory/Telemetry/Housekeeping completions natively. Production
-replies connect directly to Fabric. Substep 10a passes independent review, all
-235 verification cases, both core policy cases, 87 Python controls, actual RTL
-mutation controls and strict exports. Native admission credit (10b1) passes fresh
-review, all 253 verification cases, both core policy cases, 90 working-tree
-Python controls and strict exports. Its clocked-client crossing remains explicit.
-Native RAM source ownership/cancellation (10b2a) passes fresh review, all 276
-verification cases, both core policy cases, 96 Python controls, mutation controls
-and strict exports. Native program-memory CPU/loader ownership and Stored
-delivery (10b2b) pass fresh review, all 309 verification cases, both core policy
-cases, 105 Python controls, 50 actual RTL mutation controls and strict exports.
-Separate native publication owners now replace Telemetry/Housekeeping CPU-pending
-flags (10b2c1, digitally verified). Fresh review fixes, all 334 verification cases,
-both core policy cases, 113 Python controls, 49 actual RTL mutation controls and
-both strict SoC exports pass. Their five POR crossings per source, clocked
-client staging and reset/drain projections remain tracked for subsequent migration.
-Native recovery ownership and full-return debt release (10b2c2a/b) are digitally
-verified. All 365 verification cases across 43 suites pass, with two physical-policy
-cases, 143 Python controls, 181 actual RTL mutation controls and both strict SoC
-exports. The interrupted regression and its completed-suite continuation are
-recorded separately. Final focused rechecks pass 63 cases and then 31 cases after
-the last observation-only aliases. Temporary clocked client receipts add six net
-bits per variant; their removal remains tracked with their clocked clients.
-Passing digital checks does not establish physical timing or minimum synchronous
-state. Substep 10b2d1 connects separate native RAM return owners to SRAM, source
-publication and Completion. Fresh review, all 415 verification cases across
-44 suites, two physical-policy cases, 217 Python controls and both strict
-SoC exports pass. It removes 39 net clocked RTL bits per variant. Program/loader
-return (10b2d2) is also digitally verified: three clocked word/publication/completion
-crossings are removed, reducing clocked RTL by another 80 bits per variant.
-Fresh review, all 461 verification cases across 45 suites in an audited split
-regression, two physical-policy cases, 301 Python tests and both strict exports
-pass. The strengthened final loader-source recheck passes all 16 cases.
-Host admission, dispatch and the remaining ledger still require migration.
-Substep 11a1 removes the redundant I2C frame payload copy in both
-designs. Five-bit receipts acknowledge only an actual work-clock mailbox capture;
-the native publisher retains the 337-bit frame. Emitted state falls by 339 clocked
-bits per variant with unchanged public ports. The audited 489-case verification
-cohort, two physical-policy cases, 329 Python tests, actual capture/fault controls
-and both strict exports pass. Substep 11a2a moves payload/epoch retention into
-four native banks in each design while preserving exactly two logical credits.
-The 507-case full regression, two physical-policy cases, final 68-case affected
-rerun, 364 Python controls and both production/standalone strict exports pass.
-Independent review and actual-RTL fault controls cover capture, priority and
-native return. The emitted audit confirms another 516 fewer periodically clocked
-bits per variant with unchanged public ports. Physical qualification remains open.
-Narrow descriptor/credit state and the dispatcher remain clocked. See the
-[frame-admission contract](docs/frame-admission-contract.md).
-The next credit-removal step requires physical evidence for the complete
-same-edge hold and next-edge decision paths. The physical mapper's width-based
-guard classification is now replaced with explicit reviewed roles and
-per-lane delay chains. The local five-corner audit passes, while measured guard
-maxima expose controller/reset timing work; see the [guard contract](docs/physical-control-guard-contract.md).
-Full controller timing qualification and further clocked-state removal remain open.
-See the [RAM return contract](docs/ram-return-contract.md),
-[program return contract](docs/program-return-contract.md) and
-[remaining-state ledger](docs/async-residual-state.md).
-The independent LF timebase/watchdog remains necessary. See the [migration checklist](docs/async-soc-migration.md). A permanent
-Groundlark controller supervises power before upload and during application
-stalls. Its state, safety sample record and confirmation counters now reside
-in independent native loops, with dedicated POR-only command/reply bridges. Its default policy is disabled until qualified battery settings are
-provided. Watchdog recovery resets the application and its CPU bridges while
-preserving the power supervisor, sensing, timebase, validated image and programming
-lock. The host can explicitly restart that image and distinguish successive
-recoveries through the retained `CRASH_COUNT` status word. Reset pins assert
-immediately; ordinary service logic and clock-gate demand are synchronized.
-Only manual/POR/brownout reset
-or MCU power loss clears the lock and returns Groundlark to its off state.
-**Tapeout must deliberately supply and qualify an enabled board policy**; the
-reference emitters' disabled `PowerPolicy()` never enables Pi power.
-Physical/analog, pin/package, board and Chiselator qualification remain.
-The new Fabric, Control, Telemetry, arithmetic, Supervisor, SRAM and I2C controllers have
-no physical timing qualification.
-Earlier P&R results describe baseline `8637099` and do not qualify this migration.
+Clocked service coordination, observation and publication boundaries remain,
+along with synchronous SRAM macro access, wire sampling and the independent
+LF timebase/watchdog. The [remaining-state ledger](docs/async-residual-state.md)
+tracks removal candidates; a smaller clocked-bit count does not establish lower
+area or power. Each migration item requires fresh independent review, fixes,
+verification, documentation and a separate commit/push.
+
+The review of `c4b7f44` reopens reset-domain crossings, reset-settlement bounds
+and frame-copy completion assumptions. These are corrective gates before further
+state removal. Current guard measurements exceed some digital timing assumptions;
+passing functional tests cannot qualify those physical paths. See the
+[guard contract](docs/physical-control-guard-contract.md),
+[frame-admission contract](docs/frame-admission-contract.md) and
+[physical export contract](docs/physical-export-contract.md). Earlier P&R results
+belong to baseline `8637099` and do not qualify the migrated controllers.
+
+Groundlark's permanent controller supervises power before firmware upload and
+during application stalls. Application watchdog recovery must preserve power
+supervision, sensing, timebase, validated image and programming lock; the host
+can restart the retained image and distinguish crashes through `CRASH_COUNT`.
+Only full MCU reset or power loss clears the lock. **Tapeout must deliberately
+supply and qualify an enabled board policy**: the ordinary reference emitters'
+disabled `PowerPolicy()` never enables Pi power. Physical/analog, pin/package,
+board and Chiselator qualification remain outstanding.
 
 Both variants have [experimental GF180 implementation inputs](docs/gf180-implementation.md):
 preserved async bindings, native matched-delay cells, compact digital tops, SRAM
@@ -213,13 +130,11 @@ The [Groundlark I/O contract](docs/groundlark-io.md) maps battery sensing, shutd
 halt acknowledgement, and power-on control. The reference digital build uses a
 separate three-signal SPI ADC; physical pads and analog integration remain open.
 Compiled memory budgets are recorded in the [memory architecture](docs/memory-architecture.md).
-[GF180 planning estimates](docs/gf180-estimates.md) cover the `4b5d105` full-capacity
-baseline: approximately 2.6 mm² of digital cells and 14–19 µW nominal retained
-standby including the shared analog circuits, before pad/external-device power.
-The subsequent reset/writeback review fixes require fresh mapping and wake
-measurements before applying those numbers to current RTL. The baseline protocol
-difference is smaller than the estimation uncertainty. Placement,
-async-cell characterization and extracted timing/power remain outstanding.
+[GF180 planning estimates](docs/gf180-estimates.md) report the current mapped
+candidate's area, listed-state leakage and simulated wake activity alongside
+the historical baseline. They do not establish physical timing, measured
+standby power or an area/power improvement from the migration. Reset and
+frame-copy repairs require another measurement pass.
 
 Project licensing is recorded in [LICENSE](LICENSE). Reused third-party material
 retains its own license and attribution.

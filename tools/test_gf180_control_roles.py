@@ -49,21 +49,27 @@ class ControlRoles(unittest.TestCase):
             base = Path(folder); export = base / "export"; export.mkdir()
             (base / "soc").mkdir()
             (base / "soc/sram-lock.json").write_text('{"assets":{}}')
-            root = fixture(); root.update(module="FourPhaseFrameStore", rtl_path="FourPhaseFrameStore", endpoints=[])
+            root = fixture(); root.update(module="FourPhaseFrameStore", rtl_path="FourPhaseSoc.store", endpoints=[])
             root["timing"][0]["delay_cell"] = "data_delay"
             for p, name in zip(root["primitives"], ("data_delay", "return_guard")):
-                p.update(id=name, rtl_path="FourPhaseFrameStore." + name,
+                p.update(id=name, rtl_path="FourPhaseSoc.store." + name,
                          ports=[dict(name="reset", width=1, direction="input"),
                                 dict(name="a", width=int(p["parameters"]["WIDTH"]), direction="input"),
                                 dict(name="q", width=int(p["parameters"]["WIDTH"]), direction="output")])
-            contract = dict(manifest=dict(top="FourPhaseFrameStore", design=root))
+            contract = dict(manifest=dict(top="FourPhaseSoc", design=dict(module="FourPhaseSoc",
+                rtl_path="FourPhaseSoc", primitives=[], timing=[], endpoints=[], children=[dict(id="store", contract=root)])))
             (export / "contract.json").write_text(json.dumps(contract))
-            (export / "filelist.f").write_text("FourPhaseFrameStore.sv\n" + MODEL + ".sv\n")
+            (export / "ports.json").write_text('{"top":"FourPhaseSoc","nodes":[]}')
+            (export / "filelist.f").write_text("FourPhaseSoc.sv\nFourPhaseFrameStore.sv\n" + MODEL + ".sv\n")
+            (export / "FourPhaseSoc.sv").write_text("module FourPhaseSoc(); FourPhaseFrameStore store (); endmodule\n")
             (export / "FourPhaseFrameStore.sv").write_text("module FourPhaseFrameStore();\n" +
                 "\n".join(MODEL + " " + p["id"] + " ();" for p in root["primitives"]) + "\nendmodule\n")
             (export / (MODEL + ".sv")).write_text("module " + MODEL +
                 " #(parameter WIDTH=1, OP=0, RESET_VALUE=0, DELAY_FS=1)(input reset, input [WIDTH-1:0] a, output [WIDTH-1:0] q); endmodule\n")
-            (export / "physical-policy.json").write_text('{"policy_enabled":true,"variant":"bd"}')
+            (export / "physical-policy.json").write_text(json.dumps(dict(schema="riscay-physical-policy-v2",
+                policy_enabled=True, variant="bd", timing_policy="current-supported-digital", qualification="unqualified",
+                verification_layers="inline", timing_intent="contract.json",
+                contract_sha256=sha(export / "contract.json"), ports_sha256=sha(export / "ports.json"))))
             def shell(_export, out, _manifest, _policy):
                 for name in ("RiscayMcuDigital.sv", "riscay_reset_hold.sv"): (out / name).write_text("// shell stub\n")
             with patch("gf180_physical.ROOT", base), patch("gf180_physical.pdk_verify"), \
@@ -74,7 +80,7 @@ class ControlRoles(unittest.TestCase):
                 by_role = {b["requirements"]["role"]: b for b in mapping["bindings"]}
                 self.assertEqual(sum(c["cell"] == SC + "dlyd_1" for c in by_role[CONTROL]["cells"]), 112)
                 self.assertEqual(sum(c["cell"] == SC + "buf_1" for c in by_role[DATA]["cells"]), 1)
-                self.assertEqual(by_role[DATA]["role_evidence"]["FourPhaseFrameStore.data_delay"]["timing"][0]["timing_id"], "transform")
+                self.assertEqual(by_role[DATA]["role_evidence"]["FourPhaseSoc.store.data_delay"]["timing"][0]["timing_id"], "transform")
                 from gf180_control_roles import CATALOGUE as catalogue_path
                 self.assertEqual(mapping["control_roles_sha256"], sha(catalogue_path))
                 wrapper = (out / (MODEL + ".sv")).read_text()

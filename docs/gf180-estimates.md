@@ -1,10 +1,69 @@
 # GF180 area, standby and wake-energy estimates
 
-**Historical flip-flop baseline only.** The current RTL uses 2 KiB program SRAM
-and 1 KiB working SRAM. The area, leakage and wake-energy results below must be
-remeasured with the three pinned macros and their controllers; they are not
-current SRAM estimates. The old estimator rejects unmapped SRAM rather than
-silently omitting its area or power. See [SRAM integration](sram-integration.md).
+## Current mapped candidate and activity, 2026-10-12
+
+This refresh covers controller RTL at `c4b7f44`, the supported physical export
+under review in 17a2a, and the enabled Groundlark evaluation policy. It precedes
+the corrective reset-domain and frame-copy changes requested in the independent
+review. **These candidates are not timing-qualified.** The actual mapped native
+adapters include the overlong guard chains; counting them does not authorize
+their use in silicon. Repeat the accounting after those repairs.
+
+| Quantity | Four-phase BD | Native Click |
+| --- | ---: | ---: |
+| Audited mapped leaves, including three SRAMs | 125,834 | 127,956 |
+| Sum of Liberty cell/macro areas | 4.1115 mm² | 4.9692 mm² |
+| Sum of LEF cell/macro footprints | 3.9495 mm² | 4.8073 mm² |
+| Matched-control guards within those sums | 0.5941 mm² | 1.1463 mm² |
+| TT / 25°C / 3.3 V listed-state leakage estimate | 9.10–11.95 µW | 10.80–14.68 µW |
+| FF / 125°C / 3.6 V listed-state leakage estimate | 301.86–689.90 µW | 383.47–804.20 µW |
+
+Every cell is counted once from the audited synthesized hierarchy, including
+native storage/control, ordinary logic, all three pinned SRAM macros and the
+production 100,000-edge POR reset sequencer (117 mapped leaves per variant).
+The pinned SRAM Liberty area is 209,400.2768 µm² per macro; its pinned LEF is
+301.300 × 515.810 µm, or 155,413.553 µm². Standard-cell areas agree between views.
+The three macros therefore explain the entire difference between the two area
+rows. Neither sum includes placement whitespace, routing/clock-tree overhead,
+analog layout or pads, and neither is a core or die-area result.
+
+Leakage sums use standard-cell conditional minima/maxima plus one aggregate SRAM
+datum per corner, with the SRAM's mW units converted to µW. These are listed-state
+library estimates, not measured standby power or complete silicon bounds. The
+macro has no state-dependent min/max table. Correlated reachable standby state,
+analog, pads and physical implementation overhead remain unmeasured. All five
+pinned corners are retained in the evidence; the table shows nominal and hot-fast.
+
+The unchanged native-model activity fixture ran at 12 MHz and retained all its
+functional assertions. Both variants produced 22 maintenance, three sampling
+and two firmware wake observations. Each firmware wake retired exactly 43
+instructions. POR startup is accelerated before measurement; mapped area uses
+the real reset sequencer. These are digital-model activity counts, not
+mapped-netlist timing or energy measurements.
+
+| Observed wake | BD service / work edges | Click service / work edges |
+| --- | ---: | ---: |
+| Maintenance | 37 / 22 | 37 / 19 |
+| ADC acquisition and scaling | 220 / 216 | 218 / 214 |
+| 43-instruction firmware workload | 3,260 / 3,256 | 3,165 / 3,161 |
+
+Evidence lives under `build/review-c4b7f44/`: original test XML/logs, native
+observer logs, `mapped-cost-preview.json` and its script. Fresh independent
+review used a separate Liberty parser, Decimal accounting and recursive netlist
+walk; observer-only simulations independently reproduced every wake window.
+Its complete report and failures are in `independent-cost-review/`. Native
+storage-enable counts are retained there; they are not changed-bit counts or
+dynamic energy. The historical baseline below uses different memory and async
+cell approximations. No matched baseline comparison was run, so these numbers
+do not establish an area or power improvement from the migration.
+
+## Historical flip-flop baseline
+
+The results below predate the current 2 KiB program / 1 KiB working SRAM
+implementation. They are not current SRAM or wake-energy estimates. The old
+estimator rejects unmapped SRAM rather than silently omitting it; the refresh
+above instead counts the actual audited physical candidate. See
+[SRAM integration](sram-integration.md).
 
 2026-10-07, RTL baseline `4b5d105`. **Planning estimates, not physical signoff.**
 These results precede the second review fixes (reset synchronizers, crash counter,

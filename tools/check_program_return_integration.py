@@ -4,6 +4,7 @@ import json,re
 from pathlib import Path
 from check_program_return_contract import validate_program_return,validate_program_return_rtl,require,expression
 from check_program_capture_receipt import validate_program_access
+from check_frame_integration import validated_service_clock
 
 
 from check_ram_return_integration import mask_literal_zero, apply_return_literal_obligations
@@ -161,7 +162,7 @@ def program_return_probe(source,manifest,scopes,directory,literal_obligations=No
         record['capture_receipt']=validate_program_access(access,directory,scopes)
         pairs += record['capture_receipt']['bindings']
         pairs += [(e['reset'],top+'.reset'),(e['application_reset'],top+'.systemReset'),
-            (a['reset'],top+'.reset'),(access['rtl_path']+'.clock',top+'.fabric_clock'),
+            (a['reset'],top+'.reset'),(access['rtl_path']+'.clock',validated_service_clock(root,directory)),
             (e['eligible'],o['cpu_presentation_permit']),(e['idle'],a['return_idle']),
             (o['word_drained'],'('+a['effects_drained']+' && '+e['presentation_settled']+')'),
             (e['capture_request'],a['capture_request']),(e['capture_acknowledge'],a['capture_acknowledge']),

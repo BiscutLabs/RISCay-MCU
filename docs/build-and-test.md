@@ -1,5 +1,34 @@
 # Build and test
 
+## Current-controller physical export (17a2a)
+
+`physical/runMain riscay.physical.EmitPhysical new-output-directory` now emits
+both supported current native controller policies with the enabled evaluation
+board policy. The composed Click-policy guard remains enforced. Verification
+bodies remain inline; the physical mapper's source whitelist is unchanged.
+The v2 policy binds actual contract and port hashes, and every output remains
+unqualified. See the [export contract](physical-export-contract.md).
+
+Run `physical/test`, the complete Python controls and strict validation of both
+exports before accepting this prerequisite. Also run `tools/gf180_physical.py`,
+`tools/check_gf180_cells.py` and the synthesis leaf/connection audit on each
+variant. Evidence and actual failures belong under
+`build/async-physical-export-migration/`. The new source-path test initially
+rejected normal `.\` spellings; it now resolves paths and requires the exact
+export parent. Its initial source and failure log are preserved.
+
+The final prerequisite passes four physical tests, 378 Python tests, 3,620
+actual frame-source mutations, 124 return integration tests and both strict
+exports. Exact policy/source/port, mapped-cell, synthesis and executed-probe
+receipts are bound by `qualification-evidence.json` in that directory. This
+result verifies the exporter and its inputs; R1–R3 corrective controller work
+and physical timing qualification remain open.
+
+Old v1 policy records require re-export; do not relabel old generated RTL. The
+emitter no longer attaches global standalone-core timing claims to unrelated
+controllers. 17a2b clock/reset/crossing constraints and 17a3 complete physical
+timing obligations remain open, including the measured guard/reset mismatch.
+
 ## Physical guard-role binding (17a1)
 
 The physical mapper now uses `physical/gf180/controlgate-roles.json` and exact
