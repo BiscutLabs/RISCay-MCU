@@ -66,9 +66,13 @@ class ControlRoles(unittest.TestCase):
                 "\n".join(MODEL + " " + p["id"] + " ();" for p in root["primitives"]) + "\nendmodule\n")
             (export / (MODEL + ".sv")).write_text("module " + MODEL +
                 " #(parameter WIDTH=1, OP=0, RESET_VALUE=0, DELAY_FS=1)(input reset, input [WIDTH-1:0] a, output [WIDTH-1:0] q); endmodule\n")
-            (export / "physical-policy.json").write_text(json.dumps(dict(schema="riscay-physical-policy-v2",
+            (export / "physical-policy.json").write_text(json.dumps(dict(schema="riscay-physical-policy-v3",
                 policy_enabled=True, variant="bd", timing_policy="current-supported-digital", qualification="unqualified",
                 verification_layers="inline", timing_intent="contract.json",
+                service_max_hz=20000000, application_reset=dict(qualifier_edges=8, native_hold_edges=64, native_release_edges=64,
+        digital_delay_limit_fs="250000000", measured_local_guard_reset_max_fs="1550000000",
+        minimum_native_hold_fs="3150000000", minimum_native_release_fs="3150000000",
+        qualification="unqualified", scope="local-guard-margin-only"),
                 contract_sha256=sha(export / "contract.json"), ports_sha256=sha(export / "ports.json"))))
             def shell(_export, out, _manifest, _policy):
                 for name in ("RiscayMcuDigital.sv", "riscay_reset_hold.sv"): (out / name).write_text("// shell stub\n")

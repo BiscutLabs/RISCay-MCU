@@ -49,17 +49,29 @@ digital passes remain evidence of their tested scope, not RDC or physical proof.
   original failures under `build/async-reset-domain-migration/`. The change adds
   forty periodic-clocked bits per variant. This closes digital containment only;
   physical CDC, related-clock timing and reset propagation remain unqualified.
-- [ ] **R2. Reconcile reset release with measured propagation.** The current
-  eight-edge hold and 250 ns settlement assumption do not cover the measured
-  long-guard reset paths (up to approximately 1.55 us before wiring). Derive the
-  complete worst-case reset/recovery envelope, then use a proved completion or
-  bounded hold mechanism. A guessed larger counter is not physical closure.
-  Retain the original short-pulse/accepted-effect tests and add boundary cases;
-  never stretch their stimulus to conceal lost recovery.
-  Bound both assertion hold and post-deassertion settling before receivers/core
-  reopen. Bridge acknowledgment withdrawal proves an edge, not native settling.
-  Keep the raw pulse qualifier and supported digital timing-policy cap distinct
-  from physical propagation assumptions. Count the added reset-control state.
+- [ ] **R2. Reset intervals and complete physical recovery bounds.**
+  - [x] **R2a. Extend assertion and release intervals — digitally verified.**
+    Retain the eight-edge raw qualifier and unchanged 250 ns supported digital
+    timing-policy cap. A reused six-bit counter separately requires 64 native
+    assertion edges and 64 post-release isolation edges, plus actual receiving
+    rebase/withdrawal acknowledgments. Each interval is conservatively at least
+    3.15 us at 20 MHz, over twice the rounded measured local 1.55 us guard bound.
+    The change adds three periodic bits per variant and preserves all 34 public
+    ports. V3 export metadata explicitly records this limited scope. Fresh
+    review, 431 affected verification cases in 34 suites,
+    four physical-emitter/core-policy cases, 402 Python tests, 92 coordinator
+    and 12 service-projection actual-RTL controls and all four strict exports
+    pass. Original short pulses and behavioral oracles remain intact; service
+    projections are tested at the
+    coherent cutoff with pre-cutoff retention checked separately. Setup failures,
+    stale diagnostic expectations and a host timeout are retained with their
+    diagnosis/reruns under `build/async-reset-hold-migration/`.
+  - [ ] **R2b. Qualify the complete physical reset/recovery envelope (17a3).**
+    Include upstream logic, reset-tree wiring, recovery/removal, every native
+    controller and later core-reset removal/startup. Local guard margin and an
+    acknowledgment withdrawal edge do not establish this complete bound. Use
+    proved completion or measured bounds with margin; increase/rework intervals
+    if full-path evidence requires it. R2a does not authorize physical use.
 - [ ] **R3. Remove the unacknowledged frame-copy timing race.** Original receipt
   acceptance can precede physical bank copy completion. Review a native join of
   original receipt and bank-copy completion, with safe route/payload retention
@@ -97,10 +109,15 @@ digital passes remain evidence of their tested scope, not RDC or physical proof.
   as originally requested; use shared verification to detect asymmetric fixes.
   Plan supported upstream probe hooks to replace fragile generated-testbench
   rewriting without discarding current mutation oracles.
+  Audit mapper scaling: the current one-hot/one-cold source sweeps recheck every
+  endpoint at every step, including unrelated logic. Evaluate static connection
+  proofs and affected-path checks with equivalent actual-RTL fault coverage;
+  reducing redundant comparisons must not remove activity or handshake checks.
 
 Each correction requires the same fresh review, fixes, verification, documentation
-and separate commit/push loop. R1–R3 and current cost evidence are prerequisites
-for resuming the deeper migration; full physical qualification remains item 17.
+and separate commit/push loop. R1, the digital repairs R2a/R3 and current cost
+evidence are prerequisites for resuming deeper state removal. Complete physical
+reset qualification (R2b) remains mandatory under item 17a3.
 
 ## Items
 
@@ -201,10 +218,12 @@ for resuming the deeper migration; full physical qualification remains item 17.
         and `SramAccess.active` remain explicit boundaries in this substep.
         The implementation has separate native owners and four POR crossings.
         Focused short-pulse tests exposed Click completion-phase replay during
-        reset release; the application island now shares an eight-edge qualifier
-        on the ungated service clock. At the 20 MHz ceiling this holds at least
-        350 ns against the 250 ns digital reset-settlement envelope. Fresh review
-        fixes, all 276 verification cases, both core policy cases, 96 Python
+        reset release; that substep added an eight-edge qualifier
+        on the ungated service clock. Its original 350 ns/250 ns settlement
+        interpretation is superseded by R1/R2a: the qualifier remains, while
+        coordinated reset and separate 64-edge assertion/release intervals
+        control native restart. Complete physical reset timing remains open.
+        At that substep, review fixes, all 276 verification cases, both core policy cases, 96 Python
         controls and both strict exports pass. Unchanged oracles reject 55 actual
         RTL mutations, 191 metadata mutations and six dynamic-binding changes.
         Coverage includes the full timing policy, emitted reset distribution,

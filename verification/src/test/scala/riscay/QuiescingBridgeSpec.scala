@@ -55,13 +55,13 @@ class QuiescingBridgeFixture(click: Boolean,managed: Boolean=false) extends Asyn
   }
   if(managed) {
     if(click) {
-      val coordinator=withClockAndReset(serviceClock,reset) { Module(new riscay.click.ClickResetBoundary(8)) }
+      val coordinator=withClockAndReset(serviceClock,reset) { Module(new riscay.click.ClickResetBoundary(64,64)) }
       coordinator.io.observed:=observed; coordinator.io.closed:=rxClosed && txClosed
       coordinator.io.rebased:=rxRebased && txRebased; coordinator.io.rebaseIdle:= !rxRebased && !txRebased
       close:=coordinator.io.close; rebase:=coordinator.io.rebase
       nativeReset:=coordinator.io.nativeReset; forceRun:=coordinator.io.forceRun
     } else {
-      val coordinator=withClockAndReset(serviceClock,reset) { Module(new riscay.bd.FourPhaseResetBoundary(8)) }
+      val coordinator=withClockAndReset(serviceClock,reset) { Module(new riscay.bd.FourPhaseResetBoundary(64,64)) }
       coordinator.io.observed:=observed; coordinator.io.closed:=rxClosed && txClosed
       coordinator.io.rebased:=rxRebased && txRebased; coordinator.io.rebaseIdle:= !rxRebased && !txRebased
       close:=coordinator.io.close; rebase:=coordinator.io.rebase
@@ -285,22 +285,24 @@ end endtask
 
 class ResetBoundarySpec extends AnyFunSuite {
   private val monitors="""
-integer heldEdges=0,resets=0;
+integer heldEdges=0,releasedEdges=0,resets=0;
 reg armed=0;
 always @(posedge serviceClock) begin
   if(reset || observed || !rebase || !rxRebased || !txRebased) heldEdges=0;
   else if(nativeReset) heldEdges=heldEdges+1;
+  if(reset || nativeReset) releasedEdges=0;
+  else if(close) releasedEdges=releasedEdges+1;
 end
 always @(posedge nativeReset) if(armed && !reset) begin
   if(!rxClosed || !txClosed || !close) $fatal(1,"RESET_BOUNDARY_DESTROYED_BEFORE_CLOSE");
   resets=resets+1;
 end
 always @(negedge nativeReset) if(!reset) begin
-  if(heldEdges < 8 || !rxClosed || !txClosed || !close)
+  if(heldEdges < 64 || !rxClosed || !txClosed || !close)
     $fatal(1,"RESET_BOUNDARY_SHORT_HOLD edges=%0d",heldEdges);
 end
 always @(negedge close) if(!reset) begin
-  if(nativeReset || rebase || rxRebased || txRebased || observed)
+  if(nativeReset || rebase || rxRebased || txRebased || observed || releasedEdges < 64)
     $fatal(1,"RESET_BOUNDARY_PREMATURE_OPEN");
 end
 """
@@ -350,7 +352,7 @@ end
         if(rxSample !== rxData || !rxAcknowledge) $fatal(1,"RESET_BOUNDARY_FRESH_PAYLOAD");
       """,monitors,serviceHalfPeriodNs=25)
     }
-    for(retriggerEdge <- Seq(0,3,7,8)) {
+    for(retriggerEdge <- Seq(0,3,7,8,62,63,64)) {
       test(s"$name reset boundary restarts its continuous hold at edge $retriggerEdge") {
         ClockedSimulation.run(new QuiescingBridgeFixture(click,managed=true),name+s"-reset-boundary-hold-$retriggerEdge",s"""
           workRun=1; wait(!close); @(negedge serviceClock); armed=1;
@@ -362,6 +364,43 @@ end
           if(!close || !nativeReset || !forceRun) $$fatal(1,"RESET_BOUNDARY_HOLD_RETRIGGER");
           #1; observed=0; wait(!close); @(negedge serviceClock);
           if(rxValid || txRequest || !txReady) $$fatal(1,"RESET_BOUNDARY_HOLD_REPLAY");
+        """,monitors,serviceHalfPeriodNs=25)
+      }
+    }
+    for(halfPeriod <- Seq(25,500); duringRelease <- Seq(false,true)) {
+      val interval=if(duringRelease) "release" else "assertion"
+      test(s"$name reset boundary counts receiving edges through a stopped service clock during $interval at $halfPeriod ns") {
+        ClockedSimulation.run(new QuiescingBridgeFixture(click,managed=true),
+          name+s"-reset-boundary-service-stop-$interval-$halfPeriod",s"""
+          workRun=1; wait(!close); @(negedge serviceClock); armed=1;
+          #1; observed=1; wait(nativeReset && rxRebased && txRebased);
+          @(negedge serviceClock); #1; observed=0;
+          ${if(duringRelease) "wait(!nativeReset);" else ""}
+          repeat(20) @(negedge serviceClock);
+          #1; clockEnabled=0;
+          #100000;
+          if(!close || !forceRun || nativeReset !== ${if(duringRelease) "1'b0" else "1'b1"})
+            $$fatal(1,"RESET_BOUNDARY_SERVICE_STOP_ADVANCED_INTERVAL");
+          clockEnabled=1; wait(!close); @(negedge serviceClock);
+          if(rxValid || txRequest || !txReady)
+            $$fatal(1,"RESET_BOUNDARY_SERVICE_STOP_REPLAY");
+        """,monitors,serviceHalfPeriodNs=halfPeriod)
+      }
+    }
+    for(retriggerEdge <- Seq(0,1,62,63,64,65)) {
+      test(s"$name reset boundary restarts closure at release edge $retriggerEdge") {
+        ClockedSimulation.run(new QuiescingBridgeFixture(click,managed=true),
+          name+s"-reset-boundary-release-retrigger-$retriggerEdge",s"""
+          workRun=1; wait(!close); @(negedge serviceClock); armed=1;
+          #1; observed=1; wait(nativeReset && rxRebased && txRebased);
+          @(negedge serviceClock); #1; observed=0; wait(!nativeReset);
+          repeat($retriggerEdge) @(negedge serviceClock);
+          #1; observed=1; repeat(4) @(negedge serviceClock);
+          if(!close || !nativeReset || !forceRun || !rebase)
+            $$fatal(1,"RESET_BOUNDARY_RELEASE_RETRIGGER");
+          #1; observed=0; wait(!close); @(negedge serviceClock);
+          if(resets != 2 || rxValid || txRequest || !txReady)
+            $$fatal(1,"RESET_BOUNDARY_RELEASE_RETRIGGER_REPLAY");
         """,monitors,serviceHalfPeriodNs=25)
       }
     }

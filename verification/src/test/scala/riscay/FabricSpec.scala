@@ -139,6 +139,11 @@ end endtask
   test(s"$variant: deadline replacement consumes stale or coincident expiry, preserves GPIO, and arms the next wait") {
     ClockedSimulation.run(fixture(SocParameters(config,serviceHz=100000,watchdogCycles=1000000)),
       "deadline-replacement","""
+      // Create the GPIO event after coherent application reset has reopened.
+      // The bounded setup must not silently wait out a stuck reset controller.
+      repeat(180) @(negedge serviceClock);
+      if(dut.applicationCancel || dut.nativeApplicationReset || dut.nativeCoreReset)
+        $fatal(1,"DEADLINE_SETUP_RESET_DID_NOT_REOPEN");
       gpioIn=1; #1000;
       write_bus(32'h30000038,2); // Only deadline wakes the blocking read.
       write_bus(32'h30000008,0); // Expire while handling the previous GPIO wake.

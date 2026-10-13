@@ -89,8 +89,11 @@ include:
 | 241.200001 ns | 375.572998 ns | 1548.816406 ns |
 
 Sensitized reset propagation reaches 712.102356 ns and 1548.834106 ns for the
-last two graphs. These exceed the present 250 ns digital reset-settlement
-assumption. Resolve that mismatch in the physical controller design; do not
+last two graphs. These exceed the old 250 ns digital reset-settlement
+assumption. R2a's digital repair separates the unchanged digital policy limit from
+64-edge native assertion and release intervals (each conservatively 3.15 us).
+That covers the measured local bound with margin; complete controller/reset-tree
+propagation and core startup remain unqualified. Do not
 extend failing reset stimuli or weaken original admission timing tests.
 These measurements are pre-layout and do not
 include upstream logic, extracted wiring, pulse/hazard or full-controller reset

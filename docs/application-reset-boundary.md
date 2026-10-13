@@ -69,6 +69,33 @@ effect. Closure/rebase repeats, and only the final fresh generation becomes
 visible. Keeping the core held prevents ordinary startup trace loss; it does
 not promise that a new watchdog episode cannot abort an internal restart.
 
+## Reset intervals (R2a digitally verified)
+
+The raw pulse qualifier still requires eight ungated service edges. It observes
+short pulses and wakes a stopped source; its 350 ns conservative minimum is not
+the native reset hold. The coordinator separately requires 64 continuous service
+edges after observed reset is low and all receivers acknowledge rebase. It then
+removes native application reset while retaining cutoff and core reset for another
+64 service edges. Reopening additionally requires every rebase acknowledgment
+to withdraw. The counter saturates while withdrawal is missing, and a new reset
+restarts closure. Stopped service clocks cannot advance either interval.
+
+At the supported 20 MHz ceiling, each interval is conservatively at least
+`(64-1)/20 MHz = 3.15 us`. This exceeds twice the rounded 1.55 us worst measured
+local guard reset propagation. The reused counter grows from three to six bits,
+adding three periodic bits per variant. The eight-bit raw qualifier is unchanged.
+
+The 250 ns limit on custom digital timing parameters remains a compatibility
+check, now named `digitalDelayLimitFs`; it is not a physical settlement bound.
+V3 physical policy records distinguish these quantities and remain unqualified.
+Local guard measurements exclude upstream logic, reset distribution and wiring.
+The later core-reset removal/startup path also needs its own full envelope.
+These longer intervals repair the known numerical mismatch but do not close
+complete physical reset recovery/removal or controller timing (R2b/item 17a3).
+R2a passes the affected regressions, independent actual-RTL mutation review and
+all four strict exports. The exact sources, probes, binaries, logs and retained
+failures are bound in `build/async-reset-hold-migration/qualification-evidence.json`.
+
 Application projections now have POR reset and highest-priority synchronous
 cancellation. Immediate GPIO isolation is an output-only branch. The diagnostic
 `pending` view used by verification follows that isolation; it is not a hardware
@@ -144,4 +171,5 @@ qualify synchronizer MTBF, related service/work setup/hold, the last capture to
 destructive-reset margin, reset recovery/removal, or the complete physical
 controller/reset envelope. `close` is a timed synchronous predicate, not an
 unconditionally glitch-free asynchronous isolation primitive. The inherited
-eight-edge/250 ns assumptions remain unqualified until R2 is resolved.
+eight-edge/250 ns physical interpretation is superseded by R2's separate
+intervals above; complete physical qualification remains open.

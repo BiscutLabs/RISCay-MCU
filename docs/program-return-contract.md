@@ -30,7 +30,9 @@ captured CPU permission, application response phase and Click's saved applicatio
 target. Under the [R1 digital-containment correction](application-reset-boundary.md), ProgramReturn
 and Completion share the coordinated native reset, after their clocked receivers
 acknowledge closure. The raw qualifier alone no longer identifies the lifetime
-of the response phase. The inherited reset-duration assumptions remain open in R2.
+of the response phase. R2's integrated candidate now holds native reset and its
+release isolation for separate 64-edge intervals. Standalone controllers retain
+their own digital test assumptions; neither scope proves physical propagation.
 Application reset cancels CPU presentation but cannot cancel loader publication,
 Stored delivery, accepted byte writes or Control accounting. A word captured
 while reset is held cannot become eligible upon release.

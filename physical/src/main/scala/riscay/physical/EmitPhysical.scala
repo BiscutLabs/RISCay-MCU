@@ -54,14 +54,22 @@ object PhysicalSocExport {
       SramInventory.write(out,p.config)
       ChipWrapper.write(out,p.lowPower.get)
       Files.writeString(out.resolve("physical-policy.json"),ujson.write(ujson.Obj(
-        "schema" -> "riscay-physical-policy-v2", "variant" -> variant,
+        "schema" -> "riscay-physical-policy-v3", "variant" -> variant,
         "purpose" -> "enabled evaluation fixture; not qualified for a battery or tapeout",
         "policy_enabled" -> true, "gpio_count" -> p.config.gpioCount,
         "service_max_hz" -> ApplicationResetContract.maximumServiceHz, "lf_max_hz" -> 12,
         "timing_policy" -> "current-supported-digital", "qualification" -> "unqualified",
         "timing_intent" -> "contract.json", "contract_sha256" -> sha(out.resolve("contract.json")),
         "ports_sha256" -> sha(out.resolve("ports.json")), "verification_layers" -> "inline",
-        "native_reset_settlement_fs" -> ApplicationResetContract.nativeSettleFs.toString),indent=2)+"\n")
+        "application_reset" -> ujson.Obj(
+          "qualifier_edges" -> ApplicationResetContract.qualifierEdges,
+          "native_hold_edges" -> ApplicationResetContract.nativeHoldEdges,
+          "native_release_edges" -> ApplicationResetContract.nativeReleaseEdges,
+          "digital_delay_limit_fs" -> ApplicationResetContract.digitalDelayLimitFs.toString,
+          "measured_local_guard_reset_max_fs" -> ApplicationResetContract.measuredLocalGuardResetMaxFs.toString,
+          "minimum_native_hold_fs" -> ApplicationResetContract.minimumNativeHoldFs.toString,
+          "minimum_native_release_fs" -> ApplicationResetContract.minimumNativeReleaseFs.toString,
+          "qualification" -> "unqualified", "scope" -> "local-guard-margin-only")),indent=2)+"\n")
     }
   }
 }

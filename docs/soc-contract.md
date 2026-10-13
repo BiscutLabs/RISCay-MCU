@@ -149,12 +149,15 @@ The [R1 reset-boundary contract](application-reset-boundary.md) separates
 immediate watchdog isolation from destructive native reset. The raw qualifier
 still restarts its eight-edge hold on every pulse. Service observation closes
 the clocked receivers first; only actual closure acknowledgments permit native
-reset and synchronous bridge rebase. Payload stays held. Core reset releases
-after the receivers acknowledge rebase withdrawal. The third-edge MODE assertion
+reset and synchronous bridge rebase. Payload stays held. The verified R2a digital
+repair counts 64 service edges with observed reset low and every rebase receipt asserted,
+then 64 post-release edges before reopening, also requiring receipt withdrawal.
+Core reset stays held throughout those intervals. The third-edge MODE assertion
 observation remains unchanged; persistent accepted effects remain POR-owned.
-The inherited 350 ns minimum qualifier and 250 ns digital settlement assumption
-do not cover measured physical guard propagation. R2 must reconcile the complete
-reset envelope; current simulation and structural checks are not timing signoff.
+Each interval is conservatively at least 3.15 us at the 20 MHz ceiling. The 350 ns
+raw qualifier and 250 ns supported digital policy limit have distinct purposes;
+neither is a physical native-settlement bound. Complete physical reset-tree and
+core-startup qualification remains R2b/item 17a3.
 
 These are digital RTL implementations, not qualified physical cells or pads.
 See [sleep and clock integration](sleep-and-clock.md) for the exact gating scope.

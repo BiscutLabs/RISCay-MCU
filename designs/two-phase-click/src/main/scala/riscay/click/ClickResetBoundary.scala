@@ -11,8 +11,8 @@ import chisel3.util.experimental.InlineInstance
   * The handshake resets both toggle peers together, without an RTZ adapter or
   * a wait for POR-owned effects to finish.
   */
-class ClickResetBoundary(holdEdges: Int) extends Module with InlineInstance {
-  require(holdEdges >= 2)
+class ClickResetBoundary(holdEdges: Int, releaseEdges: Int) extends Module with InlineInstance {
+  require(holdEdges >= 2 && releaseEdges >= 2)
   val io=IO(new Bundle {
     val observed=Input(Bool())
     val closed=Input(Bool()); val rebased=Input(Bool()); val rebaseIdle=Input(Bool())
@@ -26,7 +26,7 @@ class ClickResetBoundary(holdEdges: Int) extends Module with InlineInstance {
   private val nativeHeld=RegInit(true.B)
   private val coreHeld=RegInit(true.B)
   private val rebasing=RegInit(false.B)
-  private val count=RegInit(0.U(log2Ceil(holdEdges).W))
+  private val count=RegInit(0.U(log2Ceil(math.max(holdEdges,releaseEdges)).W))
   // Clocked state decoders must not glitch a native reset or history rebase.
   io.close:=stopped || io.observed
   io.nativeReset:=nativeHeld || reset.asBool
@@ -51,8 +51,12 @@ class ClickResetBoundary(holdEdges: Int) extends Module with InlineInstance {
     is(reopening) {
       when(io.observed) { state:=closing; count:=0.U }
         .otherwise {
-          when(count === 1.U && io.rebaseIdle) { stopped:=false.B; coreHeld:=false.B; state:=running }
-            .elsewhen(count === 0.U) { count:=1.U }
+          // Withdrawal is necessary, but does not prove that native reset
+          // removal has traversed every guard. Retain isolation/core reset for
+          // a separate interval and saturate while a receipt remains asserted.
+          when(count === (releaseEdges-1).U && io.rebaseIdle) {
+            stopped:=false.B; coreHeld:=false.B; state:=running
+          }.elsewhen(count =/= (releaseEdges-1).U) { count:=count+1.U }
         }
     }
   }

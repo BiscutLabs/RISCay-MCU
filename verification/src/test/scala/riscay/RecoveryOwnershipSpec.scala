@@ -74,7 +74,14 @@ end endtask
         ClockedSimulation.run(fixture(),name+s"-recovery-stale-$first",s"""
           #10000; settled; checkpoint;
           @(negedge serviceClock); holdCommand=3; holdReply=3;
-          raw_reset; #2000; @(negedge serviceClock); gpioIn=1; #1000;
+          raw_reset;
+          // Create the old event after coherent reset, while its recovery
+          // command/reply are still held. The 64+64-edge reset interval is
+          // intentionally longer than the former fixed two-microsecond wait.
+          repeat(180) @(negedge serviceClock);
+          if(dut.applicationCancel || dut.nativeApplicationReset || dut.nativeCoreReset)
+            $$fatal(1,"RECOVERY_SETUP_RESET_DID_NOT_REOPEN");
+          @(negedge serviceClock); gpioIn=1; #1000;
           if(!visibleEvents[2]) $$fatal(1,"RECOVERY_OLD_EVENT_NOT_QUEUED");
           @(negedge serviceClock); holdCommand=0; #20000;
           if(recoveryReplyWaiting !== 3 || commands[0] != baseCommands[0]+1 || commands[1] != baseCommands[1]+1)

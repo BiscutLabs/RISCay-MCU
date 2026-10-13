@@ -167,6 +167,16 @@ end endtask
         write_bus(32'h30000038,4); wait(idle);
         @(negedge serviceClock); pauseHouseReply=1; issue(2,32'h3000003c,77); wait(housePending);
         stopHeartbeat=1; referenceEnabled=1; wait(systemReset); #1;
+        if(response_valid) $fatal(1,"HOUSEKEEPING_RAW_RESET_REPLY");
+        // These are internal POR-owned service views, not raw isolation pins.
+        if(resetObserved || dut.applicationCancel || visibleLease !== 0 || visibleMask !== 4)
+          $fatal(1,"HOUSEKEEPING_RAW_RESET_CHANGED_PROJECTION");
+        @(posedge serviceClock); #1;
+        if(resetObserved || dut.applicationCancel || visibleLease !== 0 || visibleMask !== 4 || response_valid)
+          $fatal(1,"HOUSEKEEPING_FIRST_EDGE_CHANGED_PROJECTION");
+        @(posedge serviceClock); #1;
+        if(!resetObserved || !dut.applicationCancel)
+          $fatal(1,"HOUSEKEEPING_RESET_CUTOFF_LATE");
         if(visibleLease || visibleMask != 15 || response_valid) $fatal(1,"HOUSEKEEPING_RESET_PROJECTION");
         wait(!systemReset); referenceEnabled=0; #1000;
         if(resetEdges < 32) $fatal(1,"HOUSEKEEPING_TRUNCATED_WATCHDOG");

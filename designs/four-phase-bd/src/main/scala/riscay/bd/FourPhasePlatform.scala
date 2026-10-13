@@ -15,7 +15,7 @@ abstract class FourPhasePlatform(p: SocParameters, board: SocParameters => Board
   // This legacy digital pulse qualifier does not qualify physical reset settling.
   protected val applicationResetRequest = WireDefault(reset.asBool || watchdog.io.expired)
   val release = withClockAndReset(serviceClock, applicationResetRequest.asAsyncReset) {
-    val n=ApplicationResetContract.releaseEdges
+    val n=ApplicationResetContract.qualifierEdges
     val stages = RegInit(((BigInt(1)<<n)-1).U(n.W)); stages := Cat(stages(n-2,0), false.B); stages
   }
   systemReset := applicationResetRequest || release.orR
@@ -43,7 +43,7 @@ abstract class FourPhasePlatform(p: SocParameters, board: SocParameters => Board
   protected val requestClosed=WireDefault(true.B)
   protected val requestRebased=WireDefault(true.B)
   protected val requestRebaseIdle=WireDefault(true.B)
-  protected val resetBoundary=withClockAndReset(serviceClock,reset) { Module(new FourPhaseResetBoundary(ApplicationResetContract.releaseEdges)) }
+  protected val resetBoundary=withClockAndReset(serviceClock,reset) { Module(new FourPhaseResetBoundary(ApplicationResetContract.nativeHoldEdges,ApplicationResetContract.nativeReleaseEdges)) }
   resetBoundary.io.observed:=cpuResetActive
   protected val applicationCancel=WireDefault(resetBoundary.io.close)
   protected val nativeApplicationReset=WireDefault(resetBoundary.io.nativeReset)

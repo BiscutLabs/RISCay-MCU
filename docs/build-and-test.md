@@ -1,5 +1,111 @@
 # Build and test
 
+## Reset assertion and release intervals (R2a)
+
+R2 keeps the original eight-edge pulse qualifier and adds separate 64-edge native
+assertion and release intervals. Receiving-clock acknowledgments remain required.
+The supported digital timing cap stays 250 ns. The v3 physical export policy
+separately records the conservative 3.15 us intervals and measured local 1.55 us
+guard bound; all physical qualification remains open.
+
+Evidence and unchanged baseline sources are under
+`build/async-reset-hold-migration/`. The independent draft review passed 20 Python
+tests and 197 temporal model scenarios, then identified stale diagnostic wording,
+which was corrected. That preflight did not simulate RTL. After application, the
+complete Python suite passes 402 tests. The final distinct cohort passes
+**431 verification cases in 34 suites** plus **four physical-emitter/core-policy
+cases**, with no unresolved failure, canceled, ignored or pending case. All four
+current strict exports pass, and independent actual-RTL controls reject all
+92 coordinator mutants across four complete graph baselines and 12 projection
+mutants across two complete housekeeping baselines. Each graph proof checks 65,536
+coordinator rows and 2,048 withdrawal rows. The independent review found no
+unresolved production RTL issue.
+
+`qualification-evidence.json` binds the exact current source/review hashes,
+completed cohort logs, all four source/probe/binary/simulation attestations and
+actual-RTL mutation receipts. It rejects changed post-review source and stale
+helper evidence. Portable mapping totals are
+825,165,192 BD and
+716,263,380 Click; physical export totals are
+825,376,952 BD and
+716,453,780 Click endpoint comparisons.
+These are repeated mapping comparisons, not that many independent scenarios.
+Complete physical reset/core-startup qualification remains R2b/item 17a3.
+
+Run `ResetBoundarySpec`, `ResetBoundarySocSpec`, `ControlResetSpec` and
+`RecoveryOwnershipSpec`, then the affected service, source, sleep, firmware and
+core/reference suites. Reset pulses stay seven nanoseconds; acceptance/effect
+and fresh-retirement assertions retain their original meanings. At the slower
+test clocks, startup observations now use a bounded 180 receiving edges to cover
+the explicitly longer 64+64 sequence. The stopped-work test still requires an
+actual withdrawal edge after the hold, now observed after 80 service edges.
+New tests stop the service clock during each interval and retrigger at its end.
+
+The first RTL run (`boundary-export-r1.log`) passed 94/98 cases. Its four
+`RECOVERY_OLD_EVENT_NOT_QUEUED` failures are retained. Passive replay of each
+original failing fixture shows the GPIO injection occurred with cancellation,
+native reset and core reset still asserted. The old 2 us setup wait no longer
+reached the intended post-reset precondition. Separate experiments in
+`event-window-diagnosis/` first preserve and reproduce the original failures,
+then use 180 receiving edges plus an explicit reopen assertion. All four full
+experiments pass with the original event/count/stale-reply assertions unchanged.
+The same bounded setup correction passes the official `RecoveryOwnershipSpec`
+rerun; `physical/test` also passes four cases (`recovery-export-r2.log`).
+Original short pulses and all behavioral oracles are retained.
+
+Both `FabricSpec` deadline-replacement cases initially failed
+`OLD_EVENTS_MISSING`. Their GPIO injection also occurred during the longer
+startup cancellation interval. Original-RTL passive replays and separate bounded
+setup experiments are retained in `deadline-setup-diagnosis-r2/`: the former
+reproduce the original failure with cancellation asserted, and the latter pass
+the complete original deadline/GPIO/replacement/coincidence assertions after
+180 service edges and an explicit reopen check. `returns-r1.log` confirms the
+full `FabricSpec` rerun. The first diagnostic classifier's separate error
+incorrectly expected the unrelated tick flag to be clear; its original files
+remain under `deadline-setup-diagnosis/`. The completed diagnostic classifies
+the same deadline/GPIO bits as the original oracle, without changing that oracle.
+
+The broad `regression-r1.log` also retains the BD Groundlark sleep case's
+90-second host-runner timeout and original empty simulation log. It executes
+61 ms of simulated time before its first main assertion; four mapping sweeps
+were active during that attempt. After those sweeps, `sleep-isolated-r1.log`
+reruns the unchanged test alone and passes within the original runner limit,
+with the original simulated deadline and all assertions intact. The timeout is
+not counted as a passing execution. The first independent mutation campaign's
+incomplete classifier run is likewise retained: removing a closure input made
+Yosys remove its unused receipt alias, so the audit rejected that exact missing
+net before the join equation. The completed campaign recognizes that specific
+fail-closed diagnostic; production RTL and checker behavior did not change.
+
+`state-and-abi.json` compares every emitted register declaration with R1: only
+the shared-use interval counter grows, by three bits per variant. All four
+exports retain the same 34 public ports. Portable periodic totals become
+7,792 BD / 7,793 Click bits; these are RTL inventory, not area or power results.
+
+The first return-path cohort (`returns-r1.log`) ran 191 cases: 188 passed and
+three failed. `RamSourceSpec` expected the superseded diagnostic phrase
+"reset-settlement budget"; only its two diagnostic assertions changed to
+"supported digital timing-policy limit". Oversized timing and overclock rejection
+remain mandatory.
+
+Both `HousekeepingSpec` reset cases sampled internal POR-owned lease/mask views
+one nanosecond after raw reset, before synchronized cancellation. This test had
+not been included in R1's reported affected cohort. The original-RTL diagnosis
+in `housekeeping-reset-diagnosis/` reproduces both failures and separately proves
+that those views retain the prior value through the first service edge and
+take their reset values at the second edge, with actual observation/cutoff
+required. The revised test checks that exact sequence, retains immediate reply
+rejection, and preserves the original 32-watchdog-edge hold, stale reply/lease,
+CPU recovery and retained time assertions. This directly connected service-bus
+fixture does not test the native core's immediate output isolation; production
+reset/GPIO tests cover that separately. `projection-policy-r2.log` records the
+complete affected suite reruns. No production RTL changed for these test fixes.
+Independent copied-RTL faults restore raw/first-stage debt projection, bypass
+the reset synchronizer, delay cutoff, remove projection cancellation or add an
+extra observation stage. All 12 fail at their exact intended assertion, with
+both unchanged baselines passing; receipts are under
+`review-draft/housekeeping-controls-r1/`.
+
 ## Application reset boundary (R1)
 
 Run `QuiescingBridgeSpec`, `ResetBoundarySpec`, `ResetBoundarySocSpec`,
@@ -79,7 +185,8 @@ race or R4's current implementation-cost measurement.
 both supported current native controller policies with the enabled evaluation
 board policy. The composed Click-policy guard remains enforced. Verification
 bodies remain inline; the physical mapper's source whitelist is unchanged.
-The v2 policy binds actual contract and port hashes, and every output remains
+The original v2 policy bound actual contract and port hashes; R2's v3 adds the
+separate reset-policy fields described above. Every output remains
 unqualified. See the [export contract](physical-export-contract.md).
 
 Run `physical/test`, the complete Python controls and strict validation of both

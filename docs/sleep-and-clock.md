@@ -166,19 +166,24 @@ multiple busy requests into one pending kick).
 
 LF failure still stops both timer and watchdog. Detecting LF failure would require
 another independent reference or external supervisor; that is not claimed here.
-Application reset release now waits for eight edges of the ungated service clock.
-At its 20 MHz maximum this provides at least 350 ns of continuous hold, exceeding
-the 250 ns digital native-island reset-settlement budget. Raw assertion remains
-asynchronous. A new raw pulse resets the complete release history even while the
-qualified output is already high; stopped clocks cannot release reset. Completion,
-Admission, core, Fabric and their application crossings restart together. This
-prevents an old delayed Click phase from becoming a phantom response after a
-short pulse. The two-edge LF watchdog hold is separate and unchanged. Reset-tree
-skew, minimum pulse width and recovery/removal still need physical qualification.
+The raw application-reset qualifier catches short pulses and restarts eight
+ungated service edges on every pulse. Its conservative 350 ns minimum at 20 MHz
+is pulse-observation history. R1 keeps native producers intact until their
+clocked consumers acknowledge closure; CPU-facing bridge state remains POR-owned
+and rebases synchronously while closed. Qualified watchdog reset immediately
+isolates application outputs, records native debt and requests fast-source restart.
 
-Watchdog reset asserts CPU/bridge resets and requests fast-source restart. The
-reset-pin path remains asynchronous. Mode/admission/loader logic and `forceRun`
-use a POR-only two-flop service-clock copy on assertion as well as release.
+The digitally verified R2a repair separately counts 64 continuous service edges of
+native reset after all rebase receipts, then 64 edges after its release while
+core reset and cutoff stay held. Actual receipt withdrawal is also mandatory.
+Each interval is conservatively at least 3.15 us at 20 MHz, covering the known local
+1.55 us guard observation with margin. The supported 250 ns digital timing-policy
+cap does not change. It is not a physical settlement bound. The two-edge LF hold
+remains separate. Complete reset-tree, core-startup, skew and recovery/removal
+qualification remain open; longer counters alone do not establish them.
+
+Mode/admission/loader logic observes reset through a POR-owned two-flop service
+copy, and the coordinator retains `forceRun` through actual closure and restart.
 The gate additionally synchronizes the full demand, including changes caused
 indirectly by application reset, before its falling-edge enable register.
 These extra service cycles fit within the existing wake hold and probe wait.

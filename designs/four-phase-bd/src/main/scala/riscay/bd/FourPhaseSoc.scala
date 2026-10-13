@@ -16,8 +16,8 @@ class FourPhaseSoc(p: SocParameters, board: SocParameters => BoardProfile = p =>
     extends FourPhasePlatform(p, board, clockedCpuResponse=false) {
   require(Seq(timing,executeTiming).forall(t =>
     (Seq(t.matchedDelay.fs,t.outputDelay.fs,t.dataDelay.max.fs,t.latchDelay.max.fs) ++
-      t.controls.values.map(_.max.fs)).forall(_ <= ApplicationResetContract.nativeSettleFs)),
-    "custom stage timing exceeds application reset-settlement budget")
+      t.controls.values.map(_.max.fs)).forall(_ <= ApplicationResetContract.digitalDelayLimitFs)),
+    "custom stage timing exceeds supported digital timing-policy limit")
   val core = asyncChild("core")(d => new FourPhaseCore(d, timing=timing, executeTiming=executeTiming))
   val transactions = asyncChild("transactions")(d => new FourPhaseFabric(p.config, timing, d))
   val requestBridge = asyncChild("request_bridge")(d => new FourPhaseQuiescingToDecoupled(new MemoryRequest,d))

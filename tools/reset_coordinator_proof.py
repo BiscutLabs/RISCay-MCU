@@ -14,7 +14,7 @@ from reset_bridge_proof import Cone
 BRIDGES = ('request', 'admission_grant', 'completion_plan',
            'completion_telemetry', 'completion_housekeeping')
 REGISTERS = dict(state=(2, 1), stopped=(1, 1), nativeHeld=(1, 1),
-                 coreHeld=(1, 1), rebasing=(1, 0), count=(3, 0))
+                 coreHeld=(1, 1), rebasing=(1, 0), count=(6, 0))
 
 
 def require(condition, reason):
@@ -88,7 +88,7 @@ def transition(state, stopped, native, core, rebase, count, observed,
     elif state == 2:
         if holding_blocked:
             count = 0
-        elif count == 7:
+        elif count == 63:
             native, rebase, count, state = 0, 0, 0, 3
         else:
             count += 1
@@ -96,8 +96,8 @@ def transition(state, stopped, native, core, rebase, count, observed,
         state, count = 1, 0
     elif reopen_ready:
         stopped, core, state = 0, 0, 0
-    elif count == 0:
-        count = 1
+    elif count != 63:
+        count += 1
     return dict(state=state, stopped=stopped, nativeHeld=native,
                 coreHeld=core, rebasing=rebase, count=count)
 
@@ -155,12 +155,12 @@ def prove_coordinator(module, por_reset):
                 cone.bind(env, vector, value)
             cone.bind(env, observed, seen)
             blocked_rows.append((env, seen or not all(values)))
-        for count in range(8):
+        for count in range(64):
             env = {}
             for vector, value in zip(rebases, values):
                 cone.bind(env, vector, value)
             cone.bind(env, bits('resetBoundary_count'), count)
-            ready_rows.append((env, count == 1 and not any(values)))
+            ready_rows.append((env, count == 63 and not any(values)))
     blocked = helper(cone, blocked_rows, 'REBASE_JOIN')
     ready = helper(cone, ready_rows, 'WITHDRAWAL_JOIN')
 
@@ -175,7 +175,7 @@ def prove_coordinator(module, por_reset):
             require(cone.evaluate(bits(name), env) == expected, 'OUTPUT_' + name)
 
     rows = 0
-    for state, flags, count, inputs in product(range(4), range(16), range(8), range(16)):
+    for state, flags, count, inputs in product(range(4), range(16), range(64), range(16)):
         stopped, native, core, rebase_value = ((flags >> bit) & 1 for bit in range(4))
         seen, closed_value, blocked_value, ready_value = ((inputs >> bit) & 1 for bit in range(4))
         current = dict(state=state, stopped=stopped, nativeHeld=native, coreHeld=core,
@@ -194,6 +194,6 @@ def prove_coordinator(module, por_reset):
                     'TRANSITION_' + name)
         rows += 1
     return dict(prefix='applicationResetCoordinator', rows=rows,
-                closure_rows=64, rebase_rows=64, withdrawal_rows=256, output_rows=32,
+                closure_rows=64, rebase_rows=64, withdrawal_rows=2048, output_rows=32,
                 receipt_registers=receipt_registers,
                 scope='actual POR receipt pins, complete joins and finite service FSM; no physical timing claim')

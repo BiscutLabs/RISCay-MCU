@@ -198,8 +198,10 @@ end endtask
     for(halfPeriod <- Seq(25,50,500)) {
       test(s"$name production restart publishes the first clockless boot retirement at half-period $halfPeriod") {
         ClockedSimulation.run(fixture(),name+s"-soc-reset-boot-$halfPeriod","""
-          #100000;
-          if(nativeRetirements !== 1 || publicRetirements !== 1)
+          // Bounded by receiving edges at every tested service frequency.
+          // The reset pulse itself and all retirement/effect oracles are unchanged.
+          repeat(180) @(negedge serviceClock);
+          if(cutoff || coreResetHeld || nativeRetirements !== 1 || publicRetirements !== 1)
             $fatal(1,"SOC_BOUNDARY_LOST_BOOT_RETIREMENT native=%0d public=%0d",nativeRetirements,publicRetirements);
         """,s"""
           integer nativeRetirements=0,publicRetirements=0;
@@ -242,7 +244,8 @@ end endtask
           applicationReset=1; visibleBoot=0; #7; applicationReset=0;
           wait(islandReset);
           @(negedge islandReset); #${halfPeriod/5}; applicationReset=1;
-          #7; applicationReset=0; #100000;
+          #7; applicationReset=0;
+          repeat(180) @(negedge serviceClock);
           if(systemReset || cutoff || islandReset || mode !== 0 || stores || writes || visibleBoot !== 1)
             $$fatal(1,"SOC_BOUNDARY_RETRIGGER_RECOVERY");
         """,monitors+s"""
@@ -303,7 +306,7 @@ end endtask
         // A second work edge accepts rebase. Holding time can now elapse on
         // the service clock, but reopening still needs a real rebase-idle edge.
         one_receiving_edge; savedWorkEdges=workEdges;
-        repeat(20) @(posedge serviceClock); #1;
+        repeat(80) @(posedge serviceClock); #1;
         // The live ingress has already cleared its rebase acknowledgment; the
         // stopped work receivers retain theirs. Neither aggregate can be true.
         if(workEdges !== savedWorkEdges || ingressRebased || !(&workRebaseAcks) ||

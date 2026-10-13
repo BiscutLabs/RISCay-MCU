@@ -204,7 +204,7 @@ def guard_floor(pdk):
 
 def physical_policy(export, manifest):
     policy=json.loads((export/"physical-policy.json").read_text())
-    if policy.get("schema")!="riscay-physical-policy-v2": raise ValueError("PHYSICAL_POLICY_REEXPORT_REQUIRED")
+    if policy.get("schema")!="riscay-physical-policy-v3": raise ValueError("PHYSICAL_POLICY_REEXPORT_REQUIRED")
     if policy.get("policy_enabled") is not True: raise ValueError("DISABLED_ESTIMATE_POLICY")
     if (policy.get("timing_policy")!="current-supported-digital" or
         policy.get("qualification")!="unqualified" or policy.get("verification_layers")!="inline" or
@@ -214,6 +214,14 @@ def physical_policy(export, manifest):
         raise ValueError("PHYSICAL_POLICY_TOP_MISMATCH")
     if policy.get("contract_sha256")!=sha(export/"contract.json") or policy.get("ports_sha256")!=sha(export/"ports.json"):
         raise ValueError("STALE_PHYSICAL_EXPORT_POLICY")
+    expected_reset=dict(qualifier_edges=8, native_hold_edges=64, native_release_edges=64,
+        digital_delay_limit_fs="250000000", measured_local_guard_reset_max_fs="1550000000",
+        minimum_native_hold_fs="3150000000", minimum_native_release_fs="3150000000",
+        qualification="unqualified", scope="local-guard-margin-only")
+    if policy.get("service_max_hz") != 20000000 or policy.get("application_reset") != expected_reset:
+        raise ValueError("UNSUPPORTED_APPLICATION_RESET_POLICY")
+    if "native_reset_settlement_fs" in policy:
+        raise ValueError("AMBIGUOUS_APPLICATION_RESET_POLICY")
     return policy
 
 def prepare(export,out,pdk):

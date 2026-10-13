@@ -78,17 +78,17 @@ class ResetCoordinatorTest(unittest.TestCase):
         self.assertEqual(state, dict(state=2, stopped=1, nativeHeld=1, coreHeld=1, rebasing=1, count=0))
 
     def test_hold_restarts_and_core_stays_held_until_withdrawal(self):
-        blocked = transition(2, 1, 1, 1, 1, 7, 0, 1, 1, 0)
+        blocked = transition(2, 1, 1, 1, 1, 63, 0, 1, 1, 0)
         self.assertEqual((blocked['count'], blocked['nativeHeld'], blocked['rebasing']), (0, 1, 1))
-        released = transition(2, 1, 1, 1, 1, 7, 0, 1, 0, 0)
+        released = transition(2, 1, 1, 1, 1, 63, 0, 1, 0, 0)
         self.assertEqual(released, dict(state=3, stopped=1, nativeHeld=0, coreHeld=1, rebasing=0, count=0))
-        waiting = transition(3, 1, 0, 1, 0, 1, 0, 1, 1, 0)
+        waiting = transition(3, 1, 0, 1, 0, 63, 0, 1, 1, 0)
         self.assertEqual((waiting['state'], waiting['stopped'], waiting['coreHeld']), (3, 1, 1))
-        reopened = transition(3, 1, 0, 1, 0, 1, 0, 1, 1, 1)
+        reopened = transition(3, 1, 0, 1, 0, 63, 0, 1, 1, 1)
         self.assertEqual((reopened['state'], reopened['stopped'], reopened['coreHeld']), (0, 0, 0))
 
     def test_retrigger_wins_over_reopening_without_early_native_reset(self):
-        retry = transition(3, 1, 0, 1, 0, 1, 1, 1, 1, 1)
+        retry = transition(3, 1, 0, 1, 0, 63, 1, 1, 1, 1)
         self.assertEqual(retry, dict(state=1, stopped=1, nativeHeld=0, coreHeld=1, rebasing=0, count=0))
 
 

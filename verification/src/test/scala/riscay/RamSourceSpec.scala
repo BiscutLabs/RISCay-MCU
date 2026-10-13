@@ -76,13 +76,13 @@ class RamSourceSpec extends AnyFunSuite {
           executeTiming=if(execute) oversized else BundledTiming.Simulation),
           Files.createTempDirectory(root,"bd-oversized"))
       }
-      assert(error.getMessage.contains("reset-settlement budget"),error.getMessage)
+      assert(error.getMessage.contains("supported digital timing-policy limit"),error.getMessage)
     }
     val error=intercept[IllegalArgumentException] {
       ExportDesign.emit(new riscay.click.ClickSoc(p,executeData=ModelTime.ps(300000)),
         Files.createTempDirectory(root,"click-oversized"))
     }
-    assert(error.getMessage.contains("reset-settlement budget"),error.getMessage)
+    assert(error.getMessage.contains("supported digital timing-policy limit"),error.getMessage)
   }
   private val tasks="""
     wire captureAccepted=dut.ca_child_ram_access.ca_child_capture_receipt.accepted;

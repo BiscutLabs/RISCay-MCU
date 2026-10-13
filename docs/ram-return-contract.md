@@ -63,8 +63,9 @@ cancel presentation; payload remains stable through remaining POR branches.
 Application-reset D buffers are POR-owned so reset release cannot manufacture a
 late data transition at an event register. Under the
 [R1 digital-containment correction](application-reset-boundary.md), the shared presentation reset
-follows actual clocked receiver closure. The inherited eight-edge/250 ns
-assumptions do not cover measured physical propagation; R2 remains open.
+follows actual clocked receiver closure. R2's integrated candidate has separate
+64-edge assertion and release intervals. The eight-edge raw qualifier and 250 ns
+digital policy cap are distinct; complete physical propagation remains open.
 BD access admission now synchronizes both native word phases' complete idle
 predicate. Raw native ACK cannot enter its POR readiness decision.
 

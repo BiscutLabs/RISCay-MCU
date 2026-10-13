@@ -138,10 +138,13 @@
   payload stays retained. Keep POR application projections with synchronous
   cancellation and immutable publication reservation roles. Run QuiescingBridgeSpec,
   ResetBoundarySpec and ResetBoundarySocSpec plus structural RDC mutation controls.
-  Application reset qualification still uses eight ungated service edges
-  (>=350 ns at the 20 MHz ceiling), restarting on every raw pulse. The inherited
-  250 ns digital settlement assumption is insufficient for measured physical
-  guard propagation: R2 must resolve this before physical qualification.
+  R2a is digitally verified: pulse qualification retains eight ungated service
+  edges (>=350 ns at 20 MHz), restarting on every raw pulse. Native reset hold
+  and post-release isolation each count 64 service edges, with actual rebase
+  and withdrawal acknowledgments still required. Each interval is conservatively
+  at least 3.15 us at the clock ceiling; this covers the known local guard bound,
+  not a complete physical reset-tree/core-startup envelope. The 250 ns supported
+  digital timing-policy limit is separate from physical reset propagation.
   Inject reset-test pulses before this qualifier; never lengthen failing pulses.
   Run AsyncCompletionSpec/CompletionSpec and real completion wiring mutation
   controls; preserve the full emitted port ABI even for constant error fields.
@@ -307,9 +310,9 @@
   close complete custom transforms or controller envelopes. Feed actual guard
   maxima back into those envelopes without relaxing functional timing oracles.
   Physical exports use current supported SoC timing and an enabled evaluation
-  board policy, with inline assertions and v2 contract/port hash binding. Keep
+  board policy, with inline assertions and v3 contract/port/reset-policy binding. Keep
   the composed Click-policy rejection and exact source inventory. Follow
-  `docs/physical-export-contract.md`; old v1 exports require regeneration.
+  `docs/physical-export-contract.md`; old v1/v2 exports require regeneration.
   Standalone PhysicalTiming core tests do not authorize that policy for every
   controller. Constraint coverage and complete physical envelopes remain open.
 - Keep generated RTL, tools, simulator logs and test evidence under ignored

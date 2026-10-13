@@ -6,14 +6,23 @@ import chisel3.util._
 import chisel3.util.experimental.InlineInstance
 import riscay._
 
-/** Digital reset-distribution envelope. The source must never exceed 20 MHz.
-  * Physical recovery/removal and reset-tree delay still require qualification.
+/** Separate pulse observation, supported digital policy and provisional reset
+  * intervals. The local measured bound excludes reset-tree wiring and complete
+  * controller/startup paths; these constants are not physical qualification.
   */
 object ApplicationResetContract {
   val maximumServiceHz = 20000000
-  val releaseEdges = 8
-  val nativeSettleFs = 250000000L
-  require((releaseEdges-1)*1000000000000000L/maximumServiceHz > nativeSettleFs)
+  val qualifierEdges = 8
+  val nativeHoldEdges = 64
+  val nativeReleaseEdges = 64
+  val digitalDelayLimitFs = 250000000L
+  val measuredLocalGuardResetMaxFs = 1550000000L
+  val minimumNativeHoldFs = (nativeHoldEdges-1)*1000000000000000L/maximumServiceHz
+  val minimumNativeReleaseFs = (nativeReleaseEdges-1)*1000000000000000L/maximumServiceHz
+  // At least twice the current worst measured LOCAL guard bound. Full-tree
+  // assertion/release and core startup still need complete physical envelopes.
+  require(minimumNativeHoldFs > 2*measuredLocalGuardResetMaxFs)
+  require(minimumNativeReleaseFs > 2*measuredLocalGuardResetMaxFs)
 }
 
 final case class SocParameters(config: McuConfiguration, serviceHz: Int = 10000000,

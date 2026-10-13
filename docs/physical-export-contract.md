@@ -21,17 +21,24 @@ source-stopping low-power configuration, independent LF time/watchdog and chip
 reset qualifier. Its threshold defaults are not battery/tapeout settings.
 Ordinary reference emitters keep their existing disabled board policy.
 
-Every controller's exact timing intent resides in `contract.json`. The v2
+Every controller's exact timing intent resides in `contract.json`. The current v3
 `physical-policy.json` binds that file and `ports.json` by SHA-256, identifies
 the supported digital policy and explicitly labels qualification as absent.
 The obsolete global timing numbers from the standalone core experiment are
 removed: they did not describe the migrated service controllers. Service/LF
-limits and the digital native-reset settlement assumption remain identified;
-they are targets and assumptions, not measured physical bounds.
+limits remain identified. R2's `application_reset` record separates the eight-edge
+pulse qualifier, 64-edge assertion/release intervals, their conservative 3.15 us
+minimums, the rounded measured local 1.55 us guard bound and the unchanged 250 ns
+digital timing-policy cap. The old `native_reset_settlement_fs` field is rejected.
+Reset qualification remains `unqualified` with scope `local-guard-margin-only`;
+complete reset-tree, upstream logic and core startup are not characterized here.
+R2a passes digital regression, fresh independent review, actual-RTL structural
+controls and strict validation of both portable and physical export forms. This
+verification does not close R2b/item 17a3 physical reset qualification.
 
 The mapper rejects stale contract/port hashes, wrong variant/top bindings,
 disabled evaluation policy, unsupported policy names, false qualification labels
-and old v1 policy records. Regenerate old exports with the current emitter;
+and old v1/v2 policy records. Regenerate old exports with the current emitter;
 do not edit their policy JSON to claim current support. Existing old P&R artifacts
 remain historical and do not qualify the migrated RTL.
 
@@ -93,7 +100,9 @@ preflight itself supplies no simulation PASS. Both forms retain original
 functional oracles; earlier failures and interrupted campaigns remain recorded.
 
 The 17a1 measurements already show guards exceeding fixed digital maxima and
-the 250 ns reset-settlement assumption. Successful export, synthesis or cell
+the old 250 ns reset-settlement assumption. R2's separate reset intervals exceed
+the measured local propagation but cannot establish a full reset-tree bound.
+Successful export, synthesis or cell
 truth-table checks cannot close those mismatches. Current hierarchy and
 related-clock constraint repair, complete transforms, pulse/hold/reset envelopes,
 electrical limits and extracted timing remain mandatory. No convenience boundary

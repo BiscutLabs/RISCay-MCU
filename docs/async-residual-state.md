@@ -9,6 +9,15 @@ emitted state does not establish physical timing or minimum synchronous state.
 
 ## Scope and complete reference totals
 
+R2a digital-repair update, 2026-10-12: the reused reset-interval counter grows from
+three to six bits in each implementation. Exact emitted declaration comparisons
+against R1 find this single state change in all four portable/physical exports;
+all 34 public ports remain identical. Portable periodic totals are therefore
+**7,792 BD and 7,793 Click bits**, three more per variant. Evidence is
+`build/async-reset-hold-migration/state-and-abi.json`. Functional, structural and strict
+digital checks pass; the added counter is not physical timing or cost
+qualification.
+
 R1 digital-containment update, 2026-10-12: the fresh portable exports contain **7,789 BD
 and 7,790 Click periodic-clocked bits**, a net **40-bit increase per variant**.
 The comparable baseline below remains the digitally verified 11a2a inventory.
