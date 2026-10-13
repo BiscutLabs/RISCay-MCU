@@ -37,22 +37,32 @@ class ScalingSleepSpec extends AnyFunSuite {
     lowPower=Some(LowPowerParameters()),watchdogCycles=100000)
   for(click <- Seq(false,true)) test(s"${if(click) "click" else "bd"}: pending scaling blocks sleep until publication and return drainage") {
     ClockedSimulation.run(if(click) new ClickScalingSleepFixture(p) else new BdScalingSleepFixture(p),
-      "scaling-sleep","""
+      "scaling-sleep",s"""
         request_valid=1; request_bits_operation=1; request_bits_address=32'h30000000;
         request_bits_mask=15; response_ready=1;
-        wait(sleeping);
-        wait(dut.ca_child_elapsed_scaler.ca_child_native.command_req);
-        referenceEnabled=0;
-        @(negedge serviceClock); clockEnabled=0; oldConsumed=consumedGray;
-        #5000;
-        if(!dut.ca_child_elapsed_scaler.ca_child_native.reply_req ||
-          consumedGray !== oldConsumed || !scalingBusy || sleepEligible || sleeping)
-          $fatal(1,"PENDING_SCALING_SLEEP_OR_EARLY_CONSUMPTION");
-        clockEnabled=1;
-        wait(consumedGray != oldConsumed); wait(!scalingBusy); wait(sleeping);
-        if(!sleepEligible) $fatal(1,"SCALING_DRAIN_NEVER_ALLOWED_SLEEP");
+        // A high Click level can be an idle completed phase. Select an actual
+        // new offer and repeat so both phase directions must retain the work.
+        phaseSeen=0;
+        repeat(2) begin
+          wait(sleeping); referenceEnabled=1;
+          wait(${if(click) "dut.ca_child_elapsed_scaler.ca_child_native.command_req != dut.ca_child_elapsed_scaler.ca_child_native.command_ack" else "dut.ca_child_elapsed_scaler.ca_child_native.command_req && !dut.ca_child_elapsed_scaler.ca_child_native.command_ack"});
+          phaseSeen=phaseSeen | (2'b01 << dut.ca_child_elapsed_scaler.ca_child_native.command_req);
+          referenceEnabled=0;
+          @(negedge serviceClock); clockEnabled=0; oldConsumed=consumedGray;
+          if(!scalingBusy) $$fatal(1,"SCALING_STOP_WITHOUT_PENDING_WORK");
+          #5000;
+          if(!(${if(click) "dut.ca_child_elapsed_scaler.ca_child_native.reply_req != dut.ca_child_elapsed_scaler.ca_child_native.reply_ack" else "dut.ca_child_elapsed_scaler.ca_child_native.reply_req && !dut.ca_child_elapsed_scaler.ca_child_native.reply_ack"}) ||
+            consumedGray !== oldConsumed || !scalingBusy || sleepEligible || sleeping)
+            $$fatal(1,"PENDING_SCALING_SLEEP_OR_EARLY_CONSUMPTION");
+          clockEnabled=1;
+          wait(consumedGray != oldConsumed); wait(!scalingBusy); wait(sleeping);
+          if(!sleepEligible) $$fatal(1,"SCALING_DRAIN_NEVER_ALLOWED_SLEEP");
+        end
+        if(phaseSeen !== ${if(click) "2'b11" else "2'b10"})
+          $$fatal(1,"SCALING_OFFER_PHASE_COVERAGE phases=%b",phaseSeen);
       ""","""
 reg [31:0] oldConsumed;
+reg [1:0] phaseSeen;
 always @(posedge serviceClock) if(!reset && scalingBusy && sleepEligible)
   $fatal(1,"SCALING_BUSY_SLEEP_ELIGIBLE");
 """,referenceHalfPeriodNs=1000)

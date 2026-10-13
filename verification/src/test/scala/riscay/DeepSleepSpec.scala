@@ -94,6 +94,8 @@ end endtask
     }
     test(s"$name stuck and abandoned I2C transactions release the fast source and foreign traffic is ignored") {
       val params=p.copy(config=config.copy(programBytes=16,workingRamBytes=32),adc=None)
+      // Three production-length bus timeouts need a larger host runtime budget;
+      // keep the 200 ms simulated deadline and all source-off checks unchanged.
       ClockedSimulation.run(top(click,params),name+"-host-timeout","""
         #3000000;
         // Abandoned valid write: its opcode must never commit on later recovery.
@@ -141,7 +143,7 @@ task foreign_address; integer b; reg [7:0] address; begin
   scl=0; #1000;
 end endtask
 """,referenceHalfPeriodNs=50000000,onChipOscillator=true,chipParameters=lp,
-        serviceStartupNs=100000,deadlineNs=200000000)
+        serviceStartupNs=100000,deadlineNs=200000000,processTimeoutSeconds=300)
     }
     test(s"$name stops the fast source and wakes at worst-case startup without losing host or CPU state") {
       val program = Seq(0x200000b7L,0x30000137L,

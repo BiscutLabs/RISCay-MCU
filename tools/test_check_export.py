@@ -8,6 +8,7 @@ from pathlib import Path
 import subprocess
 import tempfile
 import unittest
+from test_service_reply_receipt import add_native_reply_fixture
 from check_export import generated_reset_probe, vector_coverage_probe, probe_timeout, sleep_clock_background, register_file_background, sram_background, service_background
 
 
@@ -110,7 +111,7 @@ $display("CONTRACT_PROBES_PASS:1"); $finish; end endmodule
             sync = {f"{group}_{stage}": 1 for group in ("returned_stages", "bytesReturned_stages",
                 "bytesReturned_stages_1", "bytesReturned_stages_2", "bytesReturned_stages_3") for stage in (0, 1)}
             sync["active"] = 1
-            reply = {"state": 2, "data_programWrite": 1, "data_state_received": 32, "data_state_loaderWord": 32}
+            reply = {"state": 2}
             request = {"state": 2, "data_operation": 2, "data_address": 32, "data_data": 32, "data_mask": 4}
             inventories = {top: root, top+".ca_child_control_reply_bridge": reply,
                            top+".ca_child_request_bridge": request,
@@ -131,19 +132,21 @@ $display("CONTRACT_PROBES_PASS:1"); $finish; end endmodule
                          ports=[q],reset='reset',reset_domain='root')])) )
             def declarations(regs):
                 return "\n".join(f"reg [{width-1}:0] {name};" for name,width in regs.items())
+            add_native_reply_fixture(manifest, scopes, inventories, "control")
             rtl = "module Payload; reg [31:0] q; endmodule\nmodule Return; Payload ca_primitive_payload(); endmodule\n"
             rtl += "module Access;\n"+declarations(inventories[top+".ca_child_program_access"])+"\nwire idle = !active && " + " && ".join(
                 name for name in inventories[top+".ca_child_program_access"] if name.endswith("_1")) + "; endmodule\n"
             rtl += "module RamNativeAccess;\n"+declarations(inventories[top+".ca_child_ram_access"])+"\nwire idle = !active && "+" && ".join(n for n in inventories[top+".ca_child_ram_access"] if n.endswith("_1"))+"; endmodule\n"
+            rtl += "module ControlPayload; reg [375:0] q; endmodule\nmodule Update; ControlPayload ca_primitive_payload(); endmodule\nmodule Control; Update ca_child_update(); endmodule\n"
             rtl += "module Reply;\n"+declarations(reply)+"\nendmodule\n"
             rtl += "module Request;\n"+declarations(request)+"\nendmodule\n"
             rtl += "module Grant; reg [1:0] state; reg data; endmodule\n"
             rtl += f"module {top}; reg reset;\n"+declarations(root)+"""
 Access ca_child_program_access(); RamNativeAccess ca_child_ram_access(); Return ca_child_program_return();
-Reply ca_child_control_reply_bridge(); Request ca_child_request_bridge();
+Reply ca_child_control_reply_bridge(); Control ca_child_control(); Request ca_child_request_bridge();
 Grant ca_child_program_grant_bridge();
 wire program_valid = ca_child_program_access.idle && gate_enabled && fabric_controlOutstanding &&
-    ca_child_control_reply_bridge.state == 2 && ca_child_control_reply_bridge.data_programWrite &&
+    ca_child_control_reply_bridge.state == 2 && ca_child_control.ca_child_update.ca_primitive_payload.q[67] &&
     ca_child_program_grant_bridge.state == 2 && ca_child_program_grant_bridge.data;
 wire ram_valid = ca_child_ram_access.idle && gate_enabled && ca_child_request_bridge.state == 2 &&
     ca_child_request_bridge.data_operation == 2 && ca_child_request_bridge.data_address == 32'h20000000;
@@ -435,7 +438,7 @@ endmodule
     def test_persistent_control_and_descendants_must_use_por(self):
         manifest = copy.deepcopy(self.manifest)
         names = {"control": "FourPhaseControl", "control_command_bridge": "DecoupledToFourPhase",
-                 "control_reply_bridge": "FourPhaseToDecoupled"}
+                 "control_reply_bridge": "FourPhaseServiceReplyReceipt"}
         for name, model in names.items():
             manifest["design"]["children"].append({"id": name, "contract": {
                 "rtl_path": "FourPhaseSoc." + name, "module": model, "children": []}})
@@ -480,7 +483,7 @@ Child control_command_bridge(.reset(%s)); Child control_reply_bridge(.reset(%s))
     def test_persistent_telemetry_and_descendants_must_use_por(self):
         manifest = copy.deepcopy(self.manifest)
         names = {"telemetry": "FourPhaseTelemetry", "telemetry_command_bridge": "DecoupledToFourPhase",
-                 "telemetry_reply_bridge": "FourPhaseToDecoupled"}
+                 "telemetry_reply_bridge": "FourPhaseServiceReplyReceipt"}
         for name, model in names.items():
             manifest["design"]["children"].append({"id": name, "contract": {
                 "rtl_path": "FourPhaseSoc." + name, "module": model, "children": []}})
@@ -525,7 +528,7 @@ Child telemetry_command_bridge(.reset(%s)); Child telemetry_reply_bridge(.reset(
     def test_persistent_supervisor_and_descendants_must_use_por(self):
         manifest = copy.deepcopy(self.manifest)
         names = {"supervisor": "FourPhaseSupervisor", "supervisor_command_bridge": "DecoupledToFourPhase",
-                 "supervisor_reply_bridge": "FourPhaseToDecoupled"}
+                 "supervisor_reply_bridge": "FourPhaseServiceReplyReceipt"}
         for name, model in names.items():
             manifest["design"]["children"].append({"id": name, "contract": {
                 "rtl_path": "FourPhaseSoc." + name, "module": model, "children": []}})
@@ -569,12 +572,12 @@ Child supervisor_command_bridge(.reset(%s)); Child supervisor_reply_bridge(.rese
 
     def test_persistent_housekeeping_and_descendants_must_use_por(self):
         for top, model_name, command_model, reply_model in (
-            ("FourPhaseSoc", "FourPhaseHousekeeping", "DecoupledToFourPhase", "FourPhaseToDecoupled"),
-            ("ClickSoc", "ClickHousekeeping", "DecoupledToClick", "ClickToDecoupled"),
+            ("FourPhaseSoc", "FourPhaseHousekeeping", "DecoupledToFourPhase", "FourPhaseServiceReplyReceipt"),
+            ("ClickSoc", "ClickHousekeeping", "DecoupledToClick", "ClickServiceReplyReceipt"),
         ):
             manifest = copy.deepcopy(self.manifest)
             names = {"housekeeping": "FourPhaseHousekeeping", "housekeeping_command_bridge": "DecoupledToFourPhase",
-                     "housekeeping_reply_bridge": "FourPhaseToDecoupled"}
+                     "housekeeping_reply_bridge": "FourPhaseServiceReplyReceipt"}
             for name, model in names.items():
                 manifest["design"]["children"].append({"id": name, "contract": {
                     "rtl_path": "FourPhaseSoc." + name, "module": model, "children": []}})
@@ -582,7 +585,7 @@ Child supervisor_command_bridge(.reset(%s)); Child supervisor_reply_bridge(.rese
                 "rtl_path": "FourPhaseSoc.housekeeping.storage", "module": "Storage", "children": []}}]
             paths = ["core", "housekeeping", "housekeeping.storage", "housekeeping_command_bridge", "housekeeping_reply_bridge"]
             checks = "\n".join(f'if (FourPhaseSoc.{p}.reset !== FourPhaseSoc.reset) $fatal(1, "RESET_BINDING_MISMATCH");' for p in paths)
-            manifest = json.loads(json.dumps(manifest).replace("FourPhaseSoc", top).replace("FourPhaseHousekeeping", model_name).replace("DecoupledToFourPhase", command_model).replace("FourPhaseToDecoupled", reply_model))
+            manifest = json.loads(json.dumps(manifest).replace("FourPhaseSoc", top).replace("FourPhaseHousekeeping", model_name).replace("DecoupledToFourPhase", command_model).replace("FourPhaseServiceReplyReceipt", reply_model))
             checks = checks.replace("FourPhaseSoc", top)
             probe = generated_reset_probe('module ContractProbe; task check; begin\n' + checks + '''
     end endtask

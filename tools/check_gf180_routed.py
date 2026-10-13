@@ -3,6 +3,9 @@
 
 Reports measured violations and missing endpoints. Does not prove protocol,
 setup/hold, reset or complete end-to-end relative timing closure.
+Negative dynamic paths are violations regardless of configured bounds; signed
+reset-only paths remain diagnostics. Nonfinite paths stop the probe with raw
+arrival evidence before any aggregate result is written.
 """
 import argparse
 import hashlib
@@ -15,7 +18,7 @@ from gf180_constraints import brace, PRELUDE
 from gf180_estimate import linux
 from gf180_pnr import OPENROAD, validate_provenance, rc_inputs, RC_CORNERS
 from gf180_netgraph import graph
-from gf180_probe_plan import plan
+from gf180_probe_plan import gates, plan
 
 HELPER=r'''
 proc probe {id sources sinks minimum maximum} {
@@ -83,12 +86,27 @@ proc prepare_probe_context {sinks} {
   }
   puts "LOCAL_PROBE_CONTEXT [llength $sinks] $cut_count [llength $sources]"
 }
-proc local_probe {id root sinks pairs minimum maximum constant_count} {
+proc local_probe {id root sinks pairs minimum maximum constant_count {reset_exclusions {}}} {
   set values {}; set data_values {}; set missing 0; set covered 0
+  set invalid_dynamic 0
   set sources {}
   foreach pair $pairs {
     lassign $pair source_name sink_name inverted reset_only
     lappend sources [rp $source_name]
+    set role [expr {$reset_only ? "reset-only" : "dynamic"}]
+    if {[info exists source_roles($source_name)] && $source_roles($source_name) ne $role} {error PROBE_CONFLICTING_SOURCE_ROLE}
+    set source_roles($source_name) $role
+    set path_roles([list $source_name $sink_name $inverted]) $role
+    if {!$reset_only} {set dynamic_sinks($sink_name) 1}
+  }
+  foreach exclusion $reset_exclusions {
+    lassign $exclusion source_name sink_name inverted
+    set role_key [list $source_name $sink_name $inverted]
+    if {![info exists source_roles($source_name)] || $source_roles($source_name) ne "reset-only" ||
+        ![info exists dynamic_sinks($sink_name)] || [info exists path_roles($role_key)]} {
+      error PROBE_INVALID_RESET_EXCLUSION
+    }
+    set path_roles($role_key) reset-excluded
   }
   set sources [lsort -unique $sources]
   # One query per source polarity and min/max, retaining all endpoint paths.
@@ -111,7 +129,35 @@ proc local_probe {id root sinks pairs minimum maximum constant_count} {
         incr endpoint_count($endpoint)
         if {$endpoint_count($endpoint)>=10000} {error PROBE_ENDPOINT_CAP_EXHAUSTED}
         set key [list $source_name $sink_name $from_rf $to_rf $mode]
-        set delay [expr {[get_property $last arrival]-[get_property $first arrival]}]
+        set role unplanned
+        set role_key [list $source_name $sink_name [expr {$from_rf ne $to_rf}]]
+        if {[info exists path_roles($role_key)]} {set role $path_roles($role_key)}
+        set first_arrival [get_property $first arrival]
+        set last_arrival [get_property $last arrival]
+        if {$role eq "unplanned"} {
+          puts "UNPLANNED_LOCAL_PATH $id $source_name $sink_name $from_rf $to_rf $mode $first_arrival $last_arrival"
+          error "PROBE_UNPLANNED_PATH $id $source_name $sink_name $from_rf $to_rf $mode"
+        }
+        # Nonfinite arithmetic cannot establish any bound, including a reset
+        # diagnostic. Preserve raw arrivals before stopping; never emit NaN/Inf
+        # as a successful measurement or serialize them into results.json.
+        if {[catch {expr {$last_arrival-$first_arrival}} delay] ||
+            [catch {expr {abs($delay)<Inf}} finite] || !$finite} {
+          puts "INVALID_LOCAL_PATH $id $source_name $sink_name $from_rf $to_rf $mode $role $first_arrival $last_arrival"
+          error "PROBE_NONFINITE_DELAY $id $source_name $sink_name $from_rf $to_rf $mode $role"
+        }
+        if {$delay<0} {
+          # A negative extracted delay may result from invalid slew/table
+          # extrapolation. It is not a valid dynamic bound, even without an
+          # explicit minimum. Retain each signed diagnostic before min/max
+          # reduction, which could otherwise hide it on a reconvergent path.
+          puts "NEGATIVE_LOCAL_PATH $id $source_name $sink_name $from_rf $to_rf $mode $delay $role"
+          if {$role eq "dynamic"} {set invalid_dynamic 1}
+        }
+        if {$role eq "reset-excluded"} {
+          puts "EXCLUDED_RESET_PATH $id $source_name $sink_name $from_rf $to_rf $mode $delay"
+          continue
+        }
         if {[info exists measured($key)]} {set delay [tcl::mathfunc::$mode $delay $measured($key)]}
         set measured($key) $delay
       }
@@ -141,11 +187,57 @@ proc local_probe {id root sinks pairs minimum maximum constant_count} {
     set status PASS
     set dl [tcl::mathfunc::min {*}$data_values]; set dh [tcl::mathfunc::max {*}$data_values]
     if {($minimum ne "none" && $dl<$minimum) || ($maximum ne "none" && $dh>$maximum)} {set status VIOLATION}
+    if {$invalid_dynamic} {set status VIOLATION}
   }
   if {$missing} {set status UNCOVERED}
   puts "ROUTED_PROBE $id $status $lo $hi $covered [expr {4*[llength $pairs]}]"
 }
 '''
+
+def reset_exclusions(probe, binding):
+    """Prove exact reset crosspaths omitted when a sink has dynamic coverage.
+
+    The batched query includes reset sources needed by other reset-only sinks.
+    Permit only graph-reachable polarities from those exact reset input pins;
+    other returned paths remain unexpected and fail closed in the Tcl helper.
+    """
+    root = probe['root']+'/'
+    reset_sources = {p['source'] for p in probe['pairs'] if p['reset_only']}
+    if not reset_sources:
+        return []
+    cells = binding['cells']
+    reset_pins = {root+c['name']+'/'+pin for c in cells for pin, net in c['pins'].items()
+                  if net == 'reset' and pin not in ('Z', 'ZN', 'Q')}
+    if not reset_sources <= reset_pins:
+        raise ValueError('PROBE_RESET_SOURCE_NOT_BOUND')
+    arcs = {}
+    consumers = {}; producers = {}
+    for c in cells:
+        for pin, net in c['pins'].items():
+            refs = producers if pin in ('Z', 'ZN', 'Q') else consumers
+            refs.setdefault(net, []).append(root+c['name']+'/'+pin)
+    for source, sink, inverted in gates(cells):
+        arcs.setdefault(root+source, []).append((root+sink, inverted))
+    for net, sources in producers.items():
+        for source in sources:
+            arcs.setdefault(source, []).extend((sink, 0) for sink in consumers.get(net, []))
+    dynamic_sinks = {p['sink'] for p in probe['pairs'] if not p['reset_only']}
+    planned = {(p['source'], p['sink'], p['inverted']) for p in probe['pairs']}
+    excluded = []
+    for source in sorted(reset_sources):
+        reached = {(source, 0)}; pending = list(reached)
+        while pending:
+            pin, inverted = pending.pop()
+            for sink, edge_inverted in arcs.get(pin, []):
+                entry = (sink, inverted ^ edge_inverted)
+                if entry not in reached:
+                    reached.add(entry); pending.append(entry)
+        for sink in sorted(dynamic_sinks):
+            for inverted in (False, True):
+                if (sink, inverted) in reached and (source, sink, inverted) not in planned:
+                    excluded.append(dict(source=source, sink=sink, inverted=inverted))
+    return excluded
+
 
 def run_suffix(run_tag):
     if run_tag is None:return ''
@@ -176,6 +268,8 @@ def run(mapping,routed,corner,wire_corner="nom",only_ids=None,run_tag=None):
     cells,_=graph(json.loads((mapping/'netlist.json').read_text())['modules'])
     plans={id:plan(row,byinstance[id.removesuffix('.distribution')],
                   audit['adapter_instances'][id.removesuffix('.distribution')],cells) for id,row in grouped.items()}
+    for id, p in plans.items():
+        p['reset_exclusions'] = reset_exclusions(p, byinstance[id.removesuffix('.distribution')])
     write_json(out/'probe-plan.json',plans)
     pdk=ROOT/".tools/physical/pdk"; sram=ROOT/".tools/gf180-sram"
     t=f'read_liberty {brace(linux(pdk/(SC+corner+".lib")))}\n'
@@ -193,7 +287,9 @@ def run(mapping,routed,corner,wire_corner="nom",only_ids=None,run_tag=None):
         pairs='[list '+' '.join('[list '+brace(x['source'])+' '+brace(x['sink'])+' '+str(int(x['inverted']))+' '+str(int(x['reset_only']))+']' for x in p['pairs'])+']'
         t+='local_probe '+brace(row["id"])+" "+brace(p['root'])+" "+refs(row["to_pins"])+" "+pairs
         t+=' '+str(row["minimum_ns"] if row["minimum_ns"] is not None else "none")
-        t+=' '+str(row["maximum_ns"] if row["maximum_ns"] is not None else "none")+' '+str(len(p['constant_sinks']))+'\n'
+        t+=' '+str(row["maximum_ns"] if row["maximum_ns"] is not None else "none")+' '+str(len(p['constant_sinks']))
+        t+=' [list '+' '.join('[list '+brace(x['source'])+' '+brace(x['sink'])+' '+str(int(x['inverted']))+']'
+                             for x in p['reset_exclusions'])+']\n'
     t+='puts ROUTED_PROBES_COMPLETE\nexit\n'
     (out/"check.tcl").write_text(t)
     with (out/"check.log").open("w") as log:

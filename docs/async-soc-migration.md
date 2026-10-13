@@ -23,15 +23,26 @@ when no next item has been chosen. Both implementations remain active throughout
 
 ## Corrective gates from the independent reviews
 
+The subsequent user instruction on 2026-10-13 authorizes correcting the
+clocked coordination around native services and adapting timing analysis to
+their actual protocols. This supersedes the R4 migration freeze as a work
+priority; the measured cost regression remains evidence. Use native ownership
+and completion, remove duplicate payload storage, and measure each correction.
+Synchronous-tool limitations do not authorize masking real timing failures or
+adding periodic-clock stages to a native path. R2b and R3 remain open.
+
+The first correction is **C1: direct capture of retained native service
+replies**, tracked below. Subsequent steps must remove complete redundant
+crossings/owners; C1 alone does not remove the clocked service shell.
+
 The review of `2e4169c` changes the order: **R4 matched comparison first,
 then R2b reset distribution; R3/R5 only for service blocks retained by the
-comparison decision.** R4 is complete and further service-island migration
-remains frozen. The [matched comparison](gf180-matched-comparison.md) of `8637099`
+comparison decision.** R4 is complete. The [matched comparison](gf180-matched-comparison.md) of `8637099`
 and `2e4169c` favors the smaller clocked island with the same supported core
 timing, mapper, SRAMs, enabled board policy, wake workload and physical settings.
 Retain both native CPUs and reconstruct expensive services while preserving all
-later correctness fixes; never restore the old raw-reset crossings. A corrected
-clocked island must be measured again. Independent timekeeping and permanent
+later correctness fixes; never restore the old raw-reset crossings. Any revised
+service architecture must be measured again. Independent timekeeping and permanent
 supervision remain mandatory. The benchmark preparation and reviewed evidence
 live under `build/matched-service-comparison/`; cost comparison is complete,
 physical timing qualification is not.
@@ -106,6 +117,51 @@ digital passes remain evidence of their tested scope, not RDC or physical proof.
   orders and complete return before reuse.
   Exercise copies slower than two service periods, stalls, identical payloads,
   reset and all bank wraps with independent offer/capture/dispatch ordinals.
+- [x] **C1. Remove duplicate clocked service-reply payload banks — digitally verified, 2026-10-13.** Both native
+  variants already retain Control, Telemetry, Housekeeping and Supervisor replies
+  through acceptance. Keep their receivers' existing synchronizers, control FSM,
+  settling interval and ACK cadence while capturing payload directly in the
+  existing consumer on `reply.fire`. Add no native payload copy or guard.
+  Keep POR ownership and verify stalled replies, stopped clocks, both Click
+  phases, BD RTZ, application recovery and exactly-once effects. Strict probes
+  must drive exact native producer storage, never a derived bus. Measure the
+  actual state/ABI delta, run affected regressions and strict exports, obtain
+  fresh review, and keep producer-to-consumer physical setup/hold open until
+  qualified. See [service-reply capture](service-reply-capture-contract.md).
+  Independent compiled inventories prove exactly 1,254 fewer clocked payload
+  bits per variant, identical native/macro state and public ABI. Matched logic
+  area falls 4.02% BD / 3.21% Click; firmware wake work remains 3,256 / 3,161
+  edges. Core/reference, service/reset/sleep/firmware and physical-policy checks,
+  452 Python controls and all four strict exports pass after the documented
+  test corrections. Keep the original failed runs: a Click test selected an
+  idle high phase, and two long BD simulations hit the 90-second host allowance.
+  Actual pending-phase checks now cover both directions; exact unchanged binaries
+  prove the runtime diagnoses, with all RTL deadlines and oracles preserved.
+  Fresh independent review and hash-bound evidence are retained under
+  `build/async-service-publication-repair/`. This item removes payload copies;
+  the service scheduler, physical capture timing, R2b and R3 remain open.
+- [ ] **C2. Narrow native loader CRC feedback.** The four CRC stages currently
+  carry the whole 337-bit `ControlToken`. Keep public reply timing, transition
+  logic and the seeded state owner, but retain the 305-bit context in a native
+  Join operand while the four byte transforms carry only CRC, remaining bytes
+  and the pending flag. Proposed output widths 57/49/41/32 plus both Join operand
+  banks total 516 payload bits versus 1,348; the proposed 832-bit reduction is
+  an architectural count, not measured area. Count added controllers, guards,
+  fanout and feedback latency. Never borrow BD's update latch after its existing
+  ACK: it can reopen before the next valid token. Test independent branch stalls,
+  immediate reuse, POR at every byte/join boundary and mismatched-context
+  mutations; only Stored may publish CRC/received progress. Measure wake work
+  and mapped costs before accepting this separate correction.
+- [ ] **C3. Remove the complete Supervisor command/reply crossing pair.** Move
+  its observation/history scheduler, independent elapsed/ADC/GPIO delivery,
+  applied-output owner and feedback, coherent status view, and drain/sleep
+  demand to native ownership together. Preserve POR-only permanent supervision,
+  dwell/freshness rules and current-boot ACK identity. Prove an admitted native
+  observation can complete and update the applied output with the work clock
+  stopped. Removing the two bridges alone would lose existing ordering and
+  publication guarantees; adding replacement periodic-clock copies does not
+  complete this item. Other service schedulers remain separately tracked under
+  items 11–14.
 - [x] **R4. Matched baseline/current comparison — complete for architecture
   decision, 2026-10-13.** The [matched report](gf180-matched-comparison.md) uses
   identical core timing, SRAMs, mapper, enabled-policy workload and feasible
@@ -123,8 +179,8 @@ digital passes remain evidence of their tested scope, not RDC or physical proof.
   violation. Constant/reset-only groups are not timing passes. All 428 Python
   tests, four physical-policy cases and 17 independent collector controls pass.
   Preserve original failures and signed out-of-range Liberty diagnostics.
-  Further service migration is frozen; keep both native CPUs and reconstruct
-  costly services with all later correctness fixes. R2b comes next. These
+  This result froze further migration before the later C1 corrective direction;
+  retain both native CPUs and all later correctness fixes. These
   results establish common-outline cost, not minimum die size or timing closure.
 - [ ] **R5. Replace avoidable guard delays and epoch state.** Inventory the
   200–241 ns guard/cleanup owners and their actual area, leakage and critical
@@ -145,7 +201,7 @@ digital passes remain evidence of their tested scope, not RDC or physical proof.
   reducing redundant comparisons must not remove activity or handshake checks.
 
 Each correction requires the same fresh review, fixes, verification, documentation
-and separate commit/push loop. R4 freezes deeper service state removal.
+and separate commit/push loop. R4 remains the measured cost baseline for rework.
 R1/R2 safety must survive any architectural rework. Complete
 physical reset qualification (R2b) remains mandatory under item 17a3.
 

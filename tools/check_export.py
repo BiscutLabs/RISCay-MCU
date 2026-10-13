@@ -31,6 +31,7 @@ from check_program_return_integration import program_return_probe
 from check_application_reset import (validate_application_reset, persistent_reset_children,
     coordinated_reset, reset_endpoint, presentation_reset)
 from check_reset_crossings import check_reset_crossings
+from check_service_reply_receipt import native_reply_source, pack_reply, service_reply_probe, validate_service_reply_rtl
 from check_ram_source_export import ARM_PATH, RETIRE_PATH, validate_ram_source, ram_source_bindings, ram_source_probe
 from check_program_source_export import PROGRAM_PATHS, validate_program_source, program_source_bindings, program_source_probe, validate_program_receipts
 from check_frame_receipt import validate_frame_receipts
@@ -539,9 +540,14 @@ def sram_background(source: str, manifest: dict, scopes: dict, checks: int):
 
     idle()
     reply = top + ".ca_child_control_reply_bridge"
+    retained = native_reply_source(manifest, scopes, header, "control")
+    values = {}
+    def held(field, value):
+        values[field] = value
+        extra.append(f"force {retained['path']} = {retained['width']}'h{pack_reply(retained, values):x};\n")
     force(top + ".fabric_controlOutstanding", 1, 1)
     force(reply + ".state", 2, 2)
-    force(reply + ".data_programWrite", 1, 1)
+    held("programWrite", 1)
     # The loader's actual word admission now requires its retained tagged grant.
     # Both fields are catalogued crossing registers; never force request.valid,
     # grant.valid or any derived readiness/selection expression.
@@ -550,7 +556,7 @@ def sram_background(source: str, manifest: dict, scopes: dict, checks: int):
     check()
     for field in ("received", "loaderWord"):
         for value in walk(32):
-            force(reply + ".data_state_" + field, 32, value); check()
+            held("state." + field, value); check()
     idle()
     request = top + ".ca_child_request_bridge"
     force(request + ".state", 2, 2)
@@ -1356,6 +1362,7 @@ def main() -> None:
     def probe(manifest, scopes, paired=False):
         top_rtl=(args.directory / (manifest["top"]+".sv")).read_text(encoding="utf-8")
         validate_application_reset(manifest,scopes,top_rtl)
+        validate_service_reply_rtl(manifest,args.directory)
         if args.soc:
             if not coordinated_reset(manifest): raise ValueError('SOC_COORDINATED_RESET_REQUIRED')
             check_reset_crossings(args.directory,manifest)
@@ -1364,6 +1371,7 @@ def main() -> None:
         validate_frame_stores(manifest,args.directory,resolved=True)
         validate_return_receipts(manifest,args.directory,scopes)
         source, count = original_probe(manifest, scopes, paired)
+        source = service_reply_probe(source, manifest, scopes)
         source = spi_program_probe(source, manifest, scopes)
         source, count = register_file_background(source, manifest, count)
         source, count = control_background(source, manifest, scopes, count)

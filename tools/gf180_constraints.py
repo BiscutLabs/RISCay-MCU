@@ -98,6 +98,7 @@ def prepare(mapping):
     bridge_aliases={
         'DecoupledToFourPhase':'ack_stages_0','DecoupledToClick':'ack_stages_0',
         'FourPhaseToDecoupled':'request_stages_0','ClickToDecoupled':'request_stages_0',
+        'FourPhaseServiceReplyReceipt':'request_stages_0','ClickServiceReplyReceipt':'request_stages_0',
         'DecoupledToFourPhaseQuiescing':'acknowledge_first','DecoupledToClickQuiescing':'acknowledge_first',
         'FourPhaseQuiescingToDecoupled':'request_first','ClickQuiescingToDecoupled':'request_first'}
     for prefix in ('FourPhase','Click'):

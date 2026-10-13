@@ -2,6 +2,7 @@
 """Strict mapping obligations at the clocked/native completion boundary."""
 import re
 from check_application_reset import coordinated_reset
+from check_service_reply_receipt import native_reply_source, pack_reply
 
 
 def native_return_cell(manifest, scopes, header, bank, identity, suffix, model, parameters, width=1):
@@ -234,9 +235,18 @@ def completion_background(source, manifest, scopes, checks):
 
     request = top+".ca_child_request_bridge"
     control = top+".ca_child_control_reply_bridge"
+    retained = {name: native_reply_source(manifest, scopes, header, name)
+                for name in ("control", "telemetry", "housekeeping")}
+    reply_values = {}
+    def held(owner, field, value):
+        values = reply_values.setdefault(owner, {})
+        values[field] = value
+        native = retained[owner]
+        force(native["path"], native["width"], pack_reply(native, values), primitive=True)
 
     def plan(operation, address, mmio=False):
         extra.append(header)
+        reply_values.clear()
         force(top+".gate_enabled", 1, 1)
         # The coordinated boundary's second synchronizer register has an
         # explicit synchronous cancellation mux, proved by the graph audit.
@@ -266,7 +276,7 @@ def completion_background(source, manifest, scopes, checks):
             force(top+".fabric_controlOutstanding", 1, 1)
             force(top+".fabric_mmioCurrent", 1, 1)
             force(control+".state", 2, 2)
-            force(control+".data_kind", 3, 4)
+            held("control", "kind", 4)
             if operation==2 and address==0x30000008:
                 for owner in ("telemetry","housekeeping"):
                     force(top+f".ca_child_{owner}_grant_bridge.state",2,2)
@@ -274,8 +284,8 @@ def completion_background(source, manifest, scopes, checks):
 
     plan(1, 0x30000004, True)
     for value in walk(32):
-        force(control+".data_memory_data", 32, value); check()
-    force(control+".data_memory_error", 1, 1); check()
+        held("control", "memory.data", value); check()
+    held("control", "memory.error", 1); check()
     plan(1, 0x10000000)
     plan(1, 0x20000000)
     plan(2, 0x30000008, True)
@@ -321,7 +331,7 @@ def completion_background(source, manifest, scopes, checks):
         payload=native_return_cell(manifest,scopes,header,bank,'payload','ca_primitive_payload',
             'ChiselAsyncEventRegister_v1',dict(WIDTH='32',DELAY_FS='1000000',RESET_VALUE='0'),32)
         for value in walk(32):force(payload,32,value,primitive=True);check()
-    for name, field, width in (("telemetry", "data_kind", 2), ("housekeeping", "data_cpuCompletion", 1)):
+    for name, field in (("telemetry", "kind"), ("housekeeping", "cpuCompletion")):
         extra.append(header)
         force(top+f".fabric_{name}Outstanding", 1, 1)
         owner=next(c["contract"] for c in manifest["design"]["children"] if c["id"]==name+"_source")
@@ -330,7 +340,8 @@ def completion_background(source, manifest, scopes, checks):
             raise ValueError("COMPLETION_PUBLICATION_ELIGIBILITY_OWNER")
         force(cell["rtl_path"]+".q",1,1,primitive=True)
         force(top+f".ca_child_{name}_reply_bridge.state", 2, 2)
-        force(top+f".ca_child_{name}_reply_bridge.{field}", width, 1); check()
+        reply_values.clear()
+        held(name, field, 1); check()
         if coordinated_reset(manifest):
             # Services now consumes the POR reservation mirror, not native
             # eligibility. Preserve the preceding native-owner scenario and

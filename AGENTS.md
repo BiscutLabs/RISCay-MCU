@@ -40,11 +40,17 @@
   maintenance. Run guard handoff and ADC discard/offset/calibration checks.
   A copied clocked module is not migrated to async.
   R4's matched 8637099/2e4169c comparison is complete and favors the smaller
-  clocked service island; further service migration is frozen. Follow
-  `docs/gf180-matched-comparison.md`. Keep both native CPUs, address R2b reset
-  distribution next and prioritize R3/R5 only for retained native services.
-  Preserve R1/R2 and every later correctness fix if reconstructing a clocked
-  island. Never infer energy savings
+  historical clocked island. The user's subsequent instruction authorizes
+  correcting the synchronous shell around the native services, superseding
+  the migration freeze. Follow `docs/gf180-matched-comparison.md` for the retained
+  cost evidence. Remove duplicate storage and crossings through explicit native
+  ownership/completion; measure total cost before accepting each change. Never
+  add periodic-clock staging merely to satisfy synchronous STA assumptions.
+  Adapt analysis with exact path/relative-timing contracts and retain real
+  setup/hold, pulse, reset, slew and load failures. Keep both native CPUs and
+  preserve R1/R2 and every later correctness fix. R2b reset distribution and R3
+  frame-copy completion remain open physical/correctness obligations.
+  Never infer energy savings
   from clocked-bit or work-edge counts alone. Keep historical failures visible.
   Native completion presentation follows coordinated application reset. Its
   CPU-facing crossings retain POR ownership and rebase only while acknowledged
@@ -169,6 +175,15 @@
   polarity. Limit this to Completion's output and its two connected ingress
   aliases; stored grant payloads and all other dynamic bits retain activity checks.
   Require native Admission and the variant-specific grant bridge in SoC exports.
+  Service reply receipts capture Control, Telemetry, Housekeeping and Supervisor
+  payloads directly from their retained native owner. Follow
+  `docs/service-reply-capture-contract.md`; preserve the existing seven control
+  bits, synchronizers and ACK cadence, with no duplicate payload bank. ACK means
+  actual consumer acceptance. Run ServiceReplyReceiptSpec and composed service,
+  reset, sleep and firmware checks; strict probes must resolve actual native
+  storage and independent field packing, not force a derived bus. Keep complete
+  producer-to-consumer setup/hold and earliest ACK release physically unqualified
+  until measured. C1 removes payload copies, not the clocked service scheduler.
   Native Control state and its command/reply bridges are POR-only. Keep accepted
   MMIO commits and SRAM accounting across watchdog reset; cancel unaccepted work.
   Preserve queued host reset/busy context, including simultaneous admission.

@@ -42,7 +42,7 @@ state. Programming lock lasts until full MCU reset or power loss; status and
 telemetry remain readable when locked. See the
 [host status, telemetry and lock contract](docs/loader-status-and-lock.md).
 
-**Status: further service-island migration frozen after matched cost comparison;
+**Status: correcting excessive clocked coordination around native services;
 physical timing is unqualified.**
 Both design folders own independent native implementations of CPU/fabric routing,
 MMIO and loader state, telemetry/events, arithmetic, permanent supervision,
@@ -62,8 +62,12 @@ independent review. Native assertion and release each wait 64 service edges,
 separately from the short-pulse qualifier. The completed
 [matched comparison](docs/gf180-matched-comparison.md) favors the smaller clocked
 service island: migrated services substantially increase area, leakage estimates
-and wake work. Keep both native CPUs and preserve all later correctness fixes
-when reconstructing services. Reset distribution is the next corrective item.
+and wake work. The subsequent correction targets duplicate storage and crossings
+while keeping native BD/Click and all later correctness fixes. The first item
+removes 1,254 duplicate clocked service-reply payload bits per variant and passes
+digital verification. Mapped logic area falls 4.02% BD / 3.21% Click; wake work
+is unchanged, and complete native service scheduling remains open.
+See the [capture contract](docs/service-reply-capture-contract.md).
 Frame-copy completion remains open for the present implementation.
 Complete physical reset-tree and core-startup timing remain open; current guard
 measurements exceed some digital assumptions.

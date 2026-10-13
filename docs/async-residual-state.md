@@ -1,13 +1,28 @@
 # Remaining clocked-state audit
 
 The asynchronous migration has not reached its physically feasible limit.
-This preliminary ledger records the digitally verified native frame banks at
-checklist step 11a2a. It provides removal candidates for
+This ledger records native frame banks, reset containment and the current
+service-reply correction. It provides removal candidates for
 [steps 10–17](async-soc-migration.md), not permission to retain existing clocks.
 The declaration/ABI comparison against committed 11a1 passes. Counting
 emitted state does not establish physical timing or minimum synchronous state.
 
 ## Scope and complete reference totals
+
+C1 emitted-state audit, 2026-10-13: direct capture removes exactly **1,254
+periodic-clock payload bits per variant**: Control 376, Housekeeping 397,
+Telemetry 173 and Supervisor 308. The four receipts retain seven control bits
+each. Independent compiled inventories show unchanged native primitive models,
+parameters, state and ports, unchanged SRAMs and unchanged public ABI. Portable
+nonprimitive RTL totals change from 7,793/7,794 to **6,539 BD / 6,540 Click**;
+subtract the unchanged SDA-edge bit for periodic totals of **6,538 / 6,539**.
+Enabled-policy physical exports contain ten more bits in each variant. These
+counts exclude the generated chip wrapper and are not mapped cell counts.
+Evidence is `build/async-service-publication-repair/review-state/r1/` and
+`r1-controls/`, including complete source hashes and actual producer/receipt
+bit walks. Functional and strict verification are tracked in the
+[capture contract](service-reply-capture-contract.md); physical capture timing
+remains unqualified.
 
 R2a digital-repair update, 2026-10-12: the reused reset-interval counter grows from
 three to six bits in each implementation. Exact emitted declaration comparisons
@@ -100,11 +115,14 @@ and coherent publication.
 Remove their intermediate crossings as each pair of adjacent owners becomes
 native; preserve reset lifetimes and complete previous-token return.
 
-The eight clocked service command/reply owners account for 2,518 crossing bits;
+Before C1, the eight clocked service command/reply owners accounted for 2,518 crossing bits;
 I2C delivery 40, elapsed delivery 205, SPI delivery 97, SRAM access crossings
 674, CPU/completion/admission crossings 145, and source/final receipts 149.
 Together they sum to 3,828. A bridge's current existence is not a physical reason
 to keep its service-clock client.
+C1 reduces the eight service owners to 1,264 bits without adding native storage.
+Their command payloads and control remain candidates for removal with the
+clocked admission/dispatch and publication clients.
 
 ## Timed boundaries still need individual justification
 

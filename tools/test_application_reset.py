@@ -1,10 +1,26 @@
 # SPDX-License-Identifier: Apache-2.0
 import copy
 import unittest
-from check_application_reset import validate_application_reset
+from check_application_reset import validate_application_reset, persistent_reset_children
 
 
 class ApplicationResetTest(unittest.TestCase):
+    def test_all_four_payload_free_receipts_remain_por_owned(self):
+        for top in ('FourPhaseSoc', 'ClickSoc'):
+            prefix='Click' if top=='ClickSoc' else 'FourPhase'
+            for owner in ('control','telemetry','housekeeping','supervisor'):
+                models={owner:prefix+owner.title(), owner+'_command_bridge':'DecoupledTo'+prefix,
+                        owner+'_reply_bridge':prefix+'ServiceReplyReceipt'}
+                manifest=dict(top=top,design=dict(children=[dict(id=name,contract=dict(module=model))
+                                                          for name,model in models.items()]))
+                self.assertEqual(persistent_reset_children(manifest)[owner+'_reply_bridge'],
+                                 prefix+'ServiceReplyReceipt')
+                for replacement in (prefix+'ToDecoupled','Unknown'):
+                    bad=copy.deepcopy(manifest)
+                    bad['design']['children'][-1]['contract']['module']=replacement
+                    with self.assertRaisesRegex(ValueError,'SOC_PERSISTENT_RESET_OWNER'):
+                        persistent_reset_children(bad)
+
     def fixture(self,top):
         names=["core","transactions","request_bridge","completion","admission","admission_grant_bridge"]+[
             "completion_"+n+"_bridge" for n in ("plan","telemetry","housekeeping")]

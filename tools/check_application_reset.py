@@ -71,27 +71,27 @@ def persistent_reset_children(manifest):
     root = manifest["design"]
     persistent = {"control": "ClickControl" if top == "ClickSoc" else "FourPhaseControl",
                   "control_command_bridge": "DecoupledToClick" if top == "ClickSoc" else "DecoupledToFourPhase",
-                  "control_reply_bridge": "ClickToDecoupled" if top == "ClickSoc" else "FourPhaseToDecoupled"}
+                  "control_reply_bridge": "ClickServiceReplyReceipt" if top == "ClickSoc" else "FourPhaseServiceReplyReceipt"}
     present = {c.get("id") for c in root["children"]} & persistent.keys()
     if present and present != persistent.keys():
         raise ValueError("SOC_PERSISTENT_RESET_INVENTORY")
     telemetry = {"telemetry": "ClickTelemetry" if top == "ClickSoc" else "FourPhaseTelemetry",
                  "telemetry_command_bridge": "DecoupledToClick" if top == "ClickSoc" else "DecoupledToFourPhase",
-                 "telemetry_reply_bridge": "ClickToDecoupled" if top == "ClickSoc" else "FourPhaseToDecoupled"}
+                 "telemetry_reply_bridge": "ClickServiceReplyReceipt" if top == "ClickSoc" else "FourPhaseServiceReplyReceipt"}
     present = {c.get("id") for c in root["children"]} & telemetry.keys()
     if present and present != telemetry.keys():
         raise ValueError("SOC_PERSISTENT_RESET_INVENTORY")
     persistent.update(telemetry)
     supervisor = {"supervisor": "ClickSupervisor" if top == "ClickSoc" else "FourPhaseSupervisor",
                   "supervisor_command_bridge": "DecoupledToClick" if top == "ClickSoc" else "DecoupledToFourPhase",
-                  "supervisor_reply_bridge": "ClickToDecoupled" if top == "ClickSoc" else "FourPhaseToDecoupled"}
+                  "supervisor_reply_bridge": "ClickServiceReplyReceipt" if top == "ClickSoc" else "FourPhaseServiceReplyReceipt"}
     present = {c.get("id") for c in root["children"]} & supervisor.keys()
     if present and present != supervisor.keys():
         raise ValueError("SOC_PERSISTENT_RESET_INVENTORY")
     persistent.update(supervisor)
     housekeeping = {"housekeeping": "ClickHousekeeping" if top == "ClickSoc" else "FourPhaseHousekeeping",
                     "housekeeping_command_bridge": "DecoupledToClick" if top == "ClickSoc" else "DecoupledToFourPhase",
-                    "housekeeping_reply_bridge": "ClickToDecoupled" if top == "ClickSoc" else "FourPhaseToDecoupled"}
+                    "housekeeping_reply_bridge": "ClickServiceReplyReceipt" if top == "ClickSoc" else "FourPhaseServiceReplyReceipt"}
     present = {c.get("id") for c in root["children"]} & housekeeping.keys()
     if present and present != housekeeping.keys():
         raise ValueError("SOC_PERSISTENT_RESET_INVENTORY")

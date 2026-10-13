@@ -117,6 +117,8 @@ end endtask
       // Storage capacity is irrelevant to this permanent-controller test; the
       // production-capacity exports are checked separately.
       val params = p.copy(config=Groundlark.configuration.copy(programBytes=16,workingRamBytes=16), watchdogCycles=20000)
+      // This 61 ms native simulation can exceed the normal 90 s host budget.
+      // Its 100 ms simulated deadline and every functional assertion are unchanged.
       ClockedSimulation.run(top(click,params,x => new GroundlarkBoard(x,PowerPolicy(enabled=true))),
         name+"-sleep-groundlark","""
         // 1 nominal ms = 2 us here; conversion latency is still real service cycles.
@@ -128,7 +130,7 @@ end endtask
         if(gpioOut[0] || gpioOut[1]) $fatal(1,"SLEEP_MISSED_ACK");
         reset=1; #2000;
         if(gpioOut[0] || sleeping) $fatal(1,"SLEEP_RESET_POWER");
-      """,monitor,referenceHalfPeriodNs=250)
+      """,monitor,referenceHalfPeriodNs=250,processTimeoutSeconds=300)
     }
   }
   test("low-power parameters reject impossible cadence and unsafe leases") {

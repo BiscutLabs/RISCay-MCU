@@ -229,19 +229,19 @@ abstract class FourPhasePlatform(p: SocParameters, board: SocParameters => Board
   val controlCommandBridge = asyncChild("control_command_bridge")(d =>
     new chiselasync.clocked.DecoupledToFourPhase(new ControlCommand, 2, d))
   val controlReplyBridge = asyncChild("control_reply_bridge")(d =>
-    new chiselasync.clocked.FourPhaseToDecoupled(new ControlReply, 2, d))
+    new FourPhaseServiceReplyReceipt(new ControlReply, d))
   controlCommandBridge.clock := workClock; controlReplyBridge.clock := workClock
   chiselasync.protocol.FourPhase.connect(control.command, controlCommandBridge.out)
   chiselasync.protocol.FourPhase.connect(controlReplyBridge.in, control.reply)
   controlCommandBridge.in <> fabric.io.controlCommand
   fabric.io.controlReply <> controlReplyBridge.out
-  // Preserve the registered bridge ABI even when this profile ignores state fields.
+  // Preserve the complete held native reply ABI, including profile-unused fields.
   dontTouch(controlReplyBridge.out)
   val housekeeping=asyncChild("housekeeping")(d => new FourPhaseHousekeeping(p,d))
   val housekeepingCommandBridge=asyncChild("housekeeping_command_bridge")(d =>
     new chiselasync.clocked.DecoupledToFourPhase(new HousekeepingCommand, 2, d))
   val housekeepingReplyBridge=asyncChild("housekeeping_reply_bridge")(d =>
-    new chiselasync.clocked.FourPhaseToDecoupled(new HousekeepingReply, 2, d))
+    new FourPhaseServiceReplyReceipt(new HousekeepingReply, d))
   housekeepingCommandBridge.clock:=workClock; housekeepingReplyBridge.clock:=workClock
   chiselasync.protocol.FourPhase.connect(housekeeping.command,housekeepingCommandBridge.out)
   chiselasync.protocol.FourPhase.connect(housekeepingReplyBridge.in,housekeeping.reply)
@@ -260,7 +260,7 @@ abstract class FourPhasePlatform(p: SocParameters, board: SocParameters => Board
   val telemetryCommandBridge = asyncChild("telemetry_command_bridge")(d =>
     new chiselasync.clocked.DecoupledToFourPhase(new TelemetryCommand(p.config.measurements.size), 2, d))
   val telemetryReplyBridge = asyncChild("telemetry_reply_bridge")(d =>
-    new chiselasync.clocked.FourPhaseToDecoupled(new TelemetryReply(p.config.measurements.size, fabric.telemetryWords.size), 2, d))
+    new FourPhaseServiceReplyReceipt(new TelemetryReply(p.config.measurements.size, fabric.telemetryWords.size), d))
   chiselasync.protocol.FourPhase.connect(telemetry.command, telemetryCommandBridge.out)
   chiselasync.protocol.FourPhase.connect(telemetryReplyBridge.in, telemetry.reply)
   telemetryCommandBridge.clock := workClock; telemetryReplyBridge.clock := workClock
@@ -424,7 +424,7 @@ abstract class FourPhasePlatform(p: SocParameters, board: SocParameters => Board
     case profile: riscay.profiles.GroundlarkBoard =>
       val supervisor = asyncChild("supervisor")(d => new FourPhaseSupervisor(p,profile.policy,d))
       val supervisorCommandBridge = asyncChild("supervisor_command_bridge")(d => new chiselasync.clocked.DecoupledToFourPhase(new SupervisorCommand, 2, d))
-      val supervisorReplyBridge = asyncChild("supervisor_reply_bridge")(d => new chiselasync.clocked.FourPhaseToDecoupled(new SupervisorState, 2, d))
+      val supervisorReplyBridge = asyncChild("supervisor_reply_bridge")(d => new FourPhaseServiceReplyReceipt(new SupervisorState, d))
       supervisorCommandBridge.clock := workClock; supervisorReplyBridge.clock := workClock
 
       chiselasync.protocol.FourPhase.connect(supervisor.command,supervisorCommandBridge.out)

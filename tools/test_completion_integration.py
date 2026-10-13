@@ -8,6 +8,7 @@ import subprocess
 import tempfile
 import unittest
 from check_completion_integration import completion_background, completion_constants_probe
+from test_service_reply_receipt import add_native_reply_fixture
 
 
 def fixture(top):
@@ -123,7 +124,7 @@ class CompletionIntegrationTest(unittest.TestCase):
                 scopes[path]=dict(ports={"q":dict(name="q",width=1,direction="output")})
                 manifest["design"]["children"].append(dict(id=owner+"_source",contract=dict(primitives=[
                     dict(id="eligibility",rtl_path=path,model="ChiselAsyncEventRegister_v1",parameters=dict(WIDTH="1"))])))
-            regs[top+".ca_child_control_reply_bridge"] = dict(state=2,data_kind=3,data_memory_data=32,data_memory_error=1)
+            regs[top+".ca_child_control_reply_bridge"] = dict(state=2)
             for bank in ("program","ram"):
                 regs[top+f".ca_child_{bank}_access"]={f"{group}_{stage}":1 for group in (
                     "returned_stages","bytesReturned_stages","bytesReturned_stages_1","bytesReturned_stages_2","bytesReturned_stages_3") for stage in (0,1)}
@@ -166,8 +167,10 @@ class CompletionIntegrationTest(unittest.TestCase):
                 cell(reservation,'acknowledge','ca_primitive_acknowledge','ChiselAsyncAsymmetricC_v1',
                      dict(COMMON='1',COMMON_INVERT='1',DELAY_FS='1000000',FALLING='1',FALLING_INVERT='0',RESET_VALUE='0',RISING='1',RISING_INVERT='0'))
             manifest['design']['children'].append(dict(id='program_source',contract=owner))
-            regs[top+".ca_child_telemetry_reply_bridge"]=dict(state=2,data_kind=2)
-            regs[top+".ca_child_housekeeping_reply_bridge"]=dict(state=2,data_cpuCompletion=1)
+            regs[top+".ca_child_telemetry_reply_bridge"]=dict(state=2)
+            regs[top+".ca_child_housekeeping_reply_bridge"]=dict(state=2)
+            for name in ("control", "telemetry", "housekeeping"):
+                add_native_reply_fixture(manifest, scopes, regs, name)
             for path,rs in regs.items():scopes.setdefault(path,{})['registers']=rs
             header="".join(f"force {path}.{name} = {width}'h0;\n" for path,rs in regs.items() for name,width in rs.items())+"#1;\n"
             coverage='if (ones_0 !== 1\'h1 || zeros_0 !== 1\'h1) $fatal(1, "INACTIVE_ENDPOINT:test");\n'
@@ -213,8 +216,10 @@ class CompletionIntegrationTest(unittest.TestCase):
                         self.assertEqual(augmented.count(scenario),1)
                     # The old native-owner case remains ahead of the mirror
                     # truth table; all dynamic polarity assertions survive.
-                    previous=(f"force {top}.ca_child_{owner}_reply_bridge."+
-                              ('data_kind = 2' if owner=='telemetry' else 'data_cpuCompletion = 1')+"'h1;\n#1; check;\n")
+                    width=173 if owner=='telemetry' else 397
+                    packed=(1<<170) if owner=='telemetry' else 1
+                    previous=(f"force {top}.ca_child_{owner}.ca_child_update.ca_primitive_payload.q = "
+                              f"{width}'h{packed:x};\n#1; check;\n")
                     self.assertIn(previous,augmented)
             else:
                 self.assertNotIn('COMPLETION_PUBLICATION_MIRROR:',augmented)
@@ -252,7 +257,7 @@ class CompletionIntegrationTest(unittest.TestCase):
                     bad=copy.deepcopy(scopes)
                     if 'ports' in bad[path] and name in bad[path]['ports']: del bad[path]['ports'][name]
                     else: del bad[path]['registers'][name]
-                    with self.assertRaisesRegex(ValueError,"COMPLETION_BACKGROUND_DRIVER|COMPLETION_NATIVE_RETURN_CELL|COMPLETION_PROGRAM_PERMISSION_CELL"):
+                    with self.assertRaisesRegex(ValueError,"COMPLETION_BACKGROUND_DRIVER|COMPLETION_NATIVE_RETURN_CELL|COMPLETION_PROGRAM_PERMISSION_CELL|SERVICE_REPLY_STORAGE"):
                         completion_background(original,manifest,bad,1)
             for bank in ('ram','program'):
                 root=top+'.ca_child_'+bank+'_return'

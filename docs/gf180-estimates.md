@@ -1,9 +1,16 @@
 # GF180 area, standby and wake-energy estimates
 
 The [matched service comparison](gf180-matched-comparison.md) supersedes the
-cross-method comparisons below. Further service migration is frozen; its
-mapped area/activity and completed P&R runs are independently audited. Physical
-timing remains unqualified.
+cross-method comparisons below. Its mapped area/activity and completed P&R runs
+are independently audited. The subsequent corrective work targets redundant
+storage and clocked coordination while preserving native BD/Click; see the
+[migration checklist](async-soc-migration.md). Physical timing remains unqualified.
+
+The [C1 service-reply accounting](service-reply-capture-contract.md#matched-cost-of-this-correction)
+uses the same mapping inputs and flow against the matched candidate. It removes
+duplicate clocked payload banks and reduces mapped logic area to 3.351844 mm²
+BD / 4.206056 mm² Click. These mapped results do not update the historical P&R
+or establish energy savings.
 
 ## Current mapped candidate and activity, 2026-10-12
 

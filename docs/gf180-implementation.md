@@ -125,6 +125,12 @@ generated names. Missing or ambiguous objects fail.
   Proven constant buses are recorded separately, never counted as timing passes.
   Quiescing receivers retain synchronous closure/rebase timing; their new CDC
   inputs do not receive blanket false paths that would hide those cones.
+  The C1 service-reply receipts preserve the same request synchronizer catalogue
+  and retain real consumer timing. Their payload goes directly from retained
+  native storage to the clocked consumer. Qualify that complete bundled-data
+  setup/hold path and earliest ACK-to-source-release path separately; see the
+  [capture contract](service-reply-capture-contract.md). A periodic launch clock
+  on the native storage would describe the wrong circuit.
 - `preserve-mapped.tcl` protects exact physical cells. `feedback-cuts.tcl` cuts
   C-element feedback for analysis only; never remove the physical feedback.
 - `check-async-paths.tcl` measures internal paths separately, removing each

@@ -1,11 +1,15 @@
 # Matched service-architecture comparison
 
-Further service-island migration is frozen. Matching the mapper, SRAMs, native
+This comparison initially froze further service-island migration. The user's
+subsequent direction on 2026-10-13 authorizes correcting redundant storage and
+clocked coordination around the native services; see the
+[corrective checklist](async-soc-migration.md#corrective-gates-from-the-independent-reviews).
+The comparison results below remain the measured baseline. Matching the mapper, SRAMs, native
 core timing and workload confirms that the migrated services cost substantially
 more area and active-clock work. Keep both native CPUs and all later correctness
 requirements while evaluating a smaller service architecture. Restoring the old
 raw-reset implementation is not an acceptable rollback.
-A reconstructed clocked island must retain the newer correctness requirements
+A corrected service architecture must retain the newer correctness requirements
 and be measured again; the historical baseline does not guarantee its final cost.
 
 The compared RTL revisions are `8637099bb603543b4d8e1d76de2bf165bbaa171a`

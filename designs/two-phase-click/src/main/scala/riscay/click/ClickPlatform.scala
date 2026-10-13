@@ -226,7 +226,7 @@ abstract class ClickPlatform(p: SocParameters, board: SocParameters => BoardProf
   fabric.io.programSource.draining:=programServiceDebt || !programSourceEmpty
   val control = asyncChild("control")(d => new ClickControl(p, d))
   val controlCommandBridge = asyncChild("control_command_bridge")(d => new DecoupledToClick(new ControlCommand, d))
-  val controlReplyBridge = asyncChild("control_reply_bridge")(d => new ClickToDecoupled(new ControlReply, d))
+  val controlReplyBridge = asyncChild("control_reply_bridge")(d => new ClickServiceReplyReceipt(new ControlReply, d))
   controlCommandBridge.clock := workClock; controlReplyBridge.clock := workClock
   val controlStart = withClockAndReset(serviceClock, reset) {
     val stages = RegInit(0.U(2.W)); stages := Cat(stages(0), true.B); stages.andR
@@ -236,13 +236,13 @@ abstract class ClickPlatform(p: SocParameters, board: SocParameters => BoardProf
   chiselasync.protocol.TwoPhase.connect(controlReplyBridge.in, control.reply)
   controlCommandBridge.in <> fabric.io.controlCommand
   fabric.io.controlReply <> controlReplyBridge.out
-  // Preserve the registered bridge ABI even when this profile ignores state fields.
+  // Preserve the complete held native reply ABI, including profile-unused fields.
   dontTouch(controlReplyBridge.out)
   val housekeeping=asyncChild("housekeeping")(d => new ClickHousekeeping(p,d))
   val housekeepingCommandBridge=asyncChild("housekeeping_command_bridge")(d =>
     new DecoupledToClick(new HousekeepingCommand, d))
   val housekeepingReplyBridge=asyncChild("housekeeping_reply_bridge")(d =>
-    new ClickToDecoupled(new HousekeepingReply, d))
+    new ClickServiceReplyReceipt(new HousekeepingReply, d))
   housekeepingCommandBridge.clock:=workClock; housekeepingReplyBridge.clock:=workClock
   chiselasync.protocol.TwoPhase.connect(housekeeping.command,housekeepingCommandBridge.out)
   chiselasync.protocol.TwoPhase.connect(housekeepingReplyBridge.in,housekeeping.reply)
@@ -255,7 +255,7 @@ abstract class ClickPlatform(p: SocParameters, board: SocParameters => BoardProf
   val telemetryCommandBridge = asyncChild("telemetry_command_bridge")(d =>
     new DecoupledToClick(new TelemetryCommand(p.config.measurements.size), d))
   val telemetryReplyBridge = asyncChild("telemetry_reply_bridge")(d =>
-    new ClickToDecoupled(new TelemetryReply(p.config.measurements.size, fabric.telemetryWords.size), d))
+    new ClickServiceReplyReceipt(new TelemetryReply(p.config.measurements.size, fabric.telemetryWords.size), d))
   telemetry.start := controlStart
   chiselasync.protocol.TwoPhase.connect(telemetry.command, telemetryCommandBridge.out)
   chiselasync.protocol.TwoPhase.connect(telemetryReplyBridge.in, telemetry.reply)
@@ -413,7 +413,7 @@ abstract class ClickPlatform(p: SocParameters, board: SocParameters => BoardProf
     case profile: riscay.profiles.GroundlarkBoard =>
       val supervisor = asyncChild("supervisor")(d => new ClickSupervisor(p,profile.policy,d))
       val supervisorCommandBridge = asyncChild("supervisor_command_bridge")(d => new DecoupledToClick(new SupervisorCommand, d))
-      val supervisorReplyBridge = asyncChild("supervisor_reply_bridge")(d => new ClickToDecoupled(new SupervisorState, d))
+      val supervisorReplyBridge = asyncChild("supervisor_reply_bridge")(d => new ClickServiceReplyReceipt(new SupervisorState, d))
       supervisorCommandBridge.clock := workClock; supervisorReplyBridge.clock := workClock
       supervisor.start := controlStart
       chiselasync.protocol.TwoPhase.connect(supervisor.command,supervisorCommandBridge.out)
