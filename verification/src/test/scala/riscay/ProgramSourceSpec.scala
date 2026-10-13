@@ -88,6 +88,7 @@ class BdProgramSourceFixture(p: SocParameters, directIngress: Boolean = true) ex
   val sourceDraining=IO(Output(Bool())); sourceDraining:=fabric.io.programSource.draining
   val wordAccepted=IO(Output(Bool())); wordAccepted:=programAccess.io.request.fire
   val nativeResponsePhase=IO(Output(Bool())); nativeResponsePhase:=programReturn.response.req
+  val nativePresentationReset=IO(Output(Bool())); nativePresentationReset:=reset.asBool || programReturn.applicationReset.asBool
   val publicationAccepted=IO(Output(Bool())); publicationAccepted:=programReturn.publication.ack
   val cancelled=IO(Output(Bool())); cancelled:=programDecision.in.fire && !programDecision.in.bits
   val storedWaiting=IO(Output(Bool())); storedWaiting:=programStored.out.valid
@@ -160,6 +161,7 @@ class ClickProgramSourceFixture(p: SocParameters, directIngress: Boolean = true)
   val sourceDraining=IO(Output(Bool())); sourceDraining:=fabric.io.programSource.draining
   val wordAccepted=IO(Output(Bool())); wordAccepted:=programAccess.io.request.fire
   val nativeResponsePhase=IO(Output(Bool())); nativeResponsePhase:=programReturn.response.req
+  val nativePresentationReset=IO(Output(Bool())); nativePresentationReset:=reset.asBool || programReturn.applicationReset.asBool
   val publicationAccepted=IO(Output(Bool())); publicationAccepted:=programReturn.publication.ack
   val cancelled=IO(Output(Bool())); cancelled:=programDecision.in.fire && !programDecision.in.bits
   val storedWaiting=IO(Output(Bool())); storedWaiting:=programStored.out.valid
@@ -205,9 +207,16 @@ class ProgramSourceSpec extends AnyFunSuite {
     always @(posedge dut.fabric_program_macros_0.CLK)
       if(!reset && !dut.fabric_program_macros_0.CEN && !dut.fabric_program_macros_0.GWEN) writes=writes+1;
     // Classify role from the independent host/CPU driver, not projected DUT state.
-    always @(nativeResponsePhase) if(!reset && !systemReset && (nativeClick || nativeResponsePhase)) begin
-      if(loaderWordPending) $fatal(1,"PROGRAM_LOADER_UNSOLICITED_CPU_RESPONSE");
-      cpuOffers=cpuOffers+1;
+    always @(nativeResponsePhase) if(!reset && (nativeClick || nativeResponsePhase)) begin
+      // A stopped receiver delays destructive reset beyond raw qualification.
+      // Only actual phase reinitialization to zero is a reset event. Loader
+      // offers remain forbidden throughout the raw-to-cutoff interval too.
+      if(nativePresentationReset) begin
+        if(nativeResponsePhase !== 0) $fatal(1,"PROGRAM_RESPONSE_PHASE_DURING_RESET");
+      end else begin
+        if(loaderWordPending) $fatal(1,"PROGRAM_LOADER_UNSOLICITED_CPU_RESPONSE");
+        cpuOffers=cpuOffers+1;
+      end
     end
     // Observe real native acceptance, including both Click phase polarities.
     always @(publicationAccepted) if(!reset && (nativeClick || publicationAccepted)) published=published+1;
@@ -371,6 +380,23 @@ class ProgramSourceSpec extends AnyFunSuite {
             $$fatal(1,"PROGRAM_CPU_LOADER_PHASE_COUNTS");
         end
       """,tasks,serviceHalfPeriodNs=25,deadlineNs=2000000,maximumDelaySubtree=Some("ca_child_program_return"))
+    }
+    if(click) test("click loader response monitor rejects a phase fault after raw reset and before presentation reset") {
+      val error=intercept[IllegalArgumentException] {
+        ClockedSimulation.run(fixture,name+"-program-loader-phase-fault",s"""
+          idle_check(); host_begin(32'h${crc(word).toHexString});
+          holdCaptureReceipt=1; host_write(32'h${word.toHexString});
+          wait(captureWaiting); @(negedge serviceClock); stopWorkClock=1;
+          two_short_resets(); wait(!systemReset); #100;
+          if(nativePresentationReset || nativeResponsePhase !== 0 || !loaderWordPending)
+            $$fatal(1,"PROGRAM_PHASE_FAULT_NOT_AT_REQUIRED_BOUNDARY");
+          // Mutate actual native storage, leaving the response monitor intact.
+          force dut.ca_child_program_return.ca_primitive_application_phase.q=1'b1;
+          #100; $$fatal(1,"PROGRAM_PHASE_FAULT_WAS_NOT_DETECTED");
+        """,tasks,serviceHalfPeriodNs=25,deadlineNs=2000000)
+      }
+      assert(error.getMessage.contains("FATAL: testbench.sv:") &&
+        error.getMessage.contains("PROGRAM_LOADER_UNSOLICITED_CPU_RESPONSE"))
     }
     test(s"$name program capture receipt: loader remains POR-owned through reset release and stopped work clock") {
       ClockedSimulation.run(fixture,name+"-program-loader-capture-reset",s"""

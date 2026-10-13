@@ -222,7 +222,7 @@ def _state_policy(rtl, value_pairs, sensitivity, expected, reset):
     initial_policy(rtl, values, reset)
 
 
-def assertion_wrapper_policy(directory, model, raw, label, diagnostic):
+def assertion_wrapper_policy(directory, model, raw, label, diagnostic, coordinated=False):
     """Close preprocessing and binding around the actual executable assertion."""
     un = clean(raw)
     module = re.search(r"\bmodule\s+" + re.escape(model) + r"_Verification_Assert\s*\(\s*\)\s*;", un)
@@ -243,12 +243,18 @@ def assertion_wrapper_policy(directory, model, raw, label, diagnostic):
     require(len(before) == 1 and compact(before[0][0]) == "`ifndefSYNTHESIS" and
             after and compact(after[0][0]) == "`endif", diagnostic + "_WRAPPER")
     assertion_execution_policy(raw, body, before[0].start(), before[0].end(), after[0].start(),
-                               3 if model in ("FourPhaseSoc", "ClickSoc") else 1, diagnostic)
+                               7 if coordinated else 3 if model in ("FourPhaseSoc", "ClickSoc") else 1, diagnostic)
     binding = Path(directory) / "verification" / "assert" / ("layers-" + model + "-Verification-Assert.sv")
     require(binding.is_file(), diagnostic + "_BIND_FILE")
     raw_bind = clean(binding.read_text(encoding="utf-8"))
     guard = "layers_" + model + "_Verification_Assert"
     child_include = '`include "layers-I2cTarget-Verification-Assert.sv"\n' if model in ("FourPhaseSoc", "ClickSoc") else ""
+    if coordinated:
+        require(model in ("FourPhaseSoc", "ClickSoc"), diagnostic + "_COORDINATED_MODEL")
+        variant = "Click" if model == "ClickSoc" else "FourPhase"
+        children = ["DecoupledTo" + variant + "Quiescing", "DecoupledTo" + variant + "Quiescing_1",
+                    variant + "QuiescingToDecoupled", "I2cTarget", variant + "QuiescingToDecoupled_1"]
+        child_include = "".join(f'`include "layers-{name}-Verification-Assert.sv"\n' for name in children)
     expected = f'`ifndef {guard}\n`define {guard}\n`include "layers-{model}-Verification.sv"\n' + child_include + f'bind {model} {model}_Verification_Assert verification_assert ();\n`endif'
     require(compact(raw_bind) == compact(expected) and directives(raw_bind) == directives(expected), diagnostic + "_BIND")
 
@@ -276,7 +282,7 @@ def assertion_execution_policy(raw, body, guard_start, block_start, block_end, c
             diagnostic + "_OWNERSHIP")
 
 
-def inline_assertion_wrapper_policy(model, raw, label, diagnostic):
+def inline_assertion_wrapper_policy(model, raw, label, diagnostic, coordinated=False):
     """Accept only the pinned executable inline form, with its full macro shell.
 
     This does not manufacture an extracted verification module or remove any
@@ -305,7 +311,8 @@ def inline_assertion_wrapper_policy(model, raw, label, diagnostic):
                 diagnostic + "_WRAPPER")
     blocks = list(re.finditer(r"`ifndef\s+SYNTHESIS\s*\n(.*?)`endif", body, re.S))
     require(len(blocks) == 1 and label in blocks[0][1], diagnostic + "_WRAPPER")
-    assertion_execution_policy(raw, body, blocks[0].start(), blocks[0].start(1), blocks[0].end(1), 1, diagnostic)
+    assertion_execution_policy(raw, body, blocks[0].start(), blocks[0].start(1), blocks[0].end(1),
+                               2 if coordinated else 1, diagnostic)
 
 
 def assertion_source(directory, model, inline, diagnostic):
@@ -319,29 +326,24 @@ def assertion_source(directory, model, inline, diagnostic):
     return path.read_text(encoding="utf-8")
 
 
-def top_spelling(inline):
+def top_spelling(inline, coordinated=False):
     """Translate expected identifiers only; never rewrite the observed RTL.
 
-    These five compiler spellings change when verification layers are inlined.
+    These pinned compiler spellings change when verification layers are inlined
+    or the coordinated cutoff is present in the production Groundlark export.
     Every translated driver, use and procedural writer still goes through the
     existing exact source policies. No expression is inferred from a name.
     """
     names = dict(fabric_clock="gate_io_clockOut", fabric_io_i2c_frame_valid="_ca_child_i2c_host_frame_valid",
                  fabric__5="fabric__7", fabric__6="fabric__10", fabric__27="fabric__33") if inline else {}
+    if coordinated:
+        names.update(dict(fabric__5="fabric__6", fabric__6="fabric__9", fabric__27="fabric__32",
+                          fabric_io_applicationCancel="applicationCancel") if inline else
+                     dict(fabric__5="fabric__4", fabric__6="fabric__layerCapture_7", fabric__27="fabric__25"))
     return lambda text: re.sub(r"\b[A-Za-z_]\w*\b", lambda m: names.get(m[0], m[0]), text)
 
 
-def validated_service_clock(root, directory):
-    """Resolve the work clock independently of an access endpoint's own pin.
-
-    Both compiler forms must retain their exact gate equation and I2C work-edge
-    qualification. An ambiguous alias or an added writer fails closed.
-    """
-    target = child(root, "i2c")
-    directory = Path(directory)
-    rtl = (directory / (root["module"] + ".sv")).read_text(encoding="utf-8")
-    names = [name for name in ("fabric_clock", "gate_io_clockOut") if re.search(r"\b" + name + r"\b", clean(rtl))]
-    require(len(names) == 1, "SERVICE_CLOCK_ALIAS")
+def scalar_clock_declaration(rtl, name):
     # A vector or signed wire is not the emitted scalar clock ABI. Inventory
     # every declaration of this name, including a second bare declaration;
     # checking just its continuous driver does not establish that shape.
@@ -356,17 +358,36 @@ def validated_service_clock(root, directory):
                 parts.append(declaration[1][start:index]); start = index + 1
         parts.append(declaration[1][start:])
         for part in parts:
-            if re.search(r"\b" + names[0] + r"\b", part.split("=", 1)[0]):
+            if re.search(r"\b" + name + r"\b", part.split("=", 1)[0]):
                 declarations.append(declaration[0])
     require(len(declarations) == 1 and re.fullmatch(
-        r"wire\s+" + names[0] + r"\s*(?:;|=\s*[^;]+;)", declarations[0]) is not None,
+        r"wire\s+" + name + r"\s*(?:;|=\s*[^;]+;)", declarations[0]) is not None,
         "SERVICE_CLOCK_DECLARATION")
+
+
+def validated_service_clock(root, directory):
+    """Resolve the work clock independently of an access endpoint's own pin.
+
+    Both compiler forms must retain their exact gate equation and I2C work-edge
+    qualification. An ambiguous alias or an added writer fails closed.
+    """
+    target = child(root, "i2c")
+    directory = Path(directory)
+    rtl = (directory / (root["module"] + ".sv")).read_text(encoding="utf-8")
+    names = [name for name in ("fabric_clock", "gate_io_clockOut") if re.search(r"\b" + name + r"\b", clean(rtl))]
+    require(len(names) == 1, "SERVICE_CLOCK_ALIAS")
+    scalar_clock_declaration(rtl, names[0])
     extracted = directory / "verification" / "assert" / (target["module"] + "_Verification_Assert.sv")
     require(names[0] == top_spelling(not extracted.is_file())("fabric_clock"), "SERVICE_CLOCK_FORM")
     connection = pins(rtl, target["rtl_path"].rsplit(".", 1)[1], target["module"])
     enable = connection.get("frameAcceptEnable")
     require(enable in ("gate_enabled", "1'h1"), "WORK_ENABLE_BINDING")
-    driver(rtl, names[0], "serviceClock&gate_enabled" if enable == "gate_enabled" else "serviceClock")
+    clock = names[0]
+    if root["module"] in ("FourPhaseSoc", "ClickSoc") and extracted.is_file():
+        scalar_clock_declaration(rtl, "workClock")
+        driver(rtl, clock, "workClock")
+        clock = "workClock"
+    driver(rtl, clock, "serviceClock&gate_enabled" if enable == "gate_enabled" else "serviceClock")
     return root["rtl_path"] + "." + names[0]
 
 
@@ -406,13 +427,13 @@ def epoch_assertion_policy(directory, model, rising, ready_reset, inline=False):
     assertion_wrapper_policy(directory, model, raw, "I2C_RESET_EPOCH_WRAP", "EPOCH_ASSERTION")
 
 
-def overflow_assertion_policy(directory, model, inline=False):
+def overflow_assertion_policy(directory, model, inline=False, coordinated=False):
     """Check the overflow assertion's actual clock, ancestors and both actions."""
     raw = assertion_source(directory, model, inline, "OVERFLOW_ASSERTION")
     if inline:
-        inline_assertion_wrapper_policy(model, raw, "CONTROL_HOST_MAILBOX_OVERFLOW", "OVERFLOW_ASSERTION")
+        inline_assertion_wrapper_policy(model, raw, "CONTROL_HOST_MAILBOX_OVERFLOW", "OVERFLOW_ASSERTION", coordinated)
     else:
-        assertion_wrapper_policy(directory, model, raw, "CONTROL_HOST_MAILBOX_OVERFLOW", "OVERFLOW_ASSERTION")
+        assertion_wrapper_policy(directory, model, raw, "CONTROL_HOST_MAILBOX_OVERFLOW", "OVERFLOW_ASSERTION", coordinated)
     blocks = [b for b in always_blocks(raw) if "CONTROL_HOST_MAILBOX_OVERFLOW" in b]
     require(len(blocks) == 1 and clean(raw).count("CONTROL_HOST_MAILBOX_OVERFLOW") == 1, "OVERFLOW_ASSERTION_COUNT")
     head = re.match(r"always\s*@\((.*?)\)\s*(.*)", blocks[0], re.S)
@@ -485,10 +506,12 @@ def _mailbox_policy(rtl, clock, source):
     return fields
 
 
-def native_bank_integration(directory, root, target, store, heads, tr, sr, sp, rp, tp, gate, pairs, inline=False):
+def native_bank_integration(directory, root, target, store, heads, tr, sr, sp, rp, tp, gate, pairs, inline=False, coordinated=False):
     """Close borrowed input, physical bank heads and selected D command routing."""
     top = root["rtl_path"]; t = target["rtl_path"]; st = store["rtl_path"]
-    spell = top_spelling(inline)
+    spell = top_spelling(inline, coordinated)
+    context_reset = "fabric_io_applicationCancel" if coordinated else "cpuResetActive"
+    halt = "fabric_haltPending&~fabric_io_applicationCancel" if coordinated else "fabric_haltPending"
     copy_ack = "_ca_child_frame_store_in_ack" if inline else "ca_child_frame_store_in_ack_layerCapture"
     qualify = lambda expression: re.sub(r"(?<![\w'])\b[A-Za-z_]\w*\b", lambda match: top + "." + match[0], expression)
     require(sp.get("reset") == "reset" and sp.get("slot") == "frameSlot" and
@@ -509,7 +532,7 @@ def native_bank_integration(directory, root, target, store, heads, tr, sr, sp, r
     require(re.fullmatch(expected_command + r"(?:_[0-9]+)?", command["module"]) and
             command["reset_domain"] == "root", "COMMAND_OWNER")
     cp = pins(sr, command["rtl_path"].rsplit(".", 1)[1], command["module"])
-    require(cp.get("clock") == spell("fabric_clock") and cp.get("reset") == "reset" and
+    require(cp.get("clock") == ("workClock" if coordinated and not inline else spell("fabric_clock")) and cp.get("reset") == "reset" and
             cp.get("in_valid") == "fabric_io_controlCommand_valid" and
             cp.get("in_ready") == "_ca_child_control_command_bridge_in_ready" and
             cp.get("in_bits_kind") == "fabric_io_controlCommand_bits_kind", "COMMAND_CONTROL_PINS")
@@ -518,10 +541,10 @@ def native_bank_integration(directory, root, target, store, heads, tr, sr, sp, r
         "fabric_hostHeadValid": "fabric_hostFrames_io_deq_valid&_GEN_12[fabric_hostFrames_first_bank]",
         "fabric__io_i2c_heads_0_ready_T": gate + "&fabric_hostFrames_io_deq_ready" if gate != "1'h1" else "fabric_hostFrames_io_deq_ready",
         "fabric_controlBusy": "fabric_controlOutstanding|_ca_child_program_stored_bridge_out_valid|fabric_mmioCommitPending|fabric_resetPending|fabric_haltPending|fabric_hostFrames_io_deq_valid",
-        "fabric_io_controlCommand_valid": "~fabric_controlOutstanding&(_ca_child_program_stored_bridge_out_valid|fabric_mmioCommitPending|fabric_resetPending|fabric_haltPending|fabric_hostHeadValid|fabric_mmioLaunch)",
+        "fabric_io_controlCommand_valid": "~fabric_controlOutstanding&(_ca_child_program_stored_bridge_out_valid|fabric_mmioCommitPending|fabric_resetPending|" + halt + "|fabric_hostHeadValid|fabric_mmioLaunch)",
         "fabric__27": "fabric_mmioCommitPending&~_ca_child_program_stored_bridge_out_valid",
         "_GEN_50": "fabric__27|~fabric_hostFrames_io_deq_valid",
-        "fabric_io_controlCommand_bits_kind": "fabric__27?3'h5:_ca_child_program_stored_bridge_out_valid?3'h1:fabric_mmioCommitPending?3'h5:fabric_resetPending?3'h2:fabric_haltPending?3'h3:{~fabric_hostHeadValid,2'h0}",
+        "fabric_io_controlCommand_bits_kind": "fabric__27?3'h5:_ca_child_program_stored_bridge_out_valid?3'h1:fabric_mmioCommitPending?3'h5:fabric_resetPending?3'h2:" + halt + "?3'h3:{~fabric_hostHeadValid,2'h0}",
     }
     for name, expression in expected.items():
         driver(sr, spell(name), spell(expression))
@@ -583,7 +606,7 @@ def native_bank_integration(directory, root, target, store, heads, tr, sr, sp, r
         require(cp.get("in_bits_frame_" + field) == spell(expression), "COMMAND_FRAME_PIN:" + field)
         pairs.append((command["rtl_path"] + ".in_bits_frame_" + field, "(" + qualify(expression) + ")"))
     for field, expression in {
-        "cpuResetActive": "~fabric__27&(cpuResetActive|fabric_hostFrames_io_deq_valid&(fabric_hostFrames_first_resetActive|_GEN_48[fabric_hostFrames_first_bank]!=_ca_child_i2c_host_currentEpoch))",
+        "cpuResetActive": "~fabric__27&(" + context_reset + "|fabric_hostFrames_io_deq_valid&(fabric_hostFrames_first_resetActive|_GEN_48[fabric_hostFrames_first_bank]!=_ca_child_i2c_host_currentEpoch))",
         "programBusy": "~fabric__27&(_ca_child_program_access_io_busy|fabric_hostFrames_io_deq_valid&fabric_hostFrames_first_programBusy)"}.items():
         require(cp.get("in_bits_" + field) == spell(expression), "COMMAND_CONTEXT_PIN:" + field)
         pairs.append((command["rtl_path"] + ".in_bits_" + field, "(" + qualify(expression) + ")"))
@@ -661,7 +684,19 @@ def validate_frame_integration(manifest, scopes, directory):
             rp.get("out_valid") == "_ca_child_frame_bridge_out_valid", "RECEIPT_CONTROL_PINS")
     observed = "localReset_layerCapture" in clean(tr)
     inline = not observed
-    spell = top_spelling(inline)
+    coordinated = root["module"] in ("FourPhaseSoc", "ClickSoc")
+    spell = top_spelling(inline, coordinated)
+    context_reset = "fabric_io_applicationCancel" if coordinated else "cpuResetActive"
+    gate_reset = "applicationCancel" if coordinated else "cpuResetActive"
+    if coordinated:
+        endpoints = [e for e in root.get("endpoints", []) if e.get("id") == "application_cutoff"]
+        require(len(endpoints) == 1 and type(endpoints[0].get("width")) is int and endpoints[0]["width"] == 1 and
+                endpoints[0].get("source") == f"~|{root['module']}>applicationCancel", "CUTOFF_ENDPOINT")
+        driver(sr, "applicationCancel", "resetBoundary_stopped|cpuResetActive")
+        pairs.append((top + ".applicationCancel", f"({top}.resetBoundary_stopped | {top}.cpuResetActive)"))
+        if not inline:
+            driver(sr, "fabric_io_applicationCancel", "applicationCancel")
+            pairs.append((top + ".fabric_io_applicationCancel", top + ".applicationCancel"))
     valid = "_host_frame_valid_T_layerCapture" if observed else "host_frame_valid_0"
     local_reset = "localReset_layerCapture" if observed else "localReset_release_1"
     ready_reset = "_resetEpoch_T_2_layerCapture" if observed else local_reset
@@ -699,8 +734,8 @@ def validate_frame_integration(manifest, scopes, directory):
         expected = "always@(posedgegate__enabled_T_3orposedgereset)beginif(reset)gate_enabled<=1'h1;elsegate_enabled<=(|{gate_needClock,gate_grace})|reset;end"
         blocks = [compact(b) for b in always_blocks(sr) if re.search(r"\bgate_enabled\s*<=", b)]
         require(blocks == [expected], "WORK_GATE_STATE")
-        demand = "cpuResetActive|~(fabric_parkedForSleep&~fabric_io_programSource_draining&~fabric_io_ramSource_draining&~fabric_scalingBusy&~fabric_tick&~fabric_telemetryWork&~fabric_boardWork)|(|{fabric_io_programSource_draining|fabric_io_ramSource_draining|fabric_scalingBusy|_ca_child_i2c_host_busy,fabric__gpioActivity_T})|fabric_memoryBusy|fabric_controlBusy|fabric_telemetryWork|fabric_boardWork|gate_second!=gate_io_consumedGray"
-        drain = "cpuResetActive|(|{~fabric_parkedForSleep|_ca_child_i2c_host_busy,fabric__gpioActivity_T})"
+        demand = gate_reset + "|~(fabric_parkedForSleep&~fabric_io_programSource_draining&~fabric_io_ramSource_draining&~fabric_scalingBusy&~fabric_tick&~fabric_telemetryWork&~fabric_boardWork)|(|{fabric_io_programSource_draining|fabric_io_ramSource_draining|fabric_scalingBusy|_ca_child_i2c_host_busy,fabric__gpioActivity_T})|fabric_memoryBusy|fabric_controlBusy|fabric_telemetryWork|fabric_boardWork|gate_second!=gate_io_consumedGray"
+        drain = gate_reset + "|(|{~fabric_parkedForSleep|_ca_child_i2c_host_busy,fabric__gpioActivity_T})"
         gate_values = {n: "1'h1" for n in ("gate_demandFirst", "gate_needClock", "gate_drainFirst", "gate_drain")}
         gate_values["gate_grace"] = "3'h7"
         state_policy(sr, gate_values, "posedge serviceClock or posedge reset",
@@ -709,10 +744,16 @@ def validate_frame_integration(manifest, scopes, directory):
                      ";gate_drain<=gate_drainFirst;if(gate_drain)gate_grace<=3'h7;else if(|gate_grace)gate_grace<=gate_grace-3'h1;end end"))
         state_policy(sr, {"gate_enabled": "1'h1"}, "posedge gate__enabled_T_3 or posedge reset",
                      "begin if(reset)gate_enabled<=1'h1;else gate_enabled<=(|{gate_needClock,gate_grace})|reset;end")
-        driver(sr, spell("fabric_clock"), "serviceClock&gate_enabled")
+        if coordinated and not inline:
+            scalar_clock_declaration(sr, "workClock")
+            driver(sr, "workClock", "serviceClock&gate_enabled")
+        driver(sr, spell("fabric_clock"), "workClock" if coordinated and not inline else "serviceClock&gate_enabled")
         gate_path = top + ".gate_enabled"
     else:
-        driver(sr, spell("fabric_clock"), "serviceClock")
+        if coordinated and not inline:
+            scalar_clock_declaration(sr, "workClock")
+            driver(sr, "workClock", "serviceClock")
+        driver(sr, spell("fabric_clock"), "workClock" if coordinated and not inline else "serviceClock")
         gate_path = "1'b1"
     pairs += [(t + ".frameAcceptEnable", gate_path), (top + ".fabric_clock", f"({top}.serviceClock & {gate_path})")]
     # Explicitly pin the old pre-edge admission context. Alias names are compiler
@@ -724,7 +765,7 @@ def validate_frame_integration(manifest, scopes, directory):
         fabric__loaderControlPending_T="fabric_io_controlCommand_bits_kind==3'h0",
         fabric__loaderControlPending_T_1="|fabric_io_controlCommand_bits_frame_bytes_0",
         fabric__loaderControlPending_T_3="fabric_io_controlCommand_bits_frame_bytes_0<8'h7",
-        fabric_hostFrames_io_enq_bits_resetActive="cpuResetActive|_ca_child_i2c_host_frame_bits_resetActive",
+        fabric_hostFrames_io_enq_bits_resetActive=context_reset + "|_ca_child_i2c_host_frame_bits_resetActive",
         fabric_hostFrames_io_enq_bits_programBusy="_ca_child_i2c_host_frame_bits_programBusy|_ca_child_program_access_io_busy|fabric_loaderPending|fabric_loaderControlPending|fabric__6&fabric__loaderControlPending_T&fabric__loaderControlPending_T_1&fabric__loaderControlPending_T_3",
         fabric_hostFrames_io_enq_ready="fabric_hostFrames_count!=2'h2",
         fabric_hostFrames_io_deq_valid="|fabric_hostFrames_count",
@@ -737,7 +778,7 @@ def validate_frame_integration(manifest, scopes, directory):
     qualify = lambda expression: re.sub(r"(?<![\w'])\b[A-Za-z_]\w*\b", lambda match: top + "." + match[0], expression)
     pairs += [(top + "." + name, "(" + qualify(value) + ")") for name, value in expected_top.items()]
     host_busy = "_ca_child_program_access_io_busy|fabric_loaderPending|fabric_loaderControlPending|fabric__6&fabric__loaderControlPending_T&fabric__loaderControlPending_T_1&fabric__loaderControlPending_T_3"
-    require(tp.get("host_frame_valid") == spell("fabric_io_i2c_frame_valid") and tp.get("host_resetActive") == "cpuResetActive" and
+    require(tp.get("host_frame_valid") == spell("fabric_io_i2c_frame_valid") and tp.get("host_resetActive") == spell(context_reset) and
             tp.get("host_programBusy") == spell(host_busy) and tp.get("host_busy") == "_ca_child_i2c_host_busy", "TOP_ADMISSION_PINS")
     state_policy(sr, {"fabric_loaderControlPending": "1'h0"}, spell("posedge fabric_clock or posedge reset"),
                  spell("begin if(reset)fabric_loaderControlPending<=1'h0;else fabric_loaderControlPending<=~fabric__5&(fabric__6?fabric__loaderControlPending_T&fabric__loaderControlPending_T_1&fabric__loaderControlPending_T_3:fabric_loaderControlPending);end"))
@@ -755,9 +796,9 @@ def validate_frame_integration(manifest, scopes, directory):
               (top + "._ca_child_i2c_host_currentEpoch", t + ".resetEpoch")]
     require(not re.search(r"\breg\s+(?:\[[^;]+\]\s*)?(?:fabric_hostResetDebt|fabric_hostFrames_(?:first|second)_frame_\w+)\b", clean(sr)), "OLD_CLOCKED_PAYLOAD_OR_DEBT")
     bank_records, command_record = native_bank_integration(directory, root, target, store, heads, tr, sr,
-                                                           sp, rp, tp, gate, pairs, inline)
+                                                           sp, rp, tp, gate, pairs, inline, coordinated)
     fields = _mailbox_policy(sr, spell("fabric_clock"), source)
-    overflow_assertion_policy(directory, root["module"], inline)
+    overflow_assertion_policy(directory, root["module"], inline, coordinated)
     cells = [cell for cell in publication["primitives"] if cell["id"] == "frame_payload"]
     require(len(cells) == 1 and cells[0]["model"] == "ChiselAsyncEventRegister_v1" and
             cells[0]["parameters"].get("WIDTH") == "337", "PUBLISHER_PAYLOAD")

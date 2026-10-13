@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
 """Closed digital policy for native RAM reservations; no physical signoff claim."""
 import re
+from check_application_reset import presentation_reset
 
 ARM_PATH = "RAM reservation phase before eligibility arm"
 RETIRE_PATH = "RAM selected publication and reservation phase feedback before retirement"
@@ -182,7 +183,7 @@ def ram_source_probe(source,manifest,scopes):
         ret={x["id"]:x["rtl_path"] for x in cs["ram_return"]["endpoints"]}
         access={x["id"]:x["rtl_path"] for x in cs["ram_access"]["endpoints"]}
         pairs += [(e["publication_"+f],ret["publication_"+f]) for f in ("request","data","acknowledge")]
-        pairs += [(e["application_reset"],top+".systemReset"),
+        pairs += [(e["application_reset"],presentation_reset(manifest)),
                   (e["word_drained"],"("+access["effects_drained"]+" && "+ret["presentation_settled"]+")")]
     anchor="task check; begin"
     if source.count(anchor)!=1:raise ValueError("RAM_SOURCE_PROBE_SHAPE")

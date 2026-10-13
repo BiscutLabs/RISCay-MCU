@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
 """Native retained RAM return bindings and narrowly proven constant coverage."""
 import json,re
+from check_application_reset import presentation_reset
 from pathlib import Path
 from check_ram_return_contract import validate_ram_return,validate_ram_return_rtl,require,expression
 from check_ram_capture_receipt import validate_ram_access
@@ -189,7 +190,7 @@ def ram_return_probe(source,manifest,scopes,directory,literal_obligations=None):
         a,o,c,r=endpoints(access),endpoints(owner),endpoints(completion),endpoints(cap)
         record['capture_receipt']=validate_ram_access(access,directory,scopes)
         pairs += record['capture_receipt']['bindings']
-        pairs += [(e['reset'],top+'.reset'),(e['application_reset'],top+'.systemReset'),
+        pairs += [(e['reset'],top+'.reset'),(e['application_reset'],presentation_reset(manifest)),
             (a['reset'],top+'.reset'),(access['rtl_path']+'.clock',validated_service_clock(root,directory)),
             (e['eligible'],o['eligible']),(e['idle'],a['return_idle']),
             (o['word_drained'],'('+a['effects_drained']+' && '+e['presentation_settled']+')'),

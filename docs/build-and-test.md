@@ -1,5 +1,78 @@
 # Build and test
 
+## Application reset boundary (R1)
+
+Run `QuiescingBridgeSpec`, `ResetBoundarySpec`, `ResetBoundarySocSpec`,
+`ProgramSourceSpec`, `RamSourceSpec`, `PublicationSourceSpec`,
+`RecoveryOwnershipSpec` and `ControlResetSpec` after reset-boundary changes.
+Then run affected SoC/sleep/firmware suites, both core/reference checks and the
+required native controller suites. Use one sbt process at a time. The final
+R1 digital qualification and preserved failures are under
+`build/async-reset-domain-migration/`; `qualification-evidence.json` binds the
+reviewed sources, completed cohort and all four strict exports.
+
+Strict `--soc` export validation now runs an elaborated connectivity audit with
+pinned sv2v/Yosys tools. Native state propagates raw-reset/native-status taint;
+only exact two-flop containment or specific proved held-bus captures may cross
+into periodic-clock state. SRAM inputs are checked too. Local finite proofs
+cover receiver capture/retention and enabled phase synchronizers, with exact
+producer aliases and native reset ownership. A separate finite proof checks all
+coordinator next-state equations and actual closure/rebase/withdrawal receipts.
+They do not prove physical CDC, source hold timing, related-clock timing or the
+full asynchronous system.
+Run `test_reset_crossings.py`, all Python controls and the actual emitted-RTL
+negative controls. See the [boundary contract](application-reset-boundary.md).
+
+The host restart during this work left an interrupted log and sbt status-cache
+corruption. Those files are preserved separately; an interrupted run is not
+passing evidence. Keep later complete runs and their source hashes distinct.
+
+The completed affected cohort has **509 distinct verification cases in 38
+suites**, plus four physical-emitter/core-policy tests. This combines the latest
+case results from `regression-r2.log`, `boundary-final-r1.log`,
+`core-controls-final-r1.log`, `projection-export-final-r1.log`,
+`capacity-final-r1.log` and `native-frame-final-r1.log`; it is not a claim that
+every repository suite was rerun. The final Python run passes **402 tests**.
+
+The broad controller run initially failed two immediate diagnostic event-view
+checks and timed out both full-capacity SRAM host processes. The event fix keeps
+the raw-isolated diagnostic view separate from retained POR data, and adds real
+MMIO/host reads after cancellation. Both unchanged SRAM binaries subsequently
+passed in 386/460 seconds. Only their host timeout changed from 300 to 900 seconds;
+the 400 ms simulated deadline, clocks, traffic and all assertions are unchanged.
+The final fresh ScalaTest capacity run passes both cases. Original failures,
+passive diagnostic replays and unchanged-binary hashes remain in the evidence.
+
+Independent review led to a complete coordinator equation proof and stronger
+actual receipt-join controls. Final frame checks reject all 3,666 actual source
+mutations across ordinary/inline exports. Program-role capture passes 106
+controls, including two reset-pin bypass faults, with independent committed-role
+identity and coordinated presentation cancellation. Publication binding controls
+pass four positives and reject twelve actual RTL mutants at exact fatal
+file/line/message/scope; a second reviewer independently replayed those binaries
+and the 33 classifier controls. Native publication and recovery capture campaigns
+retain their original functional assertions and actual-pin timing controls.
+
+The first final strict probes exposed two missing completion-input activity
+cases per variant. Their old stimulus drove native eligibility while leaving
+the new POR reservation mirror inactive. The correction adds all 64 combinations
+of the actual mirror/cancellation registers per owner, preserving the original
+generic sweep and every endpoint activity assertion. Four diagnostic baselines,
+48 actual RTL wiring faults and 21 classifier corruption controls pass. Earlier
+probe failures and incomplete diagnostic attempts remain preserved under
+`completion-mirror-r1/`; these focused controls do not replace the full strict
+run.
+
+All four final strict exports pass: portable `exports-r6/{bd,click}` and
+inline enabled-policy `physical-r3/{bd,click}`. Their complete original generic
+sweeps, vector coverage, sleep-clock checks and elaborated reset-crossing proofs
+pass with executed probe, binary, source, graph and log hashes bound in the final
+receipt. Independent review replayed all 52 completion diagnostic binaries and
+21 classifier controls and checked the four full probes' unchanged activity
+assertions. The digital result adds forty periodic-clocked bits per variant;
+it does not resolve R2's physical propagation mismatch, R3's frame-copy completion
+race or R4's current implementation-cost measurement.
+
 ## Current-controller physical export (17a2a)
 
 `physical/runMain riscay.physical.EmitPhysical new-output-directory` now emits

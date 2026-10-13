@@ -200,9 +200,9 @@ always @(posedge serviceClock) if(!reset && memoryBusy && (sleepEligible || slee
     val words=(0 until 512).map(i => (0x9e3779b9L * (i+1)) & 0xffffffffL)
     val crc=new CRC32
     words.foreach(w => (0 until 4).foreach(b => crc.update(((w >>> (8*b)) & 255).toInt)))
-    // The unchanged Click simulator image takes 189 s on the development host
-    // after native expansion. Allow 300 s of host runtime; retain the simulated
-    // deadline, full-capacity traffic and every assertion.
+    // After the reset-boundary expansion the unchanged BD simulator image took
+    // 386 s to pass on the development host. Allow 900 s of host runtime; retain
+    // the simulated deadline, full-capacity traffic and every assertion.
     val dir=ClockedSimulation.run(fixture(p),"sram-capacity",s"""
       read_words(0,0,0);
       if(snapshot[96+:32] !== 2048 || snapshot[128+:32] !== 1024) $$fatal(1,"SRAM_DISCOVERY");
@@ -261,7 +261,7 @@ always @(posedge serviceClock) if(!reset && memoryBusy && (sleepEligible || slee
       issue(1,32'h20000000,0,15); answer(expected,0);
       command(5);
       issue(1,32'h30000000,0,15); answer(32'h100007fc,0);
-    """,tasks,deadlineNs=400000000L,processTimeoutSeconds=300,serviceHalfPeriodNs=25)
+    """,tasks,deadlineNs=400000000L,processTimeoutSeconds=900,serviceHalfPeriodNs=25)
     val rtl=Files.readString(dir.resolve(if(click) "ClickFabricFixture.sv" else "FabricFixture.sv"))
     assert("gf180mcu_ocd_ip_sram__sram1024x8m8wm1\\s+fabric_".r.findAllIn(rtl).size == 3)
   }

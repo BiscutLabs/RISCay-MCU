@@ -9,6 +9,29 @@ emitted state does not establish physical timing or minimum synchronous state.
 
 ## Scope and complete reference totals
 
+R1 digital-containment update, 2026-10-12: the fresh portable exports contain **7,789 BD
+and 7,790 Click periodic-clocked bits**, a net **40-bit increase per variant**.
+The comparable baseline below remains the digitally verified 11a2a inventory.
+The independent audit bound its 88 recorded Scala sources to `eb8ad1c`, rebuilt
+its scope inventory, and compared it with `exports-r3`. Exact register-declaration
+and all 34 public-port comparisons extend that inventory to final `exports-r4`;
+the strict `exports-r6` copies retain identical production source hashes.
+Evidence, including `final-export-equivalence.json`, is under
+`build/async-reset-domain-migration/state-audit/`.
+
+The increase is nine coordinator bits, twenty publication-client mirror bits,
+ten actual bridge close/rebase acknowledgments, and one additional completion
+return observation bit. The 120 application-projection bits retain their width
+but now have POR ownership and synchronous cancellation. Existing bridge POR
+release chains retain 128 bits. Current disjoint emitted totals are top
+2,765/2,766, 64 crossings 3,838 each, and five wrappers 1,187 each; subtract the
+one SDA-edge bit for the periodic totals. This is containment overhead, not
+asynchronous state removal or area/power evidence. R4 must refresh mapped costs.
+
+Do not compare these portable counts directly with enabled-policy physical
+exports: their baseline has ten additional emitted bits from configuration and
+alias retention. Supported-profile inventory remains a separate obligation.
+
 The 2026-10-12 inventory covers the Groundlark low-power portable SoCs with ADC
 and source stopping enabled. Register declarations match both emitted designs.
 Counts are RTL bits, excluding async primitive model state, fixed SRAM arrays,

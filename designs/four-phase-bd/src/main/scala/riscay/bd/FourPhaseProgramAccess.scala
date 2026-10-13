@@ -34,7 +34,9 @@ class ProgramAccess(domain: ResetDomain) extends ClockedBridge(domain, 2) {
     FourPhase.connect(requests(i).in, native.byteRequest(i)); FourPhase.connect(native.byteResponse(i), replies(i).out)
     io.bytes(i) <> requests(i).out; replies(i).in <> io.completions(i)
   }
-  private val returned = synchronizedControl(!word.req) && !word.ack
+  // Both word phases are native now that ProgramReturn owns ACK. Observe the
+  // complete RTZ predicate; a raw ACK must not gate clocked admission/state.
+  private val returned = synchronizedControl(!word.req && !word.ack)
   private val bytesReturned = requests.map(b => synchronizedControl(!b.in.req) && !b.in.ack).reduce(_ && _)
   private val ownerReturned=synchronizedControl(returnIdle)
   withClockAndReset(clock, localReset) {

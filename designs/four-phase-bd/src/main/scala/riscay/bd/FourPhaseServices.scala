@@ -50,8 +50,12 @@ class FourPhaseServices(p: SocParameters, boardFactory: SocParameters => BoardPr
   val controlState = RegInit(ControlState.initial)
   val controlOutstanding = RegInit(false.B)
   val loaderControlPending = RegInit(false.B)
-  val haltPending = withReset(io.cpuReset.asAsyncReset) { RegInit(false.B) }
-  val mmioCurrent = withReset(io.cpuReset.asAsyncReset) { RegInit(false.B) }
+  private val applicationResets=scala.collection.mutable.ArrayBuffer.empty[() => Unit]
+  def applicationReg[T <: Data](init: T): T = {
+    val value=RegInit(init); applicationResets+=(() => value:=init); value
+  }
+  val haltPending = applicationReg(false.B)
+  val mmioCurrent = applicationReg(false.B)
   val mmioCommitPending = RegInit(false.B)
   val mmioCommit = Reg(new ControlCommand)
   val resetObserved = RegNext(io.cpuResetActive, true.B)
@@ -65,7 +69,6 @@ class FourPhaseServices(p: SocParameters, boardFactory: SocParameters => BoardPr
   val controlBusy = Wire(Bool())
   val memoryBusy = io.program.busy || io.ram.busy || loaderPending
   val rom = VecInit(MemoryMap.boot.map(_.U(32.W)))
-  def applicationReg[T <: Data](init: T): T = withReset(io.cpuReset.asAsyncReset) { RegInit(init) }
   val telemetryOutstanding = RegInit(false.B)
   val telemetryRecoveryBlocked = io.telemetrySource.recoveryDebt || io.telemetrySource.returnFence
   val telemetryCommitPending = applicationReg(false.B)
@@ -88,14 +91,14 @@ class FourPhaseServices(p: SocParameters, boardFactory: SocParameters => BoardPr
   // observation even when the native reset command is backpressured.
   val mode = RegInit(0.U(3.W))
   val programmed = controlState.programmed; val locked = controlState.locked
-  // Raw application reset only drives reset pins; persistent native state
-  // consumes the synchronized reset command before any further CPU command.
+  // Persistent native state consumes the synchronized reset command before
+  // any further CPU command. Raw reset is reserved for output isolation.
   val started = applicationReg(false.B)
   val lastError = controlState.lastError
   val imageLength = controlState.imageLength; val entry = controlState.entry
   val received = controlState.received; val imageId = controlState.imageId
   io.mode := mode; io.programmed := programmed; io.locked := locked
-  val canProgram = !locked && !started && !io.cpuResetActive && !io.program.busy && !loaderPending && !controlBusy
+  val canProgram = !locked && !started && !io.applicationCancel && !io.program.busy && !loaderPending && !controlBusy
 
   val housekeepingCommand = IO(Decoupled(new HousekeepingCommand))
   val housekeepingReply = IO(Flipped(Decoupled(new HousekeepingReply)))
@@ -230,13 +233,21 @@ class FourPhaseServices(p: SocParameters, boardFactory: SocParameters => BoardPr
     }
     boardWork := needed || outstanding || io.boardDraining
   }
-  io.gpioOut := ((output & ~board.mask.U(32.W)) | (boardResult.outputs & board.mask.U(32.W))) & gpioMask
-  io.gpioOe := ((enable & ~board.mask.U(32.W)) | (board.enables.U(32.W) & board.mask.U(32.W))) & gpioMask
+  val gpioOutputView = ((output & ~board.mask.U(32.W)) | (boardResult.outputs & board.mask.U(32.W))) & gpioMask
+  val gpioEnableView = ((enable & ~board.mask.U(32.W)) | (board.enables.U(32.W) & board.mask.U(32.W))) & gpioMask
+  val isolatedOutput=config.application.pins.filter(_.resetHigh).map(x => BigInt(1) << x.index).sum.U(32.W)
+  val isolatedEnable=config.application.pins.filter(_.output).map(x => BigInt(1) << x.index).sum.U(32.W)
+  io.gpioOut:=Mux(io.cpuReset,((isolatedOutput & ~board.mask.U(32.W)) | (boardResult.outputs & board.mask.U(32.W))) & gpioMask,gpioOutputView)
+  io.gpioOe:=Mux(io.cpuReset,((isolatedEnable & ~board.mask.U(32.W)) | (board.enables.U(32.W) & board.mask.U(32.W))) & gpioMask,gpioEnableView)
 
   val pendingState = applicationReg(0.U(6.W))
   // Captured sets are irrevocable and visible while awaiting native commit.
   // A CPU clear/replacement is serialized against in-flight native work.
-  val pending = pendingState | telemetryEvents | telemetryDispatchedEvents
+  val pendingView = pendingState | telemetryEvents | telemetryDispatchedEvents
+  // Diagnostic application observation follows immediate isolation. The actual
+  // MMIO/host ABI and WAIT use pendingView and synchronous cancellation; raw
+  // reset must never enter their data/enable cones.
+  val pending = Mux(io.cpuReset, 0.U(6.W), pendingView)
   val clear = WireDefault(0.U(32.W))
   val replaceDeadline = WireDefault(false.B)
   val hostWake = WireDefault(false.B)
@@ -294,7 +305,7 @@ class FourPhaseServices(p: SocParameters, boardFactory: SocParameters => BoardPr
   val fullWord = req.address(1,0) === 0.U && req.mask === 15.U
   val ramOperation = req.address >= MemoryMap.ram.U &&
     req.address < (MemoryMap.ram + config.workingRamBytes).U && (isRead || isWrite)
-  io.ramSource.reserve.valid := io.request.valid && ramOperation && !io.cpuResetActive &&
+  io.ramSource.reserve.valid := io.request.valid && ramOperation && !io.applicationCancel &&
     !resetRecovery && !io.ramSource.resetDebt
   io.ramSource.reserve.bits := isWrite
   val ramCommit = io.request.fire && ramOperation
@@ -319,12 +330,12 @@ class FourPhaseServices(p: SocParameters, boardFactory: SocParameters => BoardPr
     programmed && (req.address - MemoryMap.program.U) < imageLength
   val loaderOffer = controlOutstanding && io.controlReply.valid && io.controlReply.bits.programWrite
   io.programSource.reserve.valid := loaderOffer || (io.request.valid && programCpuOperation &&
-    !controlBusy && !io.cpuResetActive && !resetRecovery && !io.programSource.resetDebt)
+    !controlBusy && !io.applicationCancel && !resetRecovery && !io.programSource.resetDebt)
   io.programSource.reserve.bits := loaderOffer
   val programCpuCommit = io.request.fire && programCpuOperation
   val programLoaderCommit = io.controlReply.fire && io.controlReply.bits.programWrite
   val programCancel = !io.programSource.grant.bits &&
-    (io.programSource.resetDebt || io.cpuResetActive || resetRecovery || controlBusy ||
+    (io.programSource.resetDebt || io.applicationCancel || resetRecovery || controlBusy ||
       !io.request.valid || !programCpuOperation)
   io.programSource.grant.ready := io.programSource.decision.ready &&
     (programCpuCommit || programLoaderCommit || programCancel)
@@ -346,7 +357,7 @@ class FourPhaseServices(p: SocParameters, boardFactory: SocParameters => BoardPr
   }
   val bootWait = isRead && fullWord && req.address === MemoryMap.mmio.U && !started
   val waitingRead = isRead && fullWord && req.address === (MemoryMap.mmio + 16).U
-  val eventWait = waitingRead && (pending & (wakeMask | "h30".U)) === 0.U
+  val eventWait = waitingRead && (pendingView & (wakeMask | "h30".U)) === 0.U
   parked := io.request.valid && eventWait
   val parkedForSleep = p.lowPower.nonEmpty.B && io.request.valid &&
     (bootWait || (eventWait && sleepRemaining =/= 0.U)) && io.admissionGrant.valid && !adcBusy && !memoryBusy && !controlBusy
@@ -354,7 +365,7 @@ class FourPhaseServices(p: SocParameters, boardFactory: SocParameters => BoardPr
   val nativeMmio = req.address >= MemoryMap.mmio.U && req.address < (MemoryMap.mmio + 76).U &&
     req.operation =/= Operation.Halt.U
   val mmioComplete = io.controlReply.fire && io.controlReply.bits.kind === ControlKind.Mmio.U && mmioCurrent
-  val cpuAvailable = completionAvailable && !io.cpuResetActive && !resetRecovery && io.clockRunning && io.admissionGrant.valid && !bootWait && !eventWait &&
+  val cpuAvailable = completionAvailable && !io.applicationCancel && !resetRecovery && io.clockRunning && io.admissionGrant.valid && !bootWait && !eventWait &&
     !memoryBusy && !loaderWrite && !telemetryBarrier && !housekeepingBarrierBusy &&
     !telemetryRecoveryBlocked && !housekeepingRecoveryBlocked
   // Reserve from a validated, held Control reply. An unused parked WAIT owns
@@ -378,14 +389,14 @@ class FourPhaseServices(p: SocParameters, boardFactory: SocParameters => BoardPr
     // Recovery ignores its own debt/fence, but first waits for every older
     // accepted effect and crossing. Queued observations do not enter quiet.
     source.reserve.valid:=Mux(source.recoveryDebt,
-      source.quiet && !source.occupied && !io.cpuResetActive,
+      source.quiet && !source.occupied && !io.applicationCancel,
       currentMmio && required && cpuAvailable)
     source.reserve.bits.recovery:=source.recoveryDebt
     source.reserve.bits.tag:=Mux(source.recoveryDebt,false.B,req.data(0))
     val cpuCommitted=io.request.fire && nativeMmio && required
     val committed=cpuCommitted || recoveryCommit
-    val cancelCpu=source.returnFence || source.recoveryDebt || io.cpuResetActive || !currentMmio || !required
-    val cancelRecovery= !source.eligible || io.cpuResetActive || !source.recoveryDebt
+    val cancelCpu=source.returnFence || source.recoveryDebt || io.applicationCancel || !currentMmio || !required
+    val cancelRecovery= !source.eligible || io.applicationCancel || !source.recoveryDebt
     source.grant.ready:=source.decision.ready &&
       (committed || Mux(source.grant.bits.recovery,cancelRecovery,cancelCpu))
     source.decision.valid:=source.grant.fire; source.decision.bits:=committed
@@ -470,13 +481,13 @@ class FourPhaseServices(p: SocParameters, boardFactory: SocParameters => BoardPr
   io.hostSelected := io.i2c.selected; io.hostRejected := io.i2c.rejected
   val selector = controlState.selector
   private val hostFrames = Module(new ControlMailbox)
-  io.i2c.resetActive := io.cpuResetActive
+  io.i2c.resetActive := io.applicationCancel
   io.i2c.programBusy := io.program.busy || loaderPending || loaderControlPending ||
     (io.controlCommand.fire && io.controlCommand.bits.kind === ControlKind.Host.U &&
       io.controlCommand.bits.frame.bytes(0) >= 1.U && io.controlCommand.bits.frame.bytes(0) <= 6.U)
   io.hostFrameAccepted := hostFrames.io.enq.fire
   hostFrames.io.enq.valid := io.i2c.frame.valid; hostFrames.io.enq.bits.bank := io.i2c.frameSlot
-  hostFrames.io.enq.bits.resetActive := io.cpuResetActive || io.i2c.frame.bits.resetActive
+  hostFrames.io.enq.bits.resetActive := io.applicationCancel || io.i2c.frame.bits.resetActive
   hostFrames.io.enq.bits.programBusy := io.i2c.frame.bits.programBusy || io.program.busy || loaderPending || loaderControlPending ||
     (io.controlCommand.fire && io.controlCommand.bits.kind === ControlKind.Host.U &&
       io.controlCommand.bits.frame.bytes(0) >= 1.U && io.controlCommand.bits.frame.bytes(0) <= 6.U)
@@ -491,27 +502,27 @@ class FourPhaseServices(p: SocParameters, boardFactory: SocParameters => BoardPr
   }
   // Reserve a bounded CPU admission turn before starting more background work.
   // A stalled Control computation still permits independent timer maintenance.
-  val cpuTimingTurn=io.request.valid && nativeMmio && !bootWait && !eventWait && !io.cpuResetActive &&
+  val cpuTimingTurn=io.request.valid && nativeMmio && !bootWait && !eventWait && !io.applicationCancel &&
     (!controlOutstanding || (mmioCurrent && io.controlReply.valid))
   // A queued Host retains priority while its native head receipt settles.
   val mmioLaunch = io.request.valid && nativeMmio && cpuAvailable && !hostFrames.io.deq.valid
   controlBusy := controlOutstanding || io.programSource.stored.valid || mmioCommitPending || resetPending || haltPending || hostFrames.io.deq.valid
   io.controlCommand.valid := !controlOutstanding &&
-    (io.programSource.stored.valid || mmioCommitPending || resetPending || haltPending || hostHeadValid || mmioLaunch)
+    (io.programSource.stored.valid || mmioCommitPending || resetPending || (haltPending && !io.applicationCancel) || hostHeadValid || mmioLaunch)
   io.controlCommand.bits := 0.U.asTypeOf(new ControlCommand)
   io.controlCommand.bits.kind := Mux(io.programSource.stored.valid, ControlKind.Stored.U,
     Mux(mmioCommitPending, ControlKind.MmioCommit.U, Mux(resetPending, ControlKind.ResetApplication.U,
-      Mux(haltPending, ControlKind.Halt.U, Mux(hostHeadValid, ControlKind.Host.U, ControlKind.Mmio.U)))))
+      Mux(haltPending && !io.applicationCancel, ControlKind.Halt.U, Mux(hostHeadValid, ControlKind.Host.U, ControlKind.Mmio.U)))))
   io.controlCommand.bits.frame := Mux(hostFrames.io.deq.valid, hostHead.bits.ingress.frame, 0.U.asTypeOf(new HostFrame))
-  io.controlCommand.bits.cpuResetActive := io.cpuResetActive ||
+  io.controlCommand.bits.cpuResetActive := io.applicationCancel ||
     (hostFrames.io.deq.valid && (hostFrames.io.deq.bits.resetActive || hostHead.bits.resetEpoch =/= io.i2c.currentEpoch))
   io.controlCommand.bits.programBusy := io.program.busy ||
     (hostFrames.io.deq.valid && hostFrames.io.deq.bits.programBusy)
   io.controlCommand.bits.memory := req
   io.controlCommand.bits.applicationWritable := application.keys.toSeq.map(i => appIndex === i.U).foldLeft(false.B)(_ || _)
   io.controlCommand.bits.peripheralData := MuxLookup(req.address(6,0), 0.U(32.W))(Seq(
-    4.U -> now, 8.U -> deadline, 12.U -> pending, 16.U -> pending,
-    20.U -> (gpio & gpioMask), 24.U -> io.gpioOut, 28.U -> io.gpioOe,
+    4.U -> now, 8.U -> deadline, 12.U -> pendingView, 16.U -> pendingView,
+    20.U -> (gpio & gpioMask), 24.U -> gpioOutputView, 28.U -> gpioEnableView,
     52.U -> applicationWord(appIndex), 56.U -> wakeMask, 60.U -> sleepRemaining,
     64.U -> samplePeriod, 68.U -> Cat(0.U(28.W), periodPending, sleepRemaining =/= 0.U, !io.clockRunning, p.lowPower.nonEmpty.B),
     72.U -> io.sleepEntries))
@@ -541,7 +552,7 @@ class FourPhaseServices(p: SocParameters, boardFactory: SocParameters => BoardPr
   // A reply belongs to the single outstanding command, including reset recovery.
   io.controlReply.ready := controlOutstanding &&
     (io.controlReply.bits.kind =/= ControlKind.Mmio.U || !mmioCurrent ||
-      (!telemetryBarrier && !housekeepingBarrierBusy && completionAvailable && !io.cpuResetActive &&
+      (!telemetryBarrier && !housekeepingBarrierBusy && completionAvailable && !io.applicationCancel &&
         !resetRecovery && io.clockRunning && io.admissionGrant.valid && !bootWait && !eventWait &&
         !memoryBusy && !telemetryRecoveryBlocked && !housekeepingRecoveryBlocked && publicationAdmission)) &&
     (!io.controlReply.bits.periodUpdate || !housekeepingOrderedPending) &&
@@ -549,9 +560,9 @@ class FourPhaseServices(p: SocParameters, boardFactory: SocParameters => BoardPr
   when(io.controlReply.fire) {
     val result = io.controlReply.bits
     controlOutstanding := false.B; loaderControlPending := false.B; controlState := result.state
-    mode := Mux((io.cpuResetActive || resetRecovery) && (result.state.mode === 3.U || result.state.mode === 4.U),
+    mode := Mux((io.applicationCancel || resetRecovery) && (result.state.mode === 3.U || result.state.mode === 4.U),
       Mux(result.state.programmed, 2.U, 0.U), result.state.mode)
-    started := result.state.started && !io.cpuResetActive && !resetRecovery
+    started := result.state.started && !io.applicationCancel && !resetRecovery
     when(result.kind === ControlKind.Mmio.U) { mmioCurrent := false.B }
     when(result.kind === ControlKind.ResetApplication.U && !resetPending) { resetRecovery := false.B }
     when(result.periodUpdate) { periodUpdate.valid := true.B; periodUpdate.bits := result.period }
@@ -594,16 +605,16 @@ class FourPhaseServices(p: SocParameters, boardFactory: SocParameters => BoardPr
   val housekeepingRecoveryReady=io.housekeepingSource.grant.valid &&
     io.housekeepingSource.grant.bits.recovery && io.housekeepingSource.ownerRecovery &&
     io.housekeepingSource.eligible && io.housekeepingSource.recoveryDebt &&
-    io.housekeepingSource.decision.ready && !io.cpuResetActive &&
+    io.housekeepingSource.decision.ready && !io.applicationCancel &&
     !housekeepingOrderedPending && !io.housekeepingDraining
   housekeepingCommand.valid := !housekeepingOutstanding && !housekeepingBarrier &&
     (housekeepingOrderedPending || housekeepingRecoveryReady ||
-      (!io.housekeepingSource.occupied && (io.cpuResetActive || !housekeepingRecoveryBlocked) &&
+      (!io.housekeepingSource.occupied && (io.applicationCancel || !housekeepingRecoveryBlocked) &&
         (housekeepingQueuedWork || rawTimeValid || queueNext.discard || housekeepingRetry) &&
         !cpuTimingTurn && !mmioLaunch && !(mmioCurrent && io.controlReply.valid) && !io.request.fire))
   housekeepingCommand.bits := queueNext
   housekeepingCommand.bits.recovery := housekeepingRecoveryReady
-  housekeepingCommand.bits.resetApplication := housekeepingRecoveryReady || io.cpuResetActive
+  housekeepingCommand.bits.resetApplication := housekeepingRecoveryReady || io.applicationCancel
   housekeepingCommand.bits.started := started; housekeepingCommand.bits.parked := parked
   housekeepingCommand.bits.adcBusy := io.adc.busy || adcLaunchPending
   when(housekeepingOrderedPending) { housekeepingCommand.bits := housekeepingOrdered }
@@ -630,7 +641,7 @@ class FourPhaseServices(p: SocParameters, boardFactory: SocParameters => BoardPr
     housekeepingOrdered.periodUpdate:=periodUpdate.valid; housekeepingOrdered.period:=periodUpdate.bits
     housekeepingOrdered.cpuCompletion:=housekeepingAction.cpuCompletion
     housekeepingOrdered.recovery:=false.B
-    housekeepingOrdered.resetApplication:=io.cpuResetActive
+    housekeepingOrdered.resetApplication:=io.applicationCancel
     housekeepingOrdered.started:=started; housekeepingOrdered.parked:=parked
     housekeepingOrdered.adcBusy:=io.adc.busy || adcLaunchPending
     housekeepingOrderedPending:=true.B; housekeepingQueued:=0.U.asTypeOf(new HousekeepingCommand)
@@ -647,7 +658,7 @@ class FourPhaseServices(p: SocParameters, boardFactory: SocParameters => BoardPr
     }
     when(housekeepingReply.bits.cpuCompletion && !housekeepingReply.bits.recovery &&
         !io.housekeepingSource.ownerRecovery && io.housekeepingSource.eligible &&
-        !housekeepingRecoveryBlocked && !io.cpuResetActive) {
+        !housekeepingRecoveryBlocked && !io.applicationCancel) {
       io.completionHousekeeping.valid:=true.B
       assert(io.completionHousekeeping.ready,"COMPLETION_HOUSEKEEPING_OVERFLOW")
     }
@@ -691,7 +702,7 @@ class FourPhaseServices(p: SocParameters, boardFactory: SocParameters => BoardPr
     io.telemetrySource.grant.bits.recovery && io.telemetrySource.ownerRecovery &&
     io.telemetrySource.eligible && io.telemetrySource.recoveryDebt &&
     io.telemetrySource.decision.ready && !telemetryCommitPending && !io.telemetryDraining
-  telemetryCommand.valid := !telemetryOutstanding && !io.cpuResetActive &&
+  telemetryCommand.valid := !telemetryOutstanding && !io.applicationCancel &&
     (telemetryCommitPending || telemetryRecoveryReady ||
       (!io.telemetrySource.occupied && !telemetryRecoveryBlocked &&
         observationPending && !cpuTimingTurn && !mmioCurrent && !mmioLaunch && !io.request.fire))
@@ -729,7 +740,7 @@ class FourPhaseServices(p: SocParameters, boardFactory: SocParameters => BoardPr
     val recovered=result.recovery && io.telemetrySource.ownerRecovery && io.telemetrySource.eligible
     // Fresh recovery may project before debt retirement; this preserves events
     // carried by that publication. A revoked recovery can only update samples.
-    when(!io.cpuResetActive && (recovered || (!result.recovery && !telemetryRecoveryBlocked))) {
+    when(!io.applicationCancel && (recovered || (!result.recovery && !telemetryRecoveryBlocked))) {
       output := result.state.output; enable := result.state.enable; pendingState := result.state.pending
       for((word,index) <- telemetryWords.zipWithIndex) { application(word) := result.state.application.get(index) }
       when(result.kind === TelemetryKind.Commit.U && !result.recovery &&
@@ -764,7 +775,7 @@ class FourPhaseServices(p: SocParameters, boardFactory: SocParameters => BoardPr
       val features = (if(p.lowPower.nonEmpty) 3 | (if(p.adc.nonEmpty) 4 else 0) |
         (if(p.lowPower.exists(_.stopServiceClock)) 8 else 0) else 0).U
       val status = Cat(0.U(28.W), periodPending, sleepRemaining =/= 0.U, !io.clockRunning, p.lowPower.nonEmpty.B)
-      val fields = Seq(features, now, samplePeriod, wakeMask, sleepRemaining, pending, io.sleepEntries, status)
+      val fields = Seq(features, now, samplePeriod, wakeMask, sleepRemaining, pendingView, io.sleepEntries, status)
       fields.zipWithIndex.foreach { case (value, i) => bank(i) := value }
     }
     when(space === 3.U && instance === 1.U) {
@@ -808,4 +819,13 @@ class FourPhaseServices(p: SocParameters, boardFactory: SocParameters => BoardPr
   val readIndex = selector(7,0) +& io.i2c.wordIndex
   io.i2c.readWord := Mux(io.i2c.wordIndex === 8.U, Cat(0.U(24.W), snapshotSupported),
     MuxLookup(readIndex, "hffffffff".U(32.W))(bankWords.zipWithIndex.map { case(word,i) => word.U -> snapshot(i) }))
+  // Cancellation wins over coincident stale replies and staging assignments.
+  when(io.applicationCancel) { applicationResets.foreach(_()) }
+  io.presentationClosed:=RegNext(io.applicationCancel,false.B)
+  when(io.applicationCancel) {
+    assert(!io.request.fire && !io.admissionGrant.fire,"APPLICATION_CAPTURE_AFTER_CUTOFF")
+    assert(!(io.controlCommand.fire && io.controlCommand.bits.kind === ControlKind.Halt.U),"APPLICATION_HALT_AFTER_CUTOFF")
+    assert(!telemetryCommand.fire,"APPLICATION_TELEMETRY_AFTER_CUTOFF")
+  }
+
 }

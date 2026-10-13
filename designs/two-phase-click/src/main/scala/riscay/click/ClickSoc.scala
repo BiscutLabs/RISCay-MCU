@@ -19,15 +19,19 @@ class ClickSoc(p: SocParameters, board: SocParameters => BoardProfile = p => new
     "custom execute timing exceeds application reset-settlement budget")
   val core = asyncChild("core")(d => new ClickCore(d, timing=timing, executeData=executeData))
   val transactions = asyncChild("transactions")(d => new ClickFabric(p.config, timing, d))
-  val requestBridge = asyncChild("request_bridge")(d => new ClickToDecoupled(new MemoryRequest, d))
-  Seq(core, transactions, requestBridge).foreach(_.reset := systemReset.asAsyncReset)
+  val requestBridge = asyncChild("request_bridge")(d => new ClickQuiescingToDecoupled(new MemoryRequest,d))
+  transactions.reset:=nativeApplicationReset.asAsyncReset
+  core.reset:=nativeCoreReset.asAsyncReset
+  closeBridge(requestBridge)
+  requestClosed:=requestBridge.closed; requestRebased:=requestBridge.rebased; requestRebaseIdle:= !requestBridge.rebased
   requestBridge.clock := serviceClock
-  core.start := !systemReset
+  core.start := !resetBoundary.io.coreReset
   TwoPhase.connect(transactions.request, core.request); TwoPhase.connect(core.response, transactions.response)
   TwoPhase.connect(requestBridge.in, transactions.serviceRequest)
   TwoPhase.connect(transactions.serviceResponse, completion.response)
   fabric.io.request <> requestBridge.out
-  trace := core.trace; traceEvent := core.traceEvent
+  trace := core.trace; trace.valid := core.trace.valid && !applicationIsolation
+  traceEvent := core.traceEvent && !applicationIsolation
 }
 object EmitClickSoc extends App {
   require(args.length == 1, "Usage: EmitClickSoc output-directory")

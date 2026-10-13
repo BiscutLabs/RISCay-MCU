@@ -29,7 +29,7 @@ verification. Complete the already-started supported-export prerequisite (17a2a)
 then resolve the following gates before further clocked-state removal. Earlier
 digital passes remain evidence of their tested scope, not RDC or physical proof.
 
-- [ ] **R1. Close reset-domain crossings in both implementations.** Inventory
+- [x] **R1. Close reset-domain crossings — digitally verified.** Inventory
   raw-reset state and native levels reaching POR-owned clocked acceptance,
   reservation, commit/cancel and payload state. Include request bridges,
   application projections, return fences, recovery debt and retained role levels.
@@ -38,6 +38,17 @@ digital passes remain evidence of their tested scope, not RDC or physical proof.
   drops phase or payload immediately. Preserve accepted effects and prevent old
   requests from acquiring new-lifetime credit. Add structural rejection controls
   and adversarial reset/capture tests; simulation cannot prove metastability safe.
+  The [reset-boundary contract](application-reset-boundary.md) retains
+  native producers until actual clocked closure acknowledgments, then rebases
+  POR-owned bridge history while payload stays held. Publication clients use
+  clocked reservation/recovery mirrors. A graph audit additionally found and
+  removed BD's raw word-ACK input to RAM/program admission. The affected cohort
+  passes 509 verification cases in 38 suites, four physical-emitter/core-policy
+  tests, 402 Python tests and all four portable/inline strict exports. Fresh
+  review fixes and exact source/probe/binary/log receipts are preserved with
+  original failures under `build/async-reset-domain-migration/`. The change adds
+  forty periodic-clocked bits per variant. This closes digital containment only;
+  physical CDC, related-clock timing and reset propagation remain unqualified.
 - [ ] **R2. Reconcile reset release with measured propagation.** The current
   eight-edge hold and 250 ns settlement assumption do not cover the measured
   long-guard reset paths (up to approximately 1.55 us before wiring). Derive the
@@ -45,6 +56,10 @@ digital passes remain evidence of their tested scope, not RDC or physical proof.
   bounded hold mechanism. A guessed larger counter is not physical closure.
   Retain the original short-pulse/accepted-effect tests and add boundary cases;
   never stretch their stimulus to conceal lost recovery.
+  Bound both assertion hold and post-deassertion settling before receivers/core
+  reopen. Bridge acknowledgment withdrawal proves an edge, not native settling.
+  Keep the raw pulse qualifier and supported digital timing-policy cap distinct
+  from physical propagation assumptions. Count the added reset-control state.
 - [ ] **R3. Remove the unacknowledged frame-copy timing race.** Original receipt
   acceptance can precede physical bank copy completion. Review a native join of
   original receipt and bank-copy completion, with safe route/payload retention
@@ -52,6 +67,10 @@ digital passes remain evidence of their tested scope, not RDC or physical proof.
   old no-wait-for-copy contract if required. Keep exactly two logical credits,
   original-offer overflow observability and immutable reset/busy admission
   context; delaying ACK must not conceal a third offer or resample its context.
+  Retain the selected bank tag until copy completion, including a Click capture
+  later than original admission/tail advance; an ACK join alone is insufficient
+  if the copy can observe the next slot. Cover both copy-first and receipt-first
+  orders and complete return before reuse.
   Exercise copies slower than two service periods, stalls, identical payloads,
   reset and all bank wraps with independent offer/capture/dispatch ordinals.
 - [ ] **R4. Refresh cost and wake evidence before further migration.** Re-run

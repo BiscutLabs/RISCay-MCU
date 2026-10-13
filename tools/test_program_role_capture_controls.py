@@ -13,12 +13,14 @@ def fixture_nodes(variant='bd'):
     top = 'Root'
     owner = dict(module='ProgramSource', rtl_path=top + '.source', children=[],
                  endpoints=[dict(id=n, rtl_path=top + '.source.' + n) for n in
-                     ('owner_loader', 'reserved', 'eligible', 'cpu_presentation_permit')],
+                     ('owner_loader', 'reserved', 'eligible', 'cpu_presentation_permit',
+                      'reset', 'application_reset', 'eligibility_reset')],
                  primitives=[dict(id=n, rtl_path=top + '.source.' + n,
                                   parameters={'WIDTH': '1', 'DELAY_FS': '1000000'})
                              for n in ('owned', 'armed_phase', 'eligibility')])
     returned = dict(module='ProgramReturn', rtl_path=top + '.returned', children=[],
-                    endpoints=[dict(id=n, rtl_path=top + '.returned.' + n) for n in ('eligible', 'idle')],
+                    endpoints=[dict(id=n, rtl_path=top + '.returned.' + n)
+                               for n in ('eligible', 'idle', 'reset', 'application_reset')],
                     primitives=[])
     for n in set(CAPTURES[variant]) | set(CAPTURES[variant].values()):
         returned['primitives'].append(dict(id=n, rtl_path=top + '.returned.' + n,
@@ -40,7 +42,7 @@ endmodule
 class RoleCapturePolicyTests(unittest.TestCase):
     def test_original_oracle_and_time_units_preserved(self):
         owner, returned = fixture_nodes()
-        result = instrument(BENCH, owner, returned, 'bd', 'roles')
+        result = instrument(BENCH, owner, returned, 'bd', 'roles', 'Root.nativeApplicationReset')
         original = result[:result.index('\nmodule ProgramRoleCaptureChecks;')]
         original = original.replace('ProgramRoleCaptureChecks program_role_checks();\n', '')
         original = original.replace('program_role_checks.finish_checks();\n', '')
@@ -51,12 +53,13 @@ class RoleCapturePolicyTests(unittest.TestCase):
 
     def test_monitor_tracks_driver_role_at_actual_acceptance(self):
         owner, returned = fixture_nodes('click')
-        result = role_monitors(owner, returned, 'click')
+        result = role_monitors(owner, returned, 'click', 'Root.nativeApplicationReset')
         self.assertIn('posedge Testbench.observedWorkClock', result)
         self.assertIn('!Testbench.reset && Testbench.wordAccepted', result)
         self.assertIn('role_loader=Testbench.loaderWordPending;', result)
         self.assertNotRegex(result, r'role_loader=Testbench\.dut\.')
-        self.assertIn('posedge Testbench.systemReset', result)
+        self.assertIn('posedge role_presentation_reset', result)
+        self.assertNotIn('Testbench.systemReset', result)
         self.assertIn('role_cancelled=1;', result)
         self.assertIn('Testbench.dut.source.armed_phase.q[0] === Testbench.dut.source.reserved', result)
         self.assertIn('Testbench.dut.source.owner_loader !== role_loader', result)
@@ -64,7 +67,7 @@ class RoleCapturePolicyTests(unittest.TestCase):
     def test_each_register_uses_its_own_reset_and_checks_actual_q(self):
         for variant in CAPTURES:
             owner, returned = fixture_nodes(variant)
-            text = role_monitors(owner, returned, variant)
+            text = role_monitors(owner, returned, variant, 'Root.nativeApplicationReset')
             for name in CAPTURES[variant]:
                 path = 'Testbench.dut.returned.' + name
                 with self.subTest(variant=variant, register=name):
@@ -78,12 +81,24 @@ class RoleCapturePolicyTests(unittest.TestCase):
 
     def test_permission_expectation_is_sampled_before_delta_and_own_reset_invalidates_it(self):
         owner, returned = fixture_nodes()
-        text = role_monitors(owner, returned, 'bd')
+        text = role_monitors(owner, returned, 'bd', 'Root.nativeApplicationReset')
         section = text[text.rindex('always @(posedge Testbench.dut.returned.permission.trigger) if'):]
         self.assertLess(section.index('expected_permission='), section.index('#1;'))
         self.assertLess(section.index('permission_reset_epoch=q_permission_reset;'), section.index('#1;'))
         self.assertIn("Testbench.dut.returned.permission.reset === 1'b0 && q_permission_reset==permission_reset_epoch", section)
         self.assertIn('captured_permission !== expected_permission', section)
+
+    def test_expected_cancellation_uses_bound_inputs_not_mutable_reset_pin(self):
+        owner, returned = fixture_nodes()
+        text = role_monitors(owner, returned, 'bd', 'Root.nativeApplicationReset')
+        expected = '(Testbench.dut.source.reset | Testbench.dut.source.application_reset)'
+        self.assertIn('wire role_presentation_reset=' + expected + ';', text)
+        self.assertIn('Testbench.dut.source.eligibility.reset !== ' + expected, text)
+        self.assertIn('Testbench.dut.source.application_reset !== Testbench.dut.nativeApplicationReset', text)
+        self.assertIn('Testbench.dut.returned.application_reset !== Testbench.dut.nativeApplicationReset', text)
+        self.assertIn('role_cancelled=role_presentation_reset;', text)
+        self.assertNotIn('role_cancelled=Testbench.dut.', text)
+        self.assertIn('$fatal(1,"' + PREFIX + '_RESET_BINDING");', text)
 
     def test_skew_changes_only_variable_cells_and_preserves_guard_overrides(self):
         owner, returned = fixture_nodes()
@@ -122,7 +137,7 @@ class RoleCapturePolicyTests(unittest.TestCase):
 
     def test_actual_fatal_line_and_appended_module_scope_are_bound(self):
         owner, returned = fixture_nodes()
-        test = instrument(BENCH, owner, returned, 'bd', 'roles')
+        test = instrument(BENCH, owner, returned, 'bd', 'roles', 'Root.nativeApplicationReset')
         sites = assertion_sites(test, [PREFIX + '_SETUP:payload'])
         self.assertEqual(len(sites), 1)
         site = sites[0]
@@ -173,6 +188,22 @@ endmodule
         changed, expected = mutation(rtl, node, 'permission', 'legal-skew')
         self.assertIsNone(expected)
         self.assertIn('assign #100000 role_test_clock = fire;', changed)
+
+    def test_eligibility_reset_fault_mutates_only_the_actual_reset_pin(self):
+        node = dict(module='ProgramSource', primitives=[dict(id='eligibility',
+            rtl_path='Root.source.capture', parameters={'WIDTH': '1'})])
+        rtl = '''module ProgramSource(input reset, input presentationReset, input fire, output value);
+ChiselAsyncEventRegister_v1 capture (
+  .reset(presentationReset),
+  .trigger(fire),
+  .d(1'b1),
+  .q(value)
+);
+endmodule
+'''
+        changed, expected = mutation(rtl, node, 'eligibility', 'reset-binding')
+        self.assertEqual(expected, PREFIX + '_RESET_BINDING')
+        self.assertEqual(changed, rtl.replace('.reset(presentationReset)', '.reset(reset)'))
 
 
 if __name__ == '__main__':

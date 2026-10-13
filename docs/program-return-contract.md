@@ -27,11 +27,19 @@ application response, even outside application reset and at either Click phase.
 POR owns accepted SRAM effects, retained word data, input/publication/capture
 transport and receive/issue/completion history. Qualified application reset owns
 captured CPU permission, application response phase and Click's saved application
-target. ProgramReturn and Completion receive exactly the same qualified reset.
-The 350 ns minimum hold and 250 ns digital settlement budget are unchanged.
+target. Under the [R1 digital-containment correction](application-reset-boundary.md), ProgramReturn
+and Completion share the coordinated native reset, after their clocked receivers
+acknowledge closure. The raw qualifier alone no longer identifies the lifetime
+of the response phase. The inherited reset-duration assumptions remain open in R2.
 Application reset cancels CPU presentation but cannot cancel loader publication,
 Stored delivery, accepted byte writes or Control accounting. A word captured
 while reset is held cannot become eligible upon release.
+
+BD access admission synchronizes the complete word request-low/ACK-low predicate;
+raw native ACK must not enter the POR access owner's readiness cone. Click
+already synchronizes complete phase equality. The response monitor uses the
+actual presentation-reset pin and permits only its reinitialization to zero;
+all other loader-time response phase changes remain fatal.
 
 ## Independent returns and Stored accounting
 

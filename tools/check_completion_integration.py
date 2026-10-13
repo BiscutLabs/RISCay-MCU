@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
 """Strict mapping obligations at the clocked/native completion boundary."""
 import re
+from check_application_reset import coordinated_reset
 
 
 def native_return_cell(manifest, scopes, header, bank, identity, suffix, model, parameters, width=1):
@@ -76,6 +77,8 @@ def completion_bridges(manifest):
     if found != names:
         raise ValueError("COMPLETION_BRIDGE_INVENTORY")
     prefix = "DecoupledToClick" if top == "ClickSoc" else "DecoupledToFourPhase"
+    if any(e['id']=='native_application_reset' for e in manifest['design'].get('endpoints',[])):
+        prefix += 'Quiescing'
     protocol = "two-phase-bundled-v1" if top == "ClickSoc" else "four-phase-bundled-v1"
     for name in names:
         node = children[name]
@@ -235,7 +238,9 @@ def completion_background(source, manifest, scopes, checks):
     def plan(operation, address, mmio=False):
         extra.append(header)
         force(top+".gate_enabled", 1, 1)
-        force(top+".fabric_io_completionIdle_REG", 1, 1)
+        # The coordinated boundary's second synchronizer register has an
+        # explicit synchronous cancellation mux, proved by the graph audit.
+        force(top+(".second" if coordinated_reset(manifest) else ".fabric_io_completionIdle_REG"), 1, 1)
         force(top+".ca_child_admission_grant_bridge.state", 2, 2)
         for bank in ("program", "ram"):
             for group in ("returned_stages", "bytesReturned_stages", "bytesReturned_stages_1",
@@ -326,6 +331,25 @@ def completion_background(source, manifest, scopes, checks):
         force(cell["rtl_path"]+".q",1,1,primitive=True)
         force(top+f".ca_child_{name}_reply_bridge.state", 2, 2)
         force(top+f".ca_child_{name}_reply_bridge.{field}", width, 1); check()
+        if coordinated_reset(manifest):
+            # Services now consumes the POR reservation mirror, not native
+            # eligibility. Preserve the preceding native-owner scenario and
+            # exercise every mirror/cancellation combination from actual
+            # catalogued registers with the same retained CPU reply. Neither
+            # the derived eligibility nor the completion endpoint is forced.
+            inputs = [top+f".{name}Boundary_{n}" for n in
+                      ("active", "revoked", "role", "pending")]
+            inputs += [top+".resetBoundary_stopped", top+".cpuResetActive"]
+            for value in range(1 << len(inputs)):
+                for bit, path in enumerate(inputs):
+                    force(path, 1, (value >> bit) & 1)
+                check()
+                # The fixture owns a CPU completion: it is deliverable only
+                # while active, unrevoked, non-recovery and uncancelled.
+                # This expectation comes from the driven source state, never
+                # from DUT permission/role/valid or the native eligibility q.
+                extra.append(f"if ({top}.ca_child_completion_{name}_bridge.in_valid !== 1'h{int(value == 1)}) "
+                             f'$fatal(1,"COMPLETION_PUBLICATION_MIRROR:{name}:{value}");\n')
     count = checks+steps*len(coverage)
     position = coverage[0].start()
     result = source[:end]+prelude+source[end:position]+"".join(extra)+source[position:]

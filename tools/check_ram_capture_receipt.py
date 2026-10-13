@@ -197,7 +197,9 @@ def access_policy(click):
             native[f'byteResponse_{i}_' + field] = reply['out_' + field]
         children[f'byte_request_{i}'] = request
         children[f'byte_reply_{i}'] = reply
-    terms = ['returned_stages_1'] + ([] if click else ['~word_ack'])
+    # Both word phases are native. Only their complete synchronized idle
+    # predicate may enter the POR access owner's admission decision.
+    terms = ['returned_stages_1']
     for i, (_, stage) in enumerate(BYTE_STAGES):
         terms += [stage] + ([] if click else [f'~_ca_child_byte_request_{i}_in_ack'])
     terms += ['_ca_child_command_bridge_in_ready'] + [f'_ca_child_byte_reply_{i}_in_ready' for i in range(4)]
@@ -206,7 +208,7 @@ def access_policy(click):
     wires['ca_child_command_bridge_in_valid'] = (1, 'io_request_valid&~active&drained&ownerReturned_stages_1')
     ordinary = ACCESS_REGISTERS[2:]
     reset_assignments = ''.join(n + "<=1'h0;" for n in ordinary)
-    advance = 'returned_stages_0<=' + ('packed_0==word_ack;' if click else '~packed_0;')
+    advance = 'returned_stages_0<=' + ('packed_0==word_ack;' if click else '~packed_0&~word_ack;')
     advance += 'returned_stages_1<=returned_stages_0;'
     for i, (first, second) in enumerate(BYTE_STAGES):
         source = f'_ca_child_native_byteRequest_{i}_req'

@@ -3,10 +3,77 @@ import copy
 import unittest
 from check_export import validate_native_click
 from check_application_reset import persistent_reset_children
-from check_publication_source_export import validate_publication_source,CHANNELS
+from check_publication_source_export import validate_publication_source,publication_boundary_bindings,CHANNELS
 
 
 class PublicationSourceExportTests(unittest.TestCase):
+    def boundary_fixture(self,click=False,inline=False,owner='telemetry'):
+        top='ClickSoc' if click else 'FourPhaseSoc';prefix='Click' if click else 'FourPhase'
+        boundary=owner+'Boundary_'
+        registers={boundary+n:1 for n in ('active','pending','issued','revoked','role')}
+        registers[owner+'OwnerIdle']=1
+        registers['fabric_'+('telemetryCommitPending' if owner=='telemetry' else 'housekeepingOrderedPending')]=1
+        nets=dict(registers)
+        nets.update({n:1 for n in (owner+'SourceEmpty',boundary+'io_occupied',
+            f'fabric_io_{owner}Source_reserve_ready',f'fabric_io_{owner}Source_reserve_valid',f'fabric_io_{owner}Draining')})
+        if inline:nets.update({boundary+n:1 for n in ('io_debt','io_eligible')})
+        else:nets.update({n:1 for n in (boundary+'io_available',boundary+'io_reservationRecovery',
+            f'fabric_io_{owner}Source_eligible',f'fabric_io_{owner}Source_ownerRecovery',f'fabric_io_{owner}Source_ownerRecovery_0')})
+        scopes={top:dict(nets=nets,registers=registers)};endpoints={}
+        for name in CHANNELS:
+            path=top+f'.ca_child_{owner}_{name}_bridge'
+            endpoints[name]={n:path+'.'+n for n in ('in_valid','in_ready','out_valid','out_data')}
+            scopes[path]=dict(ports={'in_bits_recovery':dict(name='in_bits_recovery',width=1,direction='input')})
+        command=dict(module='DecoupledTo'+prefix,rtl_path=top+f'.ca_child_{owner}_command_bridge')
+        scopes[command['rtl_path']]=dict(ports={
+            'in_bits_recovery':dict(name='in_bits_recovery',width=1,direction='input'),
+            'in_ready':dict(name='in_ready',width=1,direction='output')})
+        return top,owner,endpoints,command,top+'.applicationCancel',scopes
+
+    def test_both_alias_forms_keep_complete_equations_and_real_consumer_pins(self):
+        for click in (False,True):
+            for inline in (False,True):
+                for owner in ('telemetry','housekeeping'):
+                    args=self.boundary_fixture(click,inline,owner);top,_,endpoints,command,cut,_=args
+                    pairs=publication_boundary_bindings(*args);mapping=dict(pairs)
+                    available=mapping[top+f'.fabric_io_{owner}Source_reserve_ready']
+                    for term in ('active','pending','issued'):
+                        self.assertIn(top+'.'+owner+'Boundary_'+term,available)
+                    for name in ('reserve','decision','publication'):
+                        self.assertIn(endpoints[name]['in_ready'],available)
+                    for name in ('grant','drain'):self.assertIn('!'+endpoints[name]['out_valid'],available)
+                    command_pin=command['rtl_path']+'.in_bits_recovery'
+                    for term in ('active','pending','revoked','role'):
+                        self.assertIn(top+'.'+owner+'Boundary_'+term,mapping[command_pin])
+                    self.assertIn(endpoints['grant']['out_data']+'[1]',mapping[command_pin])
+                    self.assertIn(endpoints['decision']['in_ready'],mapping[command_pin])
+                    reserve_pin=endpoints['reserve']['in_valid'].rsplit('.',1)[0]+'.in_bits_recovery'
+                    self.assertEqual(mapping[reserve_pin],f'({top}.{owner}Boundary_pending || {cut})')
+                    self.assertTrue(all('force' not in a+b for a,b in pairs))
+
+    def test_all_surviving_aliases_are_checked_not_just_the_first_match(self):
+        args=list(self.boundary_fixture());top=args[0];scope=args[-1][top]
+        scope['nets'].update(telemetryBoundary_io_debt=1,telemetryBoundary_io_eligible=1)
+        mapping=dict(publication_boundary_bindings(*args))
+        self.assertEqual(mapping[top+'.telemetryBoundary_io_debt'],mapping[top+'.telemetryBoundary_io_reservationRecovery'])
+        self.assertEqual(mapping[top+'.telemetryBoundary_io_eligible'],mapping[top+'.fabric_io_telemetrySource_eligible'])
+        self.assertEqual(mapping[top+'.fabric_io_telemetrySource_ownerRecovery'],top+'.telemetryBoundary_role')
+        self.assertEqual(mapping[top+'.fabric_io_telemetrySource_ownerRecovery_0'],top+'.telemetryBoundary_role')
+
+    def test_missing_or_wrong_alias_state_and_actual_pin_fail_closed(self):
+        for inline in (False,True):
+            for group,name in (('nets','telemetryBoundary_io_debt' if inline else 'telemetryBoundary_io_reservationRecovery'),
+                               ('registers','telemetryBoundary_role')):
+                for wrong in (None,2):
+                    args=list(self.boundary_fixture(inline=inline));values=args[-1][args[0]][group]
+                    if wrong is None:values.pop(name)
+                    else:values[name]=wrong
+                    with self.assertRaisesRegex(ValueError,'PUBLICATION_BOUNDARY_(ALIAS|NET)'):
+                        publication_boundary_bindings(*args)
+        args=list(self.boundary_fixture(inline=True))
+        args[-1][args[3]['rtl_path']]['ports']['in_bits_recovery']['direction']='output'
+        with self.assertRaisesRegex(ValueError,'PUBLICATION_BOUNDARY_PIN'):publication_boundary_bindings(*args)
+
     def test_unknown_owners_are_rejected(self):
         for name in ('ClockedPublicationSource','ClickPublicationSourceRTZ','FourPhasePublicationSourceAdapter'):
             with self.assertRaisesRegex(ValueError,'PUBLICATION_SOURCE_OWNER'):

@@ -43,6 +43,8 @@ abstract class ServiceEndpoint extends Module with InlineInstance {
     val frontClock = Input(Clock())
     val cpuReset = Input(Bool())
     val cpuResetActive = Input(Bool())
+    val applicationCancel = Input(Bool())
+    val presentationClosed = Output(Bool())
     val crashCount = Input(UInt(32.W))
     val hostSelected = Output(Bool()); val hostRejected = Output(Bool())
     val hostFrameAccepted = Output(Bool())

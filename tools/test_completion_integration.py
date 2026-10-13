@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
 """Independent constant-boundary and source-campaign negative controls."""
 import copy
+from itertools import product
 from pathlib import Path
 import re
 import subprocess
@@ -95,12 +96,20 @@ class CompletionIntegrationTest(unittest.TestCase):
                 completion_constants_probe(p.replace("zeros_1 !== 1'h1","zeros_1 !== 1'h0"),m,s,rtl)
 
     def test_background_only_catalogued_registers_original_campaign_preserved(self):
-        for top in ("FourPhaseSoc", "ClickSoc"):
+        for top,coordinated in product(("FourPhaseSoc", "ClickSoc"), (False, True)):
             manifest,scopes,_,_=fixture(top)
             regs={top:{n:1 for n in ("gate_enabled","fabric_io_completionIdle_REG","fabric_controlOutstanding",
                                     "fabric_mmioCurrent","fabric_telemetryOutstanding",
                                     "fabric_housekeepingOutstanding","fabric_controlState_programmed")}}
             regs[top]["fabric_controlState_imageLength"]=32
+            if coordinated:
+                manifest['design']['endpoints']=[dict(id='native_application_reset')]
+                for child in manifest['design']['children']:
+                    child['contract']['module'] += 'Quiescing'
+                del regs[top]['fabric_io_completionIdle_REG']
+                regs[top].update(second=1,resetBoundary_stopped=1,cpuResetActive=1)
+                for owner in ('telemetry','housekeeping'):
+                    regs[top].update({owner+'Boundary_'+field:1 for field in ('active','revoked','role','pending')})
             regs[top+".ca_child_request_bridge"] = dict(state=2,data_mask=4,data_operation=2,data_address=32)
             if top == "ClickSoc":
                 regs[top]["ca_child_admission_start_stages"] = 2
@@ -192,6 +201,23 @@ class CompletionIntegrationTest(unittest.TestCase):
             else:
                 self.assertIn(f"force {root}.ca_primitive_pending.q = 1'h1;",prelude)
             self.assertIn(coverage,augmented)
+            if coordinated:
+                self.assertEqual(augmented.count('COMPLETION_PUBLICATION_MIRROR:'),128)
+                for owner in ('telemetry','housekeeping'):
+                    inputs=[top+'.'+owner+'Boundary_'+n for n in ('active','revoked','role','pending')]
+                    inputs += [top+'.resetBoundary_stopped',top+'.cpuResetActive']
+                    for value in range(64):
+                        scenario=''.join(f"force {path} = 1'h{(value>>bit)&1};\n" for bit,path in enumerate(inputs))
+                        scenario += (f"#1; check;\nif ({top}.ca_child_completion_{owner}_bridge.in_valid !== 1'h{int(value==1)}) "
+                                     f'$fatal(1,"COMPLETION_PUBLICATION_MIRROR:{owner}:{value}");\n')
+                        self.assertEqual(augmented.count(scenario),1)
+                    # The old native-owner case remains ahead of the mirror
+                    # truth table; all dynamic polarity assertions survive.
+                    previous=(f"force {top}.ca_child_{owner}_reply_bridge."+
+                              ('data_kind = 2' if owner=='telemetry' else 'data_cpuCompletion = 1')+"'h1;\n#1; check;\n")
+                    self.assertIn(previous,augmented)
+            else:
+                self.assertNotIn('COMPLETION_PUBLICATION_MIRROR:',augmented)
             # Both memory selections must be reached from the real source
             # state. The old RAM-only scenario can no longer cover program.
             for path,width,value in ((top+".fabric_controlState_programmed",1,1),

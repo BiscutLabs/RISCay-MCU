@@ -135,25 +135,26 @@ New ingress is gated at clocked acceptance without truncating an active native
 request. A queued slot may be admitted while application reset is high, but cannot
 regain eligibility merely when reset falls. Old transport must drain and cancel.
 
-The application fence is qualified reset OR native debt OR native proof returning.
-The four old clocked fence/previous-safe registers per variant are removed. Five
+The native proof fence is qualified reset OR coordinated cutoff OR native debt
+OR native proof returning. Under the R1 digital-containment correction, clocked service admission uses
+the separately retained reservation/recovery mirror; raw native levels do not
+choose service state updates. Five
 original POR crossings per source, clocked staging/dispatch and projections remain.
 Two temporary final receipts add ten clocked bits (two request synchronizers,
 one ACK and two reset-release synchronizers each), a net six-bit increase until
 the clocked clients and receipts are removed in item 14. No new payload constant
 exception or four-phase conversion is introduced.
 
-Application reset asserts immediately and releases after eight ungated service
-edges. With a maximum service clock of 20 MHz, the minimum hold is 350 ns; the
-current native application island has a 250 ns digital reset-settlement budget.
-Every additional raw pulse restarts that hold, including pulses between service
-edges while reset is already asserted. Completion, Admission, their crossings,
-core and Fabric share the qualified reset; persistent service owners do not.
-The third-edge MODE assertion observation remains unchanged. Custom timing
-policies must fit the full reset budget, with emitted-policy checks as a backstop.
-Every application primitive receives the qualified reset directly. The 250 ns
-budget therefore bounds parallel reset-assertion settlement of each output;
-normal logic-path delay sums have separate bundled-data and control obligations.
+The [R1 reset-boundary contract](application-reset-boundary.md) separates
+immediate watchdog isolation from destructive native reset. The raw qualifier
+still restarts its eight-edge hold on every pulse. Service observation closes
+the clocked receivers first; only actual closure acknowledgments permit native
+reset and synchronous bridge rebase. Payload stays held. Core reset releases
+after the receivers acknowledge rebase withdrawal. The third-edge MODE assertion
+observation remains unchanged; persistent accepted effects remain POR-owned.
+The inherited 350 ns minimum qualifier and 250 ns digital settlement assumption
+do not cover measured physical guard propagation. R2 must reconcile the complete
+reset envelope; current simulation and structural checks are not timing signoff.
 
 These are digital RTL implementations, not qualified physical cells or pads.
 See [sleep and clock integration](sleep-and-clock.md) for the exact gating scope.
@@ -446,15 +447,16 @@ remaining lease. Lease expiry always wakes WAIT and stops automatic servicing;
 an application that never resumes useful execution eventually resets. The
 reference emitter expires after 32 raw LF ticks (nominal 4.14 s, 2.67..6.4 s
 over the assumed 5..12 Hz envelope), plus kick-handshake timing effects.
-Expiry asynchronously resets the CPU, both CPU bridges, pending CPU responses,
-software GPIO/application words, event mask/pending/deadline and sleep lease.
-Release is synchronized to the service clock. Raw `systemReset` drives reset
-pins and the asynchronous fast-source wake request. Ordinary service logic uses
-a separate POR-reset two-flop copy on both assertion and release, including mode
-recovery, request admission and loader mutation guards. The retained clock gate
-also synchronizes its complete demand before the falling-edge enable flip-flop,
-covering indirect changes from application-reset registers. These crossings need
-physical synchronizer placement and half-cycle gate-enable timing checks.
+Expiry immediately isolates application GPIO/retirement visibility, records
+native recovery debt and wakes the fast source. Under R1, a two-flop observation
+starts the coherent cutoff described above. Service application projections have
+POR reset and highest-priority synchronous cancellation; CPU-facing bridge
+history rebases while closed. An actual request accepted before cutoff retains
+its effects. Native producers remain intact until their receivers close.
+The retained clock gate synchronizes its complete demand before the falling-edge
+enable flip-flop, and restart forces that gate running. These crossings still
+need physical synchronizer placement, related-clock setup/hold, reset
+recovery/removal and half-cycle gate-enable timing checks.
 The permanent board controller
 and its GPIO override, ADC, samples/ages, LF/elapsed timebase, I2C loader, image
 validity/metadata and programming lock are POR-only. The supervisor retains its

@@ -56,10 +56,12 @@ tracks removal candidates; a smaller clocked-bit count does not establish lower
 area or power. Each migration item requires fresh independent review, fixes,
 verification, documentation and a separate commit/push.
 
-The review of `c4b7f44` reopens reset-domain crossings, reset-settlement bounds
-and frame-copy completion assumptions. These are corrective gates before further
-state removal. Current guard measurements exceed some digital timing assumptions;
-passing functional tests cannot qualify those physical paths. See the
+The reset-domain correction from the review of `c4b7f44` now passes digital
+regression, structural checks and independent review. Reset-settlement bounds,
+frame-copy completion and refreshed implementation costs remain corrective gates
+before further state removal. Current guard measurements exceed some digital
+timing assumptions; passing functional tests cannot qualify those physical paths.
+See the [reset-boundary contract](docs/application-reset-boundary.md),
 [guard contract](docs/physical-control-guard-contract.md),
 [frame-admission contract](docs/frame-admission-contract.md) and
 [physical export contract](docs/physical-export-contract.md). Earlier P&R results

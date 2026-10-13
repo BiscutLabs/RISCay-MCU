@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
 """Closed policy for native program ownership and loader Stored delivery."""
 import re
+from check_application_reset import presentation_reset
 
 PROGRAM_ARM_PATH = "program reservation phase before eligibility arm"
 PROGRAM_RETIRE_PATH = "program selected publication and reservation phase feedback before retirement"
@@ -315,7 +316,7 @@ def program_source_probe(source,manifest,scopes):
         ret={x['id']:x['rtl_path'] for x in cs['program_return']['endpoints']}
         access={x['id']:x['rtl_path'] for x in cs['program_access']['endpoints']}
         pairs += [(e['publication_'+f],ret['publication_'+f]) for f in ('request','data','acknowledge')]
-        pairs += [(e["application_reset"],top+".systemReset"),
+        pairs += [(e["application_reset"],presentation_reset(manifest)),
             (e['cpu_presentation_permit'],ret['eligible']),
             (e['word_drained'],'('+access['effects_drained']+' && '+ret['presentation_settled']+')')]
     anchor="task check; begin"

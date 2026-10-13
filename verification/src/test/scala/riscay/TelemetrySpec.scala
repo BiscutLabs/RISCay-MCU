@@ -12,6 +12,7 @@ class BdTelemetryFixture(p: SocParameters, inject: Boolean) extends MemoryResetF
   val injected = IO(Input(Bool())); val injectedValue = IO(Input(UInt(32.W)))
   val injectedValid = IO(Input(Bool())); val injectedCalibrated = IO(Input(Bool()))
   val visibleEvents = IO(Output(UInt(6.W))); visibleEvents := BoringUtils.bore(fabric.pending)
+  val retainedEvents = IO(Output(UInt(6.W))); retainedEvents := BoringUtils.bore(fabric.pendingView)
   val sampleView = BoringUtils.bore(fabric.hostSamples)
   val sampleSequence = IO(Output(UInt(32.W))); sampleSequence := sampleView(0).sequence
   val sampleValue = IO(Output(UInt(32.W))); sampleValue := sampleView(0).value
@@ -38,6 +39,7 @@ class ClickTelemetryFixture(p: SocParameters, inject: Boolean) extends ClickMemo
   val injected = IO(Input(Bool())); val injectedValue = IO(Input(UInt(32.W)))
   val injectedValid = IO(Input(Bool())); val injectedCalibrated = IO(Input(Bool()))
   val visibleEvents = IO(Output(UInt(6.W))); visibleEvents := BoringUtils.bore(fabric.pending)
+  val retainedEvents = IO(Output(UInt(6.W))); retainedEvents := BoringUtils.bore(fabric.pendingView)
   val sampleView = BoringUtils.bore(fabric.hostSamples)
   val sampleSequence = IO(Output(UInt(32.W))); sampleSequence := sampleView(0).sequence
   val sampleValue = IO(Output(UInt(32.W))); sampleValue := sampleView(0).value
@@ -119,10 +121,16 @@ reg [31:0] captured;
         read_words(3,0,5);
         if(!snapshot[2]) $fatal(1,"HOST_DISPATCHED_EVENT_DISAPPEARED");
         // Pulse entirely between clock edges: the raw reset pin must remember it.
-        @(negedge serviceClock); #7; applicationReset=1; #1;
+        @(negedge serviceClock); captured=retainedEvents; #7; applicationReset=1; #1;
         if(gpioOut !== 0 || gpioOe !== 0 || visibleEvents !== 0) $fatal(1,"RAW_RESET_PROJECTION");
+        if(retainedEvents !== captured[5:0]) $fatal(1,"RAW_RESET_CHANGED_POR_EVENT_VIEW");
         #7; applicationReset=0; #10; pauseTelemetryReplies=0; #20000;
         if(gpioOut !== 0 || gpioOe !== 0 || visibleEvents[2]) $fatal(1,"STALE_TELEMETRY_REPLY_RESTORED_APP");
+        if(retainedEvents[2]) $fatal(1,"SYNCHRONOUS_CANCELLATION_LOST");
+        read_words(3,0,5);
+        if(snapshot[2]) $fatal(1,"HOST_STALE_EVENT_AFTER_RESET");
+        issue(32'h3000000c,0,0); wait(response_valid); captured=response_bits_data;
+        if(captured[2]) $fatal(1,"MMIO_STALE_EVENT_AFTER_RESET"); answer(captured);
         issue(32'h30000034,0,0); answer(0);
       """,tasks)
     }

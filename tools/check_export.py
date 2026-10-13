@@ -28,7 +28,9 @@ from check_ram_return_integration import ram_return_probe, apply_return_literal_
 from check_program_return_contract import (PATHS as PROGRAM_RETURN_PATHS, validate_program_return,
                                          program_return_bindings, policy as program_return_policy)
 from check_program_return_integration import program_return_probe
-from check_application_reset import validate_application_reset, persistent_reset_children
+from check_application_reset import (validate_application_reset, persistent_reset_children,
+    coordinated_reset, reset_endpoint, presentation_reset)
+from check_reset_crossings import check_reset_crossings
 from check_ram_source_export import ARM_PATH, RETIRE_PATH, validate_ram_source, ram_source_bindings, ram_source_probe
 from check_program_source_export import PROGRAM_PATHS, validate_program_source, program_source_bindings, program_source_probe, validate_program_receipts
 from check_frame_receipt import validate_frame_receipts
@@ -667,15 +669,18 @@ def generated_reset_probe(source: str, manifest: dict) -> str:
 
     persistent = persistent_reset_children(manifest)
 
-    def children(node, persistent_domain=False):
+    def children(node, inherited=None):
         for child in node["children"]:
-            por = persistent_domain or (node is root and child.get("id") in persistent)
-            yield child["contract"], por
-            yield from children(child["contract"], por)
+            target=inherited
+            if node is root:
+                target=(top+'.reset' if child.get('id') in persistent else
+                    reset_endpoint(manifest,'core_reset') if coordinated_reset(manifest) and child['id']=='core' else
+                    presentation_reset(manifest))
+            yield child["contract"], target
+            yield from children(child["contract"], target)
 
-    for node, por in children(root):
+    for node, target in children(root):
         old = f'if ({node["rtl_path"]}.reset !== {top}.reset) $fatal(1, "RESET_BINDING_MISMATCH");'
-        target = f"{top}.reset" if por else reset
         new = f'if ({node["rtl_path"]}.reset !== {target}) $fatal(1, "RESET_BINDING_MISMATCH");'
         if source.count(old) != 1:
             raise ValueError("SOC_RESET_CHECK_SHAPE_CHANGED")
@@ -1351,6 +1356,9 @@ def main() -> None:
     def probe(manifest, scopes, paired=False):
         top_rtl=(args.directory / (manifest["top"]+".sv")).read_text(encoding="utf-8")
         validate_application_reset(manifest,scopes,top_rtl)
+        if args.soc:
+            if not coordinated_reset(manifest): raise ValueError('SOC_COORDINATED_RESET_REQUIRED')
+            check_reset_crossings(args.directory,manifest)
         validate_program_receipts(manifest,args.directory)
         validate_frame_receipts(manifest,args.directory)
         validate_frame_stores(manifest,args.directory,resolved=True)

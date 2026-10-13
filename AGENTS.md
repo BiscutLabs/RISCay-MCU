@@ -38,8 +38,9 @@
   drain guard and full synchronized gate demand; grace may overlap tracked native
   maintenance. Run guard handoff and ADC discard/offset/calibration checks.
   A copied clocked module is not migrated to async.
-  Native completion presentation and all its crossings reset with the CPU;
-  persistent accepted effects retain their existing POR ownership. Preserve the
+  Native completion presentation follows coordinated application reset. Its
+  CPU-facing crossings retain POR ownership and rebase only while acknowledged
+  closed; persistent accepted effects retain their existing POR ownership. Preserve the
   BD rendezvous return barrier and Click aggregate payload/phase aperture. Keep
   fixed guard IDs recognized by AsyncTest, test immediate source reuse and
   unselected pending tokens, and assert source readiness at completion capture.
@@ -131,9 +132,16 @@
   controls and isolated owner mutations after recovery changes. Include
   pre-recovery quiet with reserve ingress stalled, stale recovery replies,
   offered CPU work, final-return reset and prolonged-reset housekeeping progress.
-  Application reset asserts immediately and releases after eight ungated service
-  edges (>=350 ns at the 20 MHz ceiling), restarting on every raw pulse. Audit
-  all custom timing bounds against the 250 ns digital reset-settlement budget.
+  Follow the digitally verified R1 contract in `docs/application-reset-boundary.md`: immediate
+  watchdog isolation/debt must not destroy a native producer while its clocked
+  receiver can capture. Require actual closure, rebase and withdrawal edges;
+  payload stays retained. Keep POR application projections with synchronous
+  cancellation and immutable publication reservation roles. Run QuiescingBridgeSpec,
+  ResetBoundarySpec and ResetBoundarySocSpec plus structural RDC mutation controls.
+  Application reset qualification still uses eight ungated service edges
+  (>=350 ns at the 20 MHz ceiling), restarting on every raw pulse. The inherited
+  250 ns digital settlement assumption is insufficient for measured physical
+  guard propagation: R2 must resolve this before physical qualification.
   Inject reset-test pulses before this qualifier; never lengthen failing pulses.
   Run AsyncCompletionSpec/CompletionSpec and real completion wiring mutation
   controls; preserve the full emitted port ABI even for constant error fields.
@@ -156,8 +164,9 @@
   Clocked ingress/arbitration, status projection and peripheral effects remain
   explicit boundaries until their checklist items are implemented and verified.
   Native Telemetry and its bridges are POR-only. Preserve acquisition ingress
-  across application reset; immediately reset application GPIO/event projections
-  and suppress stale replies. Never drop dispatched events from host visibility.
+  across application reset; immediately isolate application GPIO and clear
+  clocked event/word projections through coherent cancellation. Suppress stale
+  replies. Never drop dispatched events from host visibility before cancellation.
   Native Supervisor state, input history, output projection and both bridges are
   POR-only. Keep its acquisition stream independent of Control/Telemetry stalls.
   Include coincident ticks in publication freshness gaps; qualify dwell times and
@@ -268,8 +277,11 @@
   freshness and calibration status; lock must not block reads or sample updates.
 - Use explicit reset and async contracts. A digital delay model is not a mapped
   delay cell, and passing simulation is not physical timing or power evidence.
-  Keep raw watchdog reset on reset pins/source wake only; persistent service
-  logic uses its two-flop synchronized copy, and gate demand is synchronized.
+  Keep raw watchdog reset on the qualified isolation/debt and source-wake paths;
+  service cancellation uses the coherent boundary after two-flop observation.
+  Resetting native producers before their clocked receivers close is forbidden.
+  Persistent service decisions use synchronized native observations or explicit
+  proved held-bus contracts, and gate demand is synchronized.
   Preserve the writeback-before-forwarding guard and include register-read muxes
   in the execute timing budget; run the fastest-memory and guard-bypass controls.
   Deadline replacement consumes only the old deadline event, including a

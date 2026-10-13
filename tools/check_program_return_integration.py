@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
 """Native retained program return bindings and narrowly proven constant coverage."""
 import json,re
+from check_application_reset import presentation_reset
 from pathlib import Path
 from check_program_return_contract import validate_program_return,validate_program_return_rtl,require,expression
 from check_program_capture_receipt import validate_program_access
@@ -161,7 +162,7 @@ def program_return_probe(source,manifest,scopes,directory,literal_obligations=No
         a,o,c,r=endpoints(access),endpoints(owner),endpoints(completion),endpoints(cap)
         record['capture_receipt']=validate_program_access(access,directory,scopes)
         pairs += record['capture_receipt']['bindings']
-        pairs += [(e['reset'],top+'.reset'),(e['application_reset'],top+'.systemReset'),
+        pairs += [(e['reset'],top+'.reset'),(e['application_reset'],presentation_reset(manifest)),
             (a['reset'],top+'.reset'),(access['rtl_path']+'.clock',validated_service_clock(root,directory)),
             (e['eligible'],o['cpu_presentation_permit']),(e['idle'],a['return_idle']),
             (o['word_drained'],'('+a['effects_drained']+' && '+e['presentation_settled']+')'),

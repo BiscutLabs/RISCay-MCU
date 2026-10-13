@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
 """Closed digital policy for native exclusive service publication receipts."""
 import re
+from check_application_reset import coordinated_reset,reset_endpoint,presentation_reset
 from check_recovery_return_export import (validate_recovery_return,recovery_return_bindings,
     validate_return_receipt,return_receipt_bindings)
 
@@ -28,9 +29,10 @@ APERTURES=(
 def publication_recovery_background(source,manifest,scopes,checks):
     """Add joint recovery source states without forcing derived command fields.
 
-    A recovery command needs the native role, eligibility and debt, plus its
-    matching queued grant. Individual/paired source walks cannot form that
-    conjunction. Preserve every existing stimulus and dynamic coverage check.
+    A recovery command needs retained role, eligibility and debt plus its
+    matching queued grant. Coordinated service clients own clocked mirrors of
+    those facts. Exercise both native owners and mirrors independently, while
+    preserving every existing stimulus and dynamic coverage check.
     """
     children={c['id']:c['contract'] for c in manifest['design'].get('children',[])}
     owners=('telemetry','housekeeping')
@@ -83,6 +85,17 @@ def publication_recovery_background(source,manifest,scopes,checks):
             force(cells['debt_storage']['rtl_path']+'.q',1,(bits>>2)&1,'ChiselAsyncEventRegister_v1')
             force(payload['rtl_path']+'.q',2,((bits>>3)&1)<<1,payload['model'])
             extra.append('#1; check;\n');steps+=1
+        if coordinated_reset(manifest):
+            # Each field is actual catalogued POR state, never an eligibility,
+            # command or acceptance endpoint. Include revocation independently
+            # of the four prerequisites so reset-cancelled roles are covered.
+            for bits in range(32):
+                extra.append(header)
+                force(top+f'.ca_child_{name}_grant_bridge.state',2,2)
+                force(top+f'.ca_child_{name}_grant_bridge.data_recovery',1,bits&1)
+                for bit,field in ((1,'active'),(2,'pending'),(3,'role'),(4,'revoked')):
+                    force(top+f'.{name}Boundary_{field}',1,(bits>>bit)&1)
+                extra.append('#1; check;\n');steps+=1
         # New ingress is gated by synchronized native owner-idle. Recovery also
         # requires debt and empty original crossings, so a queued grant is the
         # wrong background for exercising that valid input. Use only the actual
@@ -92,6 +105,8 @@ def publication_recovery_background(source,manifest,scopes,checks):
                 extra.append(header)
                 force(top+f'.{name}OwnerIdle',1,idle)
                 force(cells['debt_storage']['rtl_path']+'.q',1,debt,'ChiselAsyncEventRegister_v1')
+                if coordinated_reset(manifest):
+                    force(top+f'.{name}Boundary_pending',1,debt)
                 extra.append('#1; check;\n');steps+=1
     count=checks+steps*len(coverage);position=coverage[0].start()
     result=source[:position]+''.join(extra)+source[position:]
@@ -124,6 +139,8 @@ def validate_publication_source(node):
     widths.update({n:1 for n in ('reset','eligibility_reset','application_reset','eligible','idle','reserved',
                                'owner_recovery','recovery_debt','recovery_event','final_request',
                                'final_acknowledge','recovery_returning','original_returned')})
+    if any(e['id']=='debt_reset' for e in node['endpoints']):
+        widths.update(debt_reset=1,recovery_reset=1)
     if click:
         widths.update(recovery_select=1,arm_sources=3,arm_data=3,arm_event=1,armed=3,
             publication_phase_data=1,publication_event=1,publication_captured=1,
@@ -195,7 +212,9 @@ def validate_publication_source(node):
     for name,(model,params) in expected.items():
         if cells[name]['model']!=model or cells[name]['parameters']!=params:raise ValueError('PUBLICATION_SOURCE_CELL_POLICY:'+name)
     for name,c in cells.items():
-        if c['reset']!=('eligibility_reset' if name in ('eligibility','debt_storage') else 'reset'):
+        reset_owner='eligibility_reset' if name in ('eligibility','debt_storage') else 'reset'
+        if name=='debt_storage' and 'debt_reset' in widths: reset_owner='debt_reset'
+        if c['reset']!=reset_owner:
             raise ValueError('PUBLICATION_SOURCE_RESET_OWNER:'+name)
     return click
 
@@ -210,7 +229,7 @@ def publication_source_bindings(node):
     q=lambda n:c[n]+'.q'
     pairs=[(e['eligibility_reset'],f"({e['reset']} | {e['application_reset']})"),
         (c['eligibility']+'.reset',e['eligibility_reset']),(c['eligibility']+'.d',"1'b1"),
-        (c['debt_storage']+'.reset',e['eligibility_reset']),(c['debt_storage']+'.d',"1'b0"),
+        (c['debt_storage']+'.reset',e.get('debt_reset',e['eligibility_reset'])),(c['debt_storage']+'.d',"1'b0"),
         (c['debt_storage']+'.trigger',proof['clear_event']),(e['recovery_debt'],q('debt_storage')),
         (e['owner_recovery'],r['out_data']+'[1]'),
         (e['eligible'],q('eligibility')),(e['reserved'],r['in_acknowledge']),
@@ -309,6 +328,75 @@ def publication_source_bindings(node):
         original+=f" && !{e['reserved']} && !{q('receipt_seen')} && !{e['recovery_event']}"
         idle=f"{e['original_returned']} && !{e['reserve_request']} && {proof['quiet']}"
     pairs.extend([(e['original_returned'],'('+original+')'),(e['idle'],'('+idle+')')])
+    if 'debt_reset' in e:
+        pairs.append((e['debt_reset'],f"({e['reset']} | {e['recovery_reset']})"))
+    return pairs
+
+
+def publication_boundary_bindings(top,owner,endpoints,command,cut,scopes):
+    """Check emitted aliases and real pins, including inline-assertion exports.
+
+    Firtool merges available into reserve.ready because SourceEmpty already
+    includes that bridge's ready. It can also merge debt and role aliases.
+    Keep the complete equations and check every surviving known alias; the
+    reserve and command bridge pins remain mandatory even when an alias goes.
+    Nothing in this helper adds a forced driver to the mapping probe.
+    """
+    boundary=top+'.'+owner+'Boundary_';pairs=[]
+    def net(path,register=False):
+        node,name=path.rsplit('.',1)
+        group='registers' if register else 'nets'
+        if scopes.get(node,{}).get(group,{}).get(name)!=1:
+            raise ValueError('PUBLICATION_BOUNDARY_NET:'+path)
+        return path
+    def aliases(paths,expression,required=True):
+        present=[]
+        for path in paths:
+            node,name=path.rsplit('.',1)
+            if name in scopes.get(node,{}).get('nets',{}):
+                present.append(net(path))
+        if required and not present:raise ValueError('PUBLICATION_BOUNDARY_ALIAS:'+paths[0])
+        pairs.extend((path,expression) for path in present)
+    def pin(path,direction='input'):
+        node,name=path.rsplit('.',1)
+        if scopes.get(node,{}).get('ports',{}).get(name)!=dict(name=name,width=1,direction=direction):
+            raise ValueError('PUBLICATION_BOUNDARY_PIN:'+path)
+        return path
+    state={name:net(boundary+name,register=True) for name in ('active','pending','issued','revoked','role')}
+    empty=' && '.join([net(top+'.'+owner+'OwnerIdle',register=True)]+
+        [endpoints[n]['in_ready'] for n in ('reserve','decision','publication')]+
+        ['!'+endpoints[n]['out_valid'] for n in ('grant','drain')])
+    available=f"(!{cut} && !{state['active']} && ({empty}) && (!{state['pending']} || !{state['issued']}))"
+    debt=f"({state['pending']} || {cut})"
+    eligible=f"({state['active']} && !{state['revoked']} && !{cut})"
+    ready=net(top+f'.fabric_io_{owner}Source_reserve_ready')
+    valid=net(top+f'.fabric_io_{owner}Source_reserve_valid')
+    aliases([top+'.'+owner+'SourceEmpty'],'('+empty+')')
+    aliases([boundary+'io_available',ready],available)
+    aliases([boundary+'io_reservationRecovery',boundary+'io_debt'],debt)
+    aliases([top+f'.fabric_io_{owner}Source_eligible',boundary+'io_eligible'],eligible)
+    aliases([boundary+'io_occupied'],f"({state['active']} || !({empty}))")
+    aliases([top+f'.fabric_io_{owner}Source_ownerRecovery',top+f'.fabric_io_{owner}Source_ownerRecovery_0'],
+        state['role'],required=False)
+    pairs.extend([(endpoints['reserve']['in_valid'],f"({valid} && {available})"),
+        (ready,f"({endpoints['reserve']['in_ready']} && {available})"),
+        (pin(endpoints['reserve']['in_valid'].rsplit('.',1)[0]+'.in_bits_recovery'),debt)])
+    # A role alias optimized into its register is not an independent check.
+    # Bind its actual production consumer instead, along with the complete
+    # recovery qualification and the grant payload at the clocked bridge.
+    pending=net(top+'.fabric_'+('telemetryCommitPending' if owner=='telemetry' else 'housekeepingOrderedPending'),register=True)
+    if top=='ClickSoc':
+        idle=pin(command['rtl_path']+'.in_ready',direction='output')
+        aliases([top+f'.fabric_io_{owner}Draining'],'!'+idle,required=False)
+    else:
+        idle='!'+net(top+f'.fabric_io_{owner}Draining')
+    terms=[endpoints['grant']['out_valid'],endpoints['grant']['out_data']+'[1]',state['role'],
+        eligible,debt,endpoints['decision']['in_ready'],'!'+pending,idle]
+    if owner=='housekeeping':terms.append('!'+cut)
+    prefix='Click' if top=='ClickSoc' else 'FourPhase'
+    if not re.fullmatch('DecoupledTo'+prefix+r'(?:_[0-9]+)?',command['module']):
+        raise ValueError('PUBLICATION_BOUNDARY_COMMAND_OWNER')
+    pairs.append((pin(command['rtl_path']+'.in_bits_recovery'),'('+' && '.join(terms)+')'))
     return pairs
 
 
@@ -325,8 +413,10 @@ def publication_source_probe(source,manifest,scopes):
             e={x['id']:x['rtl_path'] for x in node['endpoints']}
             for name in ('eligibility','debt_storage'):
                 cell=next(p['rtl_path'] for p in node['primitives'] if p['id']==name)
-                old=f'if ({cell}.reset !== {e["eligibility_reset"]} || {e["eligibility_reset"]} !== {node["rtl_path"]}.reset) $fatal(1, "RESET_BINDING_MISMATCH");'
-                new=f'if ({cell}.reset !== {e["eligibility_reset"]} || {e["eligibility_reset"]} !== ({e["reset"]} | {e["application_reset"]})) $fatal(1, "RESET_BINDING_MISMATCH");'
+                local=e.get('debt_reset',e['eligibility_reset']) if name=='debt_storage' else e['eligibility_reset']
+                request=e['recovery_reset'] if name=='debt_storage' and 'debt_reset' in e else e['application_reset']
+                old=f'if ({cell}.reset !== {local} || {local} !== {node["rtl_path"]}.reset) $fatal(1, "RESET_BINDING_MISMATCH");'
+                new=f'if ({cell}.reset !== {local} || {local} !== ({e["reset"]} | {request})) $fatal(1, "RESET_BINDING_MISMATCH");'
                 if source.count(old)!=1:raise ValueError('PUBLICATION_SOURCE_RESET_PROBE_SHAPE:'+name)
                 source=source.replace(old,new)
         for child in node['children']:visit(child['contract'])
@@ -348,12 +438,21 @@ def publication_source_probe(source,manifest,scopes):
             pairs.extend([(e['final_request'],final['request']),(e['final_acknowledge'],final['acknowledge']),
                 (final['clock'],consumer_clock)])
             endpoints={n:{x['id']:x['rtl_path'] for x in children[owner+'_'+n+'_bridge']['endpoints']} for n in CHANNELS}
+            service_quiet=(top+'.'+owner+'Boundary_io_quiet' if coordinated_reset(manifest)
+                           else top+'.fabric_io_'+owner+'Source_quiet')
             raw_quiet=' && '.join([endpoints[n]['in_ready'] for n in ('reserve','decision','publication')]+
-                ['!'+endpoints[n]['out_valid'] for n in ('grant','drain')]+[top+'.fabric_io_'+owner+'Source_quiet'])
-            pairs.extend([(final['quiet'],'('+raw_quiet+')'),
-                (top+'.'+owner+'ReturnFence',f"({top}.systemReset || {e['recovery_debt']} || {e['recovery_returning']})"),
-                (endpoints['reserve']['in_valid'],f"({top}.fabric_io_{owner}Source_reserve_valid && {top}.{owner}OwnerIdle)"),
-                (top+f'.fabric_io_{owner}Source_reserve_ready',f"({endpoints['reserve']['in_ready']} && {top}.{owner}OwnerIdle)")])
+                ['!'+endpoints[n]['out_valid'] for n in ('grant','drain')]+[service_quiet])
+            isolation=(f"({top}.systemReset || {reset_endpoint(manifest,'application_cutoff')})"
+                       if coordinated_reset(manifest) else top+'.systemReset')
+            pairs.append((final['quiet'],'('+raw_quiet+')'))
+            if coordinated_reset(manifest):
+                cut=reset_endpoint(manifest,'application_cutoff')
+                pairs.extend(publication_boundary_bindings(top,owner,endpoints,children[owner+'_command_bridge'],cut,scopes))
+            else:
+                available=top+'.'+owner+'OwnerIdle'
+                pairs.extend([(endpoints['reserve']['in_valid'],f"({top}.fabric_io_{owner}Source_reserve_valid && {available})"),
+                    (top+f'.fabric_io_{owner}Source_reserve_ready',f"({endpoints['reserve']['in_ready']} && {available})")])
+                pairs.append((top+'.'+owner+'ReturnFence',f"({isolation} || {e['recovery_debt']} || {e['recovery_returning']})"))
             for name in CHANNELS:
                 bridge=children[owner+'_'+name+'_bridge'];output=name in ('grant','drain')
                 model=('ClickToDecoupled' if click else 'FourPhaseToDecoupled') if output else ('DecoupledToClick' if click else 'DecoupledToFourPhase')
@@ -366,7 +465,10 @@ def publication_source_probe(source,manifest,scopes):
                 b={x['id']:x['rtl_path'] for x in bridge['endpoints']}
                 pairs.extend((e[name+'_'+f],b[('in_' if output else 'out_')+f]) for f in ('request','data','acknowledge'))
                 pairs.append((b['out_clock' if output else 'in_clock'],consumer_clock))
-            pairs.append((e['application_reset'],top+'.systemReset'))
+            pairs.append((e['application_reset'],presentation_reset(manifest)))
+            if coordinated_reset(manifest):
+                if 'debt_reset' not in e: raise ValueError('PUBLICATION_SPLIT_RESET_REQUIRED')
+                pairs.append((e['recovery_reset'],isolation))
     anchor='task check; begin'
     if source.count(anchor)!=1:raise ValueError('PUBLICATION_SOURCE_PROBE_SHAPE')
     checks=[f'if ({a} !== {b}) $fatal(1,"PUBLICATION_SOURCE_BINDING:{a}");' for a,b in pairs]

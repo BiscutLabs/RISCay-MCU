@@ -20,14 +20,18 @@ class FourPhaseSoc(p: SocParameters, board: SocParameters => BoardProfile = p =>
     "custom stage timing exceeds application reset-settlement budget")
   val core = asyncChild("core")(d => new FourPhaseCore(d, timing=timing, executeTiming=executeTiming))
   val transactions = asyncChild("transactions")(d => new FourPhaseFabric(p.config, timing, d))
-  val requestBridge = asyncChild("request_bridge")(d => new FourPhaseToDecoupled(new MemoryRequest, 2, d))
-  Seq(core, transactions, requestBridge).foreach(_.reset := systemReset.asAsyncReset)
+  val requestBridge = asyncChild("request_bridge")(d => new FourPhaseQuiescingToDecoupled(new MemoryRequest,d))
+  transactions.reset:=nativeApplicationReset.asAsyncReset
+  core.reset:=nativeCoreReset.asAsyncReset
+  closeBridge(requestBridge)
+  requestClosed:=requestBridge.closed; requestRebased:=requestBridge.rebased; requestRebaseIdle:= !requestBridge.rebased
   requestBridge.clock := serviceClock
   FourPhase.connect(transactions.request, core.request); FourPhase.connect(core.response, transactions.response)
   FourPhase.connect(requestBridge.in, transactions.serviceRequest)
   FourPhase.connect(transactions.serviceResponse, completion.response)
   fabric.io.request <> requestBridge.out
-  trace := core.trace; traceEvent := core.traceEvent
+  trace := core.trace; trace.valid := core.trace.valid && !applicationIsolation
+  traceEvent := core.traceEvent && !applicationIsolation
 }
 object EmitFourPhaseSoc extends App {
   require(args.length == 1, "Usage: EmitFourPhaseSoc output-directory")

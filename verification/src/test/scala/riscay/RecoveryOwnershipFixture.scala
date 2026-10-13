@@ -32,9 +32,11 @@ class BdRecoveryOwnershipFixture(p: SocParameters) extends BdPublicationSourceFi
   finalAcknowledge:=Cat(finalReturns.reverse.map(_.acknowledge))
   val finalPending=IO(Output(UInt(2.W))); finalPending:=finalRequest ^ finalAcknowledge
 
-  val nativeDebt=IO(Output(UInt(2.W))); nativeDebt:=Cat(sources.reverse.map(_.recoveryDebt))
-  val returnFence=IO(Output(UInt(2.W))); returnFence:=Cat(sources.reverse.map(_.returnFence))
-  val eligible=IO(Output(UInt(2.W))); eligible:=Cat(sources.reverse.map(_.eligible))
+  val nativeDebt=IO(Output(UInt(2.W))); nativeDebt:=Cat(housekeepingSource.recoveryDebt,telemetrySource.recoveryDebt)
+  val returnFence=IO(Output(UInt(2.W))); returnFence:=Cat(housekeepingReturnFence,telemetryReturnFence)
+  val eligible=IO(Output(UInt(2.W))); eligible:=Cat(housekeepingSource.eligible,telemetrySource.eligible)
+  val serviceEligible=IO(Output(UInt(2.W))); serviceEligible:=Cat(sources.reverse.map(_.eligible))
+  val nativeRecoveryRole=IO(Output(UInt(2.W))); nativeRecoveryRole:=Cat(housekeepingSource.ownerRecovery,telemetrySource.ownerRecovery)
   val qualifiedReset=IO(Output(Bool())); qualifiedReset:=fabric.io.cpuReset
   val recoveryGrantWaiting=IO(Output(UInt(2.W)))
   recoveryGrantWaiting:=Cat(grants.reverse.map(g => g.out.valid && g.out.bits.recovery))
@@ -92,9 +94,11 @@ class ClickRecoveryOwnershipFixture(p: SocParameters) extends ClickPublicationSo
   finalAcknowledge:=Cat(finalReturns.reverse.map(_.acknowledge))
   val finalPending=IO(Output(UInt(2.W))); finalPending:=finalRequest ^ finalAcknowledge
 
-  val nativeDebt=IO(Output(UInt(2.W))); nativeDebt:=Cat(sources.reverse.map(_.recoveryDebt))
-  val returnFence=IO(Output(UInt(2.W))); returnFence:=Cat(sources.reverse.map(_.returnFence))
-  val eligible=IO(Output(UInt(2.W))); eligible:=Cat(sources.reverse.map(_.eligible))
+  val nativeDebt=IO(Output(UInt(2.W))); nativeDebt:=Cat(housekeepingSource.recoveryDebt,telemetrySource.recoveryDebt)
+  val returnFence=IO(Output(UInt(2.W))); returnFence:=Cat(housekeepingReturnFence,telemetryReturnFence)
+  val eligible=IO(Output(UInt(2.W))); eligible:=Cat(housekeepingSource.eligible,telemetrySource.eligible)
+  val serviceEligible=IO(Output(UInt(2.W))); serviceEligible:=Cat(sources.reverse.map(_.eligible))
+  val nativeRecoveryRole=IO(Output(UInt(2.W))); nativeRecoveryRole:=Cat(housekeepingSource.ownerRecovery,telemetrySource.ownerRecovery)
   val qualifiedReset=IO(Output(Bool())); qualifiedReset:=fabric.io.cpuReset
   val recoveryGrantWaiting=IO(Output(UInt(2.W)))
   recoveryGrantWaiting:=Cat(grants.reverse.map(g => g.out.valid && g.out.bits.recovery))

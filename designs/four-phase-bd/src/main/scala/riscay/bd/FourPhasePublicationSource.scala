@@ -10,13 +10,16 @@ import chiselasync.primitives.{AsymmetricCElement,ControlGate,EventRegister,Gate
 import riscay.soc.PublicationReservation
 
 /** Exclusive service publication receipt; physical timing remains unqualified. */
-class FourPhasePublicationSource(domain: ResetDomain) extends AsyncModule(domain) {
+class FourPhasePublicationSource(domain: ResetDomain, splitRecoveryReset: Boolean=false) extends AsyncModule(domain) {
   val reserve=fourPhaseInput("reserve",new PublicationReservation)
   val grant=fourPhaseOutput("grant",new PublicationReservation)
   val decision=fourPhaseInput("decision",Bool())
   val publication=fourPhaseInput("publication",Bool())
   val drain=fourPhaseOutput("drain",new PublicationReservation)
   val applicationReset=IO(Input(AsyncReset()))
+  // Production retains presentation until clocked capture closure, while raw
+  // watchdog debt asserts immediately and remains held through that closure.
+  val recoveryReset=if(splitRecoveryReset) IO(Input(AsyncReset())) else applicationReset
   val eligible=IO(Output(Bool())); val idle=IO(Output(Bool()))
   val ownerRecovery=IO(Output(Bool())); val recoveryDebt=IO(Output(Bool()))
   val finalRequest=IO(Output(Bool())); val finalAcknowledge=IO(Input(Bool()))
@@ -28,6 +31,9 @@ class FourPhasePublicationSource(domain: ResetDomain) extends AsyncModule(domain
   private val resetRef=contract.endpoint("reset",reset)
   private val eligibilityReset=WireDefault((reset.asBool || applicationReset.asBool).asAsyncReset)
   dontTouch(eligibilityReset)
+  private val debtReset=WireDefault((reset.asBool || recoveryReset.asBool).asAsyncReset)
+  dontTouch(debtReset)
+  private val debtResetRef=contract.endpoint("debt_reset",debtReset)
   private val eligibilityResetRef=contract.endpoint("eligibility_reset",eligibilityReset)
   private def gate(id: String,op: GateOperation.Value,a: Bool,b: Bool=false.B,
       delay: ModelTime=cell,initial: Int=0): Bool = {
@@ -96,11 +102,11 @@ class FourPhasePublicationSource(domain: ResetDomain) extends AsyncModule(domain
   recoveryClear.common:=retirement.q.asUInt
   recoveryClear.rising:=Cat(ownerRecovery,issued.q,seen.q,eligible)
   recoveryClear.falling:=0.U
-  private val debt=Module(new EventRegister(1,cell,1)); debt.reset:=eligibilityReset
+  private val debt=Module(new EventRegister(1,cell,1)); debt.reset:=debtReset
   returnControl.fresh:=recoveryClear.q
   debt.trigger:=returnControl.clear; debt.d:=0.U; recoveryDebt:=debt.q.asBool
   contract.primitive("debt_storage",debt,Map("WIDTH"->BigInt(1),"DELAY_FS"->BigInt(cell.fs),
-    "RESET_VALUE"->BigInt(1)),eligibilityResetRef,
+    "RESET_VALUE"->BigInt(1)),debtResetRef,
     "reset-dominant recovery debt; only fresh attributed final return clears it")
   private val returned=state("reservation_return",0,8)
   returned.common:=retirement.q.asUInt; returned.rising:=1.U
@@ -115,6 +121,7 @@ class FourPhasePublicationSource(domain: ResetDomain) extends AsyncModule(domain
   contract.endpoint("final_request",finalRequest); contract.endpoint("final_acknowledge",finalAcknowledge)
   contract.endpoint("recovery_returning",recoveryReturning); contract.endpoint("original_returned",originalReturned)
   contract.endpoint("application_reset",applicationReset)
+  contract.endpoint("recovery_reset",recoveryReset)
   contract.endpoint("eligible",eligible); contract.endpoint("idle",idle)
   contract.endpoint("reserved",reserved)
   contract.endpoint("owner_recovery",ownerRecovery); contract.endpoint("recovery_debt",recoveryDebt)

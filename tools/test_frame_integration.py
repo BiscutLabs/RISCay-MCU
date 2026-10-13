@@ -23,6 +23,32 @@ from test_frame_receipt import PolicyRunEvidence, receipt_node, registers
 
 
 class FrameIntegrationTests(unittest.TestCase):
+    def test_coordinated_service_clock_closes_both_aliases(self):
+        for model in ("FourPhaseSoc", "ClickSoc"):
+            with self.subTest(model=model), tempfile.TemporaryDirectory() as temp:
+                directory = Path(temp)
+                marker = directory / "verification/assert/I2cTarget_Verification_Assert.sv"
+                marker.parent.mkdir(parents=True); marker.write_text("// extracted form\n")
+                root = dict(module=model, rtl_path=model, children=[dict(id="i2c", contract=dict(
+                    module="I2cTarget", rtl_path=model + ".ca_child_i2c"))])
+                good = f"""module {model}();
+wire workClock;
+assign workClock = serviceClock & gate_enabled;
+wire fabric_clock = workClock;
+I2cTarget ca_child_i2c (.frameAcceptEnable(gate_enabled));
+endmodule"""
+                source = directory / (model + ".sv"); source.write_text(good)
+                self.assertEqual(validated_service_clock(root, directory), model + ".fabric_clock")
+                for old, new, diagnostic in (
+                    ("fabric_clock = workClock", "fabric_clock = serviceClock", "DRIVER:fabric_clock"),
+                    ("serviceClock & gate_enabled", "serviceClock | gate_enabled", "DRIVER:workClock"),
+                    ("wire workClock;", "wire [1:0] workClock;", "SERVICE_CLOCK_DECLARATION"),
+                    ("endmodule", "assign workClock = serviceClock; endmodule", "DRIVER:workClock"),
+                    ("endmodule", "always_comb workClock = serviceClock; endmodule", "ALIAS_WRITERS:workClock")):
+                    source.write_text(good.replace(old, new))
+                    with self.subTest(diagnostic=diagnostic), self.assertRaisesRegex(ValueError, "FRAME_INTEGRATION_" + diagnostic + "$"):
+                        validated_service_clock(root, directory)
+
     def test_service_clock_forms_have_independent_closed_equations(self):
         root = dict(module="Top", rtl_path="Top", children=[dict(id="i2c", contract=dict(
             module="I2cTarget", rtl_path="Top.ca_child_i2c"))])
@@ -142,7 +168,8 @@ def actual_controls(directory, saved):
         paths["assertion"] = paths["target"]
         paths["top_assertion"] = paths["top"]
         del paths["bind"], paths["top_bind"]
-    spell = top_spelling(inline)
+    coordinated = top["module"] in ("FourPhaseSoc", "ClickSoc")
+    spell = top_spelling(inline, coordinated)
     texts = {key:(directory / path).read_text(encoding="utf-8") for key,path in paths.items()}
     original_bytes = {key:(directory / path).read_bytes() for key,path in paths.items()}
     baseline = validate_frame_integration(manifest, {}, directory)
@@ -201,6 +228,49 @@ def actual_controls(directory, saved):
         body, count = re.subn(r"\s*\." + re.escape(pin) + r"\s*\([^()]*\)\s*,", "", match[1])
         if count != 1: raise AssertionError((label, "pin removal shape", count))
         check(label, key, texts[key][:match.start(1)] + body + texts[key][match.end(1):], expected)
+
+    if coordinated:
+        for name in ("applicationCancel",) + (() if inline else ("fabric_io_applicationCancel",)):
+            changed, count = re.subn(r"(\bassign\s+" + name + r"\s*=)[^;]+;",
+                                    r"\g<1> cpuResetActive;", texts["top"])
+            if count != 1: raise AssertionError((name, "cutoff alias shape", count))
+            check("cutoff-alias-" + name, "top", changed, "DRIVER:" + name)
+        for register in ("gate_demandFirst", "gate_drainFirst"):
+            changed, count = re.subn(r"(\b" + register + r"\s*<=\s*)applicationCancel\b",
+                                    r"\g<1>cpuResetActive", texts["top"])
+            if count != 1: raise AssertionError((register, "cutoff demand shape", count))
+            check("cutoff-" + register, "top", changed, "STATE_TRANSITIONS:gate_demandFirst")
+        mutate_pin("cutoff-host-uses-old-observer", "top", "ca_child_i2c", "host_resetActive",
+                   "cpuResetActive", "TOP_ADMISSION_PINS")
+        command = child(top, "control_command_bridge")
+        command_pin = pins(texts["top"], "ca_child_control_command_bridge", command["module"])["in_bits_cpuResetActive"]
+        mutate_pin("cutoff-command-uses-old-observer", "top", "ca_child_control_command_bridge", "in_bits_cpuResetActive",
+                   command_pin.replace(spell("fabric_io_applicationCancel"), "cpuResetActive"), "COMMAND_CONTEXT_PIN:cpuResetActive")
+        changed, count = re.subn(r"(\bfabric_hostFrames_io_enq_bits_resetActive\s*=\s*)" + spell("fabric_io_applicationCancel") + r"\b",
+                                r"\g<1>cpuResetActive", texts["top"])
+        if count != 1: raise AssertionError("Cutoff descriptor shape")
+        check("cutoff-descriptor-uses-old-observer", "top", changed, "DRIVER:fabric_hostFrames_io_enq_bits_resetActive")
+        for name in ("fabric_io_controlCommand_valid", "fabric_io_controlCommand_bits_kind"):
+            match = re.search(r"\b(?:wire\s+(?:\[[^]]+\]\s*)?|assign\s+)" + name + r"\s*=([^;]+);", texts["top"])
+            if match is None: raise AssertionError((name, "halt cutoff shape"))
+            old = match[1]; new, count = re.subn(r"fabric_haltPending\s*&\s*~" + spell("fabric_io_applicationCancel"), "fabric_haltPending", old)
+            if count != 1: raise AssertionError((name, "halt cutoff missing"))
+            check("cutoff-halt-" + name, "top", texts["top"][:match.start(1)] + new + texts["top"][match.end(1):], "DRIVER:" + name)
+        for mode in ("missing", "old-source", "wrong-width"):
+            changed = copy.deepcopy(manifest)
+            endpoints = changed["design"]["endpoints"]
+            endpoint = next(e for e in endpoints if e["id"] == "application_cutoff")
+            if mode == "missing": endpoints.remove(endpoint)
+            elif mode == "old-source": endpoint["source"] = f"~|{top['module']}>cpuResetActive"
+            else: endpoint["width"] = 2
+            try: validate_overlay("top", texts["top"], changed)
+            except ValueError as error:
+                if str(error) != "FRAME_INTEGRATION_CUTOFF_ENDPOINT": raise
+            else: raise AssertionError("Coordinated endpoint downgrade accepted: " + mode)
+            dest = saved / ("cutoff-endpoint-" + mode) / "manifest.json"
+            dest.parent.mkdir(parents=True, exist_ok=True); dest.write_text(json.dumps(changed, indent=2) + "\n")
+            result["cases"]["cutoff-endpoint-" + mode] = dict(status="PASS", diagnostic="FRAME_INTEGRATION_CUTOFF_ENDPOINT",
+                    source=str(dest), sha256=hashlib.sha256(dest.read_bytes()).hexdigest())
 
     # Independently enumerate the full 337-bit native frame and each copied bank.
     leaves = ["resetEpoch", "ingress_programBusy", "ingress_resetActive"] + [
@@ -267,7 +337,7 @@ def actual_controls(directory, saved):
         ("epoch-clock-changed","target","posedge clock or posedge " + ("localReset_release_1" if inline else "localReset_layerCapture"),"posedge otherClock or posedge " + ("localReset_release_1" if inline else "localReset_layerCapture"),"STATE_CLOCK_RESET:resetEpoch_epoch"),
         ("ready-reset-removed","target","~" + ("localReset_release_1" if inline else "_resetEpoch_T_2_layerCapture") + " & frameAcceptEnable","frameAcceptEnable","DRIVER:ca_child_frame_bridge_out_ready"),
 
-        ("gate-clock-inverted","top","serviceClock & gate_enabled","serviceClock | gate_enabled","DRIVER:fabric_clock"),
+        ("gate-clock-inverted","top","serviceClock & gate_enabled","serviceClock | gate_enabled","DRIVER:workClock" if coordinated and not inline else "DRIVER:fabric_clock"),
         ("gate-extra-high-edge","top","posedge gate__enabled_T_3 or posedge reset","posedge serviceClock or posedge reset","WORK_GATE_STATE"),
         ("wrap-upper-bit-lost","assertion","(&" + ("" if inline else "I2cTarget.") + "resetEpoch_epoch)","(&" + ("" if inline else "I2cTarget.") + "resetEpoch_epoch[31:0])","EPOCH_ASSERTION_LOGIC"),
         ("wrap-clock-changed","assertion","always @(posedge " + ("" if inline else "I2cTarget.") + "clock) begin","always @(negedge " + ("" if inline else "I2cTarget.") + "clock) begin","EPOCH_ASSERTION_LOGIC"),

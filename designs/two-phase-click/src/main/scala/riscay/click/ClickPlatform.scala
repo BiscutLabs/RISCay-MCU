@@ -11,8 +11,8 @@ import riscay.soc._
 abstract class ClickPlatform(p: SocParameters, board: SocParameters => BoardProfile, clockedCpuResponse: Boolean = true) extends SocTop(p) {
   val watchdog = withClockAndReset(watchdogClock, reset) { Module(new Watchdog(p.watchdogCycles, p.watchdogHoldCycles)) }
   // Every pulse restarts the release history on the ungated service clock.
-  // Eight edges hold at least 350 ns at the 20 MHz ceiling, beyond the
-  // 250 ns application-island reset-settlement budget. Assertion is immediate.
+  // Eight edges hold at least 350 ns at the 20 MHz ceiling for observation.
+  // This legacy digital pulse qualifier does not qualify physical reset settling.
   protected val applicationResetRequest = WireDefault(reset.asBool || watchdog.io.expired)
   val release = withClockAndReset(serviceClock, applicationResetRequest.asAsyncReset) {
     val n=ApplicationResetContract.releaseEdges
@@ -20,8 +20,8 @@ abstract class ClickPlatform(p: SocParameters, board: SocParameters => BoardProf
   }
   systemReset := applicationResetRequest || release.orR
   resetReason := watchdog.io.reason
-  // Reset pins assert immediately. POR-only logic consumes a conventional
-  // two-flop copy instead; both assertion and release cross before use as data.
+  // Isolation/debt assert immediately. POR-only coordination consumes a
+  // two-flop copy; both assertion and release cross before use as data.
   val cpuResetActive = withClockAndReset(serviceClock, reset) {
     val first = RegNext(systemReset, true.B)
     RegNext(first, true.B)
@@ -38,14 +38,35 @@ abstract class ClickPlatform(p: SocParameters, board: SocParameters => BoardProf
   }
   protected val workClock = Wire(Clock())
   protected val fabric = withClockAndReset(workClock, reset) { Module(new ClickServices(p, board)) }
+  // Synchronous cutoff precedes destructive native reset. These defaults apply
+  // only to externally clocked verification clients; production binds ingress.
+  protected val requestClosed=WireDefault(true.B)
+  protected val requestRebased=WireDefault(true.B)
+  protected val requestRebaseIdle=WireDefault(true.B)
+  protected val resetBoundary=withClockAndReset(serviceClock,reset) { Module(new ClickResetBoundary(ApplicationResetContract.releaseEdges)) }
+  resetBoundary.io.observed:=cpuResetActive
+  protected val applicationCancel=WireDefault(resetBoundary.io.close)
+  protected val nativeApplicationReset=WireDefault(resetBoundary.io.nativeReset)
+  protected val nativeCoreReset=WireDefault(resetBoundary.io.coreReset)
+  Seq(applicationResetRequest,applicationCancel,nativeApplicationReset,nativeCoreReset).foreach(dontTouch(_))
+  protected val applicationIsolation=systemReset || applicationCancel
+  contract.endpoint("application_reset_request",applicationResetRequest)
+  contract.endpoint("application_cutoff",applicationCancel)
+  contract.endpoint("native_application_reset",nativeApplicationReset)
+  contract.endpoint("core_reset",nativeCoreReset)
+  protected val applicationBridges=scala.collection.mutable.ArrayBuffer.empty[ClickQuiescingBridge]
+  protected def closeBridge(b: ClickQuiescingBridge): Unit = {
+    b.close:=applicationCancel; b.rebase:=resetBoundary.io.rebase; applicationBridges+=b
+  }
+  fabric.io.applicationCancel:=applicationCancel
   // Application presentation cancels with the CPU. The POR-owned effect owners
   // below continue their accepted work and suppress old-lifetime completions.
   protected val completion=asyncChild("completion")(d => new ClickCompletion(d))
-  val completionPlan=asyncChild("completion_plan_bridge")(d => new DecoupledToClick(new CompletionPlan,d))
-  val completionTelemetry=asyncChild("completion_telemetry_bridge")(d => new DecoupledToClick(Bool(),d))
-  val completionHousekeeping=asyncChild("completion_housekeeping_bridge")(d => new DecoupledToClick(Bool(),d))
-  Seq(completion,completionPlan,completionTelemetry,completionHousekeeping)
-    .foreach(_.reset:=fabric.io.cpuReset.asAsyncReset)
+  val completionPlan=asyncChild("completion_plan_bridge")(d => new DecoupledToClickQuiescing(new CompletionPlan,d))
+  val completionTelemetry=asyncChild("completion_telemetry_bridge")(d => new DecoupledToClickQuiescing(Bool(),d))
+  val completionHousekeeping=asyncChild("completion_housekeeping_bridge")(d => new DecoupledToClickQuiescing(Bool(),d))
+  completion.reset:=nativeApplicationReset.asAsyncReset
+  Seq(completionPlan,completionTelemetry,completionHousekeeping).foreach(closeBridge)
   Seq(completionPlan,completionTelemetry,completionHousekeeping).foreach(_.clock:=workClock)
   Seq(completionPlan,completionTelemetry,completionHousekeeping).foreach { bridge =>
     dontTouch(bridge.in); dontTouch(bridge.out)
@@ -56,10 +77,11 @@ abstract class ClickPlatform(p: SocParameters, board: SocParameters => BoardProf
   chiselasync.protocol.TwoPhase.connect(completion.telemetry,completionTelemetry.out)
   chiselasync.protocol.TwoPhase.connect(completion.housekeeping,completionHousekeeping.out)
   protected val admission=asyncChild("admission")(d => new ClickAdmission(d))
-  val admissionGrant=asyncChild("admission_grant_bridge")(d => new ClickToDecoupled(Bool(),d))
-  Seq(admission,admissionGrant).foreach(_.reset:=fabric.io.cpuReset.asAsyncReset)
+  val admissionGrant=asyncChild("admission_grant_bridge")(d => new ClickQuiescingToDecoupled(Bool(),d))
+  admission.reset:=nativeApplicationReset.asAsyncReset
+  closeBridge(admissionGrant)
   admissionGrant.clock:=workClock
-  admission.start:=withClockAndReset(workClock,fabric.io.cpuReset.asAsyncReset) {
+  admission.start:=withClockAndReset(workClock,nativeApplicationReset.asAsyncReset) {
     val stages=RegInit(0.U(2.W)); stages:=Cat(stages(0),true.B); stages.andR
   }
   chiselasync.protocol.TwoPhase.connect(admission.returned,completion.creditReturn)
@@ -67,15 +89,17 @@ abstract class ClickPlatform(p: SocParameters, board: SocParameters => BoardProf
   fabric.io.admissionGrant <> admissionGrant.out
   dontTouch(admissionGrant.in); dontTouch(admissionGrant.out)
   // Idle only confirms drainage. The native grant owns admission credit.
-  withClockAndReset(workClock,fabric.io.cpuReset.asAsyncReset) {
+  withClockAndReset(workClock,reset) {
     val completionReturned=completion.response.req === completion.response.ack
     val completionReturnedFirst=RegNext(completionReturned,false.B)
-    fabric.io.completionIdle:=RegNext(completionReturnedFirst,false.B)
+    val second=RegNext(completionReturnedFirst,false.B)
+    when(applicationCancel) { completionReturnedFirst:=false.B; second:=false.B }
+    fabric.io.completionIdle:=second && !applicationCancel
   }
   if(clockedCpuResponse) {
     // Verification/service-bus clients have an actual clocked consumer.
-    val bridge=asyncChild("completion_fixture_bridge")(d => new ClickToDecoupled(new MemoryResponse,d))
-    bridge.reset:=fabric.io.cpuReset.asAsyncReset; bridge.clock:=workClock
+    val bridge=asyncChild("completion_fixture_bridge")(d => new ClickQuiescingToDecoupled(new MemoryResponse,d))
+    closeBridge(bridge); bridge.clock:=workClock
     chiselasync.protocol.TwoPhase.connect(bridge.in,completion.response)
     fabric.io.completionResponse <> bridge.out
   } else {
@@ -96,8 +120,8 @@ abstract class ClickPlatform(p: SocParameters, board: SocParameters => BoardProf
   val ramReturn = asyncChild("ram_return")(d => new ClickRamReturn(d))
   programAccess.clock := workClock; ramAccess.clock := workClock
   programAccess.io <> fabric.io.program; ramAccess.io <> fabric.io.ram
-  // POR identity/effects survive application reset. Only CPU reply eligibility
-  // resets immediately; retained reset debt cancels queued uncommitted grants.
+  // POR identity/effects survive application reset. CPU reply eligibility
+  // follows coordinated native reset; service debt cancels uncommitted grants.
   val ramSource=asyncChild("ram_source")(d => new ClickRamSource(d))
   val ramReserve=asyncChild("ram_reserve_bridge")(d => new DecoupledToClick(Bool(),d))
   val ramGrant=asyncChild("ram_grant_bridge")(d => new ClickToDecoupled(Bool(),d))
@@ -114,13 +138,13 @@ abstract class ClickPlatform(p: SocParameters, board: SocParameters => BoardProf
   ramAccess.captureRequest:=ramReturn.captureRequest
   ramReturn.captureAcknowledge:=ramAccess.captureAcknowledge
   ramAccess.returnIdle:=ramReturn.idle
-  ramReturn.applicationReset:=fabric.io.cpuReset.asAsyncReset
+  ramReturn.applicationReset:=nativeApplicationReset.asAsyncReset
   ramReturn.eligible:=ramSource.eligible
   completion.ram.req:=ramReturn.response.req; completion.ram.bits:=ramReturn.response.bits
   ramReturn.response.ack:=completion.ram.ack
   ramReserve.in <> fabric.io.ramSource.reserve; fabric.io.ramSource.grant <> ramGrant.out
   ramDecision.in <> fabric.io.ramSource.decision
-  ramSource.applicationReset:=fabric.io.cpuReset.asAsyncReset
+  ramSource.applicationReset:=nativeApplicationReset.asAsyncReset
   // Effects and application presentation return before publication ACK. Owner
   // occupancy is deliberately excluded: publication must not wait for itself.
   ramSource.wordDrained:=ramAccess.effectsDrained && ramReturn.presentationSettled
@@ -138,8 +162,15 @@ abstract class ClickPlatform(p: SocParameters, board: SocParameters => BoardProf
     when(previousSafe && ramSourceEmpty && !fabric.io.cpuResetActive) { debt:=false.B }
     debt
   }
-  fabric.io.ramSource.resetDebt:=ramResetDebt
-  fabric.io.ramSource.draining:=ramResetDebt || !ramSourceEmpty
+  val ramServiceDebt=withClockAndReset(workClock,reset) {
+    val debt=RegInit(true.B); val previousSafe=RegInit(false.B)
+    previousSafe:=ramSourceEmpty && !applicationCancel
+    when(applicationCancel) { debt:=true.B; previousSafe:=false.B }
+      .elsewhen(previousSafe && ramSourceEmpty) { debt:=false.B }
+    debt
+  }
+  fabric.io.ramSource.resetDebt:=ramServiceDebt
+  fabric.io.ramSource.draining:=ramServiceDebt || !ramSourceEmpty
   val programSource=asyncChild("program_source")(d => new ClickProgramSource(d))
   val programReserve=asyncChild("program_reserve_bridge")(d => new DecoupledToClick(Bool(),d))
   val programGrant=asyncChild("program_grant_bridge")(d => new ClickToDecoupled(Bool(),d))
@@ -161,13 +192,13 @@ abstract class ClickPlatform(p: SocParameters, board: SocParameters => BoardProf
   programAccess.captureRequest:=programReturn.captureRequest
   programReturn.captureAcknowledge:=programAccess.captureAcknowledge
   programAccess.returnIdle:=programReturn.idle
-  programReturn.applicationReset:=fabric.io.cpuReset.asAsyncReset
+  programReturn.applicationReset:=nativeApplicationReset.asAsyncReset
   programReturn.eligible:=programSource.cpuPresentationPermit
   completion.memory.req:=programReturn.response.req; completion.memory.bits:=programReturn.response.bits
   programReturn.response.ack:=completion.memory.ack
   programReserve.in <> fabric.io.programSource.reserve; fabric.io.programSource.grant <> programGrant.out
   programDecision.in <> fabric.io.programSource.decision
-  programSource.applicationReset:=fabric.io.cpuReset.asAsyncReset
+  programSource.applicationReset:=nativeApplicationReset.asAsyncReset
   // Capture/effects and CPU settlement cannot wait for publication or Stored return.
   programSource.wordDrained:=programAccess.effectsDrained && programReturn.presentationSettled
   fabric.io.programSource.eligible:=programSource.eligible
@@ -184,8 +215,15 @@ abstract class ClickPlatform(p: SocParameters, board: SocParameters => BoardProf
     when(previousSafe && programSourceEmpty && !fabric.io.cpuResetActive) { debt:=false.B }
     debt
   }
-  fabric.io.programSource.resetDebt:=programResetDebt
-  fabric.io.programSource.draining:=programResetDebt || !programSourceEmpty
+  val programServiceDebt=withClockAndReset(workClock,reset) {
+    val debt=RegInit(true.B); val previousSafe=RegInit(false.B)
+    previousSafe:=programSourceEmpty && !applicationCancel
+    when(applicationCancel) { debt:=true.B; previousSafe:=false.B }
+      .elsewhen(previousSafe && programSourceEmpty) { debt:=false.B }
+    debt
+  }
+  fabric.io.programSource.resetDebt:=programServiceDebt
+  fabric.io.programSource.draining:=programServiceDebt || !programSourceEmpty
   val control = asyncChild("control")(d => new ClickControl(p, d))
   val controlCommandBridge = asyncChild("control_command_bridge")(d => new DecoupledToClick(new ControlCommand, d))
   val controlReplyBridge = asyncChild("control_reply_bridge")(d => new ClickToDecoupled(new ControlReply, d))
@@ -231,7 +269,7 @@ abstract class ClickPlatform(p: SocParameters, board: SocParameters => BoardProf
 
   // Native proof ownership clears debt after original slot and final receipt
   // return. The temporary receipt only observes the remaining clocked client.
-  val telemetrySource=asyncChild("telemetry_source")(d => new ClickPublicationSource(d))
+  val telemetrySource=asyncChild("telemetry_source")(d => new ClickPublicationSource(d,splitRecoveryReset=true))
   val telemetryReserve=asyncChild("telemetry_reserve_bridge")(d => new DecoupledToClick(new PublicationReservation,d))
   val telemetryGrant=asyncChild("telemetry_grant_bridge")(d => new ClickToDecoupled(new PublicationReservation,d))
   val telemetryDecision=asyncChild("telemetry_decision_bridge")(d => new DecoupledToClick(Bool(),d))
@@ -257,14 +295,11 @@ abstract class ClickPlatform(p: SocParameters, board: SocParameters => BoardProf
   telemetryDecision.in <> fabric.io.telemetrySource.decision
   telemetryPublication.in <> fabric.io.telemetrySource.publication
   fabric.io.telemetrySource.drain <> telemetryDrain.out
-  telemetrySource.applicationReset:=fabric.io.cpuReset.asAsyncReset
-  fabric.io.telemetrySource.eligible:=telemetrySource.eligible
-  fabric.io.telemetrySource.ownerRecovery:=telemetrySource.ownerRecovery
-  fabric.io.telemetrySource.recoveryDebt:=telemetrySource.recoveryDebt
+  telemetrySource.applicationReset:=nativeApplicationReset.asAsyncReset
+  telemetrySource.recoveryReset:=applicationIsolation.asAsyncReset
   val telemetryOwnerIdle=withClockAndReset(workClock,reset) {
     val first=RegNext(telemetrySource.idle,false.B); RegNext(first,false.B)
   }
-  telemetryReserveAvailable:=telemetryOwnerIdle
   val telemetrySourceEmpty=telemetryOwnerIdle && telemetryReserve.in.ready &&
     telemetryDecision.in.ready && telemetryPublication.in.ready && !telemetryGrant.out.valid && !telemetryDrain.out.valid
   val telemetryFinalReturn=asyncChild("telemetry_final_return")(d => new ClickReturnReceipt(d))
@@ -276,16 +311,29 @@ abstract class ClickPlatform(p: SocParameters, board: SocParameters => BoardProf
   telemetryFinalReturn.quiet:=telemetryReserve.in.ready && telemetryDecision.in.ready &&
     telemetryPublication.in.ready && !telemetryGrant.out.valid && !telemetryDrain.out.valid &&
     fabric.io.telemetrySource.quiet
-  // Conservative application-lifetime masking asserts immediately; native debt
-  // retains it after reset release. No periodic-clocked recovery policy state.
-  val telemetryReturnFence=fabric.io.cpuReset || telemetrySource.recoveryDebt || telemetrySource.recoveryReturning
-  fabric.io.telemetrySource.occupied:= !telemetrySourceEmpty
-  fabric.io.telemetrySource.returnFence:=telemetryReturnFence
-  fabric.io.telemetrySource.draining:=telemetryReturnFence || telemetrySource.recoveryDebt || !telemetrySourceEmpty
+  val telemetryBoundary=withClockAndReset(workClock,reset) { Module(new ClickPublicationBoundary) }
+  telemetryReserveAvailable:=telemetryBoundary.io.available
+  telemetryBoundary.io.cancel:=applicationCancel
+  // Debt stays high through the complete attributed return; clean is held
+  // until the next reset. The complete physical CDC aperture remains open.
+  telemetryBoundary.io.nativeClean:= !telemetrySource.recoveryDebt && !telemetrySource.recoveryReturning
+  telemetryBoundary.io.empty:=telemetrySourceEmpty
+  telemetryBoundary.io.quiet:=fabric.io.telemetrySource.quiet
+  telemetryBoundary.io.reserved:=fabric.io.telemetrySource.reserve.fire
+  telemetryBoundary.io.reservationRecovery:=fabric.io.telemetrySource.reserve.bits.recovery
+  telemetryBoundary.io.decided:=fabric.io.telemetrySource.decision.fire
+  telemetryBoundary.io.committed:=fabric.io.telemetrySource.decision.bits
+  fabric.io.telemetrySource.eligible:=telemetryBoundary.io.eligible
+  fabric.io.telemetrySource.ownerRecovery:=telemetryBoundary.io.recovery
+  fabric.io.telemetrySource.recoveryDebt:=telemetryBoundary.io.debt
+  val telemetryReturnFence=applicationIsolation || telemetrySource.recoveryDebt || telemetrySource.recoveryReturning
+  fabric.io.telemetrySource.occupied:=telemetryBoundary.io.occupied
+  fabric.io.telemetrySource.returnFence:=telemetryBoundary.io.debt
+  fabric.io.telemetrySource.draining:=telemetryBoundary.io.debt || telemetryBoundary.io.occupied
 
   // Native proof ownership clears debt after original slot and final receipt
   // return. The temporary receipt only observes the remaining clocked client.
-  val housekeepingSource=asyncChild("housekeeping_source")(d => new ClickPublicationSource(d))
+  val housekeepingSource=asyncChild("housekeeping_source")(d => new ClickPublicationSource(d,splitRecoveryReset=true))
   val housekeepingReserve=asyncChild("housekeeping_reserve_bridge")(d => new DecoupledToClick(new PublicationReservation,d))
   val housekeepingGrant=asyncChild("housekeeping_grant_bridge")(d => new ClickToDecoupled(new PublicationReservation,d))
   val housekeepingDecision=asyncChild("housekeeping_decision_bridge")(d => new DecoupledToClick(Bool(),d))
@@ -311,14 +359,11 @@ abstract class ClickPlatform(p: SocParameters, board: SocParameters => BoardProf
   housekeepingDecision.in <> fabric.io.housekeepingSource.decision
   housekeepingPublication.in <> fabric.io.housekeepingSource.publication
   fabric.io.housekeepingSource.drain <> housekeepingDrain.out
-  housekeepingSource.applicationReset:=fabric.io.cpuReset.asAsyncReset
-  fabric.io.housekeepingSource.eligible:=housekeepingSource.eligible
-  fabric.io.housekeepingSource.ownerRecovery:=housekeepingSource.ownerRecovery
-  fabric.io.housekeepingSource.recoveryDebt:=housekeepingSource.recoveryDebt
+  housekeepingSource.applicationReset:=nativeApplicationReset.asAsyncReset
+  housekeepingSource.recoveryReset:=applicationIsolation.asAsyncReset
   val housekeepingOwnerIdle=withClockAndReset(workClock,reset) {
     val first=RegNext(housekeepingSource.idle,false.B); RegNext(first,false.B)
   }
-  housekeepingReserveAvailable:=housekeepingOwnerIdle
   val housekeepingSourceEmpty=housekeepingOwnerIdle && housekeepingReserve.in.ready &&
     housekeepingDecision.in.ready && housekeepingPublication.in.ready && !housekeepingGrant.out.valid && !housekeepingDrain.out.valid
   val housekeepingFinalReturn=asyncChild("housekeeping_final_return")(d => new ClickReturnReceipt(d))
@@ -330,12 +375,38 @@ abstract class ClickPlatform(p: SocParameters, board: SocParameters => BoardProf
   housekeepingFinalReturn.quiet:=housekeepingReserve.in.ready && housekeepingDecision.in.ready &&
     housekeepingPublication.in.ready && !housekeepingGrant.out.valid && !housekeepingDrain.out.valid &&
     fabric.io.housekeepingSource.quiet
-  // Conservative application-lifetime masking asserts immediately; native debt
-  // retains it after reset release. No periodic-clocked recovery policy state.
-  val housekeepingReturnFence=fabric.io.cpuReset || housekeepingSource.recoveryDebt || housekeepingSource.recoveryReturning
-  fabric.io.housekeepingSource.occupied:= !housekeepingSourceEmpty
-  fabric.io.housekeepingSource.returnFence:=housekeepingReturnFence
-  fabric.io.housekeepingSource.draining:=housekeepingReturnFence || housekeepingSource.recoveryDebt || !housekeepingSourceEmpty
+  val housekeepingBoundary=withClockAndReset(workClock,reset) { Module(new ClickPublicationBoundary) }
+  housekeepingReserveAvailable:=housekeepingBoundary.io.available
+  housekeepingBoundary.io.cancel:=applicationCancel
+  // Debt stays high through the complete attributed return; clean is held
+  // until the next reset. The complete physical CDC aperture remains open.
+  housekeepingBoundary.io.nativeClean:= !housekeepingSource.recoveryDebt && !housekeepingSource.recoveryReturning
+  housekeepingBoundary.io.empty:=housekeepingSourceEmpty
+  housekeepingBoundary.io.quiet:=fabric.io.housekeepingSource.quiet
+  housekeepingBoundary.io.reserved:=fabric.io.housekeepingSource.reserve.fire
+  housekeepingBoundary.io.reservationRecovery:=fabric.io.housekeepingSource.reserve.bits.recovery
+  housekeepingBoundary.io.decided:=fabric.io.housekeepingSource.decision.fire
+  housekeepingBoundary.io.committed:=fabric.io.housekeepingSource.decision.bits
+  fabric.io.housekeepingSource.eligible:=housekeepingBoundary.io.eligible
+  fabric.io.housekeepingSource.ownerRecovery:=housekeepingBoundary.io.recovery
+  fabric.io.housekeepingSource.recoveryDebt:=housekeepingBoundary.io.debt
+  val housekeepingReturnFence=applicationIsolation || housekeepingSource.recoveryDebt || housekeepingSource.recoveryReturning
+  fabric.io.housekeepingSource.occupied:=housekeepingBoundary.io.occupied
+  fabric.io.housekeepingSource.returnFence:=housekeepingBoundary.io.debt
+  fabric.io.housekeepingSource.draining:=housekeepingBoundary.io.debt || housekeepingBoundary.io.occupied
+
+  // Diagnostic-only held-grant checks. Native levels never choose a POR write
+  // enable or value; the clocked mirror must agree with the actual source.
+  withClockAndReset(workClock,reset) {
+    for((native,port) <- Seq((telemetrySource,fabric.io.telemetrySource),
+        (housekeepingSource,fabric.io.housekeepingSource))) {
+      when(port.decision.fire && port.decision.bits) {
+        assert(native.eligible,"PUBLICATION_NATIVE_COMMIT_INELIGIBLE")
+        assert(native.ownerRecovery === port.grant.bits.recovery &&
+          native.ownerRecovery === port.ownerRecovery,"PUBLICATION_NATIVE_COMMIT_ROLE")
+      }
+    }
+  }
 
   // Immutable profile selects this design's native permanent controller.
   val supervisorBridges = board(p) match {
@@ -385,7 +456,10 @@ abstract class ClickPlatform(p: SocParameters, board: SocParameters => BoardProf
       fabric.io.adc.result:=0.U.asTypeOf(fabric.io.adc.result)
       adcCsN:=true.B; adcSclk:=false.B
   }
-  fabric.io.cpuReset := systemReset
+  resetBoundary.io.closed:=requestClosed && fabric.io.presentationClosed && applicationBridges.map(_.closed).reduce(_ && _)
+  resetBoundary.io.rebased:=requestRebased && applicationBridges.map(_.rebased).reduce(_ && _)
+  resetBoundary.io.rebaseIdle:=requestRebaseIdle && applicationBridges.map(b => !b.rebased).reduce(_ && _)
+  fabric.io.cpuReset := applicationIsolation
   fabric.io.cpuResetActive := cpuResetActive
   fabric.io.crashCount := crashCount
   fabric.io.frontClock := serviceClock
@@ -396,7 +470,7 @@ abstract class ClickPlatform(p: SocParameters, board: SocParameters => BoardProf
       gate.io.gray := timebase.io.gray; gate.io.consumedGray := fabric.io.consumedGray
       gate.io.canSleep := fabric.io.canSleep; gate.io.activity := fabric.io.activity
       gate.io.drainDemand := fabric.io.drainDemand
-      gate.io.forceRun := cpuResetActive
+      gate.io.forceRun := resetBoundary.io.forceRun
       workClock := gate.io.clockOut; fabric.io.clockRunning := gate.io.running
       fabric.io.timeGray := gate.io.synchronizedGray
       sleepEntries := gate.io.entries; sleeping := !gate.io.running
@@ -406,7 +480,7 @@ abstract class ClickPlatform(p: SocParameters, board: SocParameters => BoardProf
         wake.io.event := timebase.io.gray =/= fabric.io.consumedGray || ((gpioIn ^ fabric.io.observedGpio) & mask).orR
         wake.io.scl := scl; wake.io.sda := sda
         wake.io.selected := fabric.io.hostSelected; wake.io.rejected := fabric.io.hostRejected
-        wake.io.running := gate.io.running || systemReset
+        wake.io.running := gate.io.running || applicationIsolation
         serviceClockEnable := wake.io.enable
       } else { serviceClockEnable := true.B }
     case None =>

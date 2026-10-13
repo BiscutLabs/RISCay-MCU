@@ -134,6 +134,11 @@ def actual_campaign(directories, library):
                 'ownerReturned_stages_1<=returnIdle;', 'ACCESS_ACTIVE_AND_OBSERVATION')
             rtl('access-word-return-bypasses-first-sync', model, 'returned_stages_1<=returned_stages_0;',
                 'returned_stages_1<=word_ack;', 'ACCESS_ACTIVE_AND_OBSERVATION')
+            if variant == 'bd':
+                rtl('access-native-ack-omitted-from-sync', model, 'returned_stages_0<=~packed_0&~word_ack;',
+                    'returned_stages_0<=~packed_0;', 'ACCESS_ACTIVE_AND_OBSERVATION')
+                rtl('access-native-ack-enters-admission', model, 'wire drained=',
+                    'wire drained=~word_ack&', 'ACCESS_WIRE:drained')
             rtl('access-extra-register', model, 'reg active;', 'reg active;reg shadow;', 'UNCONSUMED_RTL')
             rtl('access-declaration-writer', model, 'reg active;', "reg active=1'b0;", 'ACCESS_REGISTER')
             rtl('access-extra-active-writer', model, 'endmodule', "always@(posedge clock)active<=1'b0;endmodule", 'UNCONSUMED_RTL')

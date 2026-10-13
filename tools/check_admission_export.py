@@ -110,6 +110,8 @@ def admission_probe(source,manifest,scopes):
             validate_admission(cs['admission']);validate_completion(cs['completion'])
             bridge=cs['admission_grant_bridge']
             model='ClickToDecoupled' if click else 'FourPhaseToDecoupled'
+            if any(e['id']=='native_application_reset' for e in manifest['design'].get('endpoints',[])):
+                model=('Click' if click else 'FourPhase')+'QuiescingToDecoupled'
             protocol='two-phase-bundled-v1' if click else 'four-phase-bundled-v1'
             if (not re.fullmatch(model+r'(?:_[0-9]+)?',bridge['module']) or
                 {c['id']:(c['protocol'],c['role']) for c in bridge['channels']} !=

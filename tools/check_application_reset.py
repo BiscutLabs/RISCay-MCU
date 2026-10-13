@@ -3,6 +3,21 @@
 import re
 
 
+def coordinated_reset(manifest):
+    return any(e['id']=='native_application_reset' for e in manifest['design'].get('endpoints',[]))
+
+
+def reset_endpoint(manifest, name):
+    matches=[e for e in manifest['design'].get('endpoints',[]) if e['id']==name]
+    if len(matches)!=1 or matches[0]['width']!=1:
+        raise ValueError('SOC_RESET_ENDPOINT_'+name)
+    return matches[0]['rtl_path']
+
+
+def presentation_reset(manifest):
+    return reset_endpoint(manifest,'native_application_reset') if coordinated_reset(manifest) else manifest['top']+'.systemReset'
+
+
 def validate_application_reset(manifest,scopes,rtl):
     top=manifest["top"]
     if top not in ("FourPhaseSoc","ClickSoc"):return
@@ -15,11 +30,19 @@ def validate_application_reset(manifest,scopes,rtl):
     expected=("always@(posedgeserviceClockorposedgeapplicationResetRequest)begin"
               "if(applicationResetRequest)release_0<=8'hFF;"
               "elserelease_0<={release_0[6:0],1'h0};end")
-    if (compact.count(expected)!=1 or compact.count("release_0<=")!=2 or
+    if not coordinated_reset(manifest) and (compact.count(expected)!=1 or compact.count("release_0<=")!=2 or
         compact.count("wireapplicationResetRequest=reset|watchdog_;")!=1 or
         compact.count("wire_systemReset_output=|{applicationResetRequest,release_0};")!=1 or
         compact.count("assignsystemReset=_systemReset_output;")!=1):
         raise ValueError("APPLICATION_RESET_HOLD_LOGIC")
+    if coordinated_reset(manifest):
+        endpoints=manifest['design']['endpoints']
+        for name,pin in [('application_cutoff','applicationCancel'),('native_application_reset','nativeApplicationReset'),('core_reset','nativeCoreReset')]:
+            reset_endpoint(manifest,name)
+            if [e['source'] for e in endpoints if e['id']==name] != [f'~|{top}>{pin}']:
+                raise ValueError('SOC_RESET_COORDINATOR_ENDPOINT')
+        # The elaborated graph audit proves the actual raw qualifier, including
+        # reset origin, clock, asynchronous set and all shift/hold equations.
     children={c["id"]:c["contract"] for c in manifest["design"]["children"]}
     application={"core","transactions","request_bridge","completion","admission","admission_grant_bridge"} | {"completion_"+n+"_bridge" for n in ("plan","telemetry","housekeeping")}
     if not application<=children.keys():raise ValueError("APPLICATION_RESET_ISLAND_INVENTORY")
@@ -109,6 +132,13 @@ def persistent_reset_children(manifest):
         persistent.update(publication)
     persistent["i2c"] = "I2cTarget"
     persistent.update({"elapsed_scaler": "ElapsedTicks", "sample_scaler": "SampleScaler", "spi_adc": "SpiAdc"})
+    if coordinated_reset(manifest):
+        prefix='Click' if top=='ClickSoc' else 'FourPhase'
+        receivers={'request_bridge':prefix+'QuiescingToDecoupled','admission_grant_bridge':prefix+'QuiescingToDecoupled'}
+        receivers.update({'completion_'+name+'_bridge':'DecoupledTo'+prefix+'Quiescing' for name in ('plan','telemetry','housekeeping')})
+        if not receivers.keys() <= {c['id'] for c in root['children']}:
+            raise ValueError('SOC_QUIESCING_RESET_INVENTORY')
+        persistent.update(receivers)
     for child in root["children"]:
         if child.get("id") in persistent and not re.fullmatch(
                 re.escape(persistent[child["id"]]) + r"(?:_[0-9]+)?", child["contract"].get("module", "")):

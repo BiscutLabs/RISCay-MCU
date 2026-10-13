@@ -11,7 +11,8 @@ slow source/fast return, and fast source/slow return. Only declared 1 ns variabl
 cells vary within 1..10 ns; data budgets and fixed guards retain their values.
 All two BD and seven Click custom EventRegisters receive monitors. Forty-eight
 fixture/profile positives plus nine legal 100 ps distributions accompany 45
-pin timing faults and two independent permission-data faults (104 total). The
+pin timing faults, two independent permission-data faults and two actual
+eligibility-reset binding faults (106 total). The original 104 cases remain. The
 clocked fixtures retain their original service frequency and small capacities;
 this is not a random-skew, whole-chip or configuration-complete qualification.
 """
@@ -78,6 +79,13 @@ def load_fixture(source, variant):
     definitions = re.findall(r'^`define\s+(\w+)\s+([\w.]+)\s*$', ref.read_text(), re.M)
     require(len(definitions) == len(dict(definitions)), 'DUPLICATE_REFERENCE')
     references = dict(definitions)
+    coordinated = [e for e in manifest['design']['endpoints'] if e['id'] == 'native_application_reset']
+    require(len(coordinated) == 1 and coordinated[0]['width'] == 1 and
+            coordinated[0]['source'] == '~|' + top + '>nativeApplicationReset', 'PRESENTATION_RESET_ENDPOINT')
+    reference = 'ref_' + top + '_' + coordinated[0]['probe']
+    require(reference in references and references[reference] == 'nativeApplicationReset',
+            'PRESENTATION_RESET_REFERENCE')
+    presentation_reset = top + '.' + references[reference]
     children = {c['id']: c['contract'] for c in manifest['design']['children']}
     require({'program_source', 'program_return', 'program_access'} <= children.keys(), 'OWNERS')
     owner = children['program_source']
@@ -105,7 +113,7 @@ def load_fixture(source, variant):
     require(len(files) == len(set(files)), 'FILELIST_DUPLICATE')
     require(all((source / name).resolve().is_relative_to(source) and (source / name).is_file() for name in files), 'FILELIST_PATH')
     return dict(source=source, manifest=manifest, owner=owner, returned=returned,
-                boundary=boundary, original=original, files=files)
+                boundary=boundary, original=original, files=files, presentation_reset=presentation_reset)
 
 
 def skew(original, owner, returned, profile):
@@ -142,13 +150,18 @@ def absolute(path):
     return 'Testbench.dut.' + path.split('.', 1)[1]
 
 
-def role_monitors(owner, returned, variant):
+def role_monitors(owner, returned, variant, presentation_reset):
     e = {p['id']: absolute(p['rtl_path']) for p in owner['endpoints']}
     r = {p['id']: absolute(p['rtl_path']) for p in returned['endpoints']}
     cells = {p['id']: p for p in returned['primitives']}
     src = {p['id']: absolute(p['rtl_path']) for p in owner['primitives']}
     capture = absolute(cells['payload']['rtl_path']) + '.trigger'
     permission = absolute(cells['permission']['rtl_path'])
+    # Cancellation follows the expected POR/coordinated presentation inputs,
+    # never the observed eligibility value or the register reset pin itself.
+    # Explicit binding checks prevent a rewired reset from redefining the oracle.
+    expected_reset = f"({e['reset']} | {e['application_reset']})"
+    coordinated_reset = absolute(presentation_reset)
     owned = (f"({src['owned']}.q === 1'b1 && {src['armed_phase']}.q[0] === {e['reserved']})"
              if variant == 'click' else f"({e['reserved']} === 1'b1)")
     monitors = capture_monitors(returned, CAPTURES[variant], PREFIX).replace('dut.', 'Testbench.dut.')
@@ -175,6 +188,16 @@ always @(posedge {path}.trigger) if({path}.reset === 1'b0) begin
 end
 '''
     monitors += f'''
+wire role_presentation_reset={expected_reset};
+always @({e['reset']} or {e['application_reset']} or {e['eligibility_reset']} or
+         {src['eligibility']}.reset or {r['reset']} or {r['application_reset']} or
+         {coordinated_reset} or Testbench.reset) begin
+  #1;
+  if({e['reset']} !== Testbench.reset || {r['reset']} !== Testbench.reset ||
+     {e['application_reset']} !== {coordinated_reset} || {r['application_reset']} !== {coordinated_reset} ||
+     {e['eligibility_reset']} !== {expected_reset} || {src['eligibility']}.reset !== {expected_reset})
+    $fatal(1,"{PREFIX}_RESET_BINDING");
+end
 reg role_valid=0, role_loader=0, role_cancelled=0, role_captured=0;
 integer role_commits=0, role_captures=0, role_cpu=0, role_loaders=0, role_cancellations=0;
 integer role_loader_phase0=0, role_loader_phase1=0;
@@ -186,9 +209,9 @@ end
 always @(posedge Testbench.observedWorkClock) if(!Testbench.reset && Testbench.wordAccepted) begin
   if(role_valid) $fatal(1,"{PREFIX}_WORD_REUSE");
   role_valid=1;role_loader=Testbench.loaderWordPending;
-  role_cancelled=Testbench.systemReset;role_captured=0;role_commits=role_commits+1;
+  role_cancelled=role_presentation_reset;role_captured=0;role_commits=role_commits+1;
 end
-always @(posedge Testbench.systemReset) if(!Testbench.reset && role_valid && !role_cancelled) begin
+always @(posedge role_presentation_reset) if(!Testbench.reset && role_valid && !role_cancelled) begin
   role_cancelled=1;role_cancellations=role_cancellations+1;
 end
 always @(posedge {r['idle']}) if(!Testbench.reset && role_captured) role_valid=0;
@@ -197,7 +220,7 @@ always @(posedge {capture}) if(!Testbench.reset) begin
   if(!role_valid || role_captured) $fatal(1,"{PREFIX}_UNCOMMITTED_CAPTURE");
   if({e['owner_loader']} !== role_loader) $fatal(1,"{PREFIX}_RETAINED_ROLE");
   if(!{owned}) $fatal(1,"{PREFIX}_OWNER_ARM_IDENTITY");
-  if({r['eligible']} !== (!role_loader && !role_cancelled && !Testbench.systemReset))
+  if({r['eligible']} !== (!role_loader && !role_cancelled && !role_presentation_reset))
     $fatal(1,"{PREFIX}_COMPOSED_PERMISSION");
   role_captured=1;role_captures=role_captures+1;
   if(role_loader) begin
@@ -208,7 +231,7 @@ always @(posedge {capture}) if(!Testbench.reset) begin
 end
 always @(posedge {permission}.trigger) if({permission}.reset === 1'b0) begin
   captured_permission={permission}.d;
-  expected_permission=(!role_loader && !role_cancelled && !Testbench.systemReset);
+  expected_permission=(!role_loader && !role_cancelled && !role_presentation_reset);
   permission_reset_epoch=q_permission_reset;
   #1;
   if({permission}.reset === 1'b0 && q_permission_reset==permission_reset_epoch &&
@@ -219,8 +242,8 @@ end
     return monitors
 
 
-def instrument(original, owner, returned, variant, fixture):
-    monitors = role_monitors(owner, returned, variant)
+def instrument(original, owner, returned, variant, fixture, presentation_reset):
+    monitors = role_monitors(owner, returned, variant, presentation_reset)
     activity = '\n'.join(f'$display("{PREFIX}_ACTIVITY:{n}:%0d:%0d",pc_{n}_count,q_{n}_checked);' for n in CAPTURES[variant])
     activity += f'''
 if(role_commits==0 || role_commits!=role_captures) $fatal(1,"{PREFIX}_CAPTURE_COUNT");
@@ -270,6 +293,9 @@ def mutation(text, node, name, kind):
     instance = cell['rtl_path'].rsplit('.', 1)[1]
     trigger = pin_expression(text, instance, 'trigger')
     width = cell['parameters']['WIDTH']
+    if kind == 'reset-binding':
+        require(name == 'eligibility', 'RESET_MUTATION_OWNER')
+        return replace_pin(text, instance, 'reset', 'reset'), PREFIX + '_RESET_BINDING'
     if kind == 'setup':
         return replace_pin(text, instance, 'd', '{' + width + '{' + trigger + '}}'), PREFIX + '_SETUP:' + name
     if kind == 'role-data':
@@ -344,15 +370,17 @@ def main():
         case = out / name
         shutil.copytree(fixture['source'], case)
         test, delays = skew(fixture['original'], fixture['owner'], fixture['returned'], profile)
-        test = instrument(test, fixture['owner'], fixture['returned'], variant, label)
+        test = instrument(test, fixture['owner'], fixture['returned'], variant, label, fixture['presentation_reset'])
         (case / 'testbench.sv').write_text(test)
         expected = None
         if fault:
             cell, kind = fault
-            rtl = case / (fixture['returned']['module'] + '.sv')
-            changed, expected = mutation(rtl.read_text(), fixture['returned'], cell, kind)
+            mutated_owner = fixture['owner'] if kind == 'reset-binding' else fixture['returned']
+            rtl = case / (mutated_owner['module'] + '.sv')
+            changed, expected = mutation(rtl.read_text(), mutated_owner, cell, kind)
             rtl.write_text(changed)
         entry = dict(source=str(fixture['source']), profile=profile, delay_changes=delays, fault=fault,
+                     presentation_reset=fixture['presentation_reset'],
                      expected=expected, original_oracle_sha256=sha(fixture['source'] / 'testbench.sv'),
                      oracle_sha256=sha(case / 'testbench.sv'), existing_assertions_preserved=True,
                      source_sha256={f: sha(case / f) for f in fixture['files']},
@@ -384,10 +412,11 @@ def main():
                 for kind in ('legal-skew', 'setup', 'hold', 'high', 'low', 'skew'):
                     simulate(variant, 'roles', 'original', (cell, kind))
             simulate(variant, 'roles', 'original', ('permission', 'role-data'))
+            simulate(variant, 'roles', 'original', ('eligibility', 'reset-binding'))
         require(all(hashes(Path(p)) == values for p, values in originals.items()), 'ORIGINAL_CHANGED')
         require(all(sha(p) == value for p, value in tool_hashes.items()), 'TOOL_CHANGED')
-        require(len(records['cases']) == 104, 'CAMPAIGN_INVENTORY')
-        records.update(status='PASS', positive_cases=57, negative_cases=47, originals_preserved=True)
+        require(len(records['cases']) == 106, 'CAMPAIGN_INVENTORY')
+        records.update(status='PASS', positive_cases=57, negative_cases=49, originals_preserved=True)
     except BaseException as error:
         records.update(status='FAILED', error=repr(error))
         save()

@@ -61,8 +61,12 @@ polarity masks are the proven error leaf and its exact Completion aliases.
 The receiver must share the qualified application reset. Reset assertion may
 cancel presentation; payload remains stable through remaining POR branches.
 Application-reset D buffers are POR-owned so reset release cannot manufacture a
-late data transition at an event register. The platform's continuous 350 ns
-minimum qualified hold and 250 ns output-settlement bound remain unchanged.
+late data transition at an event register. Under the
+[R1 digital-containment correction](application-reset-boundary.md), the shared presentation reset
+follows actual clocked receiver closure. The inherited eight-edge/250 ns
+assumptions do not cover measured physical propagation; R2 remains open.
+BD access admission now synchronizes both native word phases' complete idle
+predicate. Raw native ACK cannot enter its POR readiness decision.
 
 ## Native handshake and digital timing obligations
 

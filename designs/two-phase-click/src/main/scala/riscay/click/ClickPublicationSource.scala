@@ -10,13 +10,16 @@ import chiselasync.primitives.{ControlGate,EventRegister,GateOperation,XorGate}
 import riscay.soc.PublicationReservation
 
 /** Native exclusive publication receipt; physical timing remains unqualified. */
-class ClickPublicationSource(domain: ResetDomain) extends AsyncModule(domain) {
+class ClickPublicationSource(domain: ResetDomain, splitRecoveryReset: Boolean=false) extends AsyncModule(domain) {
   val reserve=twoPhaseInput("reserve",new PublicationReservation)
   val grant=twoPhaseOutput("grant",new PublicationReservation)
   val decision=twoPhaseInput("decision",Bool())
   val publication=twoPhaseInput("publication",Bool())
   val drain=twoPhaseOutput("drain",new PublicationReservation)
   val applicationReset=IO(Input(AsyncReset()))
+  // Production retains presentation until clocked capture closure, while raw
+  // watchdog debt asserts immediately and remains held through that closure.
+  val recoveryReset=if(splitRecoveryReset) IO(Input(AsyncReset())) else applicationReset
   val eligible=IO(Output(Bool())); val idle=IO(Output(Bool()))
   val ownerRecovery=IO(Output(Bool())); val recoveryDebt=IO(Output(Bool()))
   val finalRequest=IO(Output(Bool())); val finalAcknowledge=IO(Input(Bool()))
@@ -29,6 +32,9 @@ class ClickPublicationSource(domain: ResetDomain) extends AsyncModule(domain) {
   private val resetRef=contract.endpoint("reset",reset)
   private val eligibilityReset=WireDefault((reset.asBool || applicationReset.asBool).asAsyncReset)
   dontTouch(eligibilityReset)
+  private val debtReset=WireDefault((reset.asBool || recoveryReset.asBool).asAsyncReset)
+  dontTouch(debtReset)
+  private val debtResetRef=contract.endpoint("debt_reset",debtReset)
   private val eligibilityResetRef=contract.endpoint("eligibility_reset",eligibilityReset)
   private def gate(id: String,op: GateOperation.Value,d: UInt,b: UInt=0.U,
       width: Int=1,delay: ModelTime=cell,initial: Int=0): UInt = {
@@ -125,11 +131,11 @@ class ClickPublicationSource(domain: ResetDomain) extends AsyncModule(domain) {
     and("recovery_live",decision.bits,eligible)))
   private val recoveryClear=WireDefault(and("recovery_clear",capture,recoverySelected))
   dontTouch(recoverySelected); dontTouch(recoveryClear)
-  private val debt=Module(new EventRegister(1,timing.payload.model,1)); debt.reset:=eligibilityReset
+  private val debt=Module(new EventRegister(1,timing.payload.model,1)); debt.reset:=debtReset
   returnControl.fresh:=recoveryClear
   debt.trigger:=returnControl.clear; debt.d:=0.U; recoveryDebt:=debt.q.asBool
   contract.primitive("debt_storage",debt,Map("WIDTH"->BigInt(1),"DELAY_FS"->BigInt(timing.payload.model.fs),
-    "RESET_VALUE"->BigInt(1)),eligibilityResetRef,
+    "RESET_VALUE"->BigInt(1)),debtResetRef,
     "reset-dominant recovery debt; only fresh attributed final return clears it")
   private val captured=WireDefault(UInt(2.W),Cat(decided.q,retired.q))
   private val acknowledged=buffer("acknowledge_guard",Cat(published.q,captured),width=3,delay=guard)
@@ -149,6 +155,7 @@ class ClickPublicationSource(domain: ResetDomain) extends AsyncModule(domain) {
   contract.endpoint("final_request",finalRequest); contract.endpoint("final_acknowledge",finalAcknowledge)
   contract.endpoint("recovery_returning",recoveryReturning); contract.endpoint("original_returned",originalReturned)
   contract.endpoint("application_reset",applicationReset)
+  contract.endpoint("recovery_reset",recoveryReset)
   contract.endpoint("eligible",eligible); contract.endpoint("idle",idle); contract.endpoint("reserved",reserved)
   contract.endpoint("owner_recovery",ownerRecovery); contract.endpoint("recovery_debt",recoveryDebt)
   contract.endpoint("recovery_select",recoverySelected); contract.endpoint("recovery_event",recoveryClear)
