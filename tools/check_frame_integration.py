@@ -673,7 +673,7 @@ def validate_frame_integration(manifest, scopes, directory):
     completion, completion_parameters = completion_metadata(target, click)
     require(re.fullmatch(prefix + r"I2c(?:_[0-9]+)?", native["module"]) and
             re.fullmatch(r"I2cPublication(?:_[0-9]+)?", publication["module"]), "NATIVE_OWNERS")
-    require(re.fullmatch(prefix + r"ToDecoupled(?:_[0-9]+)?", snapshot["module"]), "SNAPSHOT_OWNER")
+    require(re.fullmatch(prefix + r"ServiceReplyReceipt(?:_[0-9]+)?", snapshot["module"]), "SNAPSHOT_OWNER")
     require(re.fullmatch(prefix + r"FrameStore(?:_[0-9]+)?", store["module"]) and
             type(store.get("capacity")) is int and store["capacity"] == 4, "STORE_OWNER")
     for h in heads: require(validate_frame_receipt(h) == click, "HEAD_OWNER")

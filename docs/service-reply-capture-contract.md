@@ -13,6 +13,11 @@ before the clocked service consumer captured it again on `reply.fire`.
 control synchronizers and acceptance FSM but expose the held native payload
 directly. No payload storage or additional delay guard is introduced.
 
+The same per-variant generic receipts are used by C1b's
+[peripheral and SRAM capture boundaries](held-peripheral-capture-contract.md).
+That extension has separate source/capture proofs and verification evidence;
+C1's earlier completion alone does not qualify the new paths.
+
 The producer, receipt and permanent service state remain POR-owned. Application
 reset does not destroy an offered native reply. Existing synchronous application
 cancellation, immutable reservation roles, accepted-effect accounting and
@@ -64,7 +69,8 @@ and all relevant PVT corners. Preserving the digital waiting interval does not
 establish these physical bounds. Keep this path explicit in the timing ledger;
 do not replace it with blanket false paths or a fictitious periodic native clock.
 
-R2b's excessive reset slew and R3's independent frame-copy race remain open.
+R2b's reset-distribution qualification and the complete physical frame
+capture/return envelope remain open. R3/R3b repaired the digital frame-copy race.
 Negative dynamic path delays from out-of-range Liberty extrapolation are
 violations even without an explicit minimum; nonfinite values fail measurement.
 

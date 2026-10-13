@@ -185,6 +185,20 @@
   storage and independent field packing, not force a derived bus. Keep complete
   producer-to-consumer setup/hold and earliest ACK release physically unqualified
   until measured. C1 removes payload copies, not the clocked service scheduler.
+  C1b extends direct held-bus capture to elapsed/ADC replies, waveform/snapshot
+  notifications and eight native SRAM byte requests. Follow
+  `docs/held-peripheral-capture-contract.md`. Keep the macro controller's actual
+  saved request, tag and falling-edge launch. Prove all saved-data D inputs,
+  exact source aliases, common clock, priority/ready and POR-qualified capture
+  before granting RDC exemptions; never exempt the complete bank. Run actual
+  SRAM capture monitors, ServiceReplyReceiptSpec and the structural/compiled
+  wiring controls in `check_held_receipt_controls.py` and
+  `check_held_receipt_wiring_controls.py`. Native waveform tokens come from
+  each Join's input buffer, not the retired clocked command sender. Strict
+  exports reject ordinary storage beneath native owners using
+  `check_native_clock_inventory.py`; primitive exceptions require known models
+  and exact compiled bindings. Retain full generic mapping campaigns and exact
+  fatal sites; a structural negative control is not a simulated wire fault.
   Native Control state and its command/reply bridges are POR-only. Keep accepted
   MMIO commits and SRAM accounting across watchdog reset; cancel unaccepted work.
   Preserve queued host reset/busy context, including simultaneous admission.

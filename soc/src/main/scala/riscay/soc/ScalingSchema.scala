@@ -5,11 +5,13 @@ import chisel3._
 
 /** Wire schemas only. Each design owns its arithmetic and native sequencing. */
 class ElapsedScalingPort(lanes: Int) extends Bundle {
+  // publicationTarget, single and elapsed describe the publication at valid.
   val target = Input(UInt(32.W)); val consumed = Output(UInt(32.W)); val publicationTarget = Output(UInt(32.W))
   val valid = Output(Bool()); val single = Output(Bool()); val busy = Output(Bool())
   val elapsed = Output(Vec(lanes, UInt(32.W)))
 }
 class SampleScalingPort extends Bundle {
+  // Capture value on done. The held native payload is unspecified when !done.
   val start = Input(Bool()); val raw = Input(UInt(12.W))
   val busy = Output(Bool()); val done = Output(Bool()); val value = Output(UInt(32.W))
 }

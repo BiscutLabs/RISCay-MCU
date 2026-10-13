@@ -80,8 +80,8 @@ class SpiAdc(p: AdcParameters,autonomous: Boolean,domain: ResetDomain) extends C
   native.start:= !localReset.asBool
   val recipe=Wire(new SpiWaveform); recipe:=native.program; dontTouch(recipe)
   private val command=asyncChild("command_bridge")(d => new DecoupledToClick(Bool(),d))
-  private val reply=asyncChild("reply_bridge")(d => new ClickToDecoupled(new SpiResult,d))
-  private val wave=asyncChild("wave_bridge")(d => new ClickToDecoupled(Bool(),d))
+  private val reply=asyncChild("reply_bridge")(d => new ClickServiceReplyReceipt(new SpiResult, d))
+  private val wave=asyncChild("wave_bridge")(d => new ClickServiceReplyReceipt(Bool(), d))
   private val capture=asyncChild("capture_bridge")(d => new DecoupledToClick(new SpiCapture,d))
   chisel3.experimental.doNotDedup(capture)
   Seq(command,reply,wave,capture).foreach(_.clock:=clock)

@@ -23,7 +23,7 @@ class I2cTarget(address: Int,idleCycles: Int,domain: ResetDomain) extends Clocke
   val frames=asyncChild("frame_bridge")(d => new ClickFrameReceipt(d))
   val frameStore=asyncChild("frame_store")(d => new ClickFrameStore(d))
   val frameHeads=Seq.tabulate(4)(i => asyncChild(s"frame_head${i}_bridge")(d => new ClickFrameReceipt(d)))
-  val snapshots=asyncChild("snapshot_bridge")(d => new ClickToDecoupled(UInt(8.W),d))
+  val snapshots=asyncChild("snapshot_bridge")(d => new ClickServiceReplyReceipt(UInt(8.W), d))
   frames.clock:=clock; snapshots.clock:=clock
   frameHeads.foreach(_.clock:=clock)
   // Native copy and original clocked acceptance own independent ordinals.

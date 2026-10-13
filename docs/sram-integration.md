@@ -7,6 +7,14 @@ two macros for 2 KiB program storage and one macro for 1 KiB working storage.
 The boot ROM, loader, permanent supervisor and architectural registers are
 unchanged in purpose. No external memory or new pins are required.
 
+C1b removes the eight duplicate 42-bit clocked byte-request payload banks.
+Each native lane issue stage retains its request until the actual macro
+controller captures `saved` and `tag`. The receiver still owns request
+synchronizers, settling and ACK control. Falling-edge macro input launch and
+full-cycle Q capture remain unchanged. See the
+[held peripheral capture contract](held-peripheral-capture-contract.md) for the
+extended RDC proof and open producer-to-consumer physical timing obligation.
+
 ## Source and physical views
 
 The macro is from [Open Circuit Design / Tim Edwards](https://github.com/RTimothyEdwards/gf180mcu_ocd_ip_sram),

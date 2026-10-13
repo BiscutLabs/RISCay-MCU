@@ -257,7 +257,7 @@ def validate_access_rtl(rtl, model, click, models):
 def child_models(click):
     return dict(capture_receipt=('Click' if click else 'FourPhase') + 'RamCaptureReceipt',
         native=('Click' if click else 'FourPhase') + 'Sram', command_bridge='DecoupledToClick' if click else 'DecoupledToFourPhase',
-        **{f'byte_request_{i}': 'ClickToDecoupled' if click else 'FourPhaseToDecoupled' for i in range(4)},
+        **{f'byte_request_{i}': 'ClickServiceReplyReceipt' if click else 'FourPhaseServiceReplyReceipt' for i in range(4)},
         **{f'byte_reply_{i}': 'DecoupledToClick' if click else 'DecoupledToFourPhase' for i in range(4)})
 
 

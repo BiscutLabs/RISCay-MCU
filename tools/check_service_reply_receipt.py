@@ -215,11 +215,16 @@ def receipt_control_fingerprint(text, fields):
     require(match is not None and len(re.findall(r'\bmodule\b', clean)) == 1, 'RTL_MODULE')
     body = match[1]
     for field, _, _ in fields:
-        assignment = 'assign out_bits_' + leaf(field) + ' = in_bits_' + leaf(field) + ';'
+        suffix = '_' + leaf(field) if field else ''
+        assignment = 'assign out_bits' + suffix + ' = in_bits' + suffix + ';'
         expression = r'\s*'.join(map(re.escape, assignment.split()))
         body, count = re.subn(expression, '', body)
         require(count == 1, 'RTL_PAYLOAD_' + field)
     width = sum(w for _, _, w in fields)
+    if fields == [('', 0, width)]:
+        # Scalar channels alias the payload directly; FIRRTL emits no packed
+        # aggregate metadata wires. The remaining control body is identical.
+        return hashlib.sha256(re.sub(r'\s+', '', body).encode()).hexdigest()
     expected = '{' + ','.join('in_bits_' + leaf(field) for field, _, _ in reversed(fields)) + '}'
     for name in ('packed_3_probe', 'packed_6_probe'):
         expression = r'wire\s*\[' + str(width - 1) + r':0\]\s*' + name + r'\s*=\s*([^;]+);'

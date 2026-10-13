@@ -77,15 +77,15 @@ class FourPhaseSram(domain: ResetDomain) extends AsyncModule(domain) {
 class SramAccess(domain: ResetDomain) extends ClockedBridge(domain, 2) {
   val io = IO(Flipped(new SramAccessPort))
   // Services uses busy for admission and always accepts the final reply. Keep
-  // the complete registered crossing ABI even when those ports are constant.
+  // the complete crossing ABI even when those ports are constant.
   dontTouch(io)
   val native = asyncChild("native")(d => new FourPhaseSram(d))
 
   val command = asyncChild("command_bridge")(d => new DecoupledToFourPhase(new SramWordRequest, 2, d))
-  val reply = asyncChild("reply_bridge")(d => new FourPhaseToDecoupled(UInt(32.W), 2, d))
+  val reply = asyncChild("reply_bridge")(d => new FourPhaseServiceReplyReceipt(UInt(32.W), d))
   command.clock := clock; reply.clock := clock
   FourPhase.connect(native.request, command.out); FourPhase.connect(reply.in, native.response)
-  val requests = (0 until 4).map(i => asyncChild(s"byte_request_$i")(d => new FourPhaseToDecoupled(new SramByteRequest, 2, d)))
+  val requests = (0 until 4).map(i => asyncChild(s"byte_request_$i")(d => new FourPhaseServiceReplyReceipt(new SramByteRequest, d)))
   val replies = (0 until 4).map(i => asyncChild(s"byte_reply_$i")(d => new DecoupledToFourPhase(UInt(8.W), 2, d)))
   for(i <- 0 until 4) {
     requests(i).clock := clock; replies(i).clock := clock

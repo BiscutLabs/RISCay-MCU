@@ -32,6 +32,8 @@ from check_application_reset import (validate_application_reset, persistent_rese
     coordinated_reset, reset_endpoint, presentation_reset)
 from check_reset_crossings import check_reset_crossings
 from check_service_reply_receipt import native_reply_source, pack_reply, service_reply_probe, validate_service_reply_rtl
+from check_held_receipts import validate_held_receipts, held_receipt_probe
+from check_native_clock_inventory import native_clock_inventory
 from check_ram_source_export import ARM_PATH, RETIRE_PATH, validate_ram_source, ram_source_bindings, ram_source_probe
 from check_program_source_export import PROGRAM_PATHS, validate_program_source, program_source_bindings, program_source_probe, validate_program_receipts
 from check_frame_receipt import validate_frame_receipts
@@ -1364,6 +1366,8 @@ def main() -> None:
         top_rtl=(args.directory / (manifest["top"]+".sv")).read_text(encoding="utf-8")
         validate_application_reset(manifest,scopes,top_rtl)
         validate_service_reply_rtl(manifest,args.directory)
+        native_clock_inventory(manifest,scopes)
+        held_bindings = validate_held_receipts(manifest,args.directory,scopes)
         if args.soc:
             if not coordinated_reset(manifest): raise ValueError('SOC_COORDINATED_RESET_REQUIRED')
             check_reset_crossings(args.directory,manifest)
@@ -1373,6 +1377,7 @@ def main() -> None:
         validate_return_receipts(manifest,args.directory,scopes)
         source, count = original_probe(manifest, scopes, paired)
         source = service_reply_probe(source, manifest, scopes)
+        source = held_receipt_probe(source, held_bindings)
         source = spi_program_probe(source, manifest, scopes)
         source, count = register_file_background(source, manifest, count)
         source, count = control_background(source, manifest, scopes, count)

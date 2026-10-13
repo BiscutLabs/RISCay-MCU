@@ -7,7 +7,7 @@ import chiselasync.clocked.ClockedBridge
 import chiselasync.core.ResetDomain
 import chiselasync.protocol.Channel
 
-/** POR-owned native-phase receipt of an already retained service reply.
+/** POR-owned native-phase receipt of an already retained payload.
   * The producer owns every payload bit until downstream acceptance. ACK records
   * that capture's phase; there is no RTZ conversion or periodic-clock payload
   * bank. Preserve the previous receiver's control/settling cycles. The complete

@@ -7,7 +7,7 @@ import chiselasync.clocked.ClockedBridge
 import chiselasync.core.ResetDomain
 import chiselasync.protocol.Channel
 
-/** POR-owned receipt of an already retained native service reply.
+/** POR-owned receipt of an already retained native payload.
   * The native producer owns every payload bit through downstream acceptance
   * and complete RTZ. The consumer captures the held bus on out.fire; ACK means
   * that actual capture. No periodic-clock payload bank is inserted here.

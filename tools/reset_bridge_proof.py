@@ -105,6 +105,92 @@ def check_flop_reset(cell, clock, reset):
         raise ValueError('RDC_BRIDGE_CONTROL_RESET')
 
 
+def prove_sram_capture(module, bank, por_reset):
+    """Exact held-source -> unreset macro input storage, never a bank-wide waiver.
+
+    Enumerate even illegal multi-valid masks: the functional native one-hot
+    assertion is additional protection, not an assumption in this proof.
+    """
+    cone = Cone(module)
+    prefix = 'fabric_' + bank + '_'
+    access = 'ca_child_' + bank + '_access'
+    state = cone.flop(prefix + 'state')[1]
+    # Inline physical exports may eliminate the clock alias. Use the actual
+    # state-flop clock and require every receipt/capture flop to share it.
+    clock = state['connections']['CLK']
+    reset = state['connections']['ARST']
+    if not por_reset(reset, clock): raise ValueError('RDC_SRAM_NOT_POR')
+    check_flop_reset(state, clock, reset)
+    fields = dict(address=32, write=1, data=8, enable=1)
+    inputs = {}
+    for lane in range(4):
+        receipt = access + '.ca_child_byte_request_' + str(lane)
+        if cone.bits(receipt + '.clock') != clock:
+            raise ValueError('RDC_SRAM_RECEIPT_CLOCK')
+        for field, width in fields.items():
+            bits = cone.bits(receipt + '.in_bits_' + field)
+            if len(bits) != width or bits != cone.bits(receipt + '.out_bits_' + field):
+                raise ValueError('RDC_SRAM_HELD_ALIAS')
+            if bits != cone.bits(access + '.ca_child_native.byteRequest_' + str(lane) + '_bits_' + field):
+                raise ValueError('RDC_SRAM_NATIVE_ALIAS')
+            inputs[lane, field] = bits
+    registers = {}
+    for field, width in {**fields, 'tag': 2}.items():
+        name = prefix + ('tag' if field == 'tag' else 'saved_' + field)
+        q = cone.bits(name)
+        drivers = {cone.drivers[b][0] for b in q}
+        if len(drivers) != 1: raise ValueError('RDC_SRAM_CAPTURE_REGISTER')
+        reg = drivers.pop(); cell = module['cells'][reg]; pins = cell['connections']
+        if (cell['type'] != '$dff' or pins['Q'] != q or len(q) != width or
+                pins['CLK'] != clock or cell['parameters']['CLK_POLARITY'] != '1'):
+            raise ValueError('RDC_SRAM_CAPTURE_CLOCK')
+        registers[field] = reg, pins
+
+    def leaf(bit, env, leaves):
+        if bit in leaves or bit in ('0', '1'): return bit
+        _, cell, _, index = cone.drivers[bit]
+        pins = cell['connections']; kind = cell['type']
+        if kind == '$mux':
+            branch = pins['B'] if cone.evaluate(pins['S'], env) else pins['A']
+        elif kind == '$pmux':
+            select = cone.evaluate(pins['S'], env); width = len(pins['Y'])
+            if select and select & (select - 1): raise ValueError('RDC_SRAM_CAPTURE_PMUX')
+            branch = pins['A'] if not select else pins['B'][(select.bit_length()-1)*width:select.bit_length()*width]
+        elif kind == '$shiftx':
+            shift = cone.evaluate(pins['B'], env)
+            branch = pins['A'][shift:shift+len(pins['Y'])]
+        else: raise ValueError('RDC_SRAM_CAPTURE_LOGIC_' + kind)
+        return leaf(branch[index], env, leaves)
+
+    for value, mask, rst in product(range(4), range(16), range(2)):
+        env = {}; cone.bind(env, state['connections']['Q'], value); cone.bind(env, reset, rst)
+        # Chisel PriorityEncoder's no-valid default is the last lane. No
+        # payload/tag capture may occur in that case, even though ready is high.
+        selected = (mask & -mask).bit_length()-1 if mask else 3
+        for lane in range(4):
+            cone.bind(env, cone.bits(access + '.ca_child_byte_request_' + str(lane) + '.out_valid'), (mask >> lane) & 1)
+        if cone.evaluate(cone.bits(prefix + 'selected'), env) != selected:
+            raise ValueError('RDC_SRAM_SELECTED')
+        for lane in range(4):
+            ready = cone.bits(access + '.ca_child_byte_request_' + str(lane) + '.out_ready')
+            if cone.evaluate(ready, env) != (value == 0 and not rst and selected == lane):
+                raise ValueError('RDC_SRAM_READY')
+        capture = value == 0 and bool(mask) and not rst
+        for field in fields:
+            _, pins = registers[field]
+            leaves = set(pins['Q'] + sum([inputs[i, field] for i in range(4)], []))
+            expected = inputs[selected, field] if capture else pins['Q']
+            if [leaf(b, env, leaves) for b in pins['D']] != expected:
+                raise ValueError('RDC_SRAM_CAPTURE_' + field)
+        _, tag = registers['tag']
+        for old in range(4):
+            tag_env = dict(env); cone.bind(tag_env, tag['Q'], old)
+            if cone.evaluate(tag['D'], tag_env) != (selected if capture else old):
+                raise ValueError('RDC_SRAM_TAG')
+    return dict(prefix=prefix, rows=128, payload=[registers[f][0] for f in fields],
+                contract='retained native byte bus, receipt ACK on exact macro-controller capture')
+
+
 def prove_first_fanout(module, first_q, permitted, fanout):
     queue=[first_q];seen={first_q}
     while queue:

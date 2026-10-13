@@ -77,15 +77,15 @@ class ClickSram(domain: ResetDomain) extends AsyncModule(domain) {
 class SramAccess(domain: ResetDomain) extends ClockedBridge(domain, 2) {
   val io = IO(Flipped(new SramAccessPort))
   // Services uses busy for admission and always accepts the final reply. Keep
-  // the complete registered crossing ABI even when those ports are constant.
+  // the complete crossing ABI even when those ports are constant.
   dontTouch(io)
   val native = asyncChild("native")(d => new ClickSram(d))
   native.start := !localReset.asBool
   val command = asyncChild("command_bridge")(d => new DecoupledToClick(new SramWordRequest, d))
-  val reply = asyncChild("reply_bridge")(d => new ClickToDecoupled(UInt(32.W), d))
+  val reply = asyncChild("reply_bridge")(d => new ClickServiceReplyReceipt(UInt(32.W), d))
   command.clock := clock; reply.clock := clock
   TwoPhase.connect(native.request, command.out); TwoPhase.connect(reply.in, native.response)
-  val requests = (0 until 4).map(i => asyncChild(s"byte_request_$i")(d => new ClickToDecoupled(new SramByteRequest, d)))
+  val requests = (0 until 4).map(i => asyncChild(s"byte_request_$i")(d => new ClickServiceReplyReceipt(new SramByteRequest, d)))
   val replies = (0 until 4).map(i => asyncChild(s"byte_reply_$i")(d => new DecoupledToClick(UInt(8.W), d)))
   for(i <- 0 until 4) {
     requests(i).clock := clock; replies(i).clock := clock

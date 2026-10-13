@@ -130,7 +130,7 @@ class ElapsedTicks(micros: Seq[Int], domain: ResetDomain) extends ClockedBridge(
   dontTouch(io) // Profiles may ignore observation flags or duplicate elapsed lanes.
   val native = asyncChild("native")(d => new ClickElapsed(micros, d))
   private val commandBridge = asyncChild("command_bridge")(d => new DecoupledToClick(UInt(32.W), d))
-  private val replyBridge = asyncChild("reply_bridge")(d => new ClickToDecoupled(new ElapsedResult(micros.size), d))
+  private val replyBridge = asyncChild("reply_bridge")(d => new ClickServiceReplyReceipt(new ElapsedResult(micros.size), d))
   commandBridge.clock := clock; replyBridge.clock := clock
   TwoPhase.connect(native.command, commandBridge.out); TwoPhase.connect(replyBridge.in, native.reply)
   native.start := !localReset.asBool
@@ -158,7 +158,7 @@ class SampleScaler(numerator: Int, denominator: Int, domain: ResetDomain) extend
   val io = IO(new SampleScalingPort)
   val native = asyncChild("native")(d => new ClickSample(numerator, denominator, d))
   private val commandBridge = asyncChild("command_bridge")(d => new DecoupledToClick(UInt(12.W), d))
-  private val replyBridge = asyncChild("reply_bridge")(d => new ClickToDecoupled(UInt(32.W), d))
+  private val replyBridge = asyncChild("reply_bridge")(d => new ClickServiceReplyReceipt(UInt(32.W), d))
   commandBridge.clock := clock; replyBridge.clock := clock
   TwoPhase.connect(native.command, commandBridge.out); TwoPhase.connect(replyBridge.in, native.reply)
   private val returned = synchronizedControl(replyBridge.in.req === replyBridge.in.ack)

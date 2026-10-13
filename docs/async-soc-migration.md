@@ -203,6 +203,39 @@ digital passes remain evidence of their tested scope, not RDC or physical proof.
   `build/async-service-publication-repair/`. This item removes payload copies;
   the service scheduler, physical capture timing and R2b remain open. R3 is
   separately verified above.
+- [x] **C1b. Remove duplicate peripheral and SRAM receiver payload banks — digitally verified, 2026-10-13.**
+  Audit found no ordinary clocked storage inside the native controller bodies.
+  Remove 538 duplicate periodic-clock payload bits per Groundlark variant:
+  elapsed result 159, ADC result/token 35, I2C snapshot token 8, eight SRAM byte
+  requests 336. Reuse each design's existing direct held-bus receipt without
+  changing synchronizers, settling or ACK cadence. Preserve real macro input
+  capture and falling-edge launch. Extend structural RDC proof through the
+  actual saved byte, compiled native-state inventory and mutation controls.
+  Standalone scaling/SRAM wrappers receive equivalent fixes but are excluded
+  from the production count. Require regression, strict export, cost/activity
+  evidence and independent review before completion. See the
+  [capture contract](held-peripheral-capture-contract.md). Evidence root:
+  `build/async-held-boundary-cleanup/`; baseline `2676845`.
+  The full verification suite passes 660 tests and physical-policy checks pass
+  four tests; the focused run passes 68 overlapping tests. All 468 Python tests,
+  four complete strict exports, 252 structural fault controls and 24 compiled
+  exact-fatal wiring mutations pass, with a positive wiring baseline per variant.
+  Fresh independent review addresses capture-monitor, clock-proof, primitive
+  inventory and executed-binary provenance gaps. Final compiled periodic totals
+  are 6,000 BD / 6,001 Click. Matched logic area falls 1.78% / 1.41%; all 27 wake
+  windows per variant are unchanged. Keep initial checker/catalogue/provenance
+  failures and interrupted runs. The final evidence index binds passing runs and
+  review to the final sources; physical capture timing and native service
+  scheduling remain open.
+- [ ] **C1c. Remove test-only Platform reset diagnostics.** Move raw-reset
+  `ramResetDebt`/`programResetDebt` mirrors and unused return-fence expressions
+  into verification fixtures, preserving fault controls. Expect source clarity,
+  not mapped savings: these have no production consumers.
+- [ ] **C1d. Compact the fixed SPI waveform player.** Evaluate replacing its
+  96 recipe shift bits with a slot index and busy state. Preserve all 32 samples,
+  exact half-phases, first-frame discard, source retention and full drain.
+  Keep this distinct from removing the native conversion owner or physical I/O
+  timing; require matched total cost and independent wire-oracle checks.
 - [ ] **C2. Narrow native loader CRC feedback.** The four CRC stages currently
   carry the whole 337-bit `ControlToken`. Keep public reply timing, transition
   logic and the seeded state owner, but retain the 305-bit context in a native

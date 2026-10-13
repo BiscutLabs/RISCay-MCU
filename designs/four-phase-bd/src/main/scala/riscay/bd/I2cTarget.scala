@@ -23,7 +23,7 @@ class I2cTarget(address: Int,idleCycles: Int,domain: ResetDomain) extends Clocke
   val frames=asyncChild("frame_bridge")(d => new FourPhaseFrameReceipt(d))
   val frameStore=asyncChild("frame_store")(d => new FourPhaseFrameStore(d))
   val frameHeads=Seq.tabulate(4)(i => asyncChild(s"frame_head${i}_bridge")(d => new FourPhaseFrameReceipt(d)))
-  val snapshots=asyncChild("snapshot_bridge")(d => new FourPhaseToDecoupled(UInt(8.W),2,d))
+  val snapshots=asyncChild("snapshot_bridge")(d => new FourPhaseServiceReplyReceipt(UInt(8.W), d))
   frames.clock:=clock; snapshots.clock:=clock
   frameHeads.foreach(_.clock:=clock)
   // Native copy and original clocked acceptance own independent ordinals.

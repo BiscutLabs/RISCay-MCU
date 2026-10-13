@@ -130,7 +130,7 @@ class ElapsedTicks(micros: Seq[Int], domain: ResetDomain) extends ClockedBridge(
   dontTouch(io) // Profiles may ignore observation flags or duplicate elapsed lanes.
   val native = asyncChild("native")(d => new FourPhaseElapsed(micros, d))
   private val commandBridge = asyncChild("command_bridge")(d => new DecoupledToFourPhase(UInt(32.W), 2, d))
-  private val replyBridge = asyncChild("reply_bridge")(d => new FourPhaseToDecoupled(new ElapsedResult(micros.size), 2, d))
+  private val replyBridge = asyncChild("reply_bridge")(d => new FourPhaseServiceReplyReceipt(new ElapsedResult(micros.size), d))
   commandBridge.clock := clock; replyBridge.clock := clock
   FourPhase.connect(native.command, commandBridge.out); FourPhase.connect(replyBridge.in, native.reply)
 
@@ -158,7 +158,7 @@ class SampleScaler(numerator: Int, denominator: Int, domain: ResetDomain) extend
   val io = IO(new SampleScalingPort)
   val native = asyncChild("native")(d => new FourPhaseSample(numerator, denominator, d))
   private val commandBridge = asyncChild("command_bridge")(d => new DecoupledToFourPhase(UInt(12.W), 2, d))
-  private val replyBridge = asyncChild("reply_bridge")(d => new FourPhaseToDecoupled(UInt(32.W), 2, d))
+  private val replyBridge = asyncChild("reply_bridge")(d => new FourPhaseServiceReplyReceipt(UInt(32.W), d))
   commandBridge.clock := clock; replyBridge.clock := clock
   FourPhase.connect(native.command, commandBridge.out); FourPhase.connect(replyBridge.in, native.reply)
   private val returned = synchronizedControl(!replyBridge.in.req && !replyBridge.in.ack)

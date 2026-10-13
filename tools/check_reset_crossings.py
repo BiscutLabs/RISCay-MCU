@@ -14,7 +14,7 @@ from pathlib import Path
 import subprocess
 
 from gf180_estimate import ROOT, linux, sha, verify_hash
-from reset_bridge_proof import Cone, prove_receiver, prove_phase_pair, prove_completion_idle
+from reset_bridge_proof import Cone, prove_receiver, prove_phase_pair, prove_completion_idle, prove_sram_capture
 from reset_coordinator_proof import prove_coordinator
 
 NATIVE_STATE = frozenset({
@@ -302,6 +302,10 @@ def audit_graph(database: dict, top: str) -> dict:
             receiver_proofs.append(proof)
             payload_exemptions.update({sink:proof for sink in proof['payload']})
             synchronizers[proof['first']]=proof['second']
+        for bank in ('program', 'ram'):
+            proof = prove_sram_capture(module, bank, por_reset)
+            receiver_proofs.append(proof)
+            payload_exemptions.update({sink: proof for sink in proof['payload']})
         for part in ('plan','telemetry','housekeeping'):
             proof=prove_phase_pair(module,'ca_child_completion_'+part+'_bridge',por_reset,fanout)
             receiver_proofs.append(proof)

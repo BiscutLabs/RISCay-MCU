@@ -1,5 +1,23 @@
 # Remaining clocked-state audit
 
+C1b's cleanup is **digitally verified, 2026-10-13**. Compiled inventories prove **538
+fewer periodic-clock payload bits per variant**, giving **6,000 BD / 6,001 Click**
+portable totals, excluding the unchanged SDA-edge bit. Enabled-policy physical
+exports contain ten additional periodic bits. Native primitive and SRAM
+inventories and public ports are unchanged. Sources remain held through actual
+consumer capture; see the [capture contract](held-peripheral-capture-contract.md).
+The audit found no ordinary clocked storage inside the native controller
+bodies. Explicit wrappers and Services still own substantial periodic state:
+committed views, host snapshot, observation/dispatch histories, sampled I2C
+wire slots and reset epochs, and the SPI waveform player. These are tracked
+cleanup/migration candidates, not a claim of minimum synchronous state.
+The full 660-test verification suite, four physical-policy tests, 468 Python
+controls and all four strict exports pass. Fresh independent review closes the
+digital scope; producer-to-consumer physical capture remains unqualified.
+Matched logic area falls 1.78% BD / 1.41% Click, and every measured wake window
+matches the baseline. C1 through C1b now remove a net **1,792 periodic bits per
+variant**, including the intervening R3/R3b changes.
+
 R3b native frame-route ownership is **digitally verified, 2026-10-13**. It removes R3's two copy
 synchronizers and two sticky offered-context bits per variant. BD reuses its
 two-bit native route register; Click adds two native route bits and a retained

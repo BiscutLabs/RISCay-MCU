@@ -48,7 +48,7 @@ class ServiceReplyReceiptFixture(click: Boolean, width: Int) extends AsyncModule
 class ServiceReplyReceiptSpec extends AnyFunSuite {
   for(click <- Seq(false,true)) {
     val name=if(click) "click" else "bd"
-    for(width <- Seq(376,397)) {
+    for(width <- Seq(1,8,32,34,42,159,376,397)) {
       test(s"$name $width-bit service reply: every data bit, unchanged control cadence, stalls and stopped clocks") {
         val body=(0 until width*2).map { n =>
           val one=BigInt(1) << (n/2)

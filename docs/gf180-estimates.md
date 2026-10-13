@@ -6,6 +6,18 @@ are independently audited. The subsequent corrective work targets redundant
 storage and clocked coordination while preserving native BD/Click; see the
 [migration checklist](async-soc-migration.md). Physical timing remains unqualified.
 
+The [C1b retained peripheral/SRAM cleanup](held-peripheral-capture-contract.md#matched-cost)
+is digitally verified. Against `2676845`, the same mapper and five-corner
+Liberty accounting show logic area falling **1.78% BD / 1.41% Click**, to
+**3.291909 / 4.147977 mm²** excluding SRAM. TT listed-state leakage including
+SRAM falls to **8.603006–11.223379 / 10.293397–13.952939 µW**. Portable periodic
+RTL totals become **6,000 BD / 6,001 Click**, excluding the unchanged SDA-edge
+bit; enabled-policy physical SoC exports contain ten more bits each. Native
+storage, delay chains, SRAMs and public ports are unchanged. Fresh activity
+matches all 27 baseline windows per variant, including 3,256 / 3,161 firmware
+work-clock edges and 43 retired instructions. These results do not update P&R,
+qualify the direct capture paths or measure reachable standby/wake energy.
+
 The digitally verified [R3b native-frame-routing comparison](gf180-matched-comparison.md#r3b-native-frame-routing)
 uses the same mapper/library inputs as R3. Logic area changes **−0.05977% BD /
 +0.02656% Click**, to **3.351460 / 4.207351 mm²** excluding SRAM. Both variants

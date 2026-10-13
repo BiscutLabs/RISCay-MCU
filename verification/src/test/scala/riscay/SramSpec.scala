@@ -78,7 +78,23 @@ always @(posedge $path.CLK) if(!reset && !$path.CEN) begin
 end
 """
   }.mkString
-  private val tasks = pinTiming + """
+  // Observe the actual native-byte receipt -> macro-controller capture edge.
+  // Compare independent sampled inputs with saved storage after NBA, including
+  // disabled accesses. Existing lane/mask/bitwalk/reset cases drive this check.
+  private val heldCapture = (for(bank <- Seq("ram","program"); lane <- 0 until 4) yield s"""
+reg [41:0] capturedByte_${bank}_$lane;
+always @(posedge serviceClock) if(!reset &&
+    dut.ca_child_${bank}_access.io_bytes_${lane}_valid && dut.ca_child_${bank}_access.io_bytes_${lane}_ready) begin
+  capturedByte_${bank}_$lane = {dut.ca_child_${bank}_access.io_bytes_${lane}_bits_address,
+    dut.ca_child_${bank}_access.io_bytes_${lane}_bits_write,dut.ca_child_${bank}_access.io_bytes_${lane}_bits_data,
+    dut.ca_child_${bank}_access.io_bytes_${lane}_bits_enable};
+  #0.001;
+  if({dut.fabric_${bank}_saved_address,dut.fabric_${bank}_saved_write,dut.fabric_${bank}_saved_data,
+      dut.fabric_${bank}_saved_enable} !== capturedByte_${bank}_$lane || dut.fabric_${bank}_tag !== 2'd$lane)
+    $$fatal(1,"SRAM_HELD_NATIVE_CAPTURE_${bank}_$lane");
+end
+""").mkString
+  private val tasks = pinTiming + heldCapture + """
 task issue(input [1:0] op, input [31:0] addr, input [31:0] data, input [3:0] mask);
 begin
   @(negedge serviceClock); request_valid=1; request_bits_operation=op;

@@ -63,16 +63,15 @@ separately from the short-pulse qualifier. The completed
 [matched comparison](docs/gf180-matched-comparison.md) favors the smaller clocked
 service island: migrated services substantially increase area, leakage estimates
 and wake work. The subsequent correction targets duplicate storage and crossings
-while keeping native BD/Click and all later correctness fixes. The first item
-removes 1,254 duplicate clocked service-reply payload bits per variant and passes
-digital verification. Mapped logic area falls 4.02% BD / 3.21% Click; wake work
-is unchanged, and complete native service scheduling remains open.
-See the [capture contract](docs/service-reply-capture-contract.md).
-Native frame stores now own bank rotation, allowing original clocked acceptance
-to precede copy without synchronized-copy feedback. The completion join retains
-the payload through both acknowledgments. Digital verification passes; four
-periodic-clock bits are removed per variant, with two native route bits added in
-Click. Wake work is unchanged. Complete physical qualification remains open.
+while keeping native BD/Click and all later correctness fixes. Native frame
+stores now own bank rotation, and service replies use their retained native
+payload at consumer acceptance. A further digitally verified cleanup
+removes **538 duplicate clocked payload bits per variant** from peripheral and
+SRAM receivers. Its matched mapped logic area falls **1.78% BD / 1.41% Click**;
+measured wake clock counts and durations are unchanged. See the
+[service capture contract](docs/service-reply-capture-contract.md) and
+[peripheral/SRAM capture contract](docs/held-peripheral-capture-contract.md).
+Complete native service scheduling and physical capture qualification remain open.
 Complete physical reset-tree and core-startup timing remain open; current guard
 measurements exceed some digital assumptions.
 See the [reset-boundary contract](docs/application-reset-boundary.md),
@@ -152,8 +151,8 @@ Compiled memory budgets are recorded in the [memory architecture](docs/memory-ar
 [GF180 planning estimates](docs/gf180-estimates.md) report the current mapped
 candidate's area, listed-state leakage and simulated wake activity alongside
 the historical baseline. They do not establish physical timing, measured
-standby power or an area/power improvement from the migration. Reset and
-frame-copy repairs require another measurement pass.
+standby power or an overall area/power improvement from the migration. Each
+correction retains its own matched cost and activity evidence.
 
 Project licensing is recorded in [LICENSE](LICENSE). Reused third-party material
 retains its own license and attribution.
