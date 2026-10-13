@@ -315,6 +315,9 @@
   `docs/physical-export-contract.md`; old v1/v2 exports require regeneration.
   Standalone PhysicalTiming core tests do not authorize that policy for every
   controller. Constraint coverage and complete physical envelopes remain open.
+  The first P&R flow and its open violations are in `docs/gf180-first-pnr.md`.
+  Verify supplies even on protected cells; keep SPEF and the extracted ODB names
+  consistent. A zero router-violation count is not full DRC/LVS or async signoff.
 - Keep generated RTL, tools, simulator logs and test evidence under ignored
   `.tools/`, `build/` or `target/` directories. Pin dependencies and record limits.
 - Firmware and memory budgets live in `firmware/`; run FirmwareSpec and the

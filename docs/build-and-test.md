@@ -2498,3 +2498,22 @@ electrical and conservative async-path violations. No extracted SDF campaign,
 padframe, analog layout or P&R was performed. Follow
 [GF180 implementation preparation](gf180-implementation.md) for reproduction,
 limitations and the remaining routed checks.
+
+## First routed experiment
+
+Both variants completed the first digital-block P&R on 2026-10-08, including
+nominal parasitic extraction. Five-corner extracted reports retain real timing
+and electrical failures and explicitly uncovered async paths; zero detailed
+router violations does not mean timing or foundry signoff. The Python suite
+passed 59 tests, including six physical-interface binding controls. Deliberate
+disconnection/rewiring controls on both routed databases were rejected.
+See [the first-P&R report](gf180-first-pnr.md) for results, reproduction and
+evidence paths. No RTL changed, so the preceding RTL tests were not rerun.
+
+Before committing this historical flow, review found and fixed unchecked resume
+and report inputs. `python -m unittest discover -s tools -p test_gf180_pnr.py`
+passes 16 controls, including ten for exact-input provenance, checkpoint/SPEF
+tampering, both report entry points, immutable flow snapshots and retry evidence
+preservation. These controls
+do not run OpenROAD. The original 59-test result above belongs to the older
+`8637099` experiment; its routing and timing do not qualify the current RTL.

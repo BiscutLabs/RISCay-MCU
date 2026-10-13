@@ -81,8 +81,11 @@ Both variants have [experimental GF180 implementation inputs](docs/gf180-impleme
 preserved async bindings, native matched-delay cells, compact digital tops, SRAM
 power bindings, and separate clocked/async checks. Five-corner cell and
 whole-transform characterization informs the physical timing budgets. These
-support a first floorplan/P&R experiment; extracted timing, analog layouts and
-padframe qualification remain outstanding.
+supported a [first P&R experiment](docs/gf180-first-pnr.md): both designs routed
+on a common 1.44 mm square digital outline with zero detailed-router violations.
+That experiment used the older `8637099` RTL and does not qualify this migration.
+Extracted timing exposes reset and local capture-distribution problems; timing
+closure, full physical verification, analog layouts and pads remain outstanding.
 
 Both reference emitters include **retained sleep with fast-clock shutdown** and a
 nominal **7.7307 Hz** timebase matched to the

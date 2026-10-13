@@ -3,7 +3,11 @@
 Both native variants now have experimental GF180 cell bindings, an implementation
 top, three physical SRAM instances and generated constraints. These are inputs
 to a first floorplan/P&R experiment, **not a timing-closed or tapeout-qualified
-chip**. Placement, routing, analog layouts and the padframe remain outstanding.
+chip**. A [first digital-block P&R experiment](gf180-first-pnr.md) has now completed
+for both variants. Its extracted timing remains open; analog layouts and the
+padframe remain outstanding. That experiment used the older `8637099` RTL and
+does not qualify the current migration. The characterization below describes
+preparation before that run.
 
 ## Physical top and policy
 

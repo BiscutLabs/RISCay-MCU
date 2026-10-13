@@ -1,0 +1,17 @@
+{
+  "source": "same installed open_pdks snapshot as pdk-lock.json",
+  "source_files": {
+    "technology.tlef": "libs.ref/gf180mcu_fd_sc_mcu7t5v0/techlef/gf180mcu_fd_sc_mcu7t5v0__nom.tlef",
+    "tracks.info": "libs.tech/librelane/gf180mcu_fd_sc_mcu7t5v0/tracks.info",
+    "rcx.nom": "libs.tech/librelane/rules.openrcx.gf180mcuD.nom",
+    "rcx.min": "libs.tech/librelane/rules.openrcx.gf180mcuD.min",
+    "rcx.max": "libs.tech/librelane/rules.openrcx.gf180mcuD.max"
+  },
+  "files": {
+    "technology.tlef": "842b186318d53844561af4ec530b4e30d8ba519bcc58d512a363ef255acc7abd",
+    "tracks.info": "935c5e4117b760249a971b322cf30ac475cc0fbaa8debddd0382de262ec81a30",
+    "rcx.nom": "d83a04ea28af9b74a097fb479bbab9ed52859a1e3428b33d3151cb5afae62ddf",
+    "rcx.min": "5cf275c985ffd49096407d22891910fea34aff5a915db8a5b9a7c1e04b737e00",
+    "rcx.max": "0ee103cf2108f2fd945087551b6dd1eaf4ee55af60571de2983878c8a271515f"
+  }
+}
