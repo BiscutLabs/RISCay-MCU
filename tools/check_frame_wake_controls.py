@@ -102,17 +102,22 @@ def monitor(b):
     store=rtl_path(b['store']);receipts=[rtl_path(n) for n in b['receipts']]
     target=rtl_path(b['target']);receipt=receipts[0];command=rtl_path(child(b['manifest']['design'],'control_command_bridge'))
     states=['{'+','.join(r+'.'+leaf for leaf in ('requestMeta','requestSync','acknowledge'))+'}' for r in receipts]
+    states.extend([target+'.copied_frameCopyMeta',target+'.copied'])
+    publisher=rtl_path(b['publication'])
     quiet=[]
     for r in receipts:
         quiet.append(f'({r}.in_req=={r}.acknowledge && {r}.requestMeta=={r}.acknowledge && {r}.requestSync=={r}.acknowledge && !{r}.out_valid)' if b['click'] else
                      f'(!{r}.in_req && !{r}.requestMeta && !{r}.requestSync && !{r}.acknowledge && !{r}.out_valid)')
+    quiet.append(f'({target}.copied_frameCopyMeta=={receipt}.acknowledge && {target}.copied=={receipt}.acknowledge && {publisher}.frame_req=={publisher}.frame_ack)' if b['click'] else
+                 f'(!{target}.copied_frameCopyMeta && !{target}.copied && !{publisher}.frame_req && !{publisher}.frame_ack)')
     banks='{'+','.join(f'{store}.packed_17_probe[{i}]' for i in reversed(range(4)))+'}'
     owners=cells(b['store'])
     payloads=[rtl_path(owners[f'payload{i}' if b['click'] else f'storage{i}.payload'])+'.q' for i in range(4)]
     return f'''
 // Independent actual-pin observations. Time is in the original 1 ns/1 ps unit.
 wire [3:0] fw_available={banks};
-wire [14:0] fw_receipt_state={{{','.join(states)}}};
+wire [16:0] fw_receipt_state={{{','.join(states)}}};
+wire fw_completion_state={target}.ca_primitive_frame_completion.q;
 wire fw_receipts_quiet={' && '.join(quiet)};
 wire fw_quiet=(&fw_available) && !{store}.busy && fw_receipts_quiet && dut.soc.fabric_hostFrames_count==0;
 wire fw_actual_enable=dut.serviceOscillator.enable;
@@ -125,7 +130,8 @@ integer fw_bank_offers[0:3],fw_bank_dispatches[0:3],fw_return_edges[0:3];
 integer fw_front_at_stop=0,fw_work_at_stop=0,fw_low_edges=0,fw_lf_edges=0,fw_lf_at_stop=0;
 integer fw_index,fw_ring_index,fw_before;
 reg [3:0] fw_live=0,fw_returning=0;
-reg [14:0] fw_stopped_state;
+reg [16:0] fw_stopped_state;
+reg fw_stopped_completion;
 reg [1347:0] fw_stopped_payload;
 reg [336:0] fw_expected[0:3];
 reg [3:0] fw_was_available=0;
@@ -168,6 +174,11 @@ always @(fw_receipt_state) if(!fw_por) begin
  fw_last_state_edge=$realtime;
  if(!fw_actual_enable) $fatal(1,"FRAME_WAKE_CONTROL_RECEIPT_WHILE_SOURCE_OFF");
 end
+// The C-element is native: its event need not coincide with a front-clock edge.
+always @(fw_completion_state) if(!fw_por) begin
+ fw_last_state_edge=$realtime;
+ if(!fw_actual_enable) $fatal(1,"FRAME_WAKE_CONTROL_COMPLETION_WHILE_SOURCE_OFF");
+end
 always @(posedge serviceClock) if(!fw_por) begin : fw_final_return_edges
  integer k;
  for(k=0;k<4;k=k+1) if(fw_returning[k]) fw_return_edges[k]=fw_return_edges[k]+1;
@@ -185,6 +196,7 @@ always @(negedge fw_actual_enable) if(!fw_por) begin : fw_stop
  if(fw_actual_enable || serviceClock!==0 || !fw_quiet) $fatal(1,"FRAME_WAKE_CONTROL_FINAL_STOP_EDGE");
  fw_source_stops=fw_source_stops+1;fw_stopped_at=$realtime;fw_saw_stop=1;
  fw_front_at_stop=fw_front_edges;fw_work_at_stop=fw_work_edges;fw_stopped_state=fw_receipt_state;fw_lf_at_stop=fw_lf_edges;
+ fw_stopped_completion=fw_completion_state;
  fw_stopped_payload=fw_all_payload;
  if(fw_last_state_edge>=0 && $realtime-fw_last_state_edge<fw_min_state_margin) fw_min_state_margin=$realtime-fw_last_state_edge;
  if(fw_last_quiet>=0 && $realtime-fw_last_quiet<fw_min_quiet_margin) fw_min_quiet_margin=$realtime-fw_last_quiet;
@@ -196,7 +208,7 @@ task fw_stopped_check;
   if(CHECK_SOURCE_STOP) begin
    wait(!fw_actual_enable);#250;
    if(!fw_saw_stop || fw_front_edges!=fw_front_at_stop || fw_work_edges!=fw_work_at_stop ||
-      fw_receipt_state!==fw_stopped_state || fw_all_payload!==fw_stopped_payload || !fw_quiet || serviceClock!==0)
+      fw_receipt_state!==fw_stopped_state || fw_completion_state!==fw_stopped_completion || fw_all_payload!==fw_stopped_payload || !fw_quiet || serviceClock!==0)
     $fatal(1,"FRAME_WAKE_CONTROL_STOPPED_STATE_CHANGED");
    fw_low_edges=fw_low_edges+1;
   end
@@ -299,6 +311,18 @@ def metrics(log,stopped):
     return dict(banks=banks,counts=counts,margins=margins)
 
 
+def control_fault(compiled, simulated, log, sites, expected):
+    """Keep the original fault mandatory if two independent monitors coincide."""
+    records=classify_fatal(compiled,simulated,log,sites)
+    primary=[r for r in records if r['message']==expected]
+    require(len(primary)==1,'MANDATORY_FAULT_SITE')
+    extra=[r for r in records if r['message']!=expected]
+    require(not extra or (expected=='FRAME_WAKE_CONTROL_RETURN_AT_SOURCE_STOP' and len(extra)==1 and
+            extra[0]['message']=='FRAME_WAKE_CONTROL_COMPLETION_WHILE_SOURCE_OFF' and
+            extra[0]['time']==primary[0]['time']),'NONCOINCIDENT_EXTRA_FAULT')
+    return records
+
+
 def main():
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--sources',type=Path,required=True);parser.add_argument('--out',type=Path,required=True)
@@ -340,14 +364,15 @@ def main():
         files=list(dict.fromkeys(Path(f).as_posix() for f in files));require(all((case/f).is_file() and (case/f).resolve().is_relative_to(case) for f in files),'FILELIST')
         record=dict(source=str(source),original_testbench_sha256=sha(source/'testbench.sv'),original_oracles_preserved=True,
             structural_policy=b['policy'],profile=profile_name,overrides=overrides,mutation=mutation,
-            expected=expected,fatal_sites=fatal_sites(body,[expected]) if expected else [],
+            expected=expected,fatal_sites=fatal_sites(body,[expected]+(['FRAME_WAKE_CONTROL_COMPLETION_WHILE_SOURCE_OFF']
+                if fault=='premature-source-stop' else [])) if expected else [],
             testbench_sha256=sha(case/'testbench.sv'),rtl_sha256={f:sha(case/f) for f in files})
         result['cases'][name]=record;save()
         record['compile'],log=run(['iverilog','-g2012','-s','Testbench','-o','wake.vvp',*files,'testbench.sv'],case,'control-compile')
         require(record['compile']['exit_code']==0 and not record['compile']['timed_out'],'COMPILE:'+name+':'+log[-1500:])
         record['binary_sha256']=sha(case/'wake.vvp')
         record['simulation'],log=run(['vvp','wake.vvp'],case,'control-simulation');save()
-        if expected:record['fatal_records']=classify_fatal(record['compile'],record['simulation'],log,record['fatal_sites'])
+        if expected:record['fatal_records']=control_fault(record['compile'],record['simulation'],log,record['fatal_sites'],expected)
         else:
             require(record['simulation']['exit_code']==0 and not record['simulation']['timed_out'] and log.count('RISCAY_SOC_PASS')==1 and not re.search(r'FATAL|DEADLINE|TIMEOUT',log),'POSITIVE:'+name+':'+log[-1600:])
             record['metrics']=metrics(log,mode=='stopped')

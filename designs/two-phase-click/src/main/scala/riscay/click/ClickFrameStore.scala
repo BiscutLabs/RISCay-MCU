@@ -21,7 +21,8 @@ private class FrameCaptureAnd(delay: ModelTime)
   * share the pulse, while unselected data/phase D inputs retain their own Q.
   * There is no global-phase-to-bank mux and no four-phase conversion.
   * The separate original offer receipt must observe O even when a bank is
-  * unavailable, and must assert copy completion at the unchanged A edge.
+  * unavailable. Actual A waits for synchronized copy phase, so the caller's
+  * live slot cannot advance before capture; publisher ACK joins both phases.
   */
 class ClickFrameStore(domain: ResetDomain) extends AsyncModule(domain) {
   val in=twoPhaseInput("in",new I2cFrame)
@@ -74,7 +75,8 @@ class ClickFrameStore(domain: ResetDomain) extends AsyncModule(domain) {
     payload(i).d:=data(i*338+337,i*338+1); phase(i).d:=data(i*338)
   }
   // <=11+10+10+10+32=73 ns from O to guarded copy acknowledgement.
-  // Caller A occurs no earlier than100 ns, without using this ACK to delay A.
+  // Caller A waits for this phase through two synchronizers. The modeled bound
+  // does not impose a race against the original request receipt.
   in.ack:=gate("acknowledge_guard",accepted.q.asUInt,1,ModelTime.ps(32000)).asBool
   busy:=in.req =/= in.ack || !available.asUInt.andR
   private val sourceBits=WireDefault(UInt(1691.W),Cat(slot,in.bits.asUInt,

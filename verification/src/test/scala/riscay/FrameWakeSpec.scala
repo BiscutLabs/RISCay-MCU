@@ -20,6 +20,8 @@ class BdFrameWakeFixture(p: SocParameters) extends riscay.bd.FourPhaseSoc(p) {
   val receiptValid=IO(Output(Bool())); receiptValid:=BoringUtils.bore(host.frames.out.valid)
   val nativeAcknowledge=IO(Output(Bool())); nativeAcknowledge:=BoringUtils.bore(host.native.frame.ack)
   val nativeRequest=IO(Output(Bool())); nativeRequest:=BoringUtils.bore(host.native.frame.req)
+  val receiptAcknowledge=IO(Output(Bool())); receiptAcknowledge:=BoringUtils.bore(host.frames.in.ack)
+  val copyAcknowledge=IO(Output(Bool())); copyAcknowledge:=BoringUtils.bore(host.frameStore.in.ack)
   val observedNativeFrame=IO(Output(UInt(337.W))); observedNativeFrame:=BoringUtils.bore(host.native.frame.bits).asUInt
   val hostBusy=IO(Output(Bool())); hostBusy:=host.host.busy
   val nativeClick=IO(Output(Bool())); nativeClick:=false.B
@@ -39,6 +41,8 @@ class ClickFrameWakeFixture(p: SocParameters) extends riscay.click.ClickSoc(p) {
   val receiptValid=IO(Output(Bool())); receiptValid:=BoringUtils.bore(host.frames.out.valid)
   val nativeAcknowledge=IO(Output(Bool())); nativeAcknowledge:=BoringUtils.bore(host.native.frame.ack)
   val nativeRequest=IO(Output(Bool())); nativeRequest:=BoringUtils.bore(host.native.frame.req)
+  val receiptAcknowledge=IO(Output(Bool())); receiptAcknowledge:=BoringUtils.bore(host.frames.in.ack)
+  val copyAcknowledge=IO(Output(Bool())); copyAcknowledge:=BoringUtils.bore(host.frameStore.in.ack)
   val observedNativeFrame=IO(Output(UInt(337.W))); observedNativeFrame:=BoringUtils.bore(host.native.frame.bits).asUInt
   val hostBusy=IO(Output(Bool())); hostBusy:=host.host.busy
   val nativeClick=IO(Output(Bool())); nativeClick:=true.B
@@ -48,7 +52,7 @@ class FrameWakeSpec extends AnyFunSuite {
   private val config=McuConfiguration(16,16,1,Vector.empty,
     ApplicationProfile(1,1,"frame-wake",Vector.empty,Vector.empty))
   private val monitor="""
-    integer accepted=0,dispatched=0,beforeAccepted,beforeDispatched,sourceStops=0;
+    integer accepted=0,dispatched=0,beforeAccepted,beforeDispatched,sourceStops=0,joinedAcks=0;
     realtime lastAccepted=-1000;
     reg [336:0] heldFrame;
     reg heldAck;
@@ -62,9 +66,18 @@ class FrameWakeSpec extends AnyFunSuite {
         dispatched=dispatched+1;
       end
     end
-    always @(nativeAcknowledge) if(!reset && (nativeClick || nativeAcknowledge)) begin
+    always @(receiptAcknowledge) if(!reset && (nativeClick || receiptAcknowledge)) begin
       #0.001;
       if($realtime-lastAccepted > 0.01) $fatal(1,"FRAME_WAKE_ACK_WITHOUT_WORK_CAPTURE");
+    end
+    // The receipt ACK remains tied to the actual work edge. The publisher ACK
+    // now follows the native completion join (1..10 ns digital cell envelope).
+    always @(nativeAcknowledge) if(!reset && (nativeClick || nativeAcknowledge)) begin
+      #0.001;
+      if(joinedAcks>=accepted || $realtime-lastAccepted > 10.01 ||
+         receiptAcknowledge!==nativeAcknowledge || copyAcknowledge!==nativeAcknowledge)
+        $fatal(1,"FRAME_WAKE_PUBLISHER_ACK_WITHOUT_BOTH_CONSUMERS");
+      joinedAcks=joinedAcks+1;
     end
     always @(sleeping) if(!reset && serviceClock !== 0) $fatal(1,"FRAME_WAKE_GATE_CHANGED_HIGH");
     task source_stopped; begin

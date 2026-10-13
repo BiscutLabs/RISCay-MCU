@@ -1,5 +1,16 @@
 # Remaining clocked-state audit
 
+R3's frame-copy completion correction is **digitally verified, 2026-10-13**. It adds four
+POR-owned periodic-clock bits per variant beyond C1: two copy-completion
+synchronizers in I2cTarget and two retained reset/busy admission facts in
+Services. No clocked or native payload bank is added. The native publisher ACK
+join adds one C-element, included in the matched mapping. Final portable periodic
+totals are **6,542 BD / 6,543 Click**, excluding the unchanged SDA-edge bit:
+a net **1,250 fewer periodic bits per variant** across C1 and R3. The historical
+inventories below retain their original scope.
+This repair preserves a real clocked descriptor consumer; it does not remove
+the service scheduler or establish minimum synchronous state or physical closure.
+
 The asynchronous migration has not reached its physically feasible limit.
 This ledger records native frame banks, reset containment and the current
 service-reply correction. It provides removal candidates for

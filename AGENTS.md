@@ -48,8 +48,9 @@
   add periodic-clock staging merely to satisfy synchronous STA assumptions.
   Adapt analysis with exact path/relative-timing contracts and retain real
   setup/hold, pulse, reset, slew and load failures. Keep both native CPUs and
-  preserve R1/R2 and every later correctness fix. R2b reset distribution and R3
-  frame-copy completion remain open physical/correctness obligations.
+  preserve R1/R2 and every later correctness fix. R3 frame-copy completion is
+  digitally verified; R2b reset distribution and the complete physical frame
+  capture/return envelopes remain open.
   Never infer energy savings
   from clocked-bit or work-edge counts alone. Keep historical failures visible.
   Native completion presentation follows coordinated application reset. Its
@@ -201,13 +202,22 @@
   Include queued elapsed time in host freshness.
 - I2C migration uses separate native protocol loops and POR-only publication.
   The 11a1 frame receipt keeps five POR-only clocked bits and no payload copy.
-  ACK must coincide with actual work-clock mailbox capture. Qualify ready with
+  Receipt ACK must coincide with actual work-clock mailbox capture. Qualify ready with
   the falling-edge gate's running state, retaining ungated pending-frame demand.
   Follow `docs/frame-admission-contract.md`; 11a2a's native payload/epoch storage
   is digitally verified, with physical qualification still open. Four physical banks retain exactly two logical
-  admission credits. Preserve original O/A/ACK, per-bank Click phases and BD's
-  retained route through RTZ. At O prove complete bank availability and a new
-  capture ordinal, including identical payloads; copy equality alone is not proof.
+  admission credits. R3 is digitally verified: preserve original offer observation O_f
+  independently of copy-qualified admission A. Receipt ACK changes at A; native
+  publisher ACK joins receipt and copy completion. BD's join additionally waits
+  for synchronized copy-low before returning, preventing stale completion reuse.
+  Keep full-mailbox overflow visible at O_f even with same-edge dispatch; retain
+  the two POR reset/busy context facts from O_f through A. The correction adds
+  two completion synchronizers and two context bits, with no payload bank. Keep
+  per-bank Click phases and BD's retained route through RTZ. At O prove complete
+  bank availability and a new capture ordinal, including identical payloads;
+  copy equality alone is not proof. Exercise copies longer than two front-clock
+  periods, stopped work clocks and delayed context changes. Rerun affected
+  checks and obtain fresh independent review after changing this contract.
   Retain source epoch through D and compare against the coincident current epoch.
   Queued descriptors awaiting head observation retain priority over CPU MMIO.
   Keep native logical credit removal separate; narrow Q/descriptors, tail, busy

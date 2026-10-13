@@ -7,7 +7,7 @@ import unittest
 from pathlib import Path
 
 from check_frame_capture_controls import (LEAVES, PREFIX, assertion_sites,
-    classify, classify_wrap, command_capture_policy, fixture_masks_policy, instrument, monitors, packed, qualify, service_period, skew, supplemental)
+    classify, classify_wrap, command_capture_policy, fixture_masks_policy, instrument, monitors, omit_same_edge_busy, packed, qualify, service_period, skew, supplemental)
 
 
 def fake_binding():
@@ -37,6 +37,22 @@ endmodule
 
 
 class FrameCaptureControlTests(unittest.TestCase):
+    def test_same_edge_busy_fault_preserves_the_retained_context_alias(self):
+        context='fabric_hostOfferedBusy | fabric_hostAdmissionBusy'
+        terms=['_ca_child_i2c_host_frame_bits_programBusy','_ca_child_program_access_io_busy',
+               'fabric_loaderPending','fabric_loaderControlPending',
+               'fabric__9 & ~_GEN_14 & fabric__hostAdmissionBusy_T_6 & fabric__hostAdmissionBusy_T_8']
+        admission=' | '.join(terms)
+        source=f'wire fabric_hostFrames_io_enq_bits_programBusy={context};\nwire fabric_hostAdmissionBusy={admission};'
+        changed=omit_same_edge_busy(source,context,admission)
+        self.assertIn('fabric_hostFrames_io_enq_bits_programBusy='+context+';',changed)
+        self.assertIn('fabric_hostAdmissionBusy='+' | '.join(terms[:4])+';',changed)
+        self.assertNotIn(terms[-1],changed)
+        for text,c,b in ((source,admission,admission),(source,context,' | '.join(terms[:4])),
+                         (source.replace(terms[-1],'wrong'),context,admission),
+                         (source,context,admission.replace(terms[0],'unrelated'))):
+            with self.subTest(text=text),self.assertRaises(ValueError):omit_same_edge_busy(text,c,b)
+
     def test_original_functional_oracle_is_byte_for_byte_preserved(self):
         instrumented=instrument(BENCH,fake_binding())
         head=instrumented.split('\nmodule FrameCaptureChecks;',1)[0]
@@ -189,8 +205,12 @@ class FrameCaptureControlTests(unittest.TestCase):
         self.assertIn('first_writes!=405',text)
         self.assertIn('second_writes!=403',text)
         self.assertIn('FRAME_INPUT_SAME_EDGE_BUSY_RESULT',text)
+        self.assertIn('wait(dut.ca_child_i2c.frameCopyReady);',text)
+        self.assertIn('if(!hostDispatched || !injectedAccepted)',text)
         self.assertIn('FRAME_INPUT_337_POLARITY',text)
         self.assertIn('FRAME_INPUT_273_POLARITY',text)
+        self.assertIn('while(!controlIdle || dut.ca_child_i2c.host_resetActive)',text)
+        self.assertIn('currentReset || currentBusy || dut.ca_child_i2c.host_resetActive',text)
         self.assertIn('FRAME_INPUT_EPOCH_BIT',text)
         self.assertNotRegex(text,r'force\s+[^;]*=pub_data\[')
         continuous_body=continuous[continuous.index('  new_pair();\n  // Do not reset'):]
@@ -210,6 +230,11 @@ class FrameCaptureControlTests(unittest.TestCase):
         self.assertNotIn('repeat(',ring_body)
         self.assertIn('ring_late_dispatches!=30 || ring_exact_frontiers!=30',ring_body)
         self.assertIn('FRAME_INPUT_RING_LAST_LEGAL_D',ring)
+        self.assertIn('dut.ca_child_i2c.host_frameOffered && !ring_offer_pending',ring)
+        self.assertIn('hostDispatched || ring_now-ring_last_D!=ring_period',ring)
+        self.assertIn('ring_offers!=32 || ring_accepts!=32 || ring_offer_pending',ring)
+        self.assertIn('FRAME_INPUT_RING_ADMISSION_WITHOUT_COMPLETED_OFFER',ring)
+        self.assertIn('ring_offers!=ring_accepts+1',ring)
         self.assertIn('FRAME_INPUT_RING_PERIOD',ring)
         self.assertIn('in_ready && !dut.fabric_controlOutstanding)',ring_body)
         self.assertIn('FRAME_CAPTURE_READY_BY_THIRD_NEXT_A',monitors(b))

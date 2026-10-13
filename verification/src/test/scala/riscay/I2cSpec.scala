@@ -38,7 +38,7 @@ class I2cSpec extends AnyFunSuite {
     val p=SocParameters(config,serviceHz=hz,watchdogCycles=100000,i2cIdleCycles=256)
     if(click) new ClickI2cFixture(p) else new BdI2cFixture(p)
   }
-  private val tasks="""
+  private def tasks(click: Boolean): String = """
 integer frames=0, snapshots=0; reg [23:0] frameOrder=0; reg lastReset=0,lastOverflow=0; reg [5:0] lastLength; reg [7:0] firstByte;
 always @(negedge serviceClock) begin
   #1;
@@ -47,7 +47,10 @@ always @(negedge serviceClock) begin
         dut.ca_child_i2c.ca_child_snapshot_bridge.out_ready !== 0 || received !== 0 || readStarted !== 0)
       $fatal(1,"I2C_RESET_PUBLICATION");
   end else if (dut.ca_child_i2c.localReset_release_1 === 1'b0) begin
-    if (dut.ca_child_i2c.ca_child_frame_bridge.out_ready !== frameRun ||
+    // R3 retains original offer visibility, but actual admission additionally
+    // waits for synchronized native copy completion. Check the retained phases
+    // directly rather than borrowing the DUT's derived frameCopyReady signal.
+    if (dut.ca_child_i2c.ca_child_frame_bridge.out_ready !== (frameRun && @COPY_COMPLETE@) ||
         dut.ca_child_i2c.ca_child_snapshot_bridge.out_ready !== 1) $fatal(1,"I2C_RELEASE_ADMISSION");
   end
 end
@@ -76,7 +79,9 @@ task fast_word(input [31:0] word); integer b; begin
   for(b=0;b<4;b=b+1) fast_byte(word[8*b+:8],1);
 end endtask
 integer i,saved; reg [7:0] value; reg [31:0] expected;
-"""
+""".replace("@COPY_COMPLETE@", if(click)
+    "(dut.ca_child_i2c.copied != dut.ca_child_i2c.ca_child_frame_bridge.in_ack)"
+    else "dut.ca_child_i2c.copied")
   for(click <- Seq(false,true)) {
     val name=if(click) "click" else "bd"
     for(hz <- Seq(3200000,20000000)) test(s"$name I2C wire: 400kHz at $hz service Hz with maximum native delays") {
@@ -102,13 +107,13 @@ integer i,saved; reg [7:0] value; reg [31:0] expected;
         fast_start(); fast_byte(8'h6a,1); fast_byte(8'h33,1);
         repeat(3) begin #100; hostLow=0; #1150; scl=1; #1250; scl=0; end
         fast_stop(); #5000; if(frames != 3 || !lastOverflow) $fatal(1,"I2C_PARTIAL");
-      """,tasks,serviceHalfPeriodNs=5.0e8/hz,maximumDelaySubtree=Some("i2c"))
+      """,tasks(click),serviceHalfPeriodNs=5.0e8/hz,maximumDelaySubtree=Some("i2c"))
     }
     for(hz <- Seq(3200000,20000000)) test(s"$name I2C loader: earliest 400kHz status reads after VERIFY, BEGIN, WRITE and LOCK at $hz Hz") {
       val p=SocParameters(config,serviceHz=hz,watchdogCycles=100000)
       def fixture: SocTop=if(click) new ClickFabricFixture(p) else new FabricFixture(p)
       val crc=new java.util.zip.CRC32; Seq(0x73,0,0,0).foreach(x => crc.update(x))
-      val wireTasks=tasks.substring(tasks.indexOf("// 400 kHz"))
+      val wireTasks=tasks(click).substring(tasks(click).indexOf("// 400 kHz"))
       val earliestRead="""
         // STOP already left SCL high for 1250 ns: complete 1300 ns bus-free,
         // issue START directly, then 600 ns START hold. No helper preamble or poll.
@@ -190,7 +195,7 @@ integer i,saved; reg [7:0] value; reg [31:0] expected;
         #100; hostLow=0; #1150; if(busSda) $$fatal(1,"I2C_RING_ADDRESS_ACK"); scl=1; #1250; scl=0;
         fast_byte(11,1); fast_stop(); #10000;
         if(frames!=3 || frameOrder!==24'h090a0b || lastOverflow) $$fatal(1,"I2C_RING_RECOVERY");
-      """,tasks+"\nreg [831:0] heldSlots; reg [3:0] heldHead; integer occupied;\n")
+      """,tasks(click)+"\nreg [831:0] heldSlots; reg [3:0] heldHead; integer occupied;\n")
     }
     test(s"$name I2C rejects overflowing a deliberately blocked edge ring") {
       val error=intercept[IllegalArgumentException] {
@@ -199,7 +204,7 @@ integer i,saved; reg [7:0] value; reg [31:0] expected;
           fast_start(); fast_byte(8'h6a,1); fast_byte(9,1); fast_stop();
           fast_start(); fast_byte(8'h6a,1); fast_byte(10,1); fast_stop();
           fast_start(); repeat(12) begin #1250; scl=1; #1250; scl=0; end
-        """,tasks)
+        """,tasks(click))
       }
       assert(error.getMessage.contains("I2C_EDGE_RING_OVERFLOW"),error.getMessage)
     }
@@ -215,7 +220,7 @@ integer i,saved; reg [7:0] value; reg [31:0] expected;
         if(snapshots != 0) $fatal(1,"I2C_SNAPSHOT_POR_REPLAY");
         fast_start(); fast_byte(8'h6b,1); fast_read(value,1); fast_stop(); #5000;
         if(snapshots != 1 || value !== 8'hef || busBusy || sdaLow) $fatal(1,"I2C_SNAPSHOT_POR_RECOVERY");
-      """,tasks)
+      """,tasks(click))
     }
     test(s"$name I2C frame crossing retains complete reset episodes and POR cancels held effects") {
       ClockedSimulation.run(top(click,10000000),name+"-i2c-reset", """
@@ -231,7 +236,7 @@ integer i,saved; reg [7:0] value; reg [31:0] expected;
         if(frames != 2) $fatal(1,"I2C_POR_REPLAY");
         fast_start(); fast_byte(8'h6a,1); fast_byte(6,1); fast_stop(); #10000;
         if(frames != 3 || lastReset) $fatal(1,"I2C_POR_RECOVERY");
-      """,tasks)
+      """,tasks(click))
     }
   }
 }

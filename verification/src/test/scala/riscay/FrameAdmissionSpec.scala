@@ -30,8 +30,12 @@ class BdFrameAdmissionFixture(p: SocParameters) extends BdProgramSourceFixture(p
   observedNativeFrame:=BoringUtils.bore(host.native.frame.bits).asUInt
   val nativeRequest=IO(Output(Bool())); nativeRequest:=BoringUtils.bore(host.native.frame.req)
   val nativeAcknowledge=IO(Output(Bool())); nativeAcknowledge:=BoringUtils.bore(host.native.frame.ack)
+  val copyAcknowledge=IO(Output(Bool())); copyAcknowledge:=BoringUtils.bore(host.frameStore.in.ack)
+  val receiptAcknowledge=IO(Output(Bool())); receiptAcknowledge:=BoringUtils.bore(host.frames.in.ack)
   val receiptValid=IO(Output(Bool())); receiptValid:=BoringUtils.bore(host.frames.out.valid)
   val receiptReady=IO(Output(Bool())); receiptReady:=BoringUtils.bore(host.frames.out.ready)
+  val originalOffer=IO(Output(Bool())); originalOffer:=host.host.frameOffered
+  val currentCancel=IO(Output(Bool())); currentCancel:=fabric.io.applicationCancel
   val currentEpoch=IO(Output(UInt(64.W))); currentEpoch:=BoringUtils.bore(host.resetEpoch)
   val observedFrameSlot=IO(Output(UInt(2.W))); observedFrameSlot:=host.host.frameSlot
   val observedBankFrames=IO(Output(UInt(1348.W)))
@@ -71,8 +75,12 @@ class ClickFrameAdmissionFixture(p: SocParameters) extends ClickProgramSourceFix
   observedNativeFrame:=BoringUtils.bore(host.native.frame.bits).asUInt
   val nativeRequest=IO(Output(Bool())); nativeRequest:=BoringUtils.bore(host.native.frame.req)
   val nativeAcknowledge=IO(Output(Bool())); nativeAcknowledge:=BoringUtils.bore(host.native.frame.ack)
+  val copyAcknowledge=IO(Output(Bool())); copyAcknowledge:=BoringUtils.bore(host.frameStore.in.ack)
+  val receiptAcknowledge=IO(Output(Bool())); receiptAcknowledge:=BoringUtils.bore(host.frames.in.ack)
   val receiptValid=IO(Output(Bool())); receiptValid:=BoringUtils.bore(host.frames.out.valid)
   val receiptReady=IO(Output(Bool())); receiptReady:=BoringUtils.bore(host.frames.out.ready)
+  val originalOffer=IO(Output(Bool())); originalOffer:=host.host.frameOffered
+  val currentCancel=IO(Output(Bool())); currentCancel:=fabric.io.applicationCancel
   val currentEpoch=IO(Output(UInt(64.W))); currentEpoch:=BoringUtils.bore(host.resetEpoch)
   val observedFrameSlot=IO(Output(UInt(2.W))); observedFrameSlot:=host.host.frameSlot
   val observedBankFrames=IO(Output(UInt(1348.W)))
@@ -92,6 +100,20 @@ class ClickFrameAdmissionFixture(p: SocParameters) extends ClickProgramSourceFix
   dispatched.resetActive:=fabric.io.controlCommand.bits.cpuResetActive
   dispatched.programBusy:=fabric.io.controlCommand.bits.programBusy
   dispatchedFrame:=dispatched.asUInt
+}
+
+/** Context fault injection at the existing service boundary, with real native
+  * serial payload/copy/admission. Normal wire tests use the unmodified fixtures.
+  */
+class BdFrameContextFixture(p: SocParameters) extends BdFrameAdmissionFixture(p) {
+  val resetContext=IO(Input(Bool())); val busyContext=IO(Input(Bool()))
+  fabric.io.i2c.frame.bits.resetActive:=host.host.frame.bits.resetActive || resetContext
+  fabric.io.i2c.frame.bits.programBusy:=host.host.frame.bits.programBusy || busyContext
+}
+class ClickFrameContextFixture(p: SocParameters) extends ClickFrameAdmissionFixture(p) {
+  val resetContext=IO(Input(Bool())); val busyContext=IO(Input(Bool()))
+  fabric.io.i2c.frame.bits.resetActive:=host.host.frame.bits.resetActive || resetContext
+  fabric.io.i2c.frame.bits.programBusy:=host.host.frame.bits.programBusy || busyContext
 }
 
 /** Composed real-wire proof complements the isolated 337-bit receipt campaign.
@@ -125,6 +147,7 @@ class FrameAdmissionSpec extends AnyFunSuite {
     reg [336:0] expectedNativeFirst=0,expectedNativeSecond=0;
     reg [3:0] expectedDescriptorFirst=0,expectedDescriptorSecond=0,arrivalDescriptor;
     reg [3:0] liveBanks=0;
+    reg offeredReset=0,offeredBusy=0;
     integer nextBank=0;
     integer bankAdmissions[0:3];
     initial begin bankAdmissions[0]=0;bankAdmissions[1]=0;bankAdmissions[2]=0;bankAdmissions[3]=0;end
@@ -135,6 +158,11 @@ class FrameAdmissionSpec extends AnyFunSuite {
     integer checkCount;
     always @(posedge observedWorkClock) if(!reset) begin
       if(mailboxCount !== q) $$fatal(1,"FRAME_ADMISSION_PRE_COUNT");
+      if(originalOffer) begin
+        offeredReset=offeredReset || observedNativeFrame[65] || currentCancel ||
+          observedNativeFrame[63:0]!=currentEpoch;
+        offeredBusy=offeredBusy || observedNativeFrame[64] || currentBusy;
+      end
       if(mmioDispatched) begin mmioDispatches=mmioDispatches+1;hostsBeforeMmio=dispatches;end
       if(observedHeadFire !== (hostDispatched ? (4'b0001 << expectedDescriptorFirst[3:2]) : 4'b0000))
         $$fatal(1,"FRAME_ADMISSION_HEAD_RETIRE_IDENTITY");
@@ -159,8 +187,8 @@ class FrameAdmissionSpec extends AnyFunSuite {
         if(nativeBanks[observedFrameSlot] !== observedNativeFrame)
           $$fatal(1,"FRAME_ADMISSION_NATIVE_COPY_BEFORE_A");
         arrival=observedNativeFrame[336:64];
-        arrival[1]=observedNativeFrame[65] || currentReset || (observedNativeFrame[63:0] != currentEpoch);
-        arrival[0]=observedNativeFrame[64] || currentBusy;
+        arrival[1]=offeredReset || observedNativeFrame[65] || currentCancel || (observedNativeFrame[63:0] != currentEpoch);
+        arrival[0]=offeredBusy || observedNativeFrame[64] || currentBusy;
         arrivalDescriptor={observedFrameSlot,arrival[1:0]};
         liveBanks[observedFrameSlot]=1; bankAdmissions[observedFrameSlot]=bankAdmissions[observedFrameSlot]+1;
         nextBank=(nextBank+1)%4;
@@ -178,6 +206,7 @@ class FrameAdmissionSpec extends AnyFunSuite {
           q=2;secondCaptures=secondCaptures+1;
         end
         else $$fatal(1,"FRAME_ADMISSION_TEST_OVERFLOW");
+        offeredReset=0;offeredBusy=0;
       end else if(hostDispatched) begin
         expectedFirst=expectedSecond;expectedNativeFirst=expectedNativeSecond;expectedDescriptorFirst=expectedDescriptorSecond;
         q=q-1;
@@ -224,6 +253,109 @@ class FrameAdmissionSpec extends AnyFunSuite {
   for(click <- Seq(false,true)) {
     val name=if(click) "click" else "bd"
     def fixture(hz: Int): SocTop=if(click) new ClickFrameAdmissionFixture(params(hz)) else new BdFrameAdmissionFixture(params(hz))
+    val slowCopy=Map(("ca_child_i2c.ca_child_frame_store",if(click) "request_delay" else "request_guard") -> 8000000000L)
+    if(!click) test("bd frame admission: source return waits for actual copy-low observation") {
+      ClockedSimulation.run(fixture(20000000),"bd-frame-admission-copy-rearm","""
+        control_done();holdHostCommands=1;
+        fork
+          command(9);
+          begin
+            wait(injectedAccepted);@(posedge observedWorkClock);#0.001;
+            // Delay the actual retained synchronizer's return observation.
+            // Other receipt clocks and both raw native return paths keep running.
+            force dut.ca_child_i2c.copied=1'b1;
+            wait(nativeAcknowledge);
+            wait(!nativeRequest && !copyAcknowledge && !receiptAcknowledge);
+            repeat(8) begin
+              @(posedge serviceClock);#0.001;
+              if(!nativeAcknowledge || nativeRequest || injectedAccepted ||
+                 admissions!=1 || observedFrameSlot!=1)
+                $fatal(1,"FRAME_BD_COPY_REARM_RELEASED_EARLY");
+            end
+            release dut.ca_child_i2c.copied;
+            wait(!nativeAcknowledge);
+          end
+        join
+        @(negedge serviceClock);#1;holdHostCommands=0;control_done();
+        command(9);native_return();control_done();
+        if(admissions!=2 || dispatches!=2 || mailboxCount || liveBanks)
+          $fatal(1,"FRAME_BD_COPY_REARM_REPLAY_OR_LOSS");
+      """,monitors,serviceHalfPeriodNs=25,maximumDelaySubtree=Some("i2c"),deadlineNs=500000)
+    }
+    test(s"$name frame admission: original-offer context remains after it clears before late copy") {
+      def contextFixture: SocTop=if(click) new ClickFrameContextFixture(params(20000000)) else new BdFrameContextFixture(params(20000000))
+      ClockedSimulation.run(contextFixture,name+"-frame-admission-late-context","""
+        @(negedge serviceClock);while(!controlIdle) @(negedge serviceClock);
+        #1;holdHostCommands=1;command(9);wait(receiptValid);@(negedge serviceClock);
+        if(!originalOffer || copyAcknowledge===nativeRequest || receiptReady ||
+           observedNativeFrame[65:64] || currentCancel || currentBusy)
+          $fatal(1,"FRAME_LATE_CONTEXT_PRECONDITION");
+        // A one-edge boundary observation disappears before the actual copy.
+        // Neither the retained source payload nor its epoch supplies this fact.
+        #1;resetContext=1;busyContext=1;
+        @(posedge observedWorkClock);
+        if(!originalOffer || injectedAccepted) $fatal(1,"FRAME_LATE_CONTEXT_OFFER_NOT_OBSERVED");
+        @(negedge serviceClock);#1;resetContext=0;busyContext=0;
+        wait(injectedAccepted);@(posedge observedWorkClock);#1;
+        if(resetContext || busyContext || observedNativeFrame[65:64] ||
+           observedNativeFrame[63:0]!=currentEpoch || currentCancel || currentBusy)
+          $fatal(1,"FRAME_LATE_CONTEXT_NOT_CLEARED_BEFORE_A");
+        if(!dut.fabric_hostFrames_first_resetActive)
+          $fatal(1,"FRAME_LATE_CONTEXT_RESET_HISTORY_LOST");
+        if(!dut.fabric_hostFrames_first_programBusy)
+          $fatal(1,"FRAME_LATE_CONTEXT_BUSY_HISTORY_LOST");
+        @(negedge serviceClock);#1;holdHostCommands=0;
+        wait(hostDispatched);
+        if(dispatchedFrame[1:0]!==2'b11)
+          $fatal(1,"FRAME_LATE_CONTEXT_DISPATCH_LOST");
+        @(posedge observedWorkClock);#1;
+        @(negedge serviceClock);while(!controlIdle) @(negedge serviceClock);
+      """,serviceHalfPeriodNs=25,deadlineNs=500000,primitiveDelayOverrides=slowCopy,powerOnResetNs=20000)
+    }
+    test(s"$name frame admission: late native copy holds slot and publisher through stopped work") {
+      // Deliberately make capture much slower than the old two-clock assumption.
+      // The injected 8 us cell also delays reset, so only these fault-injection
+      // fixtures use a 20 us POR. Production pulse tests keep their old durations.
+      ClockedSimulation.run(fixture(20000000),name+"-frame-admission-late-copy","""
+        control_done();
+        for(n=0;n<8;n=n+1) begin
+          @(negedge serviceClock);#1;holdHostCommands=1;
+          beforeAdmissions=admissions;beforeDispatches=dispatches;
+          command(9);wait(receiptValid);@(negedge serviceClock);
+          heldNative=observedNativeFrame;heldAck=nativeAcknowledge;
+          if(copyAcknowledge===nativeRequest || receiptReady || injectedAccepted ||
+             observedFrameSlot!==n%4 || mailboxCount)
+            $fatal(1,"FRAME_LATE_COPY_STALL_NOT_EXERCISED");
+          repeat(6) begin
+            @(posedge observedWorkClock);
+            if(copyAcknowledge===nativeRequest || receiptReady || injectedAccepted ||
+               admissions!=beforeAdmissions || observedFrameSlot!==n%4 ||
+               observedNativeFrame!==heldNative || nativeAcknowledge!==heldAck)
+              $fatal(1,"FRAME_LATE_COPY_EARLY_ADMISSION_OR_RELEASE");
+          end
+          // Native copy must finish even while work is stopped. Acceptance and
+          // descriptor rotation still require the real destination work edge.
+          @(negedge serviceClock);#1;stopWorkClock=1;
+          repeat(3) @(negedge serviceClock);
+          if(workRunning) $fatal(1,"FRAME_LATE_COPY_WORK_STOP_PRECONDITION");
+          wait(copyAcknowledge===nativeRequest);
+          repeat(4) @(negedge serviceClock);
+          if(receiptReady || injectedAccepted || admissions!=beforeAdmissions ||
+             observedFrameSlot!==n%4 || observedNativeFrame!==heldNative ||
+             nativeAcknowledge!==heldAck || !hostBusy)
+            $fatal(1,"FRAME_LATE_COPY_STOPPED_WORK_RELEASE");
+          @(negedge serviceClock);#1;stopWorkClock=0;
+          wait(admissions==beforeAdmissions+1);native_return();
+          if(mailboxCount!=1 || dispatches!=beforeDispatches || mailboxFirst!==heldNative[336:64])
+            $fatal(1,"FRAME_LATE_COPY_CAPTURE_IDENTITY");
+          @(negedge serviceClock);#1;holdHostCommands=0;control_done();
+          if(dispatches!=admissions || mailboxCount || liveBanks)
+            $fatal(1,"FRAME_LATE_COPY_REPLAY_OR_LOSS");
+        end
+        for(j=0;j<4;j=j+1) if(bankAdmissions[j]!=2)
+          $fatal(1,"FRAME_LATE_COPY_BANK_OR_PHASE_COVERAGE");
+      """,monitors,serviceHalfPeriodNs=25,deadlineNs=2000000,primitiveDelayOverrides=slowCopy,powerOnResetNs=20000)
+    }
     for(hz <- Seq(3200000,20000000)) {
       test(s"$name frame admission: native held frame survives stopped work and repeated reset at $hz Hz") {
         ClockedSimulation.run(fixture(hz),name+"-frame-admission-reset",s"""
@@ -340,25 +472,28 @@ class FrameAdmissionSpec extends AnyFunSuite {
           $fatal(1,"FRAME_ADMISSION_HOST_MMIO_REPLAY");
       """,monitors,serviceHalfPeriodNs=25,maximumDelaySubtree=Some("i2c"),deadlineNs=1000000)
     }
-    for(dequeue <- Seq(false,true)) test(s"$name frame admission: full mailbox rejects native offer with simultaneous dequeue=$dequeue") {
+    for(dequeue <- Seq(false,true); lateCopy <- Seq(false,true)) test(s"$name frame admission: full mailbox rejects native offer with simultaneous dequeue=$dequeue late copy=$lateCopy") {
       val error=intercept[IllegalArgumentException] {
         ClockedSimulation.run(fixture(20000000),name+"-frame-admission-overflow",s"""
           @(negedge serviceClock); while(!controlIdle) @(negedge serviceClock);
           #1; holdHostCommands=1;
-          command(9); #5000;
+          command(9); ${if(lateCopy) "wait(dut.fabric_hostFrames_count==1);" else ""} #5000;
           if(dut.fabric_hostFrames_count!=1) $$fatal(1,"FRAME_OVERFLOW_FIRST_SLOT_NOT_FILLED");
-          command(10); #5000;
+          command(10); ${if(lateCopy) "wait(dut.fabric_hostFrames_count==2);" else ""} #5000;
           if(dut.fabric_hostFrames_count!=2) $$fatal(1,"FRAME_OVERFLOW_SECOND_SLOT_NOT_FILLED");
           @(negedge serviceClock); #1; holdFrame=1;
           command(11); wait(receiptValid); @(negedge serviceClock); #1;
           holdFrame=0; holdHostCommands=${if(dequeue) 0 else 1}; #1;
           // The queue's full pre-edge state cannot acquire extra capacity from D.
-          if(dut.fabric_hostFrames_count!=2 || !receiptValid || !receiptReady ||
+          if(dut.fabric_hostFrames_count!=2 || !receiptValid || receiptReady!==${if(lateCopy) 0 else 1} ||
              injectedAccepted || hostDispatched!==${if(dequeue) 1 else 0})
             $$fatal(1,"FRAME_OVERFLOW_PREEDGE_NOT_EXERCISED");
+          if(${if(lateCopy) 1 else 0} && copyAcknowledge===nativeRequest)
+            $$fatal(1,"FRAME_OVERFLOW_COPY_STALL_NOT_EXERCISED");
           @(posedge observedWorkClock); #1;
           $$fatal(1,"FRAME_OVERFLOW_ASSERTION_MISSING");
-        """,serviceHalfPeriodNs=25,maximumDelaySubtree=Some("i2c"),deadlineNs=1000000)
+        """,serviceHalfPeriodNs=25,maximumDelaySubtree=if(lateCopy) None else Some("i2c"),deadlineNs=1000000,
+          primitiveDelayOverrides=if(lateCopy) slowCopy else Map.empty,powerOnResetNs=if(lateCopy) 20000 else 2000)
       }
       // Bind the expected failure to this fresh emitted assertion's actual fatal
       // line; unrelated failures or a matching diagnostic display do not count.

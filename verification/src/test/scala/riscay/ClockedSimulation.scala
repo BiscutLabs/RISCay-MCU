@@ -17,8 +17,11 @@ object ClockedSimulation {
       chipParameters: riscay.soc.LowPowerParameters = riscay.soc.LowPowerParameters(),
       serviceStartupNs: Int = 500, deadlineNs: Long = 100000000L,
       serviceModelHz: Double = 10000000, processTimeoutSeconds: Int = 90,
-      serviceHalfPeriodNs: Double = 50, maximumDelaySubtree: Option[String] = None): Path = {
+      serviceHalfPeriodNs: Double = 50, maximumDelaySubtree: Option[String] = None,
+      primitiveDelayOverrides: Map[(String,String),Long] = Map.empty,
+      powerOnResetNs: Long = 2000): Path = {
     require(serviceHalfPeriodNs > 0)
+    require(powerOnResetNs > 0)
     val root = Paths.get("build/soc-tests").toAbsolutePath; Files.createDirectories(root)
     val base = Files.createTempDirectory(root, name)
     Simulator().check(base.resolve("simulator"))
@@ -57,8 +60,18 @@ object ClockedSimulation {
       }
     }
     require(maximumDelaySubtree.isEmpty || maximumDelays.nonEmpty, "NO_MAXIMUM_DELAY_CELLS")
-    Files.writeString(base.resolve("maximum-delays.json"),ujson.write(ujson.Obj.from(maximumDelays.map { case(k,v) => k -> ujson.Str(v) }),indent=2))
-    val delayOverrides=maximumDelays.map { case(path,delay) =>
+    // Resolve intentional fault/stall injection by contract identity. Guessed
+    // Verilog instance names can otherwise become ignored defparam warnings.
+    val selectedDelays=primitiveDelayOverrides.toSeq.map { case((owner,id),delay) =>
+      val selected=nodes(manifest("design")).filter(_("rtl_path").str.endsWith("."+owner))
+        .flatMap(_("primitives").arr).filter(_("id").str == id)
+      require(selected.size == 1 && delay >= 0 && selected.head("parameters").obj.contains("DELAY_FS"),
+        s"INVALID_PRIMITIVE_DELAY_OVERRIDE:$owner/$id")
+      selected.head("rtl_path").str -> delay.toString
+    }
+    val delays=maximumDelays.filterNot(x => selectedDelays.exists(_._1 == x._1)) ++ selectedDelays
+    Files.writeString(base.resolve("maximum-delays.json"),ujson.write(ujson.Obj.from(delays.map { case(k,v) => k -> ujson.Str(v) }),indent=2))
+    val delayOverrides=delays.map { case(path,delay) =>
       s"defparam dut.${path.split('.').drop(1).mkString(".")}.DELAY_FS=$delay;"
     }.mkString("\n")
     val ports = ujson.read(Files.readString(base.resolve("ports.json")))("nodes")(0)("ports").arr.toSeq
@@ -90,7 +103,7 @@ ${if(onChipOscillator && chipParameters.stopServiceClock) wakeProbe + hostTasks.
 initial begin
 ${ports.filter(p => p("direction").str == "input" && !Set("serviceClock", "watchdogClock", "sda").contains(flat(p))).map(p => s"${flat(p)}=0;").mkString("\n")}
 reset=1; scl=1; gpioIn=4; adcMiso=0;
-#2000; reset=0; #3000;
+#$powerOnResetNs; reset=0; #3000;
 $body
 $$display("RISCAY_SOC_PASS"); $$finish;
 end

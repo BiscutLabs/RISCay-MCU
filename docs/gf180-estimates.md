@@ -6,6 +6,18 @@ are independently audited. The subsequent corrective work targets redundant
 storage and clocked coordination while preserving native BD/Click; see the
 [migration checklist](async-soc-migration.md). Physical timing remains unqualified.
 
+The digitally verified [R3 frame-completion comparison](gf180-matched-comparison.md#r3-incremental-frame-completion-comparison)
+uses final exports and the same C1 mapper/library inputs. Logic area increases
+0.04833% BD / 0.00423% Click to **3.353464 / 4.206234 mm²** excluding SRAM.
+The completion join and four clocked control bits add no payload bank; existing
+native storage and guard area are unchanged. TT listed-state leakage including
+SRAM is **8.765842–11.459462 / 10.450277–14.177046 µW**. Fresh activity retains
+3,256 / 3,161 work-clock edges and 43 retired instructions per firmware wake;
+all 27 measured windows per variant match C1. Storage clock-input capacitance
+increases 0.006692 pF on each front/work domain. Affected functional checks, strict
+exports and fresh independent review pass; these results do not measure loader transfer latency,
+establish physical timing or measure standby/wake energy.
+
 The [C1 service-reply accounting](service-reply-capture-contract.md#matched-cost-of-this-correction)
 uses the same mapping inputs and flow against the matched candidate. It removes
 duplicate clocked payload banks and reduces mapped logic area to 3.351844 mm²

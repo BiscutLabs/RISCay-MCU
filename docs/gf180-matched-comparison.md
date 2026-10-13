@@ -17,6 +17,68 @@ and `2e4169c2f1befd1e8c5dfc704d9e936fe70e1a90`. No production RTL changes
 are part of this measurement. The flip-flop-memory `4b5d105` experiment is not
 the baseline here.
 
+## R3 incremental frame-completion comparison
+
+The frame-copy completion repair is mapped against committed C1 (`abcd1d2`),
+using final `physical-r2` exports. This is a separate incremental comparison;
+the historical R4 tables below retain their original revisions. The mapper
+sources, Yosys/ABC/sv2v binaries, pinned Liberty files, physical policy, guard
+mapping and normalized synthesis commands match C1. No P&R or STA run is included.
+
+| Metric | C1 BD → R3 BD | C1 Click → R3 Click |
+| --- | ---: | ---: |
+| Logic area excluding SRAM (mm²) | 3.351844 → 3.353464 | 4.206056 → 4.206234 |
+| Mapped leaves, including SRAM | 122,587 → 122,751 | 124,516 → 124,521 |
+| TT listed-state leakage, including SRAM (µW) | 8.761202–11.452980 → 8.765842–11.459462 | 10.448732–14.176661 → 10.450277–14.177046 |
+| Front/service-clock storage cells | 1,331 → 1,333 | 1,335 → 1,337 |
+| Front/service storage clock-input capacitance (pF) | 4.454669 → 4.461361 | 4.468083 → 4.474775 |
+| Work-clock storage cells | 4,731 → 4,733 | 4,782 → 4,784 |
+| Work storage clock-input capacitance (pF) | 16.579085 → 16.585777 | 16.750511 → 16.757203 |
+| Preserved native physical leaves | 66,112 → 66,127 | 71,518 → 71,531 |
+| Firmware work-clock edges per wake | 3,256 → 3,256 | 3,161 → 3,161 |
+| Maintenance work-clock edges per wake | 22 → 22 | 19 → 19 |
+| Sampling work-clock edges per wake | 216 → 216 | 214 → 214 |
+| Retired instructions per firmware wake | 43 → 43 | 43 → 43 |
+
+Logic area increases **0.04833% BD / 0.00423% Click**. The added native C-element
+maps to 15 BD or 13 Click leaves; every existing native binding, native storage,
+guard area and all three SRAMs remain unchanged. Ordinary logic is remapped by
+the same ABC policy, so total cell-count changes are not the new join count plus
+four flip-flops. The four added clocked bits are two copy-completion synchronizers
+and two retained admission-context facts. No payload bank is added.
+
+Fresh native-model activity contains 22 maintenance, three sampling and two
+firmware windows per variant. Every recorded window retains its C1 classification,
+fast/work-clock counts, ADC count, retired count and duration; measured deltas are
+zero. The audit records all old/new ordinals and flags changes rather than requiring
+unchanged performance. It verifies identical stimulus and observers, the same
+50 uploaded words, current source/binary hashes and exact final R3 I2C RTL.
+The measured testbenches are identical.
+These measured windows exclude loader transfer latency. The added synchronizers
+and context facts increase front and work storage clock-input capacitance by
+0.006692 pF each per variant despite unchanged measured clock-edge counts.
+
+Final constraint generation binds 15,321 paths / 230 stages / 14,221 capture
+monitors for BD and 15,592 / 131 / 14,382 for Click. The new join adds one bound
+path per variant. Both retain the same 40 pre-existing first-stage false-path
+declarations; the new copy synchronizer is explicitly recorded with
+`none-preserve-synchronous-control`. Neither the new stage nor the completion
+path receives a false-path exemption. Binding is not timing qualification.
+
+Evidence is under `build/async-frame-completion-repair/`: final `mapped-*-r2/`,
+`mapped-cost-r2/receipt.json` (1,285 input hashes), `audit_mapped_r2.py`,
+`constraints-binding-r2.json` and its audit script/log. Fresh activity is recorded
+in `activity-r1-receipt.json` (470 input hashes) and `audit_activity_r1.py`; the
+frozen reviewer handoff is `reviewer-cost-activity-r1.json`. Accounting adapts C1's
+reviewed independent Decimal/Liberty and hierarchical clock-pin audit. R3's
+affected functional checks, all four strict exports and fresh independent review
+pass; `final-evidence-r1.json` binds the final sources and result receipts.
+All five listed-state leakage corners are retained in the receipt. These are
+library state envelopes, not measured reachable standby power. Clock-pin
+capacitance excludes routing/CTS and does not determine wake energy. Historical
+R4 physical failures remain open; this correction does not qualify reset, pulse,
+setup/hold, slew/load or routed timing.
+
 ## Matched mapping and activity
 
 | Metric | Baseline BD | Current BD | Baseline Click | Current Click |

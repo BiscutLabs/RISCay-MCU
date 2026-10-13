@@ -19,8 +19,9 @@ private class FrameRouteAnd(delay: ModelTime)
 }
 
 /** Four physical payload banks; logical admission still has exactly two credits.
-  * The caller observes the original offer independently and acknowledges it at A.
-  * This borrowed copy must complete before A (>=100 ns after O at 20 MHz).
+  * The caller observes the original offer independently and admits it at A only
+  * after synchronizing this copy ACK. Publisher ACK joins copy and receipt;
+  * its return also waits for synchronized copy-low before the next offer.
   * slot is prequalified before O and advances at A. The native route capture
   * keeps that old tag through the source's entire four-phase return.
   * All delays are digital bounds, not physical timing qualification.
@@ -48,7 +49,8 @@ class FourPhaseFrameStore(domain: ResetDomain) extends AsyncModule(domain) {
   private val tagCapture=gate("request_delay",in.req.asUInt,1,ModelTime.ps(11000)).asBool
   tag.d:=tagData; tag.trigger:=tagCapture
   // Route Q <=21 ns, decode <=31 ns. The preserved 32 ns request guard
-  // leaves >=1 ns before the atomic route gate; bank capture/ACK <=83 ns.
+  // leaves >=1 ns before the atomic route gate; modeled capture/ACK <=83 ns.
+  // The caller waits for completion; this bound is not an admission deadline.
   private val selection=gate("route_decode",UIntToOH(tag.q,4),4,cell)
   private val offered=gate("request_guard",in.req.asUInt,1,ModelTime.ps(32000)).asBool
   private val storage=Seq.tabulate(4)(i => asyncChild(s"storage$i")(d =>

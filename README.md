@@ -68,7 +68,9 @@ removes 1,254 duplicate clocked service-reply payload bits per variant and passe
 digital verification. Mapped logic area falls 4.02% BD / 3.21% Click; wake work
 is unchanged, and complete native service scheduling remains open.
 See the [capture contract](docs/service-reply-capture-contract.md).
-Frame-copy completion remains open for the present implementation.
+The frame-copy race correction passes digital verification and independent
+review: admission waits for native copy completion while retaining original-offer
+overflow and reset/busy history. Complete physical qualification remains open.
 Complete physical reset-tree and core-startup timing remain open; current guard
 measurements exceed some digital assumptions.
 See the [reset-boundary contract](docs/application-reset-boundary.md),

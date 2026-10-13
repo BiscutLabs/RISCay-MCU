@@ -29,7 +29,8 @@ their actual protocols. This supersedes the R4 migration freeze as a work
 priority; the measured cost regression remains evidence. Use native ownership
 and completion, remove duplicate payload storage, and measure each correction.
 Synchronous-tool limitations do not authorize masking real timing failures or
-adding periodic-clock stages to a native path. R2b and R3 remain open.
+adding periodic-clock stages to a native path. R3 completion is digitally verified;
+R2b and complete physical frame capture/return qualification remain open.
 
 The first correction is **C1: direct capture of retained native service
 replies**, tracked below. Subsequent steps must remove complete redundant
@@ -104,8 +105,8 @@ digital passes remain evidence of their tested scope, not RDC or physical proof.
     acknowledgment withdrawal edge do not establish this complete bound. Use
     proved completion or measured bounds with margin; increase/rework intervals
     if full-path evidence requires it. R2a does not authorize physical use.
-- [ ] **R3. Remove the unacknowledged frame-copy timing race.** Original receipt
-  acceptance can precede physical bank copy completion. Review a native join of
+- [x] **R3. Remove the unacknowledged frame-copy timing race — digitally verified, 2026-10-13.** Original receipt
+  acceptance could precede physical bank copy completion. Use a native join of
   original receipt and bank-copy completion, with safe route/payload retention
   through BD RTZ and independent Click phase ownership. Explicitly revise the
   old no-wait-for-copy contract if required. Keep exactly two logical credits,
@@ -117,6 +118,32 @@ digital passes remain evidence of their tested scope, not RDC or physical proof.
   orders and complete return before reuse.
   Exercise copies slower than two service periods, stalls, identical payloads,
   reset and all bank wraps with independent offer/capture/dispatch ordinals.
+  The current implementation keeps the original request receipt and observes
+  its eligible offer O_f independently of A. Two POR copy-ACK synchronizers
+  gate actual A/tail advance. Publisher ACK uses a native C-element join of
+  copy and receipt; BD also includes synchronized copy ACK so RTZ cannot finish
+  before the old high observation clears. Click compares synchronized copy
+  phase against the clocked receipt phase, without a four-phase adapter.
+  Two POR descriptor-context bits accumulate original-offer reset/busy evidence
+  through delayed A and clear only at accepted enqueue. Full Q still faults on
+  the original offer, including same-edge D. This adds four periodic-clock bits
+  per variant and no payload bank. Existing identity/capture checks remain.
+  Final evidence covers 262 distinct passing Scala cases across 28 suites,
+  including both core/reference implementations, firmware, reset and sleep;
+  457 Python tests plus the final ten-case integration-helper rerun; and all
+  four portable/physical strict exports. The 312 capture and 20 wake controls,
+  2,880 receipt mutations and 3,868 integration mutations pass, with exact-site
+  negative controls and immutable export provenance. Fresh independent review
+  checked RTL, context/rearm mutants, costs, activity and evidence hashes.
+  Matched logic area increases 0.04833% BD / 0.00423% Click versus C1; all 27
+  measured wake windows per variant retain their work counts and durations.
+  Preserve initial failed runs, including twelve obsolete ready-identity checks
+  and the 240-second BD host timeout. The unchanged binary passed in 251 seconds;
+  its fresh rerun passes with a 600-second host allowance and the same simulated
+  deadline and behavioral assertions. See `build/async-frame-completion-repair/`
+  and [frame verification](frame-admission-contract.md#r3-final-verification).
+  This closes the unacknowledged-copy race in the digital contract. The service
+  scheduler and complete physical bank/capture/return timing remain open.
 - [x] **C1. Remove duplicate clocked service-reply payload banks — digitally verified, 2026-10-13.** Both native
   variants already retain Control, Telemetry, Housekeeping and Supervisor replies
   through acceptance. Keep their receivers' existing synchronizers, control FSM,
@@ -139,7 +166,8 @@ digital passes remain evidence of their tested scope, not RDC or physical proof.
   prove the runtime diagnoses, with all RTL deadlines and oracles preserved.
   Fresh independent review and hash-bound evidence are retained under
   `build/async-service-publication-repair/`. This item removes payload copies;
-  the service scheduler, physical capture timing, R2b and R3 remain open.
+  the service scheduler, physical capture timing and R2b remain open. R3 is
+  separately verified above.
 - [ ] **C2. Narrow native loader CRC feedback.** The four CRC stages currently
   carry the whole 337-bit `ControlToken`. Keep public reply timing, transition
   logic and the seeded state owner, but retain the 305-bit context in a native
@@ -162,6 +190,25 @@ digital passes remain evidence of their tested scope, not RDC or physical proof.
   publication guarantees; adding replacement periodic-clock copies does not
   complete this item. Other service schedulers remain separately tracked under
   items 11–14.
+  - [ ] Deliver native elapsed/ADC events with immutable time/observation identity;
+    preserve conversion age, missed-tick gaps and GPIO discontinuities without
+    recreating the 425-bit clocked Supervisor queue. Physical samplers and the
+    independent LF/watchdog remain explicit source boundaries.
+  - [ ] Provide native competing-event arbitration or a proved event-token
+    scheduler. The library's `TwoPhaseArbiter` wraps `FourPhaseArbiter` and is
+    unsuitable for native Click; the present GF180 binder has no qualified
+    MUTEX implementation. Close metastability containment, ownership, return,
+    input-rate/capacity and physical binding before using either mechanism.
+    A finite digital arbitration delay is not a physical resolution guarantee.
+    The user has placed chisel-async in scope for coordinated library additions;
+    propose native Click arbitration there before implementation, as requested.
+    Keep technology-specific MUTEX qualification in the MCU physical integration.
+  - [ ] Retain actual applied power/shutdown outputs natively and feed their
+    acceptance back to policy. Supply coherent on-demand status snapshots to
+    remaining clocked readers; a stalled read must not block permanent policy.
+  - [ ] Remove the old queue, outstanding/needed/return flags and clocked
+    board-result replica together with the two bridges; count every replacement
+    owner, crossing and gate synchronizer in the matched cost/work comparison.
 - [x] **R4. Matched baseline/current comparison — complete for architecture
   decision, 2026-10-13.** The [matched report](gf180-matched-comparison.md) uses
   identical core timing, SRAMs, mapper, enabled-policy workload and feasible
@@ -616,13 +663,17 @@ physical reset qualification (R2b) remains mandatory under item 17a3.
         Do not acknowledge the publisher before immutable payload retention is
         proved. Qualify each head's full return independently of the next head's
         selection.
-        The verified implementation uses four fixed native banks, two logical credits,
+        The historical verified implementation uses four fixed native banks, two logical credits,
         two four-bit descriptors and the unchanged original admission receipt.
         It removes 516 periodic-clocked bits per variant after counting four
         five-bit head receipts, the two-bit tail and two busy synchronizers.
         Full digital qualification and fresh independent review pass; retained
         evidence is under `build/async-host-admission-payload-migration/`.
         Physical timing remains item 17; this step does not remove logical Q.
+        R3 above supersedes its copy-before-original-A assumption: original offer
+        observation stays independent, but A waits for completion and publisher
+        ACK follows the native join. The checked items below retain the scope of
+        that earlier digital campaign; R3 records the repair's separate verification.
         - [x] Prove complete bank availability at original O and by A_(i+3),
           independent copy ordinals (including identical payloads), fixed bank
           rotation, retained BD routing and independent per-bank Click phases.

@@ -217,12 +217,15 @@ def bindings(source):
     busy = re.search(r'wire\s+fabric_hostFrames_io_enq_bits_programBusy\s*=\s*([^;]+);', rtl)
     reset = re.search(r'wire\s+fabric_hostFrames_io_enq_bits_resetActive\s*=\s*([^;]+);', rtl)
     require(busy and reset, 'CONTEXT_BINDING')
+    admission_busy = re.search(r'wire\s+fabric_hostAdmissionBusy\s*=\s*([^;]+);', rtl)
+    require(admission_busy is not None, 'ADMISSION_BUSY_BINDING')
     return dict(variant=variant, manifest=manifest, top=top, publisher=publisher,
                 receipt=receipt, receipt_model=receipt_model, source_cell=primitive[0], source_q=path(primitive[0]['rtl_path']) + '.q',
                 publisher_path=path(publisher['rtl_path']), receipt_path=path(receipt['rtl_path']),
                 target_path=path(receipt['rtl_path']).rsplit('.', 1)[0], clock=qualify(clocks[0][0]),
                 frame_d=frame_d, register_assignments=assignments,
                 context_busy=busy[1].strip(), context_reset=reset[1].strip(),
+                admission_busy=admission_busy[1].strip(),
                 store=store,store_model=store_model,store_path=path(store['rtl_path']),banks=banks,
                 command=command,command_model=command_model,command_path=path(command['rtl_path']),command_fields=command_fields)
 
@@ -250,13 +253,24 @@ wire [3:0] bank_available={bank_select('available')};
 wire [3:0] bank_request={bank_select('req')},bank_acknowledge={bank_select('ack')};
 wire [336:0] bank_q[0:3];
 assign bank_q[0]=bank_q_0;assign bank_q[1]=bank_q_1;assign bank_q[2]=bank_q_2;assign bank_q[3]=bank_q_3;
-wire expected_reset=native_payload[65] || {target}.host_resetActive ||
+wire observed_reset_now=native_payload[65] || {target}.host_resetActive ||
   (native_payload[63:0] != ({target}.resetEpoch_epoch + ({target}.host_resetActive && !{target}.resetEpoch_previous))) ||
   Testbench.dut.cpuResetActive;
-wire expected_busy=native_payload[64] || Testbench.dut.ca_child_program_access.io_busy ||
+wire observed_busy_now=native_payload[64] || Testbench.dut.ca_child_program_access.io_busy ||
   Testbench.dut.fabric_loaderPending || Testbench.dut.fabric_loaderControlPending ||
   ({command}.in_valid && {command}.in_ready && {command}.in_bits_kind==0 &&
    {command}.in_bits_frame_bytes_0>=1 && {command}.in_bits_frame_bytes_0<=6);
+// Independent original-offer history, never the production sticky registers.
+reg observed_reset_history=0,observed_busy_history=0;
+always @(posedge {b['clock']} or posedge Testbench.reset) begin
+ if(Testbench.reset || enq) begin observed_reset_history<=0;observed_busy_history<=0;end
+ else if({target}.host_frameOffered) begin
+  observed_reset_history<=observed_reset_history || observed_reset_now;
+  observed_busy_history<=observed_busy_history || observed_busy_now;
+ end
+end
+wire expected_reset=observed_reset_history || observed_reset_now;
+wire expected_busy=observed_busy_history || observed_busy_now;
 wire [272:0] independently_expected={{native_payload[336:66],expected_reset,expected_busy}};
 wire [272:0] command_d={command_data('in_bits_')},command_q={command_data('data_')};
 wire command_fire={command}.in_valid && {command}.in_ready && {command}.in_bits_kind==0;
@@ -556,9 +570,9 @@ begin
   repeat(8) @(negedge serviceClock);
   #2;reset=0;
   repeat(64) @(negedge serviceClock);
-  while(!controlIdle) @(negedge serviceClock);
+  while(!controlIdle || {b['target_path'].replace('Testbench.','')}.host_resetActive) @(negedge serviceClock);
   #2;holdHostCommands=1;
-  if(dut.fabric_hostFrames_count!=0 || currentReset || currentBusy) $fatal(1,"FRAME_INPUT_PAIR_PRECONDITION");
+  if(dut.fabric_hostFrames_count!=0 || currentReset || currentBusy || {b['target_path'].replace('Testbench.','')}.host_resetActive) $fatal(1,"FRAME_INPUT_PAIR_PRECONDITION");
 end
 endtask
 task offer_frame(input [336:0] data);
@@ -605,6 +619,8 @@ initial begin
   offer_frame(pattern);holdFrame=1;pattern[73:66]=5;
   expectedSourcePayload=pattern;pub_data=pattern;old_accepts=frame_capture_checks.accepts;
   #30;{request}wait({pub}.in_ack==pub_phase);{input_return}wait(receiptValid);
+  // Retain the incoming frame until copy is actually ready, then release A and D together.
+  wait({b['target_path'].replace('Testbench.','')}.frameCopyReady);
   @(negedge serviceClock);#2;
   if(currentBusy || currentReset || dut.fabric_loaderPending || dut.fabric_loaderControlPending ||
      observedNativeFrame[65:64]!=0 || observedNativeFrame[63:0]!=currentEpoch)
@@ -706,7 +722,7 @@ endmodule
         start=result.index('  // Walking one')
         result=result[:start]+f'''  new_pair();ring_active=1;
   // The next input is offered immediately after the publisher input handshake.
-  // After the initial two-credit fill, original A and actual command-input
+  // After the initial two-credit fill, actual A and actual command-input
   // readiness pace legal traffic; the single outstanding Control bridge can be
   // slower than publication. No native-bank return or extra service edge is awaited.
   for(bit_index=0;bit_index<32;bit_index=bit_index+1) begin
@@ -723,7 +739,7 @@ endmodule
   wait(frame_capture_checks.dispatches==32);{native_return}
   wait(frame_capture_checks.bank_available==4'b1111);
   #2;
-  if(ring_late_dispatches!=30 || ring_exact_frontiers!=30)
+  if(ring_late_dispatches!=30 || ring_exact_frontiers!=30 || ring_offers!=32 || ring_accepts!=32 || ring_offer_pending)
     $fatal(1,"FRAME_INPUT_RING_FRONTIER_COUNT");
   for(bit_index=0;bit_index<4;bit_index=bit_index+1)
     if(frame_capture_checks.bank_accepts[bit_index]!=8 || frame_capture_checks.bank_dispatches[bit_index]!=8)
@@ -734,13 +750,14 @@ end
 endmodule
 '''
         driver=f'''
-reg ring_active=0,ring_draining=0;
-integer ring_late_dispatches=0,ring_exact_frontiers=0,ring_accepts=0;
+reg ring_active=0,ring_draining=0,ring_offer_pending=0;
+integer ring_late_dispatches=0,ring_exact_frontiers=0,ring_accepts=0,ring_offers=0;
 localparam time RING_EXPECTED_PERIOD_FS={round(float(re.findall(r'#([0-9.]+)',clocks[0])[0])*2000000)};
 time ring_last_D=0,ring_last_edge=0,ring_period=0,ring_now=0;
 always @(negedge serviceClock) if(ring_active && !ring_draining) begin
   // Meta has observed original O; the next edge updates Sync. D on that edge
-  // is the final legal dequeue before A on the following actual work edge.
+  // is the final legal dequeue before original offer eligibility O_f on the
+  // following actual work edge. Copy completion may postpone A further.
   holdHostCommands=!(dut.fabric_hostFrames_count==2 && ({pre_second}));
 end
 always @(posedge observedWorkClock) if(ring_active) begin
@@ -751,13 +768,20 @@ always @(posedge observedWorkClock) if(ring_active) begin
     ring_last_D=ring_now;
     if(!ring_draining) ring_late_dispatches=ring_late_dispatches+1;
   end
-  if(injectedAccepted) begin
-    if(ring_accepts>=2) begin
-    if(hostDispatched || ring_now-ring_last_D!=ring_period)
-      $fatal(1,"FRAME_INPUT_RING_LAST_LEGAL_D");
-    ring_exact_frontiers=ring_exact_frontiers+1;
+  if({b['target_path'].replace('Testbench.','')}.host_frameOffered && !ring_offer_pending) begin
+    if(ring_offers>=2) begin
+      if(hostDispatched || ring_now-ring_last_D!=ring_period)
+        $fatal(1,"FRAME_INPUT_RING_LAST_LEGAL_D");
+      ring_exact_frontiers=ring_exact_frontiers+1;
     end
-    ring_accepts=ring_accepts+1;
+    if(ring_offers!=ring_accepts) $fatal(1,"FRAME_INPUT_RING_OFFER_ORDER");
+    ring_offers=ring_offers+1;ring_offer_pending=1;
+  end
+  if(injectedAccepted) begin
+    if(!ring_offer_pending || ring_offers!=ring_accepts+1 ||
+       !{b['target_path'].replace('Testbench.','')}.frameCopyReady)
+      $fatal(1,"FRAME_INPUT_RING_ADMISSION_WITHOUT_COMPLETED_OFFER");
+    ring_accepts=ring_accepts+1;ring_offer_pending=0;
   end
 end
 '''
@@ -904,10 +928,8 @@ def mutate(case, b, fault):
         return PREFIX+'_CONTEXT_OR_DATA'
     if fault=='same-edge-busy':
         text=top.read_text(encoding='utf-8')
-        parts=b['context_busy'].split('|');require(len(parts)==5,'MUTATION_BUSY_CLAUSES')
-        text,count=re.subn(r'(wire\s+fabric_hostFrames_io_enq_bits_programBusy\s*=\s*)[^;]+;',
-                          lambda m:m[1]+' | '.join(parts[:4])+';',text)
-        require(count==1,'MUTATION_BUSY_BINDING');top.write_text(text,encoding='utf-8')
+        text=omit_same_edge_busy(text,b['context_busy'],b['admission_busy'])
+        top.write_text(text,encoding='utf-8')
         return PREFIX+'_CONTEXT_OR_DATA'
     if fault=='command-capture':
         path=case/(b['command_model']+'.sv');text=path.read_text(encoding='utf-8')
@@ -924,6 +946,24 @@ def mutate(case, b, fault):
         require(count==1,'MUTATION_DISPATCH_EPOCH_COUNT');top.write_text(text,encoding='utf-8')
         return PREFIX+'_COMMAND_D_IDENTITY'
     raise ValueError(PREFIX + '_MUTATION_KIND:' + fault)
+
+
+def omit_same_edge_busy(text, context_busy, admission_busy):
+    """Remove only the actual same-edge command fact, preserving sticky history."""
+    compact=lambda value:re.sub(r'\s+','',value)
+    require(compact(context_busy)=='fabric_hostOfferedBusy|fabric_hostAdmissionBusy','MUTATION_BUSY_CONTEXT')
+    driver(text,'fabric_hostFrames_io_enq_bits_programBusy',context_busy)
+    driver(text,'fabric_hostAdmissionBusy',admission_busy)
+    parts=[part.strip() for part in admission_busy.split('|')]
+    require(len(parts)==5 and [compact(part) for part in parts[:4]]==[
+        '_ca_child_i2c_host_frame_bits_programBusy','_ca_child_program_access_io_busy',
+        'fabric_loaderPending','fabric_loaderControlPending'],'MUTATION_BUSY_CLAUSES')
+    require('&' in parts[4] and 'fabric__hostAdmissionBusy_T_6' in parts[4] and
+            'fabric__hostAdmissionBusy_T_8' in parts[4],'MUTATION_BUSY_DISPATCH')
+    changed,count=re.subn(r'(wire\s+fabric_hostAdmissionBusy\s*=\s*)[^;]+;',
+                         lambda match:match[1]+' | '.join(parts[:4])+';',text)
+    require(count==1,'MUTATION_BUSY_BINDING')
+    return changed
 
 
 def service_period(test, period_ns):
