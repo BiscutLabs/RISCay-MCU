@@ -20,7 +20,8 @@ from check_frame_store import validate_frame_store
 
 
 CAMPAIGNS=('rotation','por-route','por-captured','por-offered','por-acknowledged','por-return')
-PROFILES=('minimum','capture-slow','feedback-slow')
+PROFILES=('minimum','capture-slow','feedback-slow','route-late','route-early',
+          'route-slow-accepted-fast','route-fast-accepted-slow')
 FIXED={'request_delay','output_delay','request_guard','return_guard','acknowledge_guard','output_guard'}
 
 
@@ -129,7 +130,7 @@ def path(cell):
 def validate_node(node,click):
     require(node['module']==('ClickFrameStore' if click else 'FourPhaseFrameStore'),'OWNER')
     all_cells=cells(node)
-    expected=({f'payload{i}' for i in range(4)}|{f'phase{i}' for i in range(4)}) if click else {'route'}
+    expected=({f'payload{i}' for i in range(4)}|{f'phase{i}' for i in range(4)}|{'route'}) if click else {'route'}
     require({k for k,c in all_cells.items() if c['model']=='ChiselAsyncEventRegister_v1'}==expected,'EVENT_REGISTER_INVENTORY')
     latches={k for k,c in all_cells.items() if c['model']=='ChiselAsyncClosingLatch_v1'}
     require(latches==(set() if click else {f'storage{i}.payload' for i in range(4)}),'LATCH_INVENTORY')
@@ -157,7 +158,11 @@ def profile(test,node,name):
             require(old=='10000000','DATA_DELAY_OVERRIDE');continue
         require(1000000<=int(old)<=10000000,'CELL_DELAY_BOUNDS')
         capture=c['model'] in {'ChiselAsyncEventRegister_v1','ChiselAsyncClosingLatch_v1'} or identifier=='route_decode'
-        slow=(name=='capture-slow' and capture) or (name=='feedback-slow' and not capture)
+        slow=((name=='capture-slow' and capture) or (name=='feedback-slow' and not capture) or
+              (name=='route-late' and identifier in {'route','accepted_phase','pending'}) or
+              (name=='route-early' and identifier not in {'route','accepted_phase','pending'}) or
+              (name=='route-slow-accepted-fast' and identifier=='route') or
+              (name=='route-fast-accepted-slow' and identifier=='accepted_phase'))
         new=10000000 if slow else 1000000
         test=replace_one(test,re.escape(f'defparam {target}.DELAY_FS={old};'),f'defparam {target}.DELAY_FS={new};')
         changes[target]=dict(before=int(old),after=new)
@@ -253,9 +258,9 @@ integer fs_offer_seq=0,fs_copy_seq[0:3]; integer fs_init;
 reg [1:0] fs_offered_slot; reg [336:0] fs_offered_bits;
 time fs_copy_time[0:3];
 initial for(fs_init=0;fs_init<4;fs_init=fs_init+1) begin fs_copy_seq[fs_init]=0;fs_copy_time[fs_init]=0;end
-always @(in_req) if(!reset) begin fs_offer_seq=fs_offer_seq+1;fs_offered_slot=slot;fs_offered_bits={packed};end
+always @(in_req) if(!reset) begin fs_offer_seq=fs_offer_seq+1;fs_offered_slot=nextBank;fs_offered_bits={packed};end
 always @(posedge {path(all_cells['capture'])}.q) if(!reset) begin
-  fs_copy_seq[slot]=fs_offer_seq;fs_copy_time[slot]=$time;
+  fs_copy_seq[nextBank]=fs_offer_seq;fs_copy_time[nextBank]=$time;
 end
 always @(in_ack) begin #1;if(!reset && in_req==in_ack) begin
   case(fs_offered_slot)
@@ -287,14 +292,15 @@ def mutation_jobs(click):
     def add(name,expected,fixture='rotation',profile_name='minimum'):
         jobs.append(dict(name=name,expected=expected if isinstance(expected,list) else [expected],fixture=fixture,profile=profile_name))
     if click:
+        add('capture-memory-bypassed','FRAME_STORE_COPY_MISSED_ORIGINAL_A',profile_name='route-late')
         add('global-bank-phase','FRAME_STORE_UNSELECTED_PHASE_1')
         add('input-phase-as-bank-phase','FRAME_STORE_UNSELECTED_PHASE_0')
         add('unselected-payload-cleared','DATA_HOLD banks_0')
         add('selected-bank-disconnected','FRAME_STORE_COPY_MISSED_ORIGINAL_A')
-        add('global-history-disconnected','HANDSHAKE_ORDER in')
+        add('global-history-disconnected','FRAME_STORE_COPY_MISSED_ORIGINAL_A')
         add('ack-before-capture','FRAME_STORE_ACK_BEFORE_CAPTURE_0',profile_name='feedback-slow')
         add('por-phase-disconnected','UNKNOWN_HANDSHAKE in',fixture='por-offered')
-        registers=[f'{kind}{i}' for i in range(4) for kind in ('payload','phase')]+['accepted_phase']
+        registers=[f'{kind}{i}' for i in range(4) for kind in ('payload','phase')]+['accepted_phase','route']
         for register in registers:
             add('disconnect-trigger-'+register,'FRAME_STORE_CAPTURE_DISTRIBUTION')
             add('short-high-'+register,'FRAME_STORE_PULSE_HIGH_'+register)
@@ -307,9 +313,9 @@ def mutation_jobs(click):
                 add('hold-'+register,'FRAME_STORE_HOLD_'+register)
     else:
         add('route-tag-disconnected','FRAME_STORE_COPY_MISSED_ORIGINAL_A')
-        # Live slot changes at A while old source REQ is still asserted. The
-        # old branch withdraws ACK before source REQ returns: exact RTZ error.
-        add('route-live-slot','HANDSHAKE_ORDER in')
+        # Routing from the increment feedback selects the next bank instead of
+        # retaining the active captured tag through old source RTZ.
+        add('route-live-slot','FRAME_STORE_COPY_MISSED_ORIGINAL_A')
         add('selected-bank-disconnected','FRAME_STORE_COPY_MISSED_ORIGINAL_A')
         add('request-guard-bypassed','HANDSHAKE_ORDER in',fixture='por-return',profile_name='capture-slow')
         add('return-guard-bypassed','FRAME_STORE_AVAILABLE_BEFORE_INTERNAL_RETURN_0')
@@ -320,6 +326,8 @@ def mutation_jobs(click):
         add('short-low-route',['FRAME_STORE_PULSE_LOW_route','FRAME_STORE_PIN_PULSE_LOW_route'])
         add('latch-setup',['FRAME_STORE_LATCH_SETUP_0','FRAME_STORE_LATCH_HOLD_0'])
         add('latch-hold','FRAME_STORE_LATCH_HOLD_0')
+    add('route-counter-stuck','FRAME_STORE_NATIVE_ROUTE_ADVANCE' if click else 'FRAME_STORE_ONE_NEW_COPY_PER_OFFER')
+    add('route-reset-wrong','FRAME_STORE_NATIVE_ROUTE_ORDINAL')
     add('payload-bit-corrupted','FRAME_STORE_ACK_CAPTURE_IDENTITY_0' if click else 'FRAME_STORE_COPY_AT_A_0')
     add('epoch-bit-corrupted','FRAME_STORE_ACK_CAPTURE_IDENTITY_0' if click else 'FRAME_STORE_COPY_AT_A_0')
     return jobs
@@ -331,10 +339,20 @@ def mutate_rtl(texts,node,fault,click):
     def set_pin(key,pin,value):
         c=all_cells[key];file=c['owner']+'.sv'
         texts[file]=replace_pin(texts[file],instance(c),pin,value)
-    if fault=='route-tag-disconnected':set_pin('route','d',"2'h0")
-    elif fault=='route-live-slot':set_pin('route_decode','a',"4'h1 << slot")
+    if fault=='route-counter-stuck':set_pin('route','d',get('route','q'))
+    elif fault=='route-reset-wrong':
+        inst=instance(all_cells['route'])
+        pattern=r'(ChiselAsyncEventRegister_v1\s*#\s*\([^;]*?\.RESET_VALUE\s*\(\s*)'+('0' if click else '3')+r'(\s*\)[^;]*?\)\s*'+re.escape(inst)+r'\s*\()'
+        changed,count=re.subn(pattern,lambda m:m[1]+('1' if click else '0')+m[2],texts[top])
+        require(count==1,'ROUTE_RESET_BINDING');texts[top]=changed
+    elif fault=='capture-memory-bypassed':
+        q=get('capture','q');pending=get('capture','common');ready=get('capture','rising')
+        set_pin('capture','q','fs_unused_capture')
+        texts[top]=extra_rtl(texts[top],'wire fs_unused_capture;',f'assign #1000000 {q} = {pending} & {ready};')
+    elif fault=='route-tag-disconnected':set_pin('route','d',"2'h0")
+    elif fault=='route-live-slot':set_pin('route_decode','a',"4'h1 << nextBank")
     elif fault=='selected-bank-disconnected':
-        set_pin('capture' if click else 'route0','d',"2'b0")
+        set_pin('capture' if click else 'route0','rising' if click else 'd',"1'b0" if click else "2'b0")
     elif fault=='global-history-disconnected':set_pin('pending','b',"1'b0")
     elif fault=='global-bank-phase':
         for i in range(4):set_pin(f'phase{i}','d','~'+get(f'phase{i}','q'))

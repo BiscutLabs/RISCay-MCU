@@ -59,7 +59,8 @@ def bindings(source):
     require(pin_value(top_rtl,target_instance,'clock')=='serviceClock','FRONT_CLOCK')
     require(pin_value(top_rtl,target_instance,'reset')=='reset','POR_OWNER')
     require(re.sub(r'\s+','',pin_value(top_rtl,target_instance,'frameAcceptEnable'))=='gate_enabled&~holdFrame','FIXTURE_ACCEPT_MASK')
-    require(pin_value(target_rtl,store_instance,'slot')=='frameSlot','ROTATING_SLOT')
+    require(not re.search(r'\binput\s+(?:\[[^]]+\]\s*)?slot\b',masked(store_rtl)) and
+            masked(pin_value(target_rtl,store_instance,'nextBank')).strip()=='','NATIVE_ROUTE_BOUNDARY')
     require(pin_value(target_rtl,store_instance,'reset')=='reset','STORE_POR')
     policy=validate_frame_store(store,source)
     receipt_models=[]
@@ -102,22 +103,26 @@ def monitor(b):
     store=rtl_path(b['store']);receipts=[rtl_path(n) for n in b['receipts']]
     target=rtl_path(b['target']);receipt=receipts[0];command=rtl_path(child(b['manifest']['design'],'control_command_bridge'))
     states=['{'+','.join(r+'.'+leaf for leaf in ('requestMeta','requestSync','acknowledge'))+'}' for r in receipts]
-    states.extend([target+'.copied_frameCopyMeta',target+'.copied'])
     publisher=rtl_path(b['publication'])
     quiet=[]
     for r in receipts:
         quiet.append(f'({r}.in_req=={r}.acknowledge && {r}.requestMeta=={r}.acknowledge && {r}.requestSync=={r}.acknowledge && !{r}.out_valid)' if b['click'] else
                      f'(!{r}.in_req && !{r}.requestMeta && !{r}.requestSync && !{r}.acknowledge && !{r}.out_valid)')
-    quiet.append(f'({target}.copied_frameCopyMeta=={receipt}.acknowledge && {target}.copied=={receipt}.acknowledge && {publisher}.frame_req=={publisher}.frame_ack)' if b['click'] else
-                 f'(!{target}.copied_frameCopyMeta && !{target}.copied && !{publisher}.frame_req && !{publisher}.frame_ack)')
+    quiet.append(f'({publisher}.frame_req=={publisher}.frame_ack)' if b['click'] else
+                 f'(!{publisher}.frame_req && !{publisher}.frame_ack)')
     banks='{'+','.join(f'{store}.packed_17_probe[{i}]' for i in reversed(range(4)))+'}'
     owners=cells(b['store'])
     payloads=[rtl_path(owners[f'payload{i}' if b['click'] else f'storage{i}.payload'])+'.q' for i in range(4)]
+    captures=[rtl_path(owners[f'payload{i}' if b['click'] else f'storage{i}.payload'])+('.trigger' if b['click'] else '.closed') for i in range(4)]
+    phases='{'+','.join(rtl_path(owners['phase'+str(i)])+'.q' for i in reversed(range(4)))+'}' if b['click'] else "4'b0"
+    route=rtl_path(owners['route'])
     return f'''
 // Independent actual-pin observations. Time is in the original 1 ns/1 ps unit.
 wire [3:0] fw_available={banks};
-wire [16:0] fw_receipt_state={{{','.join(states)}}};
+wire [14:0] fw_receipt_state={{{','.join(states)}}};
 wire fw_completion_state={target}.ca_primitive_frame_completion.q;
+wire [1:0] fw_native_route={route}.q;
+wire [3:0] fw_native_phases={phases};
 wire fw_receipts_quiet={' && '.join(quiet)};
 wire fw_quiet=(&fw_available) && !{store}.busy && fw_receipts_quiet && dut.soc.fabric_hostFrames_count==0;
 wire fw_actual_enable=dut.serviceOscillator.enable;
@@ -129,9 +134,11 @@ integer fw_offers=0,fw_accepts=0,fw_dispatches=0,fw_next=0,fw_front_edges=0,fw_w
 integer fw_bank_offers[0:3],fw_bank_dispatches[0:3],fw_return_edges[0:3];
 integer fw_front_at_stop=0,fw_work_at_stop=0,fw_low_edges=0,fw_lf_edges=0,fw_lf_at_stop=0;
 integer fw_index,fw_ring_index,fw_before;
-reg [3:0] fw_live=0,fw_returning=0;
-reg [16:0] fw_stopped_state;
-reg fw_stopped_completion;
+reg [3:0] fw_live=0,fw_returning=0,fw_admitted=0,fw_copied=0;
+integer fw_capture_generation[0:3];integer fw_pending_bank=0,fw_pending_generation=0,fw_route_generation=0;
+reg fw_copy_pending=0;reg [3:0] fw_phase_at_offer=0;
+reg [14:0] fw_stopped_state;
+reg fw_stopped_completion;reg [1:0] fw_stopped_route;
 reg [1347:0] fw_stopped_payload;
 reg [336:0] fw_expected[0:3];
 reg [3:0] fw_was_available=0;
@@ -139,7 +146,7 @@ reg fw_saw_stop=0;
 realtime fw_front_at=-1000,fw_last_state_edge=-1000,fw_last_quiet=-1000,fw_stopped_at=-1000;
 realtime fw_min_quiet_margin=1.0e30,fw_min_state_margin=1.0e30;
 initial for(fw_index=0;fw_index<4;fw_index=fw_index+1) begin
- fw_bank_offers[fw_index]=0;fw_bank_dispatches[fw_index]=0;fw_return_edges[fw_index]=0;
+ fw_bank_offers[fw_index]=0;fw_bank_dispatches[fw_index]=0;fw_return_edges[fw_index]=0;fw_capture_generation[fw_index]=0;
 end
 always @(posedge serviceClock) if(!fw_por) begin fw_front_edges=fw_front_edges+1;fw_front_at=$realtime;end
 always @(posedge watchdogClock) if(!fw_por) fw_lf_edges=fw_lf_edges+1;
@@ -149,25 +156,49 @@ always @(posedge observedWorkClock) if(!fw_por) begin
  if(frameDispatched!==({command}.in_valid && {command}.in_ready && {command}.in_bits_kind==0)) $fatal(1,"FRAME_WAKE_CONTROL_D_ALIAS");
  if(frameAccepted) begin
   if(!workRunning || !fw_actual_enable || fw_accepts>=fw_offers) $fatal(1,"FRAME_WAKE_CONTROL_A_WITHOUT_O");
-  if(fw_bank_data[{store}.slot]!==fw_expected[{store}.slot] || {store}.in_ack!=={store}.in_req)
-   $fatal(1,"FRAME_WAKE_CONTROL_COPY_AT_A");
-  fw_accepts=fw_accepts+1;
+  if({target}.frameSlot!==(fw_accepts%4) || !fw_live[fw_accepts%4] || fw_admitted[fw_accepts%4])
+   $fatal(1,"FRAME_WAKE_CONTROL_ADMISSION_ORDER");
+  fw_admitted[fw_accepts%4]=1;fw_accepts=fw_accepts+1;
  end
  if(frameDispatched) begin
   if(!workRunning || !fw_actual_enable || !fw_live[dut.soc.fabric_hostFrames_first_bank]) $fatal(1,"FRAME_WAKE_CONTROL_D_WITHOUT_O");
+  if(!fw_admitted[dut.soc.fabric_hostFrames_first_bank] || !fw_copied[dut.soc.fabric_hostFrames_first_bank])
+   $fatal(1,"FRAME_WAKE_CONTROL_DISPATCH_BEFORE_ADMISSION_OR_COPY");
   if(fw_bank_data[dut.soc.fabric_hostFrames_first_bank]!==fw_expected[dut.soc.fabric_hostFrames_first_bank])
    $fatal(1,"FRAME_WAKE_CONTROL_PAYLOAD_AT_D");
-  fw_live[dut.soc.fabric_hostFrames_first_bank]=0;
+  fw_live[dut.soc.fabric_hostFrames_first_bank]=0;fw_admitted[dut.soc.fabric_hostFrames_first_bank]=0;fw_copied[dut.soc.fabric_hostFrames_first_bank]=0;
   fw_returning[dut.soc.fabric_hostFrames_first_bank]=1;
   fw_bank_dispatches[dut.soc.fabric_hostFrames_first_bank]=fw_bank_dispatches[dut.soc.fabric_hostFrames_first_bank]+1;
   fw_dispatches=fw_dispatches+1;
  end
 end
 always @({store}.in_req) if(!fw_por && ({"1'b1" if b['click'] else store+'.in_req'})) begin
- if({store}.slot!==fw_next || !fw_available[fw_next] || fw_live[fw_next]) $fatal(1,"FRAME_WAKE_CONTROL_UNAVAILABLE_AT_O");
+ if({store}.nextBank!==fw_next || !fw_available[fw_next] || fw_live[fw_next]) $fatal(1,"FRAME_WAKE_CONTROL_UNAVAILABLE_AT_O");
+ if(fw_copy_pending) $fatal(1,"FRAME_WAKE_CONTROL_OFFER_BEFORE_COPY");
+ fw_copy_pending=1;fw_pending_bank=fw_next;fw_pending_generation=fw_offers+1;fw_phase_at_offer=fw_native_phases;
+ fw_capture_generation[fw_next]=0;
  fw_live[fw_next]=1;fw_bank_offers[fw_next]=fw_bank_offers[fw_next]+1;
  fw_expected[fw_next]=observedNativeFrame;
  fw_next=(fw_next+1)%4;fw_offers=fw_offers+1;
+end
+{''.join(f"always @(posedge {cap}) if(!fw_por && fw_pending_bank=={i}) begin if(!fw_copy_pending || fw_capture_generation[{i}]==fw_pending_generation) $fatal(1,\"FRAME_WAKE_CONTROL_COPY_CAPTURE_ORDINAL\");fw_capture_generation[{i}]=fw_pending_generation;end\n" for i,cap in enumerate(captures))}
+always @(posedge {route}.trigger) if(!fw_por) begin
+ if(!fw_copy_pending || fw_route_generation==fw_pending_generation ||
+    fw_native_route!=={('(fw_pending_bank&3)' if b['click'] else '((fw_pending_bank+3)&3)')} ||
+    {route}.d!=={('((fw_pending_bank+1)&3)' if b['click'] else '(fw_pending_bank&3)')})
+  $fatal(1,"FRAME_WAKE_CONTROL_NATIVE_ROUTE_CAPTURE");
+ fw_route_generation=fw_pending_generation;
+end
+always @({store}.in_ack) if(!fw_por && ({"1'b1" if b['click'] else store+'.in_ack'})) begin
+ if(!fw_copy_pending || fw_capture_generation[fw_pending_bank]!=fw_pending_generation ||
+    fw_route_generation!=fw_pending_generation || fw_bank_data[fw_pending_bank]!==fw_expected[fw_pending_bank])
+  $fatal(1,"FRAME_WAKE_CONTROL_COPY_COMPLETION");
+ {"if(fw_native_phases!==(fw_phase_at_offer ^ (4'b1 << fw_pending_bank))) $fatal(1,\"FRAME_WAKE_CONTROL_COPY_PHASE\");" if b['click'] else ''}
+ fw_copied[fw_pending_bank]=1;fw_copy_pending=0;
+end
+always @(fw_native_route) if(!fw_por) begin
+ fw_last_state_edge=$realtime;
+ if(!fw_actual_enable) $fatal(1,"FRAME_WAKE_CONTROL_NATIVE_ROUTE_WHILE_SOURCE_OFF");
 end
 always @(fw_receipt_state) if(!fw_por) begin
  if($realtime!=fw_front_at) $fatal(1,"FRAME_WAKE_CONTROL_RECEIPT_WITHOUT_FRONT_EDGE");
@@ -196,7 +227,7 @@ always @(negedge fw_actual_enable) if(!fw_por) begin : fw_stop
  if(fw_actual_enable || serviceClock!==0 || !fw_quiet) $fatal(1,"FRAME_WAKE_CONTROL_FINAL_STOP_EDGE");
  fw_source_stops=fw_source_stops+1;fw_stopped_at=$realtime;fw_saw_stop=1;
  fw_front_at_stop=fw_front_edges;fw_work_at_stop=fw_work_edges;fw_stopped_state=fw_receipt_state;fw_lf_at_stop=fw_lf_edges;
- fw_stopped_completion=fw_completion_state;
+ fw_stopped_completion=fw_completion_state;fw_stopped_route=fw_native_route;
  fw_stopped_payload=fw_all_payload;
  if(fw_last_state_edge>=0 && $realtime-fw_last_state_edge<fw_min_state_margin) fw_min_state_margin=$realtime-fw_last_state_edge;
  if(fw_last_quiet>=0 && $realtime-fw_last_quiet<fw_min_quiet_margin) fw_min_quiet_margin=$realtime-fw_last_quiet;
@@ -208,7 +239,7 @@ task fw_stopped_check;
   if(CHECK_SOURCE_STOP) begin
    wait(!fw_actual_enable);#250;
    if(!fw_saw_stop || fw_front_edges!=fw_front_at_stop || fw_work_edges!=fw_work_at_stop ||
-      fw_receipt_state!==fw_stopped_state || fw_completion_state!==fw_stopped_completion || fw_all_payload!==fw_stopped_payload || !fw_quiet || serviceClock!==0)
+      fw_receipt_state!==fw_stopped_state || fw_completion_state!==fw_stopped_completion || fw_native_route!==fw_stopped_route || fw_all_payload!==fw_stopped_payload || !fw_quiet || serviceClock!==0)
     $fatal(1,"FRAME_WAKE_CONTROL_STOPPED_STATE_CHANGED");
    fw_low_edges=fw_low_edges+1;
   end
@@ -217,7 +248,7 @@ endtask
 task fw_finish;
  integer k;
  begin
-  if(fw_offers!=14 || fw_accepts!=14 || fw_dispatches!=14 || fw_live || fw_returning || !fw_quiet)
+  if(fw_offers!=14 || fw_accepts!=14 || fw_dispatches!=14 || fw_live || fw_admitted || fw_copied || fw_copy_pending || fw_returning || !fw_quiet)
    $fatal(1,"FRAME_WAKE_CONTROL_RING_COUNTS");
   for(k=0;k<4;k=k+1) begin
    if(fw_bank_offers[k] < 3 || fw_bank_offers[k]!=fw_bank_dispatches[k]) $fatal(1,"FRAME_WAKE_CONTROL_BANK_WRAP");

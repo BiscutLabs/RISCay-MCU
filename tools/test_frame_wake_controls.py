@@ -9,17 +9,19 @@ class FrameWakeControlsTest(unittest.TestCase):
     def test_new_completion_state_has_native_event_and_separate_clocked_observation(self):
         for click in (False,True):
             cell=lambda i:dict(id='payload'+str(i) if click else 'payload',rtl_path='Top.store.payload'+str(i))
-            store=dict(module='Store',rtl_path='Top.store',primitives=[cell(i) for i in range(4)] if click else [],children=[])
+            store=dict(module='Store',rtl_path='Top.store',primitives=([cell(i) for i in range(4)]+[dict(id='phase'+str(i),rtl_path='Top.store.phase'+str(i)) for i in range(4)] if click else [])+[dict(id='route',rtl_path='Top.store.route')],children=[])
             if not click:store['children']=[dict(id='storage'+str(i),contract=dict(module='Bank',primitives=[cell(i)],children=[])) for i in range(4)]
             binding=dict(click=click,store=store,target=dict(rtl_path='Top.i2c'),
                          publication=dict(rtl_path='Top.i2c.native.publication'),
                          receipts=[dict(rtl_path='Top.i2c.receipt'+str(i)) for i in range(5)],
                          manifest=dict(design=dict(children=[dict(id='control_command_bridge',contract=dict(rtl_path='Top.command'))])))
             text=monitor(binding)
-            for fragment in ('wire [16:0] fw_receipt_state','dut.soc.i2c.copied_frameCopyMeta',
-                             'dut.soc.i2c.copied','dut.soc.i2c.ca_primitive_frame_completion.q',
-                             'fw_completion_state!==fw_stopped_completion'):
+            for fragment in ('wire [14:0] fw_receipt_state','dut.soc.i2c.ca_primitive_frame_completion.q',
+                             'fw_completion_state!==fw_stopped_completion','fw_native_route!==fw_stopped_route',
+                             'DISPATCH_BEFORE_ADMISSION_OR_COPY','COPY_CAPTURE_ORDINAL','NATIVE_ROUTE_CAPTURE'):
                 self.assertIn(fragment,text)
+            self.assertNotIn('COPY_AT_A',text)
+            self.assertNotIn('copied_frameCopyMeta',text)
             native=text.split('always @(fw_completion_state)',1)[1].split('end',1)[0]
             self.assertNotIn('fw_front_at',native)
             self.assertIn('FRAME_WAKE_CONTROL_COMPLETION_WHILE_SOURCE_OFF',native)

@@ -18,12 +18,12 @@ from check_frame_receipt import FIELDS
 MODEL = r"(?:FourPhase|Click)FrameStore(?:_[0-9]+)?"
 RTL_FINGERPRINTS = {
     "bd": {
-        "9a41aab3d945799d3ba183289dbbdbfc3f7b198b707972a4a7d9e4e604e7d71d",  # embedded aliases
-        "b925ac81ae6b336b39146d00a6366350e2c2abfeaba6aa8273650ac4041e32a6",  # standalone aliases
+        "b7fcdfca1b128b2b47016f92fb6d3ef09999a33a252e6bfb9bf29d5b8e5814a6",  # native-route standalone
+        "698146e39df32073c727a73f2d746a24bd2c4f0e6dbb6ac8872fa79317a5e4df",  # native-route embedded
     },
     "click": {
-        "704590623294de4831450f9d2f2f4df00c9f07bd950cebf56145c610a7bf3d2c",
-        "3bb3442d6497c7b8b5b2e484733c1314b886f82bfe200ef2485688db9b73206d",
+        "bd52959bc583156c1fdb574194be37871a5ed584cf4497c7bd2e35ce7275ba47",  # native-route standalone
+        "196b8ce59027e515521ac43ca6ec41fe90fed3a78cf4e0bcd4a9aebf20c02d1d",  # native-route embedded
     },
 }
 BD_BUFFER_FINGERPRINT = "d776db42fe7986486ecefa402db6f48b0f594e6f4dd40d1735116842380d2f45"
@@ -48,17 +48,19 @@ def rtl_fingerprint(text):
 
 def primitive_spec(click):
     gate = lambda width, delay: ("ChiselAsyncControlGate_v1", dict(WIDTH=str(width), OP="0", RESET_VALUE="0", DELAY_FS=str(delay)))
-    register = lambda width: ("ChiselAsyncEventRegister_v1", dict(WIDTH=str(width), RESET_VALUE="0", DELAY_FS="1000000"))
+    register = lambda width, reset=0: ("ChiselAsyncEventRegister_v1", dict(WIDTH=str(width), RESET_VALUE=str(reset), DELAY_FS="1000000"))
     atomic = ("ChiselAsyncAnd_v1", dict(INPUTS="2", INVERT="0", DELAY_FS="1000000"))
     if click:
         result = {"payload"+str(i): register(337) for i in range(4)}
         result.update({"phase"+str(i): register(1) for i in range(4)})
         result.update(accepted_phase=("ChiselAsyncPhaseRegister_v1", dict(RESET_VALUE="0", DELAY_FS="1000000")),
-                      pending=("ChiselAsyncXor_v1", dict(DELAY_FS="1000000")), capture=atomic,
-                      request_delay=gate(1,11000000), data_delay=gate(1352,10000000),
+                      pending=("ChiselAsyncXor_v1", dict(DELAY_FS="1000000")), route=register(2),
+                      capture=("ChiselAsyncAsymmetricC_v1",dict(COMMON="1",RISING="1",FALLING="0",DELAY_FS="1000000",
+                        RESET_VALUE="0",COMMON_INVERT="0",RISING_INVERT="0",FALLING_INVERT="0")),
+                      request_delay=gate(1,11000000), data_delay=gate(1354,10000000),
                       acknowledge_guard=gate(1,32000000), output_guard=gate(4,110000000))
     else:
-        result = dict(route=register(2), data_delay=gate(2,10000000), request_delay=gate(1,11000000),
+        result = dict(route=register(2,3), data_delay=gate(2,10000000), request_delay=gate(1,11000000),
                       route_decode=gate(4,1000000), request_guard=gate(1,32000000), return_guard=gate(4,32000000))
         result.update({"route"+str(i): atomic for i in range(4)})
     return result
@@ -67,9 +69,9 @@ def primitive_spec(click):
 def timing_spec(click):
     path, aperture = ("bank_transform","bank_aperture") if click else ("route_path","route_aperture")
     source, sink, capture, captured = ("sources","register_data","capture_event","captured") if click else (
-        "slot","route_data","route_capture","route_value")
+        "route_value","route_data","route_capture","route_value")
     logic = ("full selected source/unselected retained data and phase muxes, including every feedback bit" if click else
-             "temporary slot to retained native route; 10 ns complete data budget")
+             "native modulo-four increment feedback; 10 ns complete data budget")
     return [dict(id=path,kind="bundled-data-path-v1",marker=path+"_marker",source=source,sink=sink,logic=logic,
                  logic_model_fs="0",budget=dict(min_fs="10000000",max_fs="10000000",model_fs="10000000"),
                  delay_owner=[],delay_cell="data_delay",accounting="included-in-delay-cell; replace-model-with-mapped-path; not-additive"),
@@ -116,13 +118,13 @@ def validate_frame_store_metadata(node, resolved=False):
                   for bound in ("MIN","MAX","MODEL")}
         params.update(HOLD_FS="0",SETUP_FS="0",MATCHED_FS="0",OUTPUT_FS="0")
         if index == 0:
-            params.update(KIND="3",WIDTH="3043" if click else "4",DATA_MIN_FS="10000000",DATA_MAX_FS="10000000",DATA_MODEL_FS="10000000")
+            params.update(KIND="3",WIDTH="3045" if click else "4",DATA_MIN_FS="10000000",DATA_MAX_FS="10000000",DATA_MODEL_FS="10000000")
         else:
-            params.update(KIND="1",WIDTH="4397" if click else "8",HOLD_FS="100000",SETUP_FS="100000")
+            params.update(KIND="1",WIDTH="4401" if click else "8",HOLD_FS="100000",SETUP_FS="100000")
         require(marker.get("parameters") == params, "MARKER_PARAMETERS:"+marker["id"])
     endpoints = {c["id"]+"_"+kind:width for c in channels for kind,width in (("request",1),("data",337),("acknowledge",1))}
-    endpoints.update(reset=1,slot=2,available=4,busy=1)
-    endpoints.update(dict(sources=1691,register_data=1352,captured=1352,capture_event=1) if click else
+    endpoints.update(reset=1,next_bank=2,available=4,busy=1)
+    endpoints.update(dict(sources=1691,register_data=1354,captured=1354,capture_event=1) if click else
                      dict(route_data=2,route_capture=1,route_value=2))
     actual_endpoints = node.get("endpoints", [])
     require(len(actual_endpoints) == len(endpoints) and {e.get("id") for e in actual_endpoints} == set(endpoints) and
@@ -130,7 +132,8 @@ def validate_frame_store_metadata(node, resolved=False):
     sources = {c["id"]+"_"+kind: re.escape("~|"+model+">"+(
         "in" if c["id"] == "in" else "banks_"+c["id"][-1])+"."+member)
         for c in channels for kind,member in (("request","req"),("data","bits"),("acknowledge","ack"))}
-    sources.update({name:re.escape("~|"+model+">"+name) for name in ("reset","slot","available","busy")})
+    sources.update({name:re.escape("~|"+model+">"+name) for name in ("reset","available","busy")})
+    sources['next_bank']=re.escape("~|"+model+">nextBank")
     if click:
         sources.update(sources=re.escape("~|"+model+">sourceBits"), captured=re.escape("~|"+model+">capturedBits"),
                        capture_event=re.escape("~|"+model+">captureEvent"),

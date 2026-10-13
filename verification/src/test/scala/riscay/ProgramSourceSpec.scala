@@ -75,7 +75,6 @@ class BdProgramSourceFixture(p: SocParameters, directIngress: Boolean = true) ex
     val banks=withClockAndReset(workClock,reset) { Module(new ProgramInjectedFrameBanks) }
     banks.io.frame:=injected; banks.io.accepted:=fabric.io.hostFrameAccepted
     fabric.io.i2c.frame.valid:=injectedValid; fabric.io.i2c.frame.bits:=injected.ingress
-    fabric.io.i2c.frameOffered:=injectedValid
     fabric.io.i2c.frameSlot:=banks.io.slot; fabric.io.i2c.currentEpoch:=host.host.currentEpoch
     for(i <- 0 until 4) {
       fabric.io.i2c.heads(i) <> banks.io.heads(i)
@@ -149,7 +148,6 @@ class ClickProgramSourceFixture(p: SocParameters, directIngress: Boolean = true)
     val banks=withClockAndReset(workClock,reset) { Module(new ProgramInjectedFrameBanks) }
     banks.io.frame:=injected; banks.io.accepted:=fabric.io.hostFrameAccepted
     fabric.io.i2c.frame.valid:=injectedValid; fabric.io.i2c.frame.bits:=injected.ingress
-    fabric.io.i2c.frameOffered:=injectedValid
     fabric.io.i2c.frameSlot:=banks.io.slot; fabric.io.i2c.currentEpoch:=host.host.currentEpoch
     for(i <- 0 until 4) {
       fabric.io.i2c.heads(i) <> banks.io.heads(i)

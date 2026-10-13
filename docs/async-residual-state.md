@@ -1,6 +1,20 @@
 # Remaining clocked-state audit
 
-R3's frame-copy completion correction is **digitally verified, 2026-10-13**. It adds four
+R3b native frame-route ownership is **digitally verified, 2026-10-13**. It removes R3's two copy
+synchronizers and two sticky offered-context bits per variant. BD reuses its
+two-bit native route register; Click adds two native route bits and a retained
+capture pulse. The original clocked descriptor ordinal and receipt remain.
+Compiled emitted inventories show portable periodic totals of **6,538 BD /
+6,539 Click**, excluding the unchanged SDA-edge bit. Enabled-policy physical
+exports contain ten more periodic bits per variant. Native declared register
+bits remain 14,221 for BD and grow from 14,382 to 14,384 for Click; Click's retained
+C-element capture is accounted separately in mapped logic. No payload bank is
+added. Evidence is `build/async-frame-native-route-repair/emitted-state-r2/receipt.json`;
+all affected functional and strict-export checks pass. Matched wake counts and
+durations are unchanged. Across C1, R3 and R3b, the net reduction is 1,254 periodic
+bits per variant; native storage, mapped cost and physical limits remain separate.
+
+R3's historical frame-copy completion correction at `a3f11af` is **digitally verified, 2026-10-13**. It added four
 POR-owned periodic-clock bits per variant beyond C1: two copy-completion
 synchronizers in I2cTarget and two retained reset/busy admission facts in
 Services. No clocked or native payload bank is added. The native publisher ACK

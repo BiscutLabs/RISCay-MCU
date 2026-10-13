@@ -127,9 +127,9 @@ endmodule"""
         with self.assertRaisesRegex(ValueError, "^FRAME_INTEGRATION_INSTANCE_PARAMETERS:instance$"):
             pins(good, "instance", "Model")
 
-    def test_completion_metadata_pins_native_join_and_rearm(self):
+    def test_completion_metadata_pins_native_join_without_clocked_copy_state(self):
         for click in (False, True):
-            common = 2 if click else 3
+            common = 2
             cell = dict(id="frame_completion", model="ChiselAsyncAsymmetricC_v1", version=1,
                         resource="chiselasync/sv/ChiselAsyncAsymmetricC_v1.sv", reset="frame_completion_reset",
                         reset_domain="root", rtl_path="Top.i2c.ca_primitive_frame_completion",
@@ -139,12 +139,10 @@ endmodule"""
                                (("reset",1,"input"),("common",common,"input"),("rising",1,"input"),("falling",1,"input"),("q",1,"output"))])
             target = dict(module="I2cTarget", rtl_path="Top.i2c", primitives=[cell], endpoints=[
                 dict(id=i, width=1, source="~|I2cTarget>" + s, rtl_path=f"Top.i2c.ca_p_{len(i)}_{i}") for i,s in
-                dict(frame_copy_meta="copied_frameCopyMeta", frame_copy_sync="copied",
-                     frame_copy_ready="frameCopyReady", frame_offered="host.frameOffered", frame_completion_reset="reset").items()])
+                dict(frame_completion_reset="reset").items()])
             self.assertEqual(completion_metadata(target, click), (cell, cell["parameters"]))
             lowered = copy.deepcopy(target)
-            resolved = dict(frame_copy_meta="copied_frameCopyMeta", frame_copy_sync="copied",
-                            frame_copy_ready="frameCopyReady", frame_offered="packed_5", frame_completion_reset="packed_2_probe")
+            resolved = dict(frame_completion_reset="packed_probe")
             for endpoint in lowered["endpoints"]:
                 endpoint["rtl_path"] = "Top.i2c." + resolved[endpoint["id"]]
             self.assertEqual(completion_metadata(lowered, click), (cell, cell["parameters"]))
@@ -157,11 +155,27 @@ endmodule"""
                 changed = copy.deepcopy(target); changed["primitives"][0]["parameters"][parameter] = "999"
                 with self.subTest(click=click, parameter=parameter), self.assertRaisesRegex(ValueError, "FRAME_INTEGRATION_COMPLETION_CONTRACT$"):
                     completion_metadata(changed, click)
-            for identity in ("frame_copy_meta", "frame_copy_sync", "frame_copy_ready", "frame_offered", "frame_completion_reset"):
+            for identity in ("frame_completion_reset",):
                 changed = copy.deepcopy(target)
                 next(e for e in changed["endpoints"] if e["id"] == identity)["source"] = "~|I2cTarget>wrong"
                 with self.subTest(click=click, identity=identity), self.assertRaisesRegex(ValueError, "FRAME_INTEGRATION_COMPLETION_ENDPOINT:" + identity + "$"):
                     completion_metadata(changed, click)
+
+    def test_completion_metadata_rejects_reintroduced_copy_crossing(self):
+        for identity in ("frame_copy_meta", "frame_copy_sync", "frame_copy_ready", "frame_offered"):
+            # Exercise the complete valid native metadata first, then mutate its endpoint inventory.
+            cell=dict(id="frame_completion",model="ChiselAsyncAsymmetricC_v1",version=1,
+                      resource="chiselasync/sv/ChiselAsyncAsymmetricC_v1.sv",reset="frame_completion_reset",reset_domain="root",
+                      rtl_path="Top.i2c.ca_primitive_frame_completion",
+                      parameters=dict(COMMON="2",COMMON_INVERT="0",DELAY_FS="1000000",FALLING="0",FALLING_INVERT="0",RESET_VALUE="0",RISING="0",RISING_INVERT="0"),
+                      ports=[dict(name=n,width=w,direction=d) for n,w,d in
+                             (("reset",1,"input"),("common",2,"input"),("rising",1,"input"),("falling",1,"input"),("q",1,"output"))])
+            target=dict(module="I2cTarget",rtl_path="Top.i2c",primitives=[cell],endpoints=[
+                dict(id="frame_completion_reset",width=1,source="~|I2cTarget>reset",rtl_path="Top.i2c.packed_probe")])
+            completion_metadata(target,False)
+            target["endpoints"].append(dict(id=identity,width=1))
+            with self.subTest(identity=identity),self.assertRaisesRegex(ValueError,"FRAME_INTEGRATION_CLOCKED_COPY_COMPLETION_ENDPOINT$"):
+                completion_metadata(target,False)
 
     def test_initializer_guards_are_closed(self):
         good = """initial begin
@@ -291,56 +305,34 @@ def actual_controls(directory, saved):
         if count != 1: raise AssertionError((label, "pin removal shape", count))
         check(label, key, texts[key][:match.start(1)] + body + texts[key][match.end(1):], expected)
 
-    # R3 cannot be satisfied by delaying only the receipt or only the publisher.
-    # Exercise each actual production cut, including BD's synchronized-low RTZ.
+    # Native route ownership must not turn admission into a copy crossing.
     click = receipt["module"].startswith("Click")
-    ready = "frameCopyReady"
-    copy_input = "_ca_child_frame_store_in_ack" if inline else "ca_child_frame_store_in_ack_layerCapture"
+    copy_input = "_ca_child_frame_store_in_ack"
     mutate_pin("original-offer-hidden-behind-copy", "target", "ca_child_frame_bridge", "in_req",
-               "_ca_child_frame_store_in_ack", "NATIVE_RECEIPT_PIN:req")
+               copy_input, "NATIVE_RECEIPT_PIN:req")
     mutate_pin("publisher-ack-before-copy", "target", "ca_child_native", "frame_ack",
                "_ca_child_frame_bridge_in_ack", "COMPLETION_ACK_BINDING")
     mutate_pin("publisher-ack-before-admission", "target", "ca_child_native", "frame_ack",
-               "_ca_child_frame_store_in_ack", "COMPLETION_ACK_BINDING")
+               copy_input, "COMPLETION_ACK_BINDING")
     for pin, value in (("reset", "host_resetActive"), ("rising", "1'h0"), ("falling", "1'h1"),
                        ("q", "_ca_child_frame_bridge_in_ack"),
-                       ("common", "{_ca_child_frame_store_in_ack,_ca_child_frame_store_in_ack}" if click else
-                        "{_ca_child_frame_store_in_ack,copied,_ca_child_frame_store_in_ack}")):
+                       ("common", "{"+copy_input+","+copy_input+"}")):
         mutate_pin("completion-join-" + pin, "target", "ca_primitive_frame_completion", pin, value, "COMPLETION_JOIN_PINS")
-    if not click:
-        mutate_pin("BD-join-bypasses-copy-low-observation", "target", "ca_primitive_frame_completion", "common",
-                   "{_ca_child_frame_store_in_ack,_ca_child_frame_store_in_ack,_ca_child_frame_bridge_in_ack}", "COMPLETION_JOIN_PINS")
-    for label, old, new in (
-            ("copy-sync-bypass", "copied <= copied_frameCopyMeta", "copied <= " + copy_input),
-            ("copy-meta-uses-source-offer", "copied_frameCopyMeta <= " + copy_input, "copied_frameCopyMeta <= _ca_child_native_frame_req"),
-            ("copy-sync-retains-old-high", "copied <= 1'h0", "copied <= 1'h1")):
-        replace(label, "target", old, new, "STATE_TRANSITIONS:copied")
-    for label, old, new, diagnostic in (
-            ("admission-before-copy", "frameAcceptEnable & " + ready, "frameAcceptEnable", "DRIVER:ca_child_frame_bridge_out_ready"),
-            ("admission-raw-copy-level", "frameAcceptEnable & " + ready, "frameAcceptEnable & _ca_child_frame_store_in_ack", "DRIVER:ca_child_frame_bridge_out_ready"),
-            ("overflow-original-offer-copy-masked", "_ca_child_frame_bridge_out_valid & frameAcceptEnable;", "_ca_child_frame_bridge_out_valid & frameAcceptEnable & " + ready + ";", "DRIVER:packed_5")):
-        replace(label, "target", old, new, diagnostic)
-    if click:
-        replace("click-copy-ready-compares-raw-request", "target", "copied != _ca_child_frame_bridge_in_ack", "copied == _ca_child_native_frame_req", "DRIVER:frameCopyReady")
-        replace("click-copy-ready-old-phase", "target", "copied != _ca_child_frame_bridge_in_ack", "copied == _ca_child_frame_bridge_in_ack", "DRIVER:frameCopyReady")
-    mutate_pin("top-original-offer-hidden", "top", "ca_child_i2c", "host_frameOffered", "", "TOP_OFFER_PIN")
+    mutate_pin("completion-reintroduces-third-clocked-input", "target", "ca_primitive_frame_completion", "common",
+               "{"+copy_input+",1'b0,_ca_child_frame_bridge_in_ack}", "COMPLETION_JOIN_PINS")
     for parameter in ("COMMON", "COMMON_INVERT", "RISING", "FALLING", "RESET_VALUE"):
-        value = "2" if parameter == "COMMON" and not click else "999"
+        value = "3" if parameter == "COMMON" else "999"
         cell = next(p for p in target["primitives"] if p["id"] == "frame_completion")
         replace("join-parameter-" + parameter, "target", f'.{parameter}({cell["parameters"][parameter]})', f".{parameter}({value})", "INSTANCE_PARAMETERS:ca_primitive_frame_completion")
-    for name, source in (("fabric_hostOfferedReset", "fabric_hostAdmissionReset"),
-                         ("fabric_hostOfferedBusy", "fabric_hostAdmissionBusy")):
-        matches = list(re.finditer(r"\b" + name + r"\s*<=([^;]+);", texts["top"]))
-        updates = [m for m in matches if compact(m[1]) != "1'h0"]
-        if len(updates) != 1: raise AssertionError((name, "retained context shape"))
-        update = updates[0]
-        for suffix, expression in (("forgets-observed-fact", source),
-                                   ("clears-on-application-reset", update[1] + " & ~" + spell("fabric_io_applicationCancel")),
-                                   ("does-not-clear-at-admission", f"{spell('fabric_io_i2c_frameOffered')} & {source} | {name}")):
-            raw = texts["top"]
-            check(name + "-" + suffix, "top", raw[:update.start(1)] + expression + raw[update.end(1):],
-                  "STATE_TRANSITIONS:fabric_hostOfferedBusy")
-    for identity in ("frame_copy_meta", "frame_copy_sync", "frame_copy_ready", "frame_offered", "frame_completion_reset"):
+    for name in ("copied_frameCopyMeta", "copied", "frameCopyReady", "host_frameOffered"):
+        inject("clocked-copy-reintroduced-"+name,"target","reg "+name+";","CLOCKED_COPY_COMPLETION_STATE")
+    for name in ("fabric_hostOfferedReset", "fabric_hostOfferedBusy"):
+        inject("sticky-context-reintroduced-"+name,"top","reg "+name+";","STICKY_OFFER_CONTEXT")
+    ready_reset="localReset_release_1" if inline else "_resetEpoch_T_2_layerCapture"
+    ready="~"+ready_reset+" & frameAcceptEnable"
+    for label,extra in (("copy-qualifies-admission",copy_input),("request-qualifies-admission","_ca_child_native_frame_req")):
+        replace(label,"target",ready,ready+" & "+extra,"DRIVER:ca_child_frame_bridge_out_ready")
+    for identity in ("frame_completion_reset",):
         for mode in ("missing", "wrong-source", "wrong-width", "wrong-path"):
             changed = copy.deepcopy(manifest); altered_target = child(changed["design"], "i2c")
             endpoint = next(e for e in altered_target["endpoints"] if e["id"] == identity)
@@ -376,10 +368,10 @@ def actual_controls(directory, saved):
         command_pin = pins(texts["top"], "ca_child_control_command_bridge", command["module"])["in_bits_cpuResetActive"]
         mutate_pin("cutoff-command-uses-old-observer", "top", "ca_child_control_command_bridge", "in_bits_cpuResetActive",
                    command_pin.replace(spell("fabric_io_applicationCancel"), "cpuResetActive"), "COMMAND_CONTEXT_PIN:cpuResetActive")
-        changed, count = re.subn(r"(\bfabric_hostAdmissionReset\s*=\s*)" + spell("fabric_io_applicationCancel") + r"\b",
+        changed, count = re.subn(r"(\bfabric_hostFrames_io_enq_bits_resetActive\s*=\s*)" + spell("fabric_io_applicationCancel") + r"\b",
                                 r"\g<1>cpuResetActive", texts["top"])
         if count != 1: raise AssertionError("Cutoff descriptor shape")
-        check("cutoff-descriptor-uses-old-observer", "top", changed, "DRIVER:fabric_hostAdmissionReset")
+        check("cutoff-descriptor-uses-old-observer", "top", changed, "DRIVER:fabric_hostFrames_io_enq_bits_resetActive")
         for name in ("fabric_io_controlCommand_valid", "fabric_io_controlCommand_bits_kind"):
             match = re.search(r"\b(?:wire\s+(?:\[[^]]+\]\s*)?|assign\s+)" + name + r"\s*=([^;]+);", texts["top"])
             if match is None: raise AssertionError((name, "halt cutoff shape"))
@@ -452,7 +444,7 @@ def actual_controls(directory, saved):
     for field in ("cpuResetActive", "programBusy"):
         mutate_pin("command-context-" + field, "top", "ca_child_control_command_bridge", "in_bits_" + field,
                    "corrupt", "COMMAND_CONTEXT_PIN:" + field)
-    for pin in ("reset", "slot", "in_ack", "busy"):
+    for pin in ("reset", "nextBank", "in_ack", "busy"):
         mutate_pin("store-" + pin, "target", "ca_child_frame_store", pin, "corrupt", "STORE_CONTROL_PINS")
     mutate_pin("store-request", "target", "ca_child_frame_store", "in_req", "corrupt", "BORROWED_SOURCE:req")
     for i in range(4):
@@ -475,8 +467,8 @@ def actual_controls(directory, saved):
     if not inline:
         entries.append(("wrap-bind-disabled","bind","bind I2cTarget I2cTarget_Verification_Assert","bind Unrelated I2cTarget_Verification_Assert","EPOCH_ASSERTION_BIND"))
     for row in entries: replace(*row)
-    replace("wrap-disabled","assertion","$fatal;",";","EPOCH_ASSERTION_LOGIC",4)
-    for role in ("fabric_hostAdmissionReset", "fabric_hostAdmissionBusy", "fabric_hostFrames_io_enq_bits_resetActive", "fabric_hostFrames_io_enq_bits_programBusy",
+    replace("wrap-disabled","assertion","$fatal;",";","EPOCH_ASSERTION_LOGIC",2)
+    for role in ("fabric_hostFrames_io_enq_bits_resetActive", "fabric_hostFrames_io_enq_bits_programBusy",
                  "fabric__loaderControlPending_T", "fabric__loaderControlPending_T_1", "fabric__loaderControlPending_T_3",
                  "fabric_hostFrames_io_enq_ready", "fabric_hostFrames__1", "fabric_hostFrames__2"):
         name = spell(role)
@@ -516,16 +508,12 @@ def actual_controls(directory, saved):
         ("tail-starts-wrong-bank", "frameSlot <= 2'h0", "frameSlot <= 2'h1", "STATE_TRANSITIONS:frameSlot"),
         ("busy-sync-bypass", "frameStoreBusy_stages_1 <= frameStoreBusy_stages_0", "frameStoreBusy_stages_1 <= _ca_child_frame_store_busy", "STATE_TRANSITIONS:frameStoreBusy_stages_0")):
         replace(label, "target", old, new, diagnostic)
-    copy_ack = " & _ca_child_frame_store_in_ack" if inline else "\n          & I2cTarget.ca_child_frame_store_in_ack_layerCapture"
-    replace("copy-ACK-assertion-disabled", "assertion", "_GEN" + copy_ack, "1'b0" + copy_ack, "EPOCH_ASSERTION_LOGIC")
-    replace("copy-full-width-assertion-corrupt", "assertion", "_GEN_0[" + ("" if inline else "I2cTarget.") + "frameSlot]", "_GEN_0[2'h0]", "EPOCH_ASSERTION_LOGIC")
     top_name = top["module"]
     assert_prefix = "" if inline else top_name + "."
-    overflow_offer = re.findall(r"~\(" + re.escape(spell(assert_prefix + "fabric_io_i2c_frame_valid")) +
-                               r"\s*\|\s*" + re.escape(spell(assert_prefix + "fabric_io_i2c_frameOffered")) + r"\)", texts["top_assertion"])
+    overflow_offer = re.findall(r"~" + re.escape(spell(assert_prefix + "fabric_io_i2c_frame_valid")) +
+                               r"\s*\|", texts["top_assertion"])
     if len(overflow_offer) != 1: raise AssertionError(("overflow-offer-masked", "shape", len(overflow_offer), 1))
-    replace("overflow-offer-masked", "top_assertion", overflow_offer[0], "1'b1", "OVERFLOW_ASSERTION_LOGIC")
-    replace("overflow-original-offer-ignored", "top_assertion", " | " + assert_prefix + "fabric_io_i2c_frameOffered)", ")", "OVERFLOW_ASSERTION_LOGIC")
+    replace("overflow-offer-masked", "top_assertion", overflow_offer[0], "1'b1 |", "OVERFLOW_ASSERTION_LOGIC")
     if inline:
         # Only the assertion operand changes; the source's real enqueue driver
         # and its other users remain present and unchanged.

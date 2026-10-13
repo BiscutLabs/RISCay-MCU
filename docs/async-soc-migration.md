@@ -118,7 +118,7 @@ digital passes remain evidence of their tested scope, not RDC or physical proof.
   orders and complete return before reuse.
   Exercise copies slower than two service periods, stalls, identical payloads,
   reset and all bank wraps with independent offer/capture/dispatch ordinals.
-  The current implementation keeps the original request receipt and observes
+  The original R3 implementation at `a3f11af` kept the request receipt and observed
   its eligible offer O_f independently of A. Two POR copy-ACK synchronizers
   gate actual A/tail advance. Publisher ACK uses a native C-element join of
   copy and receipt; BD also includes synchronized copy ACK so RTZ cannot finish
@@ -144,6 +144,41 @@ digital passes remain evidence of their tested scope, not RDC or physical proof.
   and [frame verification](frame-admission-contract.md#r3-final-verification).
   This closes the unacknowledged-copy race in the digital contract. The service
   scheduler and complete physical bank/capture/return timing remain open.
+- [x] **R3b. Move frame-bank route ownership fully into each native store — digitally verified, 2026-10-13.**
+  The review of `a3f11af` identifies clocked `frameSlot` as the avoidable native
+  copy dependency. BD reuses its two-bit route register, seeded to three and
+  incremented at each original offer. Click adds a two-bit native route register,
+  seeded to zero and incremented on the common capture pulse. Include increment
+  feedback in each full data aperture. Click capture uses a public asymmetric
+  C-element: selected-bank availability permits assertion, while pending alone
+  controls return. A combinational AND could retrigger when route/phase feedback
+  changes before pending falls; verify opposing route/accepted delays explicitly.
+  Restore original clocked acceptance A and direct descriptor reset/busy capture.
+  Remove the two copy synchronizers, two sticky offered-context bits and offered
+  port per variant. Join raw copy and receipt ACK only, retaining publisher data
+  through both acknowledgments. Keep the independent two-bit clocked descriptor
+  ordinal: A may precede native copy, so substituting live native route at A
+  would recreate the crossing. Verify original O, actual copy, A and D ordinals,
+  full-Q rejection including same-edge D, identical payloads, all bank wraps,
+  POR and application reset. D must wait for a valid completed head. Prove late
+  copy completes after A with both front/work clocks stopped. The original
+  receipt still requires clocked acceptance and BD return; only the redundant
+  synchronized-copy round trip is removed. Final verification passes 275 distinct
+  Scala cases across 29 suites, 463 Python tests and all four strict exports.
+  Actual-RTL campaigns pass 172 positive/86 negative store simulations,
+  292 positive/52 negative composed capture simulations, 16 positive/four negative
+  wake simulations, 6,368 store/2,880 receipt/3,762 integration mutations.
+  Fresh independent review covers RTL, exact fault sites, input/binary hashes,
+  state/ABI, mapped cost and activity. Four periodic bits are removed per variant;
+  Click adds two native route bits. Mapped logic changes −0.05977% BD / +0.02656%
+  Click; all 27 wake windows per variant retain their counts and durations.
+  Evidence: `build/async-frame-native-route-repair/final-evidence-r1.json` and
+  [R3b verification](frame-admission-contract.md#r3b-verification-and-cost-evidence).
+  Preserve initial fixture, stale-expectation and host-timeout failures. Both
+  original timed-out strict binaries independently pass unchanged with the
+  existing 3,600-second host allowance; simulated deadlines and coverage remain
+  unchanged. R3's earlier evidence remains historical. Physical capture/reset
+  qualification, clocked service scheduling and energy measurement remain open.
 - [x] **C1. Remove duplicate clocked service-reply payload banks — digitally verified, 2026-10-13.** Both native
   variants already retain Control, Telemetry, Housekeeping and Supervisor replies
   through acceptance. Keep their receivers' existing synchronizers, control FSM,
@@ -670,10 +705,12 @@ physical reset qualification (R2b) remains mandatory under item 17a3.
         Full digital qualification and fresh independent review pass; retained
         evidence is under `build/async-host-admission-payload-migration/`.
         Physical timing remains item 17; this step does not remove logical Q.
-        R3 above supersedes its copy-before-original-A assumption: original offer
-        observation stays independent, but A waits for completion and publisher
-        ACK follows the native join. The checked items below retain the scope of
-        that earlier digital campaign; R3 records the repair's separate verification.
+        Historical R3 at `a3f11af` superseded its copy-before-original-A
+        assumption by delaying A until completion and joining publisher ACK.
+        R3b above restores independent original A by giving each native store
+        its own route counter, retaining the native completion join. The checked
+        items below retain the scope of the earlier 11a2a digital campaign;
+        R3 and R3b record their separate verification.
         - [x] Prove complete bank availability at original O and by A_(i+3),
           independent copy ordinals (including identical payloads), fixed bank
           rotation, retained BD routing and independent per-bank Click phases.

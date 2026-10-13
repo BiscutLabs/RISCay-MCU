@@ -6,6 +6,20 @@ are independently audited. The subsequent corrective work targets redundant
 storage and clocked coordination while preserving native BD/Click; see the
 [migration checklist](async-soc-migration.md). Physical timing remains unqualified.
 
+The digitally verified [R3b native-frame-routing comparison](gf180-matched-comparison.md#r3b-native-frame-routing)
+uses the same mapper/library inputs as R3. Logic area changes **−0.05977% BD /
++0.02656% Click**, to **3.351460 / 4.207351 mm²** excluding SRAM. Both variants
+remove four periodic-clock storage bits; Click adds two native route bits. TT
+listed-state leakage including SRAM is **8.760285–11.451153 /
+10.452129–14.179303 µW**. Each front/work storage clock load falls 0.006692 pF.
+Compiled portable periodic totals are **6,538 BD / 6,539 Click**; enabled-policy
+physical SoC exports contain ten more bits each, excluding the chip wrapper.
+No payload bank or timing exemption is added. Fresh activity matches R3 in all
+27 windows per variant: firmware wakes use 3,256 / 3,161 work-clock edges and
+retire 43 instructions, with unchanged measured durations. Affected functional and
+strict checks pass; independent review receipts bind the evidence. These measurements exclude
+loader transfer latency and do not establish physical timing or power/energy savings.
+
 The digitally verified [R3 frame-completion comparison](gf180-matched-comparison.md#r3-incremental-frame-completion-comparison)
 uses final exports and the same C1 mapper/library inputs. Logic area increases
 0.04833% BD / 0.00423% Click to **3.353464 / 4.206234 mm²** excluding SRAM.

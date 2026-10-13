@@ -42,9 +42,6 @@ class I2cResult extends Bundle {
 /** Target-facing service boundary. The front clock owns publication only. */
 class I2cHostPort extends Bundle {
   val frame = Valid(new ControlIngress)
-  // Original observed offer, independent of copy-qualified acceptance above.
-  // Full logical mailboxes must diagnose it even while native copy is delayed.
-  val frameOffered = Output(Bool())
   // A retains only this bank tag and service context. The native payload/epoch
   // remains in the selected bank until actual Host Control-command dispatch D.
   val frameSlot = Output(UInt(2.W))

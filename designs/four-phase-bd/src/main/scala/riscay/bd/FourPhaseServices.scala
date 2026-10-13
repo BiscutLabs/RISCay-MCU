@@ -487,22 +487,11 @@ class FourPhaseServices(p: SocParameters, boardFactory: SocParameters => BoardPr
       io.controlCommand.bits.frame.bytes(0) >= 1.U && io.controlCommand.bits.frame.bytes(0) <= 6.U)
   io.hostFrameAccepted := hostFrames.io.enq.fire
   hostFrames.io.enq.valid := io.i2c.frame.valid; hostFrames.io.enq.bits.bank := io.i2c.frameSlot
-  val hostAdmissionReset = io.applicationCancel || io.i2c.frame.bits.resetActive
-  val hostAdmissionBusy = io.i2c.frame.bits.programBusy || io.program.busy || loaderPending || loaderControlPending ||
+  hostFrames.io.enq.bits.resetActive := io.applicationCancel || io.i2c.frame.bits.resetActive
+  hostFrames.io.enq.bits.programBusy := io.i2c.frame.bits.programBusy || io.program.busy || loaderPending || loaderControlPending ||
     (io.controlCommand.fire && io.controlCommand.bits.kind === ControlKind.Host.U &&
       io.controlCommand.bits.frame.bytes(0) >= 1.U && io.controlCommand.bits.frame.bytes(0) <= 6.U)
-  // Native copy can postpone A past the original eligible receipt edge. Retain
-  // its reset/busy evidence through that wait; application cancellation cannot
-  // clear these POR-owned admission facts before the descriptor captures them.
-  val hostOfferedReset = RegInit(false.B); val hostOfferedBusy = RegInit(false.B)
-  when(hostFrames.io.enq.fire) { hostOfferedReset := false.B; hostOfferedBusy := false.B }
-    .elsewhen(io.i2c.frameOffered) {
-      hostOfferedReset := hostOfferedReset || hostAdmissionReset
-      hostOfferedBusy := hostOfferedBusy || hostAdmissionBusy
-    }
-  hostFrames.io.enq.bits.resetActive := hostOfferedReset || hostAdmissionReset
-  hostFrames.io.enq.bits.programBusy := hostOfferedBusy || hostAdmissionBusy
-  assert(!(io.i2c.frame.valid || io.i2c.frameOffered) || hostFrames.io.enq.ready, "CONTROL_HOST_MAILBOX_OVERFLOW")
+  assert(!io.i2c.frame.valid || hostFrames.io.enq.ready, "CONTROL_HOST_MAILBOX_OVERFLOW")
   // Preserve the original source epoch until D. A complete watchdog episode
   // invalidates precisely older queued frames; a new explicit START stays fresh.
   private val hostHead=io.i2c.heads(hostFrames.io.deq.bits.bank)

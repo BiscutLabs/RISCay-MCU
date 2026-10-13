@@ -30,8 +30,10 @@ from check_frame_store import validate_frame_store
 PREFIX = 'FRAME_CAPTURE'
 PROFILES = ('original', 'minimum', 'data-slow-control-fast', 'data-fast-control-slow',
             'publisher-fast-banks-slow', 'publisher-slow-banks-fast')
+ROUTE_PROFILES = ('route-slow-accepted-fast','route-fast-accepted-slow')
 FIXTURES = {'reset3200000','reset20000000','slots3200000','slots20000000','stored20000000',
-            'reuse20000000','queuedepoch20000000','priority20000000'}
+            'reuse20000000','queuedepoch20000000','priority20000000',
+            'latecopyrun20000000','latecopystop20000000'}
 LEAVES = [('frame_length', 6), ('frame_overflow', 1)] + [
     ('frame_bytes_' + str(i), 8) for i in range(33)] + [('resetActive', 1), ('programBusy', 1)]
 DESCRIPTOR = [('bank', 2), ('resetActive', 1), ('programBusy', 1)]
@@ -207,6 +209,7 @@ def bindings(source):
         banks.append(dict(index=i,node=owner,owner_model=owner_model,cell=cell,path=path(cell['rtl_path']),
                           q=path(cell['rtl_path'])+'.q',d=path(cell['rtl_path'])+'.d',
                           capture=path(cell['rtl_path'])+('.trigger' if variant=='click' else '.closed'),
+                          phase=(path(next(p for p in store['primitives'] if p['id']==f'phase{i}')['rtl_path'])+'.q') if variant=='click' else None,
                           receipt_path=path(node['rtl_path']),receipt_model=hm,
                           req=path(store['rtl_path'])+f'.banks_{i}_req',ack=path(store['rtl_path'])+f'.banks_{i}_ack',
                           # Whole-store policy closes this actual probe alias;
@@ -217,15 +220,19 @@ def bindings(source):
     busy = re.search(r'wire\s+fabric_hostFrames_io_enq_bits_programBusy\s*=\s*([^;]+);', rtl)
     reset = re.search(r'wire\s+fabric_hostFrames_io_enq_bits_resetActive\s*=\s*([^;]+);', rtl)
     require(busy and reset, 'CONTEXT_BINDING')
-    admission_busy = re.search(r'wire\s+fabric_hostAdmissionBusy\s*=\s*([^;]+);', rtl)
-    require(admission_busy is not None, 'ADMISSION_BUSY_BINDING')
+    route=[cell for cell in store['primitives'] if cell['id']=='route']
+    require(len(route)==1 and route[0]['model']=='ChiselAsyncEventRegister_v1' and
+            route[0]['parameters']['WIDTH']=='2','NATIVE_ROUTE')
+    require('slot' not in sp and sp.get('nextBank')=='observedNextBank_bore' and
+            tp.get('observedNextBank_bore')=='observedNextBank','NATIVE_ROUTE_BOUNDARY')
     return dict(variant=variant, manifest=manifest, top=top, publisher=publisher,
                 receipt=receipt, receipt_model=receipt_model, source_cell=primitive[0], source_q=path(primitive[0]['rtl_path']) + '.q',
                 publisher_path=path(publisher['rtl_path']), receipt_path=path(receipt['rtl_path']),
                 target_path=path(receipt['rtl_path']).rsplit('.', 1)[0], clock=qualify(clocks[0][0]),
                 frame_d=frame_d, register_assignments=assignments,
                 context_busy=busy[1].strip(), context_reset=reset[1].strip(),
-                admission_busy=admission_busy[1].strip(),
+                route_q=path(route[0]['rtl_path'])+'.q',route_d=path(route[0]['rtl_path'])+'.d',
+                route_capture=path(route[0]['rtl_path'])+'.trigger',
                 store=store,store_model=store_model,store_path=path(store['rtl_path']),banks=banks,
                 command=command,command_model=command_model,command_path=path(command['rtl_path']),command_fields=command_fields)
 
@@ -239,6 +246,7 @@ def monitors(b):
         ['frame_length','frame_overflow']+['frame_bytes_'+str(i) for i in reversed(range(33))]+['resetActive','programBusy'])+'}'
     bank_wires='\n'.join(f"wire [336:0] bank_q_{i}={v['q']};wire [336:0] bank_d_{i}={v['d']};" for i,v in enumerate(b['banks']))
     bank_select=lambda leaf:'{'+','.join(v[leaf] for v in reversed(b['banks']))+'}'
+    native_phases=bank_select('phase') if b['variant']=='click' else "4'b0"
     result=bank_wires+f'''\nwire [336:0] native_payload={b['source_q']};
 wire [336:0] receipt_payload={{{packed(receipt+'.out_bits_ingress_')},{receipt}.out_bits_resetEpoch}};
 wire [3:0] first_q={descriptor('first')},second_q={descriptor('second')};
@@ -248,7 +256,9 @@ wire deq=Testbench.dut.fabric_hostFrames__0;
 wire [1:0] occupancy=Testbench.dut.fabric_hostFrames_count;
 wire work_clock={b['clock']};
 wire receipt_fire={receipt}.out_valid && {receipt}.out_ready;
-wire [1:0] slot={store}.slot;
+wire [1:0] slot={target}.frameSlot;
+wire [1:0] native_route={b['route_q']},native_next_bank={store}.nextBank;
+wire [3:0] native_phases={native_phases};
 wire [3:0] bank_available={bank_select('available')};
 wire [3:0] bank_request={bank_select('req')},bank_acknowledge={bank_select('ack')};
 wire [336:0] bank_q[0:3];
@@ -260,23 +270,20 @@ wire observed_busy_now=native_payload[64] || Testbench.dut.ca_child_program_acce
   Testbench.dut.fabric_loaderPending || Testbench.dut.fabric_loaderControlPending ||
   ({command}.in_valid && {command}.in_ready && {command}.in_bits_kind==0 &&
    {command}.in_bits_frame_bytes_0>=1 && {command}.in_bits_frame_bytes_0<=6);
-// Independent original-offer history, never the production sticky registers.
-reg observed_reset_history=0,observed_busy_history=0;
-always @(posedge {b['clock']} or posedge Testbench.reset) begin
- if(Testbench.reset || enq) begin observed_reset_history<=0;observed_busy_history<=0;end
- else if({target}.host_frameOffered) begin
-  observed_reset_history<=observed_reset_history || observed_reset_now;
-  observed_busy_history<=observed_busy_history || observed_busy_now;
- end
-end
-wire expected_reset=observed_reset_history || observed_reset_now;
-wire expected_busy=observed_busy_history || observed_busy_now;
+// Context is sampled at original A; no copy-completion condition delays A.
+wire expected_reset=observed_reset_now;
+wire expected_busy=observed_busy_now;
 wire [272:0] independently_expected={{native_payload[336:66],expected_reset,expected_busy}};
 wire [272:0] command_d={command_data('in_bits_')},command_q={command_data('data_')};
 wire command_fire={command}.in_valid && {command}.in_ready && {command}.in_bits_kind==0;
 wire [63:0] epoch_now={target}.resetEpoch_epoch + ({target}.host_resetActive && !{target}.resetEpoch_previous);
 reg [336:0] expected_native[0:3];reg [272:0] expected_context[0:3];
-reg [3:0] live=0;
+reg [3:0] live=0,offered_banks=0,copied_banks=0;
+integer offered_generation[0:3],captured_generation[0:3],copied_generation[0:3];
+integer pending_bank=0,pending_generation=0,route_generation=0;
+reg [1:0] expected_route;time route_captured_at=0,route_data_changed_at=0;
+reg copy_pending=0;reg [3:0] phase_at_offer=0;
+integer copies=0,copy_before_accept=0,accept_before_copy=0;
 reg [3:0] expected_first,expected_second;
 reg [1:0] expected_count;
 reg [272:0] expected_command;
@@ -294,16 +301,51 @@ time minimum_source_hold=64'hffffffffffffffff,minimum_payload_hold=64'hfffffffff
 time minimum_third_next_margin=64'hffffffffffffffff,minimum_reuse_offer_margin=64'hffffffffffffffff;
 reg source_seen=0,admission_seen=0,previous_ack=0;
 always @(posedge Testbench.reset) begin
- admission_seen=0;source_seen=0;previous_ack=0;live=0;bank_retired=0;next_offer=0;next_accept=0;lifetime_accepts=0;lifetime_offers=0;
+ admission_seen=0;source_seen=0;previous_ack=0;live=0;offered_banks=0;copied_banks=0;copy_pending=0;route_generation=0;bank_retired=0;next_offer=0;next_accept=0;lifetime_accepts=0;lifetime_offers=0;
+ for(i=0;i<4;i=i+1) begin offered_generation[i]=0;captured_generation[i]=0;copied_generation[i]=0;end
 end
 initial for(i=0;i<4;i=i+1) begin bank_accepts[i]=0;bank_dispatches[i]=0;bank_ready_at[i]=0;bank_ones[i]=0;bank_zeroes[i]=0;end
 always @({pub}.frame_req) if(!Testbench.reset && ({"1'b1" if b['variant']=='click' else pub+'.frame_req'})) begin
- if(slot!==next_offer || bank_available[slot]!==1'b1) $fatal(1,"{PREFIX}_BANK_UNAVAILABLE_AT_O");
+ if(native_next_bank!==next_offer || bank_available[next_offer]!==1'b1 || offered_banks[next_offer]) $fatal(1,"{PREFIX}_BANK_UNAVAILABLE_AT_O");
+ if(copy_pending) $fatal(1,"{PREFIX}_OFFER_BEFORE_COPY_COMPLETION");
+ pending_bank=next_offer;pending_generation=lifetime_offers+1;copy_pending=1;
+ offered_generation[next_offer]=pending_generation;captured_generation[next_offer]=0;copied_generation[next_offer]=0;
+ expected_native[next_offer]=native_payload;offered_banks[next_offer]=1;copied_banks[next_offer]=0;phase_at_offer=native_phases;
+
  if(lifetime_offers>=4) begin
   reuse_offer_checks=reuse_offer_checks+1;
-  if($time-bank_ready_at[slot]<minimum_reuse_offer_margin) minimum_reuse_offer_margin=$time-bank_ready_at[slot];
+  if($time-bank_ready_at[next_offer]<minimum_reuse_offer_margin) minimum_reuse_offer_margin=$time-bank_ready_at[next_offer];
  end
  lifetime_offers=lifetime_offers+1;next_offer=(next_offer+1)%4;offers=offers+1;
+end
+always @({b['route_d']}) if(!Testbench.reset) begin
+ if(route_generation && $time-route_captured_at<=100000) $fatal(1,"{PREFIX}_NATIVE_ROUTE_HOLD");
+ route_data_changed_at=$time;
+end
+always @(posedge Testbench.reset) begin
+ #10000001;if(Testbench.reset && native_route!==2'd{0 if b['variant']=='click' else 3}) $fatal(1,"{PREFIX}_NATIVE_ROUTE_RESET");
+end
+always @(posedge {b['route_capture']}) if(!Testbench.reset) begin
+ if($time-route_data_changed_at<=100000) $fatal(1,"{PREFIX}_NATIVE_ROUTE_SETUP");
+ if(!copy_pending || route_generation==pending_generation ||
+    native_route!=={('(pending_bank & 3)' if b['variant']=='click' else '((pending_bank+3) & 3)')} ||
+    {b['route_d']}!=={('((pending_bank+1) & 3)' if b['variant']=='click' else '(pending_bank & 3)')})
+   $fatal(1,"{PREFIX}_NATIVE_ROUTE_CAPTURE");
+ route_generation=pending_generation;expected_route={('((pending_bank+1) & 3)' if b['variant']=='click' else '(pending_bank & 3)')};
+ route_captured_at=$time;
+ #10000001;if(native_route!==expected_route) $fatal(1,"{PREFIX}_NATIVE_ROUTE_Q");
+end
+always @(negedge {b['route_capture']}) if(!Testbench.reset && route_generation && $time-route_captured_at<=100000)
+ $fatal(1,"{PREFIX}_NATIVE_ROUTE_PULSE");
+always @({store}.in_ack) if(!Testbench.reset && ({"1'b1" if b['variant']=='click' else store+'.in_ack'})) begin
+ if(!copy_pending || route_generation!=pending_generation || captured_generation[pending_bank]!=pending_generation ||
+    offered_generation[pending_bank]!=pending_generation)
+   $fatal(1,"{PREFIX}_COPY_COMPLETION_IDENTITY");
+ {chr(10).join(f'if(pending_bank=={i} && bank_q[{i}]!==expected_native[{i}]) $fatal(1,"{PREFIX}_BANK{i}_COPY_COMPLETION_IDENTITY");' for i in range(4))}
+ {"if(native_phases!==(phase_at_offer ^ (4'b1 << pending_bank))) $fatal(1,\"FRAME_CAPTURE_COPY_PHASE_IDENTITY\");" if b['variant']=='click' else ''}
+ copied_generation[pending_bank]=pending_generation;copied_banks[pending_bank]=1;copy_pending=0;
+ if(live[pending_bank]) accept_before_copy=accept_before_copy+1;else copy_before_accept=copy_before_accept+1;
+ copies=copies+1;
 end
 always @(native_payload) if(!Testbench.reset) begin
  if({pub}.frame_req{('!='+pub+'.frame_ack') if b['variant']=='click' else (' || '+pub+'.frame_ack')}) $fatal(1,"{PREFIX}_SOURCE_OVERWRITE");
@@ -336,11 +378,13 @@ always @(posedge {b['clock']}) if(!Testbench.reset) begin
  if(command_fire!==deq) $fatal(1,"{PREFIX}_DISPATCH_IDENTITY");
  if(deq) begin
   if(!live[first_q[3:2]]) $fatal(1,"{PREFIX}_DISPATCH_WITHOUT_LIVE_BANK");
+  if(!copied_banks[first_q[3:2]] || copied_generation[first_q[3:2]]!=offered_generation[first_q[3:2]])
+    $fatal(1,"{PREFIX}_DISPATCH_BEFORE_COPY_COMPLETION");
   expected_command=expected_context[first_q[3:2]];
   expected_command[1]=expected_command[1] || Testbench.dut.cpuResetActive || expected_native[first_q[3:2]][63:0]!=epoch_now;
   expected_command[0]=expected_command[0] || Testbench.dut.ca_child_program_access.io_busy;
   if(command_d!==expected_command || bank_q[first_q[3:2]]!==expected_native[first_q[3:2]]) $fatal(1,"{PREFIX}_COMMAND_D_IDENTITY");
-  live[first_q[3:2]]=0;bank_retired[first_q[3:2]]=1;bank_retired_at[first_q[3:2]]=$time;
+  live[first_q[3:2]]=0;offered_banks[first_q[3:2]]=0;bank_retired[first_q[3:2]]=1;bank_retired_at[first_q[3:2]]=$time;
   dispatches=dispatches+1;bank_dispatches[first_q[3:2]]=bank_dispatches[first_q[3:2]]+1;
  end
  if(enq) begin
@@ -356,8 +400,9 @@ always @(posedge {b['clock']}) if(!Testbench.reset) begin
   if(descriptor_d!=={{slot,expected_reset,expected_busy}} || receipt_payload!==native_payload) $fatal(1,"{PREFIX}_CONTEXT_OR_DATA");
   if(occupancy==2) $fatal(1,"{PREFIX}_IMPOSSIBLE_ACCEPTANCE");
   if(slot!==next_accept || live[slot]) $fatal(1,"{PREFIX}_LIVE_BANK_OVERWRITE");
-  if({store}.in_ack!=={pub}.frame_req || bank_q[slot]!==native_payload) $fatal(1,"{PREFIX}_BANK_COPY_AT_A");
-  next_accept=(next_accept+1)%4;live[slot]=1;expected_native[slot]=native_payload;expected_context[slot]=independently_expected;
+  if(!offered_banks[slot] || expected_native[slot]!==native_payload || offered_generation[slot]!=lifetime_accepts)
+    $fatal(1,"{PREFIX}_ADMISSION_OFFER_ORDER");
+  next_accept=(next_accept+1)%4;live[slot]=1;expected_context[slot]=independently_expected;
   bank_accepts[slot]=bank_accepts[slot]+1;bank_ones[slot]=bank_ones[slot]|native_payload;bank_zeroes[slot]=bank_zeroes[slot]|~native_payload;
   admission_seen=1;admission_time=$time;accepts=accepts+1;
   seen_one=seen_one|native_payload;seen_zero=seen_zero|~native_payload;
@@ -398,7 +443,11 @@ end
 always @(posedge {bank['capture']}) if(!Testbench.reset) begin
  if($time-bank_data_change_{i}<=100000) $fatal(1,"{PREFIX}_BANK{i}_SETUP");
  if($time-bank_data_change_{i}<minimum_destination_setup) minimum_destination_setup=$time-bank_data_change_{i};
- bank_expected_d_{i}={bank['d']};bank_expected_identity_{i}=(slot=={i} ? native_payload : {bank['q']});
+ bank_expected_d_{i}={bank['d']};bank_expected_identity_{i}=(pending_bank=={i} ? expected_native[{i}] : {bank['q']});
+ if(pending_bank=={i}) begin
+  if(!copy_pending || captured_generation[{i}]==pending_generation) $fatal(1,"{PREFIX}_BANK{i}_CAPTURE_ORDINAL");
+  captured_generation[{i}]=pending_generation;
+ end
  bank_capture_time_{i}=$time;bank_captured_{i}=1;
  #10000001;if({bank['q']}!==bank_expected_d_{i}) $fatal(1,"{PREFIX}_BANK{i}_CAPTURE");
  if({bank['q']}!==bank_expected_identity_{i}) $fatal(1,"{PREFIX}_BANK{i}_IDENTITY");
@@ -406,7 +455,7 @@ end
 always @(negedge {bank['capture']}) if(!Testbench.reset && bank_captured_{i} && $time-bank_capture_time_{i}<=100000)
  $fatal(1,"{PREFIX}_BANK{i}_PULSE");
 always @({bank['q']}) if(!Testbench.reset) begin
- if(live[{i}] || {owned}) $fatal(1,"{PREFIX}_BANK{i}_RETAIN");
+ if((live[{i}] && copied_banks[{i}]) || ({owned} && !(copy_pending && pending_bank=={i}))) $fatal(1,"{PREFIX}_BANK{i}_RETAIN");
  if(bank_retired[{i}] && $time-bank_retired_at[{i}]<minimum_payload_hold) minimum_payload_hold=$time-bank_retired_at[{i}];
 end
 always @(posedge Testbench.reset) bank_captured_{i}=0;
@@ -421,6 +470,7 @@ begin
  $display("{PREFIX}_DEST_ONES:%h",seen_destination_one);$display("{PREFIX}_DEST_ZEROES:%h",seen_destination_zero);
  for(k=0;k<4;k=k+1) $display("{PREFIX}_BANK:%0d:%0d:%0d:%h:%h",k,bank_accepts[k],bank_dispatches[k],bank_ones[k],bank_zeroes[k]);
  $display("{PREFIX}_MIN_FS:%0d:%0d:%0d:%0d",minimum_source_setup,minimum_destination_setup,minimum_source_hold,minimum_payload_hold);
+ $display("{PREFIX}_COPY_ORDER:%0d:%0d:%0d",copies,copy_before_accept,accept_before_copy);
  $display("{PREFIX}_READY_FS:%0d:%0d:%0d:%0d",third_next_checks,reuse_offer_checks,minimum_third_next_margin,minimum_reuse_offer_margin);
 end
 endtask
@@ -439,6 +489,10 @@ def instrument(original, b):
 
 
 def assertion_sites(test, expected):
+    if isinstance(expected, tuple):
+        require(len(expected)==2 and re.fullmatch(r'FRAME_CAPTURE_BANK[0-3]_IDENTITY',expected[0]) and
+                expected[1]==expected[0].replace('_IDENTITY','_COPY_COMPLETION_IDENTITY'),'FAULT_SITE_GROUP')
+        return [site for message in expected for site in assertion_sites(test,message)]
     start = test.index('module FrameCaptureChecks;')
     if not expected.startswith(PREFIX + '_'):
         return fatal_sites(test[:start], [expected])
@@ -483,8 +537,16 @@ def classify_wrap(compiled,simulated,log,site):
     return [site]
 
 
+def copy_order_metrics(log, require_early_admission=False):
+    rows=re.findall(r'^FRAME_CAPTURE_COPY_ORDER:(\d+):(\d+):(\d+)$',log,re.M)
+    require(len(rows)==1 and int(rows[0][0])==int(rows[0][1])+int(rows[0][2]) and int(rows[0][0])>0,'COPY_ORDER_METRICS')
+    result=dict(zip(('copies','copy_before_accept','accept_before_copy'),map(int,rows[0])))
+    if require_early_admission:require(result['accept_before_copy']>0,'A_BEFORE_COPY_COVERAGE')
+    return result
+
+
 def skew(test, b, profile):
-    require(profile in PROFILES, 'PROFILE')
+    require(profile in PROFILES+ROUTE_PROFILES, 'PROFILE')
     if profile == 'original':
         return test, {}
     changes = {}
@@ -495,7 +557,8 @@ def skew(test, b, profile):
         if p['parameters'].get('DELAY_FS') != '1000000':
             continue
         is_data=p['id'] in ('frame_payload','frame_phase','payload') or bool(re.fullmatch(r'(payload|phase)\d',p['id']))
-        if profile=='publisher-fast-banks-slow': slow=owner=='bank'
+        if profile in ROUTE_PROFILES: slow=owner=='bank' and p['id']==('route' if profile=='route-slow-accepted-fast' else 'accepted_phase')
+        elif profile=='publisher-fast-banks-slow': slow=owner=='bank'
         elif profile=='publisher-slow-banks-fast': slow=owner=='publisher'
         else: slow=profile!='minimum' and (is_data == (profile=='data-slow-control-fast'))
         name = 'dut.' + p['rtl_path'].split('.', 1)[1] + '.DELAY_FS'
@@ -619,8 +682,6 @@ initial begin
   offer_frame(pattern);holdFrame=1;pattern[73:66]=5;
   expectedSourcePayload=pattern;pub_data=pattern;old_accepts=frame_capture_checks.accepts;
   #30;{request}wait({pub}.in_ack==pub_phase);{input_return}wait(receiptValid);
-  // Retain the incoming frame until copy is actually ready, then release A and D together.
-  wait({b['target_path'].replace('Testbench.','')}.frameCopyReady);
   @(negedge serviceClock);#2;
   if(currentBusy || currentReset || dut.fabric_loaderPending || dut.fabric_loaderControlPending ||
      observedNativeFrame[65:64]!=0 || observedNativeFrame[63:0]!=currentEpoch)
@@ -768,7 +829,7 @@ always @(posedge observedWorkClock) if(ring_active) begin
     ring_last_D=ring_now;
     if(!ring_draining) ring_late_dispatches=ring_late_dispatches+1;
   end
-  if({b['target_path'].replace('Testbench.','')}.host_frameOffered && !ring_offer_pending) begin
+  if(receiptValid && !ring_offer_pending) begin
     if(ring_offers>=2) begin
       if(hostDispatched || ring_now-ring_last_D!=ring_period)
         $fatal(1,"FRAME_INPUT_RING_LAST_LEGAL_D");
@@ -778,9 +839,8 @@ always @(posedge observedWorkClock) if(ring_active) begin
     ring_offers=ring_offers+1;ring_offer_pending=1;
   end
   if(injectedAccepted) begin
-    if(!ring_offer_pending || ring_offers!=ring_accepts+1 ||
-       !{b['target_path'].replace('Testbench.','')}.frameCopyReady)
-      $fatal(1,"FRAME_INPUT_RING_ADMISSION_WITHOUT_COMPLETED_OFFER");
+    if(!ring_offer_pending || ring_offers!=ring_accepts+1)
+      $fatal(1,"FRAME_INPUT_RING_ADMISSION_WITHOUT_OFFER");
     ring_accepts=ring_accepts+1;ring_offer_pending=0;
   end
 end
@@ -817,7 +877,7 @@ def mutate(case, b, fault):
         require(len(data)==len(trigger)==1,'MUTATION_BANK_PINS')
         if kind=='data':
             body=replace_pin(body,instance,'d',f"({data[0]} ^ 337'h1)")
-            expected=f'{PREFIX}_BANK{index}_IDENTITY'
+            expected=(f'{PREFIX}_BANK{index}_IDENTITY',f'{PREFIX}_BANK{index}_COPY_COMPLETION_IDENTITY')
         else:
             delayed='frame_fault_delayed';declaration='\nwire '+delayed+';\n'
             body,count=re.subn(r'(\bmodule\s+\w+\s*\(.*?\);)',r'\1'+declaration,body,count=1,flags=re.S)
@@ -928,7 +988,7 @@ def mutate(case, b, fault):
         return PREFIX+'_CONTEXT_OR_DATA'
     if fault=='same-edge-busy':
         text=top.read_text(encoding='utf-8')
-        text=omit_same_edge_busy(text,b['context_busy'],b['admission_busy'])
+        text=omit_same_edge_busy(text,b['context_busy'])
         top.write_text(text,encoding='utf-8')
         return PREFIX+'_CONTEXT_OR_DATA'
     if fault=='command-capture':
@@ -948,19 +1008,17 @@ def mutate(case, b, fault):
     raise ValueError(PREFIX + '_MUTATION_KIND:' + fault)
 
 
-def omit_same_edge_busy(text, context_busy, admission_busy):
-    """Remove only the actual same-edge command fact, preserving sticky history."""
+def omit_same_edge_busy(text, context_busy):
+    """Remove only the actual same-edge command fact from direct A context."""
     compact=lambda value:re.sub(r'\s+','',value)
-    require(compact(context_busy)=='fabric_hostOfferedBusy|fabric_hostAdmissionBusy','MUTATION_BUSY_CONTEXT')
     driver(text,'fabric_hostFrames_io_enq_bits_programBusy',context_busy)
-    driver(text,'fabric_hostAdmissionBusy',admission_busy)
-    parts=[part.strip() for part in admission_busy.split('|')]
+    parts=[part.strip() for part in context_busy.split('|')]
     require(len(parts)==5 and [compact(part) for part in parts[:4]]==[
         '_ca_child_i2c_host_frame_bits_programBusy','_ca_child_program_access_io_busy',
         'fabric_loaderPending','fabric_loaderControlPending'],'MUTATION_BUSY_CLAUSES')
-    require('&' in parts[4] and 'fabric__hostAdmissionBusy_T_6' in parts[4] and
-            'fabric__hostAdmissionBusy_T_8' in parts[4],'MUTATION_BUSY_DISPATCH')
-    changed,count=re.subn(r'(wire\s+fabric_hostAdmissionBusy\s*=\s*)[^;]+;',
+    require('&' in parts[4] and 'fabric__loaderControlPending_T_1' in parts[4] and
+            'fabric__loaderControlPending_T_3' in parts[4],'MUTATION_BUSY_DISPATCH')
+    changed,count=re.subn(r'(wire\s+fabric_hostFrames_io_enq_bits_programBusy\s*=\s*)[^;]+;',
                          lambda match:match[1]+' | '.join(parts[:4])+';',text)
     require(count==1,'MUTATION_BUSY_BINDING')
     return changed
@@ -1078,6 +1136,8 @@ def main():
         entry['actual_fatals'] = (classify_wrap(entry['compile'],entry['simulation'],log,entry['exact_fatal_sites'][0])
                                  if wrap else classify(entry['compile'], entry['simulation'], log, entry['exact_fatal_sites']))
         entry['activity'] = [s for s in log.splitlines() if s.startswith(PREFIX + '_')]
+        if not expected:
+            entry['copy_order']=copy_order_metrics(log,label.startswith('latecopy'))
         require(entry['binary_sha256'] == sha(case / 'frame-capture.vvp') and entry['oracle_sha256'] == sha(case / 'testbench.sv'), 'EXECUTED_ARTIFACT_CHANGED')
         require(all(sha(case / f)==digest for f,digest in entry['source_sha256'].items()),'COMPILED_INPUT_CHANGED')
         entry['status'] = 'PASS'; save(); print(name, 'PASS', flush=True)
@@ -1095,6 +1155,9 @@ def main():
                     simulate(variant, label, profile, walk=True)
                 for profile in PROFILES:
                     simulate(variant, label, profile, continuous=True)
+            for profile in ROUTE_PROFILES:
+                simulate(variant,'slots20000000',profile,continuous=True)
+                simulate(variant,'slots20000000',profile,ring=True,period_ns=50)
             for period_ns in PERIODS_NS:
                 for profile in ('publisher-fast-banks-slow','publisher-slow-banks-fast'):
                     simulate(variant,'slots20000000',profile,ring=True,period_ns=period_ns)
@@ -1117,7 +1180,7 @@ def main():
         require(all(hashes(Path(p)) == h for p, h in originals.items()), 'ORIGINAL_CHANGED')
         require(all(sha(p)==value for p,value in helper_hashes.items()),'HELPER_CHANGED')
         require(all(sha(p)==value for p,value in compiler_hashes.items()),'COMPILER_CHANGED')
-        require(len(records['cases'])==312 and all(e.get('status')=='PASS' for e in records['cases'].values()),'COMPLETE_CASE_CATALOGUE')
+        require(len(records['cases'])==344 and all(e.get('status')=='PASS' for e in records['cases'].values()),'COMPLETE_CASE_CATALOGUE')
         records.update(status='PASS', positives=sum(not e['expected'] for e in records['cases'].values()),
                        negatives=sum(bool(e['expected']) for e in records['cases'].values()), originals_preserved=True)
     except BaseException as error:

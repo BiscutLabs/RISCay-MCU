@@ -19,16 +19,14 @@ private class FrameRouteAnd(delay: ModelTime)
 }
 
 /** Four physical payload banks; logical admission still has exactly two credits.
-  * The caller observes the original offer independently and admits it at A only
-  * after synchronizing this copy ACK. Publisher ACK joins copy and receipt;
-  * its return also waits for synchronized copy-low before the next offer.
-  * slot is prequalified before O and advances at A. The native route capture
-  * keeps that old tag through the source's entire four-phase return.
+  * Native route ownership advances once per original offer, independently of
+  * clocked descriptor acceptance. Publisher ACK joins copy and receipt.
+  * The native route remains selected through the complete source RTZ.
   * All delays are digital bounds, not physical timing qualification.
   */
 class FourPhaseFrameStore(domain: ResetDomain) extends AsyncModule(domain) {
   val in=fourPhaseInput("in",new I2cFrame)
-  val slot=IO(Input(UInt(2.W)))
+  val nextBank=IO(Output(UInt(2.W)))
   val banks=Seq.tabulate(4)(i => fourPhaseOutput(s"bank$i",new I2cFrame))
   val available=IO(Output(Vec(4,Bool())))
   dontTouch(available)
@@ -42,15 +40,17 @@ class FourPhaseFrameStore(domain: ResetDomain) extends AsyncModule(domain) {
       "frame-bank route/return digital bound; complete physical path unqualified")
     g.q
   }
-  private val tag=Module(new EventRegister(2,cell)); tag.reset:=reset
+  private val tag=Module(new EventRegister(2,cell,3)); tag.reset:=reset
   contract.primitive("route",tag,Map("WIDTH"->BigInt(2),"DELAY_FS"->BigInt(cell.fs),
-    "RESET_VALUE"->BigInt(0)),resetRef,"capture original O tag; retain through source RTZ")
-  private val tagData=gate("data_delay",slot,2,ModelTime.ps(10000))
+    "RESET_VALUE"->BigInt(3)),resetRef,"advance native route once at original O; retain through source RTZ")
+  nextBank:=(tag.q+1.U)(1,0)
+  dontTouch(nextBank)
+  private val tagData=gate("data_delay",nextBank,2,ModelTime.ps(10000))
   private val tagCapture=gate("request_delay",in.req.asUInt,1,ModelTime.ps(11000)).asBool
   tag.d:=tagData; tag.trigger:=tagCapture
   // Route Q <=21 ns, decode <=31 ns. The preserved 32 ns request guard
   // leaves >=1 ns before the atomic route gate; modeled capture/ACK <=83 ns.
-  // The caller waits for completion; this bound is not an admission deadline.
+  // Publisher completion joins this copy; A may precede the native capture.
   private val selection=gate("route_decode",UIntToOH(tag.q,4),4,cell)
   private val offered=gate("request_guard",in.req.asUInt,1,ModelTime.ps(32000)).asBool
   private val storage=Seq.tabulate(4)(i => asyncChild(s"storage$i")(d =>
@@ -73,12 +73,12 @@ class FourPhaseFrameStore(domain: ResetDomain) extends AsyncModule(domain) {
   private val routeDataProbe=WireDefault(UInt(2.W),tagData)
   private val routeValueProbe=WireDefault(UInt(2.W),tag.q)
   Seq(routeDataProbe,routeValueProbe).foreach(dontTouch(_))
-  contract.endpoint("slot",slot); contract.endpoint("available",available)
+  contract.endpoint("next_bank",nextBank); contract.endpoint("available",available)
   contract.endpoint("busy",busy); contract.endpoint("route_data",routeDataProbe)
   contract.endpoint("route_capture",tagCapture); contract.endpoint("route_value",routeValueProbe)
-  contract.dataPathTiming("route_path","slot","route_data",BundledTiming.Simulation,
-    "temporary slot to retained native route; 10 ns complete data budget")
-  contract.setupHold("route_aperture","in_request","slot","route_data","route_capture","route_value",
+  contract.dataPathTiming("route_path","route_value","route_data",BundledTiming.Simulation,
+    "native modulo-four increment feedback; 10 ns complete data budget")
+  contract.setupHold("route_aperture","in_request","route_value","route_data","route_capture","route_value",
     ModelTime.ps(100),ModelTime.ps(100))
   contract.capacity(4)
 }

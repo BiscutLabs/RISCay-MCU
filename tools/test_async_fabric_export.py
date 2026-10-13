@@ -280,7 +280,8 @@ class FabricExportTest(unittest.TestCase):
         self.assertIn('"lsb": i, "width": 1} for i in range(4)', adapted)
         self.assertIn('FourPhase(?:Ram|Program)Return', adapted)
         self.assertIn('native program return', adapted)
-        self.assertIn('temporary slot to retained native route; 10 ns complete data budget', adapted)
+        self.assertIn('native modulo-four increment feedback; 10 ns complete data budget', adapted)
+        self.assertNotIn('temporary slot to retained native route; 10 ns complete data budget', adapted)
         self.assertIn('full selected source/unselected retained data and phase muxes, including every feedback bit', adapted)
         for missing in (layout,guard):
             with self.assertRaisesRegex(ValueError, "RAM_RETURN_.*CHECKER_SHAPE"):

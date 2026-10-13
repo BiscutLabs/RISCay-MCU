@@ -57,7 +57,7 @@ class AsyncFrameStoreSpec extends AnyFunSuite {
     */
   private def captureMonitors(directory: Path, click: Boolean): String = {
     val pin=new Pins(directory)
-    val registers=if(click) (0 until 4).flatMap(i => Seq((s"payload$i",337),(s"phase$i",1)))
+    val registers=if(click) (0 until 4).flatMap(i => Seq((s"payload$i",337),(s"phase$i",1))) :+ ("route" -> 2)
       else Seq("route"->2)
     val events=registers.map { case(id,width) =>
       val p=pin(id)
@@ -92,7 +92,7 @@ class AsyncFrameStoreSpec extends AnyFunSuite {
       val destinations=(registers.map { case(id,_) => pin(id)+".trigger" } :+ (pin("accepted_phase")+".trigger"))
       s"""begin : capture_distribution
         forever begin @($common); #1;
-          if(!reset && {${destinations.mkString(",")}}!=={9{$common}})
+          if(!reset && {${destinations.mkString(",")}}!=={10{$common}})
             $$fatal(1,"FRAME_STORE_CAPTURE_DISTRIBUTION");
         end
       end
@@ -167,7 +167,7 @@ class AsyncFrameStoreSpec extends AnyFunSuite {
             if(${pin(s"phase$i")}.q!==expected_phase[$i]) $$fatal(1,"FRAME_STORE_UNSELECTED_PHASE_$i");"""
         }.mkString("\n") else ""
         val copyCounters=if(click) s"""begin forever begin @(posedge ${pin("payload0")}.trigger);
-          if(!reset) begin copy_count[slot]=copy_count[slot]+1;global_copies=global_copies+1;end
+          if(!reset) begin copy_count[nextBank]=copy_count[nextBank]+1;global_copies=global_copies+1;end
         end end""" else (0 until 4).map { i => s"""begin forever begin
           @(posedge ${pin(s"storage$i.payload")}.closed);
           if(!reset) begin copy_count[$i]=copy_count[$i]+1;global_copies=global_copies+1;end
@@ -177,7 +177,7 @@ class AsyncFrameStoreSpec extends AnyFunSuite {
           ${if(click) s"if(${pin(s"phase$i")}.q!==expected_phase[$i]) $$fatal(1,\"FRAME_STORE_INDEPENDENT_BANK_PHASE_$i\");" else ""}
         """ }
         val sourceReturn=if(click) s"${ports.packed("in")}=~value;" else s"""
-          // The caller advances slot at A while the old publisher REQ is high.
+          // Native route retains the selected bank while the old publisher REQ is high.
           // It retains data through the source's complete return, then reuses it.
           #110999998;in_req=0;wait(!in_ack);#2;${ports.packed("in")}=~value;
         """
@@ -193,9 +193,10 @@ class AsyncFrameStoreSpec extends AnyFunSuite {
           for(n=0;n<4;n=n+1) copy_count[n]=0;
           ${captureMonitors(directory,click)}
           fork $copyCounters join_none
-          slot=0;#100000000;
+          #100000000;
           for(n=0;n<$frames;n=n+1) begin
             bank=n%4;previous=(n+3)%4;
+            if(nextBank!==bank) $$fatal(1,"FRAME_STORE_NATIVE_ROUTE_ORDINAL");
             if(n>0) begin
               if($$time+1000000>next_offer) $$fatal(1,"FRAME_STORE_EARLIEST_REUSE_BUDGET");
               #(next_offer-$$time-1000000);
@@ -226,7 +227,7 @@ class AsyncFrameStoreSpec extends AnyFunSuite {
             $unselected
             pending[bank]=1;logical_count=logical_count+1;
             if(logical_count<1 || logical_count>2) $$fatal(1,"FRAME_STORE_TWO_LOGICAL_CREDITS");
-            slot=(bank+1)%4;#2;
+            if(nextBank!==(bank+1)%4) $$fatal(1,"FRAME_STORE_NATIVE_ROUTE_ADVANCE");#2;
             fork
               begin $sourceReturn end
               begin if(n>0) begin #10000000;${consume(ports,click,"previous",120000000L)} end end
@@ -270,14 +271,14 @@ class AsyncFrameStoreSpec extends AnyFunSuite {
             val inputPhase=if(click) (n+1)%2 else 1
             val value=(BigInt(1)<<336) ^ (BigInt(1)<<(n*23)) ^ BigInt(0x83a7+n)
             s"""
-              slot=$i;${ports.packed("in")}=337'h${value.toString(16)};#1000000;
+              if(nextBank!==$i) $$fatal(1,"FRAME_STORE_POR_ROUTE_ORDINAL");${ports.packed("in")}=337'h${value.toString(16)};#1000000;
               if(!${ports.available(i)} || global_copies-base_copies!=$n) $$fatal(1,"FRAME_STORE_POR_ORIGINAL_O");
               in_req=$inputPhase;
               #100000000;
               if(in_ack!==$inputPhase || ${ports.packed(b)}!==337'h${value.toString(16)} ||
                   global_copies-base_copies!=${n+1})
                 $$fatal(1,"FRAME_STORE_POR_FRESH_COPY");
-              slot=${(i+1)%4};
+              if(nextBank!==${(i+1)%4}) $$fatal(1,"FRAME_STORE_POR_ROUTE_ADVANCE");
               fork
                 begin ${if(click) s"#2;${ports.packed("in")}=0;" else "#111000000;in_req=0;wait(!in_ack);#2;"} end
                 begin wait(${b}_req===$phase);#20000000;
@@ -293,10 +294,10 @@ class AsyncFrameStoreSpec extends AnyFunSuite {
             integer base_in,base_bank0,base_bank1,base_bank2,base_bank3,global_copies=0,base_copies;
             ${captureMonitors(directory,click)}
             fork $copyCounters join_none
-            slot=0;${ports.packed("in")}={337{1'b1}};#1000000;
+            ${ports.packed("in")}={337{1'b1}};#1000000;
             if(!${ports.available(0)} || global_copies!=0) $$fatal(1,"FRAME_STORE_POR_FIRST_O");
             fork
-              begin in_req=1;#100000000;slot=1;#111000000;
+              begin in_req=1;#211000000;
                 ${if(click) "" else "in_req=0;"}
               end
               begin $point reset=1;in_req=0;$resetInputs end

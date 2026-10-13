@@ -206,24 +206,28 @@
   the falling-edge gate's running state, retaining ungated pending-frame demand.
   Follow `docs/frame-admission-contract.md`; 11a2a's native payload/epoch storage
   is digitally verified, with physical qualification still open. Four physical banks retain exactly two logical
-  admission credits. R3 is digitally verified: preserve original offer observation O_f
-  independently of copy-qualified admission A. Receipt ACK changes at A; native
-  publisher ACK joins receipt and copy completion. BD's join additionally waits
-  for synchronized copy-low before returning, preventing stale completion reuse.
-  Keep full-mailbox overflow visible at O_f even with same-edge dispatch; retain
-  the two POR reset/busy context facts from O_f through A. The correction adds
-  two completion synchronizers and two context bits, with no payload bank. Keep
+  admission credits. R3b native route ownership is digitally verified after
+  R3's original completion repair. Each store owns its modulo-four
+  route independently of the clocked descriptor ordinal. Receipt ACK changes
+  at original acceptance A; publisher ACK joins native copy and receipt only.
+  Never gate A or native return on a synchronized copy ACK. Keep full-mailbox
+  overflow at A even with same-edge dispatch and capture reset/busy context at A.
+  Click's capture C-element retains its pulse until pending falls: changing the
+  native route must not retrigger capture through selected-bank availability. Keep
   per-bank Click phases and BD's retained route through RTZ. At O prove complete
   bank availability and a new capture ordinal, including identical payloads;
-  copy equality alone is not proof. Exercise copies longer than two front-clock
-  periods, stopped work clocks and delayed context changes. Rerun affected
+  copy equality alone is not proof. A may precede native copy; require completed
+  head identity at D. Exercise copies longer than two front-clock periods,
+  copy-first and A-first orders, stopped front/work clocks and delayed context
+  changes. Both ordinals are POR-only, with no instantaneous equality assumed
+  at A. Retain original receipt clock dependence and full BD RTZ. Rerun affected
   checks and obtain fresh independent review after changing this contract.
   Retain source epoch through D and compare against the coincident current epoch.
   Queued descriptors awaiting head observation retain priority over CPU MMIO.
   Keep native logical credit removal separate; narrow Q/descriptors, tail, busy
   synchronization and four head receipts remain temporary for 11a2b/11b/14.
   Run AsyncFrameStoreSpec, FrameReceiptSpec, FrameAdmissionSpec and FrameWakeSpec,
-  actual 337-bit source/bank and ControlCommand capture controls, all nine Click
+  actual 337-bit source/bank and ControlCommand capture controls, all ten Click
   trigger/pulse/distribution checks, and exact-fatal full-queue controls
   including simultaneous dequeue, and unchanged Stored-edge/context assertions.
   Keep native-bus aperture checks separate from physical synchronous-context hold.

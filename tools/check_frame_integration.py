@@ -69,10 +69,10 @@ def pins(rtl, instance, model, parameters=None):
 def completion_metadata(target, click):
     """The native publisher ACK joins copy and actual receipt completion.
 
-    BD additionally joins the synchronized copy level, retaining ACK through
-    its low observation so a new offer cannot reuse stale completion credit.
+    Route ownership remains native; admission may precede or follow the copy.
+    Both protocols join only native copy and actual receipt completion.
     """
-    common = 2 if click else 3
+    common = 2
     parameters = dict(COMMON=str(common), COMMON_INVERT="0", DELAY_FS="1000000",
                       FALLING="0", FALLING_INVERT="0", RESET_VALUE="0", RISING="0", RISING_INVERT="0")
     primitives = target.get("primitives", [])
@@ -89,10 +89,10 @@ def completion_metadata(target, click):
                  falling=(1, "input"), q=(1, "output")) and
             all(type(p.get("width")) is int for p in ports), "COMPLETION_PORTS")
     endpoints = {e["id"]: e for e in target["endpoints"]}
-    sources = dict(frame_copy_meta="copied_frameCopyMeta", frame_copy_sync="copied",
-                   frame_copy_ready="frameCopyReady", frame_offered="host.frameOffered", frame_completion_reset="reset")
-    resolved = dict(frame_copy_meta="copied_frameCopyMeta", frame_copy_sync="copied",
-                    frame_copy_ready="frameCopyReady", frame_offered="packed_5", frame_completion_reset="packed_2_probe")
+    require(not {"frame_copy_meta", "frame_copy_sync", "frame_copy_ready", "frame_offered"}.intersection(endpoints),
+            "CLOCKED_COPY_COMPLETION_ENDPOINT")
+    sources = dict(frame_completion_reset="reset")
+    resolved = dict(frame_completion_reset="packed_probe")
     for identity, source in sources.items():
         endpoint = endpoints.get(identity, {})
         require(type(endpoint.get("width")) is int and endpoint["width"] == 1 and
@@ -380,14 +380,11 @@ def top_spelling(inline, coordinated=False):
     existing exact source policies. No expression is inferred from a name.
     """
     names = dict(fabric_clock="gate_io_clockOut", fabric_io_i2c_frame_valid="_ca_child_i2c_host_frame_valid",
-                 fabric_io_i2c_frameOffered="_ca_child_i2c_host_frameOffered",
                  fabric__5="fabric__7", fabric__6="fabric__10", fabric__27="fabric__33") if inline else {}
     if coordinated:
         names.update(dict(fabric__5="fabric__6", fabric__6="fabric__9", fabric__27="fabric__32",
                           fabric_io_applicationCancel="applicationCancel") if inline else
                      dict(fabric__5="fabric__4", fabric__6="fabric__layerCapture_7", fabric__27="fabric__25"))
-    names.update(fabric__loaderControlPending_T_1="fabric__hostAdmissionBusy_T_6",
-                 fabric__loaderControlPending_T_3="fabric__hostAdmissionBusy_T_8")
     return lambda text: re.sub(r"\b[A-Za-z_]\w*\b", lambda m: names.get(m[0], m[0]), text)
 
 
@@ -444,15 +441,8 @@ def epoch_assertion_policy(directory, model, rising, ready_reset, inline=False):
     un = clean(raw); prefix = "" if inline else model + "."
     blocks = re.findall(r"`ifndef\s+SYNTHESIS[^\n]*\n(.*?)`endif\s*//\s*not def SYNTHESIS", raw, re.S)
     require(len(blocks) == 2 and compact(clean(blocks[0])) == "`ifndefENABLE_INITIAL_REG_`defineENABLE_INITIAL_REG_`endif", "EPOCH_ASSERTION_GUARD")
-    def packed(path):
-        return "{" + ",".join(prefix + ("_" if inline else "") + path + leaf(f) +
-                              ("" if inline else "_layerCapture") for f, _, _ in reversed(FIELDS)) + "}"
-    banks = "{" + ",".join("{" + packed(f"ca_child_frame_store_banks_{i}_bits_") + "}" for i in reversed(range(4))) + "}"
-    expected = "wire _GEN=" + prefix + ("host_frame_valid_0&~localReset_release_1;" if inline else "_host_frame_valid_T_layerCapture&~" + prefix + "localReset_layerCapture;")
-    expected += "wire[3:0][336:0]_GEN_0=" + banks + ";always@(posedge " + prefix + "clock)begin "
+    expected = "always@(posedge " + prefix + "clock)begin "
     checks = [
-        ("_GEN&" + ("_ca_child_frame_store_in_ack!=_ca_child_native_frame_req" if inline else prefix + "ca_child_frame_store_in_ack_layerCapture!=" + prefix + "ca_child_native_frame_req_layerCapture"), "FRAME_STORE_COPY_NOT_READY_AT_A"),
-        ("_GEN&_GEN_0[" + prefix + "frameSlot]!=" + packed("ca_child_native_frame_bits_"), "FRAME_STORE_COPY_IDENTITY_AT_A"),
         (prefix + rising + "&~" + prefix + ready_reset + "&(&" + prefix + "resetEpoch_epoch)", "I2C_RESET_EPOCH_WRAP"),
         (prefix + ("event_0" if inline else "event_layerCapture") + "&~" + prefix + ready_reset + "&" + prefix + "tailGray==(headGray^4'hC)", "I2C_EDGE_RING_OVERFLOW")]
     for condition, label in checks:
@@ -503,7 +493,7 @@ def overflow_assertion_policy(directory, model, inline=False, coordinated=False)
         else:
             visit(node[2], path + ((node[1], True),)); visit(node[3], path + ((node[1], False),))
     visit(tree)
-    pred = top_spelling(inline)("~" + prefix + "reset&~(~(" + prefix + "fabric_io_i2c_frame_valid|" + prefix + "fabric_io_i2c_frameOffered)|" + prefix + "fabric_hostFrames_io_enq_ready)")
+    pred = top_spelling(inline)("~" + prefix + "reset&~(~" + prefix + "fabric_io_i2c_frame_valid|" + prefix + "fabric_hostFrames_io_enq_ready)")
     for number, macro in ((index[0], "`ASSERT_VERBOSE_COND_"), (index[0] + 1, "`STOP_COND_")):
         require(guards.get(f"check_call_{number}") == [(((pred, True), (macro, True)), "1")], "OVERFLOW_ASSERTION_LOGIC")
     for macro in ("STOP_COND", "ASSERT_VERBOSE_COND"):
@@ -560,14 +550,14 @@ def native_bank_integration(directory, root, target, store, heads, tr, sr, sp, r
     spell = top_spelling(inline, coordinated)
     context_reset = "fabric_io_applicationCancel" if coordinated else "cpuResetActive"
     halt = "fabric_haltPending&~fabric_io_applicationCancel" if coordinated else "fabric_haltPending"
-    copy_ack = "_ca_child_frame_store_in_ack" if inline else "ca_child_frame_store_in_ack_layerCapture"
+    copy_ack = "_ca_child_frame_store_in_ack"
     qualify = lambda expression: re.sub(r"(?<![\w'])\b[A-Za-z_]\w*\b", lambda match: top + "." + match[0], expression)
-    require(sp.get("reset") == "reset" and sp.get("slot") == "frameSlot" and
+    require(sp.get("reset") == "reset" and "slot" not in sp and sp.get("nextBank") == "" and
             sp.get("in_ack") == copy_ack and
             sp.get("busy") == "_ca_child_frame_store_busy", "STORE_CONTROL_PINS")
     for i in range(4):
         require(sp.get(f"available_{i}") == "", "STORE_AVAILABILITY_PIN:" + str(i))
-    pairs += [(st + ".reset", top + ".reset"), (st + ".slot", t + ".frameSlot"),
+    pairs += [(st + ".reset", top + ".reset"),
               (t + "." + copy_ack, st + ".in_ack"),
               (t + "._ca_child_frame_store_busy", st + ".busy")]
     for net in (sp["in_ack"], sp["busy"]): no_other_writers(tr, net)
@@ -721,15 +711,15 @@ def validate_frame_integration(manifest, scopes, directory):
             np.get("frame_ack") == "_ca_primitive_frame_completion_q", "COMPLETION_ACK_BINDING")
     require(pp.get("frame_ack") == "frame_ack", "PUBLICATION_PIN:ack")
     no_other_writers(nr, "frame_ack")
-    copy_ack = "ca_child_frame_store_in_ack_layerCapture" if "localReset_layerCapture" in clean(tr) else "_ca_child_frame_store_in_ack"
-    common = "{" + copy_ack + "," + ("" if click else "copied,") + "_ca_child_frame_bridge_in_ack}"
+    copy_ack = "_ca_child_frame_store_in_ack"
+    common = "{" + copy_ack + ",_ca_child_frame_bridge_in_ack}"
     require(jp == dict(reset="reset", common=common, rising="1'h1", falling="1'h0", q="_ca_primitive_frame_completion_q"),
             "COMPLETION_JOIN_PINS")
     for alias in ("_ca_child_frame_bridge_in_ack", "_ca_primitive_frame_completion_q"): no_other_writers(tr, alias)
     j = completion["rtl_path"]
     pairs += [(n + ".frame_ack", p + ".frame_ack"), (n + ".frame_ack", j + ".q"),
               (j + ".reset", top + ".reset"),
-              (j + ".common", "{" + store["rtl_path"] + ".in_ack," + ("" if click else t + ".copied,") + r + ".in_ack}"),
+              (j + ".common", "{" + store["rtl_path"] + ".in_ack," + r + ".in_ack}"),
               (j + ".rising", "1'b1"), (j + ".falling", "1'b0")]
     for field, _, _ in FIELDS:
         f = leaf(field)
@@ -761,18 +751,15 @@ def validate_frame_integration(manifest, scopes, directory):
         if not inline:
             driver(sr, "fabric_io_applicationCancel", "applicationCancel")
             pairs.append((top + ".fabric_io_applicationCancel", top + ".applicationCancel"))
-    valid = "_host_frame_valid_T_layerCapture" if observed else "host_frame_valid_0"
-    copy_ready = "frameCopyReady"
+    valid = "host_frame_valid_0"
     local_reset = "localReset_layerCapture" if observed else "localReset_release_1"
     ready_reset = "_resetEpoch_T_2_layerCapture" if observed else local_reset
     rising = "resetEpoch_rising_layerCapture" if observed else "resetEpoch_rising"
     if observed:
         driver(tr, local_reset, "localReset_release_1")
         driver(tr, ready_reset, local_reset)
-    driver(tr, copy_ready, "copied!=_ca_child_frame_bridge_in_ack" if click else "copied")
-    for name, value in dict(ca_child_frame_bridge_out_ready="~" + ready_reset + "&frameAcceptEnable&" + copy_ready,
-                           packed_2_probe="reset",
-                           packed_5="_ca_child_frame_bridge_out_valid&frameAcceptEnable", host_frameOffered="packed_5",
+    for name, value in dict(ca_child_frame_bridge_out_ready="~" + ready_reset + "&frameAcceptEnable",
+                           packed_probe="reset",
                            **{rising: "host_resetActive&~resetEpoch_previous"},
                            resetEpoch=rising + "?resetEpoch_epoch+64'h1:resetEpoch_epoch",
                            **{valid: "ca_child_frame_bridge_out_ready&_ca_child_frame_bridge_out_valid"},
@@ -790,19 +777,16 @@ def validate_frame_integration(manifest, scopes, directory):
     state_policy(tr, {"frameStoreBusy_stages_0": "1'h0", "frameStoreBusy_stages_1": "1'h0"},
                  "posedge clock or posedge " + local_reset,
                  "begin if(" + local_reset + ")begin frameStoreBusy_stages_0<=1'h0;frameStoreBusy_stages_1<=1'h0;end else begin frameStoreBusy_stages_0<=_ca_child_frame_store_busy;frameStoreBusy_stages_1<=frameStoreBusy_stages_0;end end", local_reset)
-    state_policy(tr, {"copied_frameCopyMeta": "1'h0", "copied": "1'h0"},
-                 "posedge clock or posedge " + local_reset,
-                 "begin if(" + local_reset + ")begin copied_frameCopyMeta<=1'h0;copied<=1'h0;end else begin copied_frameCopyMeta<=" + copy_ack + ";copied<=copied_frameCopyMeta;end end", local_reset)
+    require(not re.search(r"\b(?:copied_frameCopyMeta|copied|frameCopyReady|host_frameOffered)\b", clean(tr)),
+            "CLOCKED_COPY_COMPLETION_STATE")
     epoch_assertion_policy(directory, target["module"], rising, ready_reset, inline)
     pairs += [(r + ".clock", top + ".serviceClock"),
-              (r + ".out_ready", f"(!{t}.localReset_release_1 && {t}.frameAcceptEnable && {t}.{copy_ready})"),
-              (te["frame_copy_ready"]["rtl_path"], f"({t}.copied != {r}.in_ack)" if click else t + ".copied"),
-              (t + ".host_frameOffered", f"({r}.out_valid && {t}.frameAcceptEnable)"),
+              (r + ".out_ready", f"(!{t}.localReset_release_1 && {t}.frameAcceptEnable)"),
               (t + ".host_frame_valid", f"({r}.out_valid && {r}.out_ready)"),
               (t + ".host_frame_bits_resetActive", f"({r}.out_bits_ingress_resetActive | {t}.host_resetActive | ({r}.out_bits_resetEpoch != {t}.resetEpoch))"),
               (te["frame_accept_enable"]["rtl_path"], t + ".frameAcceptEnable")]
     pairs += [(te[identity]["rtl_path"], t + "." + net) for identity, net in
-              dict(frame_copy_meta="copied_frameCopyMeta", frame_copy_sync="copied", frame_offered="host_frameOffered", frame_completion_reset="reset").items()]
+              dict(frame_completion_reset="reset").items()]
     gate = tp.get("frameAcceptEnable"); require(gate in ("gate_enabled", "1'h1"), "WORK_ENABLE_BINDING")
     if gate == "gate_enabled":
         driver(sr, "gate__enabled_T_3", "~serviceClock")
@@ -840,10 +824,8 @@ def validate_frame_integration(manifest, scopes, directory):
         fabric__loaderControlPending_T="fabric_io_controlCommand_bits_kind==3'h0",
         fabric__loaderControlPending_T_1="|fabric_io_controlCommand_bits_frame_bytes_0",
         fabric__loaderControlPending_T_3="fabric_io_controlCommand_bits_frame_bytes_0<8'h7",
-        fabric_hostAdmissionReset=context_reset + "|_ca_child_i2c_host_frame_bits_resetActive",
-        fabric_hostAdmissionBusy="_ca_child_i2c_host_frame_bits_programBusy|_ca_child_program_access_io_busy|fabric_loaderPending|fabric_loaderControlPending|fabric__6&fabric__loaderControlPending_T&fabric__loaderControlPending_T_1&fabric__loaderControlPending_T_3",
-        fabric_hostFrames_io_enq_bits_resetActive="fabric_hostOfferedReset|fabric_hostAdmissionReset",
-        fabric_hostFrames_io_enq_bits_programBusy="fabric_hostOfferedBusy|fabric_hostAdmissionBusy",
+        fabric_hostFrames_io_enq_bits_resetActive=context_reset + "|_ca_child_i2c_host_frame_bits_resetActive",
+        fabric_hostFrames_io_enq_bits_programBusy="_ca_child_i2c_host_frame_bits_programBusy|_ca_child_program_access_io_busy|fabric_loaderPending|fabric_loaderControlPending|fabric__6&fabric__loaderControlPending_T&fabric__loaderControlPending_T_1&fabric__loaderControlPending_T_3",
         fabric_hostFrames_io_enq_ready="fabric_hostFrames_count!=2'h2",
         fabric_hostFrames_io_deq_valid="|fabric_hostFrames_count",
         fabric_hostFrames_io_deq_ready="fabric__6&fabric__loaderControlPending_T",
@@ -857,17 +839,9 @@ def validate_frame_integration(manifest, scopes, directory):
     host_busy = "_ca_child_program_access_io_busy|fabric_loaderPending|fabric_loaderControlPending|fabric__6&fabric__loaderControlPending_T&fabric__loaderControlPending_T_1&fabric__loaderControlPending_T_3"
     require(tp.get("host_frame_valid") == spell("fabric_io_i2c_frame_valid") and tp.get("host_resetActive") == spell(context_reset) and
             tp.get("host_programBusy") == spell(host_busy) and tp.get("host_busy") == "_ca_child_i2c_host_busy", "TOP_ADMISSION_PINS")
-    require(tp.get("host_frameOffered") == spell("fabric_io_i2c_frameOffered"), "TOP_OFFER_PIN")
-    no_other_writers(sr, spell("fabric_io_i2c_frameOffered"))
-    pairs.append((top + ".fabric_io_i2c_frameOffered", t + ".host_frameOffered"))
-    offer_accept = "fabric__45" if inline else "fabric__31"
-    driver(sr, offer_accept, spell("fabric_hostFrames_io_enq_ready&fabric_io_i2c_frame_valid"))
-    state_policy(sr, {"fabric_hostOfferedReset": "1'h0", "fabric_hostOfferedBusy": "1'h0"},
-                 spell("posedge fabric_clock or posedge reset"), spell(
-                 "begin if(reset)begin fabric_hostOfferedReset<=1'h0;fabric_hostOfferedBusy<=1'h0;end else begin " +
-                 "fabric_hostOfferedReset<=~" + offer_accept + "&(fabric_io_i2c_frameOffered&fabric_hostAdmissionReset|fabric_hostOfferedReset);" +
-                 "fabric_hostOfferedBusy<=~" + offer_accept + "&(fabric_io_i2c_frameOffered&fabric_hostAdmissionBusy|fabric_hostOfferedBusy);end end"))
-    pairs.append((top + "." + offer_accept, "(" + qualify("fabric_hostFrames_io_enq_ready&fabric_io_i2c_frame_valid") + ")"))
+    require("host_frameOffered" not in tp and not re.search(
+        r"\b(?:fabric_hostOfferedReset|fabric_hostOfferedBusy|fabric_io_i2c_frameOffered|_ca_child_i2c_host_frameOffered)\b", clean(sr)),
+        "STICKY_OFFER_CONTEXT")
     state_policy(sr, {"fabric_loaderControlPending": "1'h0"}, spell("posedge fabric_clock or posedge reset"),
                  spell("begin if(reset)fabric_loaderControlPending<=1'h0;else fabric_loaderControlPending<=~fabric__5&(fabric__6?fabric__loaderControlPending_T&fabric__loaderControlPending_T_1&fabric__loaderControlPending_T_3:fabric_loaderControlPending);end"))
     source = {"bank": "_ca_child_i2c_host_frameSlot"}

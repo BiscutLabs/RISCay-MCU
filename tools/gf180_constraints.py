@@ -116,7 +116,7 @@ def prepare(mapping):
         catalog={'soc/':['completionReturnedFirst','ramOwnerIdle_first','programOwnerIdle_first',
             'telemetryOwnerIdle_first','housekeepingOwnerIdle_first','telemetryBoundary_cleanFirst',
             'housekeepingBoundary_cleanFirst','gate_drainFirst'],
-            'soc/ca_child_i2c/':['copied_frameCopyMeta','frameStoreBusy_stages_0','active_stages_0','selected_stages_0',
+            'soc/ca_child_i2c/':['frameStoreBusy_stages_0','active_stages_0','selected_stages_0',
                                'rejectedLevel_stages_0','effects_stages_0'],
             'soc/ca_child_elapsed_scaler/':['returned_stages_0'],
             'soc/ca_child_spi_adc/':['returned_stages_0','waveReturned_stages_0']}

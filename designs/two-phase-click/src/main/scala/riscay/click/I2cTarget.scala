@@ -26,21 +26,20 @@ class I2cTarget(address: Int,idleCycles: Int,domain: ResetDomain) extends Clocke
   val snapshots=asyncChild("snapshot_bridge")(d => new ClickToDecoupled(UInt(8.W),d))
   frames.clock:=clock; snapshots.clock:=clock
   frameHeads.foreach(_.clock:=clock)
-  // Observe the original offer independently; admission waits for the native
-  // bank's actual copy completion, not a bound relative to the front clock.
+  // Native copy and original clocked acceptance own independent ordinals.
+  // The publisher retains its payload until both have acknowledged.
   frameStore.in.req:=native.frame.req; frameStore.in.bits:=native.frame.bits
-  val copied=withClockAndReset(clock,localReset) {
-    val frameCopyMeta=RegNext(frameStore.in.ack,false.B)
-    val frameCopySync=RegNext(frameCopyMeta,false.B)
-    Seq(frameCopyMeta,frameCopySync).foreach(dontTouch(_))
-    contract.endpoint("frame_copy_meta",frameCopyMeta)
-    contract.endpoint("frame_copy_sync",frameCopySync)
-    frameCopySync
+  val frameSlot=withClockAndReset(clock,localReset) {
+    val tail=RegInit(0.U(2.W)); when(frames.out.fire) { tail:=tail+1.U }; tail
   }
-  // A copied phase must differ from the last clocked acceptance. Compare only
-  // retained clocked phases here, never the asynchronous publisher request.
-  val frameCopyReady=WireDefault(copied =/= frames.in.ack)
-  dontTouch(frameCopyReady)
+  host.frameSlot:=frameSlot
+  for(i <- 0 until 4) {
+    TwoPhase.connect(frameHeads(i).in,frameStore.banks(i))
+    host.heads(i) <> frameHeads(i).out
+    // Preserve the complete declared internal port ABI for strict export.
+    dontTouch(host.heads(i).bits.ingress.resetActive)
+    dontTouch(host.heads(i).bits.ingress.programBusy)
+  }
   val frameAckJoin=Module(new AsymmetricCElement(2,0,0,ModelTime.ps(1000)))
   frameAckJoin.reset:=reset
   frameAckJoin.common:=Cat(frameStore.in.ack,frames.in.ack)
@@ -49,34 +48,15 @@ class I2cTarget(address: Int,idleCycles: Int,domain: ResetDomain) extends Clocke
     "FALLING"->BigInt(0),"DELAY_FS"->BigInt(1000000),"RESET_VALUE"->BigInt(0),
     "COMMON_INVERT"->BigInt(0),"RISING_INVERT"->BigInt(0),"FALLING_INVERT"->BigInt(0)),
     contract.endpoint("frame_completion_reset",reset),
-    "native phase join of actual mailbox acceptance and retained bank copy; no four-phase conversion")
-  val frameSlot=withClockAndReset(clock,localReset) {
-    val tail=RegInit(0.U(2.W)); when(frames.out.fire) { tail:=tail+1.U }; tail
-  }
-  frameStore.slot:=frameSlot; host.frameSlot:=frameSlot
-  for(i <- 0 until 4) {
-    TwoPhase.connect(frameHeads(i).in,frameStore.banks(i))
-    host.heads(i) <> frameHeads(i).out
-    // Preserve the complete declared internal port ABI for strict export.
-    dontTouch(host.heads(i).bits.ingress.resetActive)
-    dontTouch(host.heads(i).bits.ingress.programBusy)
-  }
-  withClockAndReset(clock,localReset) {
-    when(frames.out.fire) {
-      assert(frameStore.in.ack === native.frame.req,"FRAME_STORE_COPY_NOT_READY_AT_A")
-      assert(VecInit(frameStore.banks.map(_.bits.asUInt))(frameSlot) === native.frame.bits.asUInt,
-        "FRAME_STORE_COPY_IDENTITY_AT_A")
-    }
-  }
+    "join independently ordered native bank copy and original mailbox acceptance")
   frames.in.req:=native.frame.req; frames.in.bits:=native.frame.bits
   native.frame.ack:=frameAckJoin.q
   TwoPhase.connect(snapshots.in,native.snapshot)
   // Publish only after this POR-only service boundary has left reset.
   // Receipt ACK and mailbox enqueue share a real work-clock edge. A held frame
   // still contributes ungated busy/wake demand while the work gate is stopped.
-  frames.out.ready:= !localReset.asBool && frameAcceptEnable && frameCopyReady
+  frames.out.ready:= !localReset.asBool && frameAcceptEnable
   snapshots.out.ready:= !localReset.asBool
-  host.frameOffered:=frames.out.valid && frameAcceptEnable
   host.frame.valid:=frames.out.fire; host.frame.bits:=frames.out.bits.ingress
   host.readStart:=snapshots.out.fire
   dontTouch(frames.out); dontTouch(snapshots.out)
@@ -149,8 +129,6 @@ class I2cTarget(address: Int,idleCycles: Int,domain: ResetDomain) extends Clocke
     dontTouch(slots); dontTouch(tailGray)
   }
   contract.endpoint("frame_accept_enable",frameAcceptEnable)
-  contract.endpoint("frame_copy_ready",frameCopyReady)
-  contract.endpoint("frame_offered",host.frameOffered)
   contract.endpoint("reset",reset)
   private val wireInputs=WireDefault(UInt(2.W),Cat(scl,sda)); dontTouch(wireInputs)
   contract.endpoint("wire_inputs",wireInputs); contract.endpoint("pull_low",pullLow)

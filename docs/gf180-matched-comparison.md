@@ -17,6 +17,84 @@ and `2e4169c2f1befd1e8c5dfc704d9e936fe70e1a90`. No production RTL changes
 are part of this measurement. The flip-flop-memory `4b5d105` experiment is not
 the baseline here.
 
+## R3b native frame routing
+
+This incremental comparison uses committed R3 (`a3f11af`) and the final R3b
+`physical-r1` exports. The mapper sources, Yosys/ABC/sv2v binaries, five pinned
+Liberty corners, physical policy, control-delay mapping and normalized synthesis
+commands match the R3 run. No P&R or STA run is included.
+
+| Metric | R3 BD → R3b BD | R3 Click → R3b Click |
+| --- | ---: | ---: |
+| Logic area excluding SRAM (mm²) | 3.353464 → 3.351460 | 4.206234 → 4.207351 |
+| Mapped leaves, including SRAM | 122,751 → 122,539 | 124,521 → 124,561 |
+| TT listed-state leakage, including SRAM (µW) | 8.765842–11.459462 → 8.760285–11.451153 | 10.450277–14.177046 → 10.452129–14.179303 |
+| Front/service-clock storage cells | 1,333 → 1,331 | 1,337 → 1,335 |
+| Front/service storage clock-input capacitance (pF) | 4.461361 → 4.454669 | 4.474775 → 4.468083 |
+| Work-clock storage cells | 4,733 → 4,731 | 4,784 → 4,782 |
+| Work storage clock-input capacitance (pF) | 16.585777 → 16.579085 | 16.757203 → 16.750511 |
+| Preserved native physical leaves | 66,127 → 66,125 | 71,531 → 71,542 |
+| Firmware work-clock edges per wake | 3,256 → 3,256 | 3,161 → 3,161 |
+| Maintenance work-clock edges per wake | 22 → 22 | 19 → 19 |
+| Sampling work-clock edges per wake | 216 → 216 | 214 → 214 |
+| Retired instructions per firmware wake | 43 → 43 | 43 → 43 |
+
+Logic area changes **−0.05977% BD / +0.02656% Click**. Each variant removes
+two copy synchronizers and two retained admission-context bits, reducing each
+front/work clock load by 0.006692 pF. BD reuses its two native route bits with
+a different reset seed and reduces its completion join from three inputs to two.
+Click adds two native route bits, replaces its capture AND with a C-element and
+widens the existing data transform by two route bits. No payload bank is added.
+The private AND bindings in BD's bank routes are unchanged by this item.
+
+Eight compiled hierarchy inventories independently confirm portable nonprimitive
+totals of 6,539 BD / 6,540 Click, or **6,538 / 6,539 periodic bits** after excluding
+the unchanged SDA-edge bit. Enabled-policy physical exports contain ten more bits
+per variant: 6,549 / 6,550 nonprimitive, or 6,548 / 6,549 periodic. These counts
+exclude the generated chip wrapper and SRAMs; they are not mapped cell counts.
+Native primitive register declarations remain 14,221 bits in BD and increase
+14,382 → 14,384 in Click. Click's retained C-element pulse is recorded separately
+as a primitive change; combinational feedback state is not a Verilog register.
+
+All native binding changes are confined to the frame store and completion join.
+The four 337-bit frame banks and matched-control guard area remain unchanged;
+guard area is 0.594065 mm² BD / 1.146281 mm² Click. All three SRAMs, the 34 external
+ports in each portable/physical export, and every chip wrapper/oscillator/reset/
+supply model are unchanged. Ordinary logic remaps under the same ABC policy;
+fewer periodic storage cells do not imply lower total mapped area or leakage,
+as the measured Click increase demonstrates.
+
+Fresh native-model activity contains 22 maintenance, three sampling and two
+firmware windows in each variant. All 27 ordinals retain their R3 classifications,
+fast/work-clock counts, retired counts, ADC counts and durations. Every measured
+delta is zero; the audit records changes rather than requiring unchanged
+performance. Firmware windows last 271,691.173 ns BD / 263,774.443 ns Click.
+The testbenches and 50 uploaded words are identical, and the audit verifies
+current source/binary hashes and exact final R3b I2C target/store RTL. These
+windows exclude loader transfer latency and do not measure energy.
+
+Final constraints bind 15,321 paths / 230 stages / 14,221 capture monitors for BD
+and 15,594 / 131 / 14,384 for Click. Click's two route bits add two paths and two
+capture monitors. Both variants retain the same 40 pre-existing first-stage
+false-path declarations. The removed copy synchronizer also removes its timed
+residual CDC entry; no timing exemption is added. Binding is not qualification
+of the new feedback path or any reset, pulse, setup/hold, slew/load or routed path.
+
+Evidence is under `build/async-frame-native-route-repair/`: final `mapped-*-r1/`,
+`mapped-cost-r1/receipt.json` (1,799 input hashes), `constraints-abi-r1.json`
+(79 hashes), their audit scripts/logs, and `mapping-source-exports-r1.json`.
+`reviewer-mapped-constraints-r1.json` freezes 1,890 evidence hashes. Accounting
+adapts the reviewed independent Liberty/Decimal and clock-pin graph audit;
+`emitted-state-r2/receipt.json` binds the compiled inventories with 1,299 hashes.
+`activity-r1-receipt.json` binds 475 activity inputs, and
+`reviewer-cost-state-activity-r1.json` freezes 2,583 combined evidence hashes.
+Affected functional and strict checks pass; fresh independent review covers
+the mapped/compiled inventories, activity, unchanged public ABI and all constraint
+bindings. See [R3b verification](frame-admission-contract.md#r3b-verification-and-cost-evidence).
+Listed-state leakage is a library envelope, not measured reachable standby power.
+Storage clock-pin capacitance excludes routing/CTS and does not establish energy.
+Historical physical failures remain open.
+
 ## R3 incremental frame-completion comparison
 
 The frame-copy completion repair is mapped against committed C1 (`abcd1d2`),

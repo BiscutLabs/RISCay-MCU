@@ -1071,22 +1071,23 @@ def fabric_path_bindings(node, timing):
         if not click:
             return [(endpoints['route_data'],cells['data_delay']+'.q'),
                     (endpoints['route_data'],cells['route']+'.d'),
-                    (endpoints['slot'],cells['data_delay']+'.a'),
+                    (cells['data_delay']+'.a',"("+endpoints['route_value']+" + 2'h1)"),
                     (endpoints['route_capture'],cells['request_delay']+'.q'),
                     (endpoints['route_capture'],cells['route']+'.trigger'),
                     (endpoints['route_value'],cells['route']+'.q'),
                     (endpoints['in_request'],cells['request_delay']+'.a')]
         cat=lambda values:'{'+','.join(values)+'}'
         state=cat([cells[k+str(i)]+'.q' for i in reversed(range(4)) for k in ('payload','phase')])
-        data=cat([cells[k+str(i)]+'.d' for i in reversed(range(4)) for k in ('payload','phase')])
+        captured=cat([cells['route']+'.q',state])
+        data=cat([cells['route']+'.d']+[cells[k+str(i)]+'.d' for i in reversed(range(4)) for k in ('payload','phase')])
         result=[(endpoints['register_data'],cells['data_delay']+'.q'),(endpoints['register_data'],data),
-                (endpoints['captured'],state),
-                (endpoints['sources'],cat([endpoints['slot'],endpoints['in_data'],state])),
+                (endpoints['captured'],captured),
+                (endpoints['sources'],cat([cells['route']+'.q',endpoints['in_data'],state])),
                 (endpoints['capture_event'],cells['capture']+'.q'),
                 (endpoints['in_request'],cells['request_delay']+'.a'),
                 (endpoints['in_acknowledge'],cells['acknowledge_guard']+'.q')]
         result += [(endpoints['capture_event'],cells[k]+'.trigger') for k in
-                   [kind+str(i) for i in range(4) for kind in ('payload','phase')]+['accepted_phase']]
+                   [kind+str(i) for i in range(4) for kind in ('payload','phase')]+['accepted_phase','route']]
         return result
     if timing.get("logic") in PROGRAM_RETURN_PATHS:
         return program_return_bindings(node,resolved=True)

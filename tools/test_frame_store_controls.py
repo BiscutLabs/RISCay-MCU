@@ -30,10 +30,10 @@ class FrameStoreControlsTest(unittest.TestCase):
         self.assertEqual(code[closing(code,code.index('('))],')')
         with self.assertRaisesRegex(ValueError,'PORT_DELIMITER'):closing('([)]',0)
 
-    def test_all_nine_click_pins_have_independent_pulse_and_distribution_controls(self):
+    def test_all_ten_click_pins_have_independent_pulse_and_distribution_controls(self):
         jobs=mutation_jobs(True);names={j['name'] for j in jobs}
         self.assertEqual(len(names),len(jobs))
-        for register in [f'{kind}{i}' for i in range(4) for kind in ('payload','phase')]+['accepted_phase']:
+        for register in [f'{kind}{i}' for i in range(4) for kind in ('payload','phase')]+['accepted_phase','route']:
             for prefix in ('disconnect-trigger','short-high','short-low','late-trigger'):
                 self.assertIn(prefix+'-'+register,names)
         self.assertNotIn('setup-accepted_phase',names)
@@ -42,7 +42,15 @@ class FrameStoreControlsTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError,'VARIANT_INVENTORY'):source_oracles({'bd':{}})
         with self.assertRaisesRegex(ValueError,'SOURCE_INVENTORY'):source_oracles({'bd':{},'click':{}})
         self.assertEqual(len(CAMPAIGNS),6)
-        self.assertEqual(len(PROFILES),3)
+        self.assertEqual(len(PROFILES),7)
+
+    def test_native_route_and_capture_memory_have_exact_mutation_controls(self):
+        for click in (False,True):
+            jobs={j['name']:j for j in mutation_jobs(click)}
+            self.assertIn('route-counter-stuck',jobs)
+            self.assertIn('route-reset-wrong',jobs)
+            self.assertEqual(jobs['route-reset-wrong']['expected'],['FRAME_STORE_NATIVE_ROUTE_ORDINAL'])
+        self.assertEqual(jobs['capture-memory-bypassed']['profile'],'route-late')
 
     def test_profile_rejects_fixed_guard_or_unknown_cell_overrides(self):
         node={'primitives':[{'id':'request_guard','rtl_path':'M.guard','parameters':{'DELAY_FS':'32000000'},'model':'Gate'}],
@@ -59,9 +67,9 @@ class FrameStoreControlsTest(unittest.TestCase):
         self.assertIn('Gate g(.a(late),.q(q));',result)
         self.assertEqual(result.count('assign #100000 late=a;'),1)
 
-    def test_low_pulse_controls_bind_both_independent_monitors_at_all_nine_pins(self):
+    def test_low_pulse_controls_bind_both_independent_monitors_at_all_ten_pins(self):
         low=[j for j in mutation_jobs(True) if j['name'].startswith('short-low-')]
-        self.assertEqual(len(low),9)
+        self.assertEqual(len(low),10)
         self.assertTrue(all(j['expected']==['FRAME_STORE_PULSE_LOW_'+j['name'][10:],
             'FRAME_STORE_PIN_PULSE_LOW_'+j['name'][10:]] for j in low))
         route=next(j for j in mutation_jobs(False) if j['name']=='short-low-route')

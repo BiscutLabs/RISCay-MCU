@@ -7,18 +7,19 @@ import unittest
 from pathlib import Path
 
 from check_frame_capture_controls import (LEAVES, PREFIX, assertion_sites,
-    classify, classify_wrap, command_capture_policy, fixture_masks_policy, instrument, monitors, omit_same_edge_busy, packed, qualify, service_period, skew, supplemental)
+    classify, classify_wrap, copy_order_metrics, command_capture_policy, fixture_masks_policy, instrument, monitors, omit_same_edge_busy, packed, qualify, service_period, skew, supplemental)
 
 
 def fake_binding():
     path = 'Testbench.dut.ca_child_i2c'
-    store={'primitives':[dict(id='payload0',rtl_path='Top.store.payload0',parameters={'DELAY_FS':'1000000'})], 'children':[]}
+    store={'primitives':[dict(id=id,rtl_path='Top.store.'+id,parameters={'DELAY_FS':'1000000'}) for id in ('payload0','route','accepted_phase')], 'children':[]}
     return dict(variant='bd', source_q=path+'.ca_child_native.ca_child_publication.ca_primitive_frame_payload.q',
                 clock='Testbench.dut.workClock', target_path=path,
                 publisher_path=path+'.ca_child_native.ca_child_publication', receipt_path=path+'.ca_child_frame_bridge',
+                route_q=path+'.route.q',route_d=path+'.route.d',route_capture=path+'.route.trigger',
                 store_path=path+'.ca_child_frame_store',store=store,command_path='Testbench.dut.ca_child_control_command_bridge',
                 banks=[dict(q=path+f'.bank{i}.q',d=path+f'.bank{i}.d',capture=path+f'.bank{i}.closed',
-                            req=path+f'.bank{i}.req',ack=path+f'.bank{i}.ack',available=path+f'.bank{i}.available') for i in range(4)],
+                            phase=path+f'.phase{i}.q',req=path+f'.bank{i}.req',ack=path+f'.bank{i}.ack',available=path+f'.bank{i}.available') for i in range(4)],
                 frame_d={name:'incoming_'+name for name in ('bank','resetActive','programBusy')},
                 publisher={'primitives': [dict(id=n,rtl_path='Top.publisher.'+n,parameters={'DELAY_FS':delay})
                     for n,delay in [('frame_payload','1000000'),('frame_phase','1000000'),
@@ -37,21 +38,18 @@ endmodule
 
 
 class FrameCaptureControlTests(unittest.TestCase):
-    def test_same_edge_busy_fault_preserves_the_retained_context_alias(self):
-        context='fabric_hostOfferedBusy | fabric_hostAdmissionBusy'
+    def test_same_edge_busy_fault_preserves_direct_admission_context(self):
         terms=['_ca_child_i2c_host_frame_bits_programBusy','_ca_child_program_access_io_busy',
                'fabric_loaderPending','fabric_loaderControlPending',
-               'fabric__9 & ~_GEN_14 & fabric__hostAdmissionBusy_T_6 & fabric__hostAdmissionBusy_T_8']
-        admission=' | '.join(terms)
-        source=f'wire fabric_hostFrames_io_enq_bits_programBusy={context};\nwire fabric_hostAdmissionBusy={admission};'
-        changed=omit_same_edge_busy(source,context,admission)
-        self.assertIn('fabric_hostFrames_io_enq_bits_programBusy='+context+';',changed)
-        self.assertIn('fabric_hostAdmissionBusy='+' | '.join(terms[:4])+';',changed)
+               'fabric__9 & ~_GEN_14 & fabric__loaderControlPending_T_1 & fabric__loaderControlPending_T_3']
+        context=' | '.join(terms)
+        source=f'wire fabric_hostFrames_io_enq_bits_programBusy={context};'
+        changed=omit_same_edge_busy(source,context)
+        self.assertIn('fabric_hostFrames_io_enq_bits_programBusy='+' | '.join(terms[:4])+';',changed)
         self.assertNotIn(terms[-1],changed)
-        for text,c,b in ((source,admission,admission),(source,context,' | '.join(terms[:4])),
-                         (source.replace(terms[-1],'wrong'),context,admission),
-                         (source,context,admission.replace(terms[0],'unrelated'))):
-            with self.subTest(text=text),self.assertRaises(ValueError):omit_same_edge_busy(text,c,b)
+        for text,c in ((source,' | '.join(terms[:4])),(source.replace(terms[-1],'wrong'),context),
+                       (source,context.replace(terms[0],'unrelated'))):
+            with self.subTest(text=text),self.assertRaises(ValueError):omit_same_edge_busy(text,c)
 
     def test_original_functional_oracle_is_byte_for_byte_preserved(self):
         instrumented=instrument(BENCH,fake_binding())
@@ -72,12 +70,56 @@ class FrameCaptureControlTests(unittest.TestCase):
                          'if(occupancy==0 || deq)','expected_first=second_q',
                          'first_q!==expected_first','second_q!==expected_second',
                          'data_frame_bytes_32','COMMAND_D_IDENTITY','COMMAND_Q_CAPTURE',
-                         'BANK_UNAVAILABLE_AT_O','BANK_COPY_AT_A','next_offer=(next_offer+1)%4'):
+                         'BANK_UNAVAILABLE_AT_O','COPY_COMPLETION_IDENTITY','DISPATCH_BEFORE_COPY_COMPLETION','next_offer=(next_offer+1)%4'):
             self.assertIn(expected,text)
         for index in range(4):
             for suffix in ('SETUP','HOLD','CAPTURE','IDENTITY','RETAIN','PULSE'):
                 self.assertIn(f'BANK{index}_{suffix}',text)
         self.assertEqual(sum(w for _,w in LEAVES),273)
+
+    def test_native_offer_capture_and_admission_counters_are_independent(self):
+        for variant in ('bd','click'):
+            b=fake_binding();b['variant']=variant;text=monitors(b)
+            for expected in ('native_next_bank!==next_offer','offered_generation[slot]!=lifetime_accepts',
+                             'captured_generation[pending_bank]!=pending_generation','copied_generation[first_q[3:2]]!=offered_generation[first_q[3:2]]',
+                             'NATIVE_ROUTE_SETUP','NATIVE_ROUTE_HOLD','NATIVE_ROUTE_Q','NATIVE_ROUTE_RESET','NATIVE_ROUTE_PULSE',
+                             'accept_before_copy=accept_before_copy+1','copy_before_accept=copy_before_accept+1'):
+                self.assertIn(expected,text)
+            self.assertNotIn('BANK_COPY_AT_A',text)
+            self.assertNotIn('host_frameOffered',text)
+            self.assertNotIn('frameCopyReady',text)
+            self.assertNotIn('observed_reset_history',text)
+            self.assertNotIn('store.slot',text)
+            if variant=='click':self.assertIn('COPY_PHASE_IDENTITY',text)
+
+    def test_copy_order_metrics_require_real_completions_and_early_admission(self):
+        self.assertEqual(copy_order_metrics('FRAME_CAPTURE_COPY_ORDER:8:0:8\n',True)['accept_before_copy'],8)
+        self.assertEqual(copy_order_metrics('FRAME_CAPTURE_COPY_ORDER:4:4:0\n')['copy_before_accept'],4)
+        for text in ('','FRAME_CAPTURE_COPY_ORDER:0:0:0\n','FRAME_CAPTURE_COPY_ORDER:3:2:2\n',
+                     'FRAME_CAPTURE_COPY_ORDER:1:1:0\nFRAME_CAPTURE_COPY_ORDER:1:1:0\n'):
+            with self.subTest(text=text),self.assertRaises(ValueError):copy_order_metrics(text)
+        with self.assertRaisesRegex(ValueError,'A_BEFORE_COPY_COVERAGE'):
+            copy_order_metrics('FRAME_CAPTURE_COPY_ORDER:4:4:0\n',True)
+
+    def test_bank_corruption_group_is_exact_and_keeps_observation_points_distinct(self):
+        text=instrument(BENCH,fake_binding())
+        sites=assertion_sites(text,('FRAME_CAPTURE_BANK0_IDENTITY','FRAME_CAPTURE_BANK0_COPY_COMPLETION_IDENTITY'))
+        self.assertEqual(len(sites),2)
+        for site in sites:
+            log=f'FATAL: testbench.sv:{site["line"]}: {site["message"]}\n       Time: 21 Scope: {site["scope"]}\n'
+            self.assertEqual(len(classify({'exit_code':0},{'exit_code':1},log,sites)),1)
+            with self.assertRaises(ValueError):classify({'exit_code':0},{'exit_code':1},log.replace('BANK0','BANK1'),sites)
+        for messages in (('FRAME_CAPTURE_BANK0_IDENTITY','FRAME_CAPTURE_COPY_COMPLETION_IDENTITY'),
+                         ('FRAME_CAPTURE_BANK0_IDENTITY','FRAME_CAPTURE_BANK1_COPY_COMPLETION_IDENTITY')):
+            with self.assertRaises(ValueError):assertion_sites(text,messages)
+
+    def test_opposing_route_and_accepted_delays_preserve_fixed_budgets(self):
+        for profile,slow in (('route-slow-accepted-fast','route'),('route-fast-accepted-slow','accepted_phase')):
+            b=fake_binding();text,changes=skew(BENCH,b,profile)
+            self.assertEqual(changes['dut.store.route.DELAY_FS']['after'],'10000000' if slow=='route' else '1000000')
+            self.assertEqual(changes['dut.store.accepted_phase.DELAY_FS']['after'],'10000000' if slow=='accepted_phase' else '1000000')
+            self.assertNotIn('data_delay.DELAY_FS',text)
+            self.assertNotIn('output_guard.DELAY_FS',text)
 
     def test_apertures_do_not_exempt_application_reset(self):
         text=monitors(fake_binding())
@@ -205,7 +247,7 @@ class FrameCaptureControlTests(unittest.TestCase):
         self.assertIn('first_writes!=405',text)
         self.assertIn('second_writes!=403',text)
         self.assertIn('FRAME_INPUT_SAME_EDGE_BUSY_RESULT',text)
-        self.assertIn('wait(dut.ca_child_i2c.frameCopyReady);',text)
+        self.assertNotIn('frameCopyReady',text)
         self.assertIn('if(!hostDispatched || !injectedAccepted)',text)
         self.assertIn('FRAME_INPUT_337_POLARITY',text)
         self.assertIn('FRAME_INPUT_273_POLARITY',text)
@@ -230,10 +272,10 @@ class FrameCaptureControlTests(unittest.TestCase):
         self.assertNotIn('repeat(',ring_body)
         self.assertIn('ring_late_dispatches!=30 || ring_exact_frontiers!=30',ring_body)
         self.assertIn('FRAME_INPUT_RING_LAST_LEGAL_D',ring)
-        self.assertIn('dut.ca_child_i2c.host_frameOffered && !ring_offer_pending',ring)
+        self.assertIn('receiptValid && !ring_offer_pending',ring)
         self.assertIn('hostDispatched || ring_now-ring_last_D!=ring_period',ring)
         self.assertIn('ring_offers!=32 || ring_accepts!=32 || ring_offer_pending',ring)
-        self.assertIn('FRAME_INPUT_RING_ADMISSION_WITHOUT_COMPLETED_OFFER',ring)
+        self.assertIn('FRAME_INPUT_RING_ADMISSION_WITHOUT_OFFER',ring)
         self.assertIn('ring_offers!=ring_accepts+1',ring)
         self.assertIn('FRAME_INPUT_RING_PERIOD',ring)
         self.assertIn('in_ready && !dut.fabric_controlOutstanding)',ring_body)
