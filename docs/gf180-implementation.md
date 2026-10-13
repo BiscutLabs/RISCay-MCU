@@ -119,6 +119,12 @@ generated names. Missing or ambiguous objects fail.
   Its clocked view includes upstream storage propagation and can overconstrain
   transparent async latch networks. Use **isolated-stage STA** to characterize
   the transform; periodic-pipeline STA does not prove the async protocol.
+  When synthesis removes a transform's named source, the fallback constrains
+  every register launch to its exact destination, without a module-input filter:
+  locally retained state can launch data without traversing an external input.
+  Proven constant buses are recorded separately, never counted as timing passes.
+  Quiescing receivers retain synchronous closure/rebase timing; their new CDC
+  inputs do not receive blanket false paths that would hide those cones.
 - `preserve-mapped.tcl` protects exact physical cells. `feedback-cuts.tcl` cuts
   C-element feedback for analysis only; never remove the physical feedback.
 - `check-async-paths.tcl` measures internal paths separately, removing each
@@ -168,3 +174,12 @@ and analysis ran, not that timing closed; inspect JSON and logs. Use the mapped
 models. Load power and preservation rules before physical optimization. For
 event verification, annotate extracted SDF and define `RISCAY_DUT` when compiling
 the generated monitors.
+
+The [matched comparison](gf180-matched-comparison.md) adds a common configurable
+outline and independent nominal/minimum/maximum RC extraction. Routed clocked
+reports cover all five cell corners against each RC view. Local async probes
+retain original source slew, cut only outgoing timing edges in a separate STA
+context and check every meaningful source/sink polarity. Their constant and
+reset-only cases are explicit; keeper feedback, complete controller loops and
+capture/reset envelopes remain open. These changes support cost comparison,
+not a claim of physical qualification.

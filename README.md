@@ -42,7 +42,8 @@ state. Programming lock lasts until full MCU reset or power loss; status and
 telemetry remain readable when locked. See the
 [host status, telemetry and lock contract](docs/loader-status-and-lock.md).
 
-**Status: asynchronous SoC migration in progress; physical timing is unqualified.**
+**Status: further service-island migration frozen after matched cost comparison;
+physical timing is unqualified.**
 Both design folders own independent native implementations of CPU/fabric routing,
 MMIO and loader state, telemetry/events, arithmetic, permanent supervision,
 SRAM word sequencing, I2C/SPI protocol and housekeeping. Click remains native
@@ -58,15 +59,19 @@ verification, documentation and a separate commit/push.
 
 The reset-domain and reset-interval corrections pass digital verification and
 independent review. Native assertion and release each wait 64 service edges,
-separately from the short-pulse qualifier. Frame-copy completion and refreshed
-implementation costs remain corrective gates before further state removal.
+separately from the short-pulse qualifier. The completed
+[matched comparison](docs/gf180-matched-comparison.md) favors the smaller clocked
+service island: migrated services substantially increase area, leakage estimates
+and wake work. Keep both native CPUs and preserve all later correctness fixes
+when reconstructing services. Reset distribution is the next corrective item.
+Frame-copy completion remains open for the present implementation.
 Complete physical reset-tree and core-startup timing remain open; current guard
 measurements exceed some digital assumptions.
 See the [reset-boundary contract](docs/application-reset-boundary.md),
 [guard contract](docs/physical-control-guard-contract.md),
 [frame-admission contract](docs/frame-admission-contract.md) and
-[physical export contract](docs/physical-export-contract.md). Earlier P&R results
-belong to baseline `8637099` and do not qualify the migrated controllers.
+[physical export contract](docs/physical-export-contract.md). The matched P&R
+runs preserve open timing violations and do not qualify either implementation.
 
 Groundlark's permanent controller supervises power before firmware upload and
 during application stalls. Application watchdog recovery must preserve power

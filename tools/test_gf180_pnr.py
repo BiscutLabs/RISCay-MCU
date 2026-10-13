@@ -21,6 +21,10 @@ def design():
         "Consumer":{"ports":{"in_bits_pc":{"bits":[2]}},"cells":{}}}
 
 class PnrBindings(unittest.TestCase):
+    def test_common_outline_rejects_nonfinite_or_too_small(self):
+        for side in (0,1400,float('inf'),float('nan')):
+            with self.assertRaisesRegex(ValueError,'INVALID_COMMON_OUTLINE'):pnr.geometry(side)
+        self.assertEqual(pnr.geometry(3250)['core_um'],[30,30,3220,3220])
     def test_aliased_ports_resolve_to_real_leaf_driver(self):
         # Two output aliases with different parent bit IDs must be unioned,
         # including the alias visited last, rather than overwriting the first.
@@ -82,6 +86,23 @@ class PnrProvenance(unittest.TestCase):
         before={p:p.read_bytes() for p in self.out.rglob('*') if p.is_file()}
         self.assertEqual(pnr.validate_provenance(self.mapping,self.out,'extract'),self.meta)
         self.assertTrue(all(p.read_bytes()==b for p,b in before.items()))
+
+    def test_all_rc_views_are_required_and_bound(self):
+        with self.assertRaisesRegex(ValueError,'PNR_RC_CORNERS_MISSING'):
+            pnr.rc_inputs(self.mapping,self.out,'min')
+        self.meta['wire_corners']=list(pnr.RC_CORNERS)
+        receipt={}
+        for rc in pnr.RC_CORNERS:
+            odb=self.out/('extract'+('' if rc=='nom' else '-'+rc)+'.odb')
+            spef=self.out/('routed-'+rc+'.spef')
+            if not odb.exists():odb.write_text(rc+' database')
+            spef.write_text(rc+' parasitics')
+            receipt[rc]=dict(odb_sha256=pnr.sha(odb),spef_sha256=pnr.sha(spef))
+        self.meta['checkpoints']['extract']['rc_corners']=receipt;self.save()
+        self.assertEqual(pnr.rc_inputs(self.mapping,self.out,'max')[1].name,'routed-max.spef')
+        (self.out/'routed-min.spef').write_text('nominal substituted for min')
+        with self.assertRaisesRegex(ValueError,'PNR_RC_INPUT_CHANGED_min'):
+            pnr.rc_inputs(self.mapping,self.out,'nom')
 
     def test_every_mapping_input_change_is_rejected(self):
         for name in pnr.MAPPING_INPUTS:

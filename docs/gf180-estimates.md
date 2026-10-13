@@ -1,5 +1,10 @@
 # GF180 area, standby and wake-energy estimates
 
+The [matched service comparison](gf180-matched-comparison.md) supersedes the
+cross-method comparisons below. Further service migration is frozen; its
+mapped area/activity and completed P&R runs are independently audited. Physical
+timing remains unqualified.
+
 ## Current mapped candidate and activity, 2026-10-12
 
 This refresh covers controller RTL at `c4b7f44`, the supported physical export

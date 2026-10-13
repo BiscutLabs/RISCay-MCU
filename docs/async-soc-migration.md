@@ -21,7 +21,20 @@ when no next item has been chosen. Both implementations remain active throughout
   Groundlark power supervision. Keep an independent timebase/watchdog even as
   service-clock work is removed. Never relax tests to accept implementation bugs.
 
-## Corrective gates from the independent review of `c4b7f44`
+## Corrective gates from the independent reviews
+
+The review of `2e4169c` changes the order: **R4 matched comparison first,
+then R2b reset distribution; R3/R5 only for service blocks retained by the
+comparison decision.** R4 is complete and further service-island migration
+remains frozen. The [matched comparison](gf180-matched-comparison.md) of `8637099`
+and `2e4169c` favors the smaller clocked island with the same supported core
+timing, mapper, SRAMs, enabled board policy, wake workload and physical settings.
+Retain both native CPUs and reconstruct expensive services while preserving all
+later correctness fixes; never restore the old raw-reset crossings. A corrected
+clocked island must be measured again. Independent timekeeping and permanent
+supervision remain mandatory. The benchmark preparation and reviewed evidence
+live under `build/matched-service-comparison/`; cost comparison is complete,
+physical timing qualification is not.
 
 The user supplied a code-only review on 2026-10-12. Its environment could not run
 the dependencies, so its findings require local reproduction and independent
@@ -49,6 +62,8 @@ digital passes remain evidence of their tested scope, not RDC or physical proof.
   original failures under `build/async-reset-domain-migration/`. The change adds
   forty periodic-clocked bits per variant. This closes digital containment only;
   physical CDC, related-clock timing and reset propagation remain unqualified.
+  - [ ] Remove unused raw-reset return fences and move the test-only RAM/program
+    reset-debt observers into fixtures, preserving their reset-coverage oracles.
 - [ ] **R2. Reset intervals and complete physical recovery bounds.**
   - [x] **R2a. Extend assertion and release intervals — digitally verified.**
     Retain the eight-edge raw qualifier and unchanged 250 ns supported digital
@@ -67,6 +82,12 @@ digital passes remain evidence of their tested scope, not RDC or physical proof.
     stale diagnostic expectations and a host timeout are retained with their
     diagnosis/reruns under `build/async-reset-hold-migration/`.
   - [ ] **R2b. Qualify the complete physical reset/recovery envelope (17a3).**
+    Repair reset fanout/slew with a protected-net-aware buffered distribution
+    tree before measuring assertion and release; the first run's small inverter
+    and excessive slew are not acceptable physical implementation.
+    Include the generated `~porReleased` distribution: R4 found a 3,300-load
+    Click net with modeled reset slew far outside Liberty's table range.
+    Repairing only the external reset port would miss this tree.
     Include upstream logic, reset-tree wiring, recovery/removal, every native
     controller and later core-reset removal/startup. Local guard margin and an
     acknowledgment withdrawal edge do not establish this complete bound. Use
@@ -85,17 +106,26 @@ digital passes remain evidence of their tested scope, not RDC or physical proof.
   orders and complete return before reuse.
   Exercise copies slower than two service periods, stalls, identical payloads,
   reset and all bank wraps with independent offer/capture/dispatch ordinals.
-- [ ] **R4. Refresh cost and wake evidence before further migration.** Re-run
-  the current enabled-policy workload and report service/work edges per wake.
-  Account for actual mapped guards, native storage, bridges, logic and all three
-  SRAM macros in area and state-dependent standby leakage. Repair the historical
-  estimator's flip-flop-memory assumptions rather than applying old estimates.
-  Separate measured activity, library estimates and missing analog/pad/route
-  costs. Fewer periodic-clocked bits alone is not an area or power improvement.
-  The [current candidate estimate](gf180-estimates.md) now records actual mapped
-  area/leakage and unchanged-workload wake counts, independently reproduced under
-  `build/review-c4b7f44/`. This gate remains open for repetition after R1–R3;
-  native-model activity is not mapped timing or measured power.
+- [x] **R4. Matched baseline/current comparison — complete for architecture
+  decision, 2026-10-13.** The [matched report](gf180-matched-comparison.md) uses
+  identical core timing, SRAMs, mapper, enabled-policy workload and feasible
+  common-outline P&R settings. Mapped logic grows 6.06× BD / 7.31× Click;
+  placed cells plus SRAM grow from 1.058/1.080 to 4.025/4.881 mm². Firmware work
+  edges per wake grow from 866 each to 3,256/3,161, with exactly 43 retired
+  instructions in every window. Reports account for actual guards, native
+  storage, bridges, five-corner listed-state leakage and storage clock loads;
+  these do not amount
+  to measured energy or reachable-state standby leakage. Independent review
+  reproduced mapping/activity and verified all four corrected routes, three RC
+  extractions each, 60 clocked corner reports and 257,148 local measurements.
+  Full TT/nom local probes have zero uncovered groups but retain 395 BD / 47
+  Click violation groups; selected FF/min and SS/max probes retain the BD
+  violation. Constant/reset-only groups are not timing passes. All 428 Python
+  tests, four physical-policy cases and 17 independent collector controls pass.
+  Preserve original failures and signed out-of-range Liberty diagnostics.
+  Further service migration is frozen; keep both native CPUs and reconstruct
+  costly services with all later correctness fixes. R2b comes next. These
+  results establish common-outline cost, not minimum die size or timing closure.
 - [ ] **R5. Replace avoidable guard delays and epoch state.** Inventory the
   200–241 ns guard/cleanup owners and their actual area, leakage and critical
   paths. Prefer native completion where it proves the same ordering/reset
@@ -115,9 +145,9 @@ digital passes remain evidence of their tested scope, not RDC or physical proof.
   reducing redundant comparisons must not remove activity or handshake checks.
 
 Each correction requires the same fresh review, fixes, verification, documentation
-and separate commit/push loop. R1, the digital repairs R2a/R3 and current cost
-evidence are prerequisites for resuming deeper state removal. Complete physical
-reset qualification (R2b) remains mandatory under item 17a3.
+and separate commit/push loop. R4 freezes deeper service state removal.
+R1/R2 safety must survive any architectural rework. Complete
+physical reset qualification (R2b) remains mandatory under item 17a3.
 
 ## Items
 

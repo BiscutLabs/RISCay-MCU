@@ -61,11 +61,12 @@ proc protected_snapshot {} {
 }
 
 if {$stage eq "floorplan"} {
-  initialize_floorplan -die_area {0 0 1440 1440} -core_area {30 30 1410 1410} -site GF018hv5v_mcu_sc7
+  initialize_floorplan -die_area $die_area -core_area $core_area -site GF018hv5v_mcu_sc7
   foreach layer {Metal1 Metal2 Metal3 Metal4} {make_tracks $layer -x_offset 0.28 -x_pitch 0.56 -y_offset 0.28 -y_pitch 0.56}
   make_tracks Metal5 -x_offset 0.45 -x_pitch 0.90 -y_offset 0.45 -y_pitch 0.90
-  foreach {name x} {program_macros_0 100 program_macros_1 570 ram_macros_0 1040} {
-    place_macro -macro_name soc/fabric_$name -location [list $x 864] -orientation R0 -exact
+  foreach record $macro_locations {
+    lassign $record name x y
+    place_macro -macro_name $name -location [list $x $y] -orientation R0 -exact
   }
   tapcell -tapcell_master ${sc}filltie -endcap_master ${sc}endcap -distance 20 -halo_width_x 12 -halo_width_y 12
   insert_tiecells ${sc}tieh/Z
@@ -82,7 +83,7 @@ if {$stage eq "floorplan"} {
 }
 if {$stage eq "place"} {
   # Timing-driven resizing is opt-in and deliberately omitted in this run.
-  global_placement -density 0.50 -routability_driven
+  global_placement -density $placement_density -routability_driven
   detailed_placement
   check_placement -verbose
   estimate_parasitics -placement
@@ -126,21 +127,22 @@ if {$stage eq "extract"} {
       incr tie_index
     }
   }
-  define_process_corner -ext_model_index 0 typical
-  extract_parasitics -ext_model_file $routing/rcx.nom
-  write_spef $out/routed.spef
+  define_process_corner -ext_model_index 0 $rc_corner
+  extract_parasitics -ext_model_file $routing/rcx.$rc_corner
+  write_spef $out/routed-$rc_corner.spef
+  if {$rc_corner eq "nom"} {file copy -force $out/routed-nom.spef $out/routed.spef}
 }
 source $out/protected-baseline.tcl
 if {[protected_snapshot] ne $expected_protected} {error "PROTECTED_CONNECTIVITY_CHANGED"}
 puts "PROTECTED_AUDIT_PASS [llength $protected_cells]"
 connect_power
-write_db $out/$stage.odb
-write_def $out/$stage.def
-write_verilog -include_pwr_gnd $out/$stage.v
-write_sdc $out/$stage.sdc
+write_db $out/$checkpoint.odb
+write_def $out/$checkpoint.def
+write_verilog -include_pwr_gnd $out/$checkpoint.v
+write_sdc $out/$checkpoint.sdc
 if {$stage in {place clock global extract}} {
-  report_checks -path_delay min_max -group_path_count 10 -format full_clock_expanded > $out/$stage-timing.rpt
-  report_check_types -max_slew -max_capacitance -violators > $out/$stage-electrical.rpt
+  report_checks -path_delay min_max -group_path_count 10 -format full_clock_expanded > $out/$checkpoint-timing.rpt
+  report_check_types -max_slew -max_capacitance -violators > $out/$checkpoint-electrical.rpt
 }
 report_design_area
 puts "PNR_STAGE_COMPLETE $stage"

@@ -117,8 +117,17 @@ python tools/report_gf180_pnr.py build/physical-qualified-inputs/bd-dly build/pn
 python tools/check_gf180_routed.py build/physical-qualified-inputs/bd-dly build/pnr-new/bd --corner ss_125C_3v00
 ```
 
-Run both report tools for each variant and all five `--corner` values for the
-internal probes. `report_gf180_pnr.py` covers all five cell corners itself.
+Run both report tools for each variant and all five `--corner` values with each
+`--wire-corner nom|min|max` for a complete internal-probe sweep.
+`report_gf180_pnr.py` covers all fifteen cell/RC combinations itself. Current
+runs extract three independent RC views; the historical nominal-only records
+below are not accepted by these tools. `--die-side-um` sets the outline before
+placement; matched comparisons must use the same feasible geometry. `--only`
+on the probe tool creates an explicitly partial diagnostic report.
+Use `--run-tag <new-tag>` for a fresh analysis of an unchanged route; existing
+output directories are never overwritten. Local probes prepare their isolated
+timing graph once and still require every expected pair, polarity and min/max
+result, with fail-closed query limits.
 `--from-stage` resumes a saved checkpoint; `--to-stage` stops after one.
 Keep failed evidence when changing an experiment. New runs snapshot their Tcl
 flow sources using the hashes of all three input files. Resume and reporting
@@ -151,5 +160,6 @@ analysis before the SPEF naming correction. Generated files remain ignored.
 
 The next iteration should repair reset distribution/release, improve local
 capture distribution, and complete coverage of the routed timing obligations.
-Then rerun extraction with minimum/maximum wire corners, event/feedback checks
-and full physical verification before optimizing the block outline.
+The [matched comparison](gf180-matched-comparison.md) adds minimum/maximum RC
+extraction and broader probe coverage. Event/feedback checks and full physical
+verification remain required before optimizing the block outline.

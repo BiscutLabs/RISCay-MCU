@@ -23,7 +23,8 @@
   and physically justified boundary minimization. Audit every remaining clocked
   state owner; a boundary label alone is not a reason to retain synchronous logic.
   Keep independent watchdog/time and physical I/O obligations. Physical
-  requalification is now item 17 and follows the residual-state audit.
+  requalification is item 17; the corrective gates below take priority over
+  further residual-state removal.
   Audit generated chip reset-hold state separately and cover supported parameter/
   profile configurations; the Groundlark low-power emitter is not a whole-chip
   or configuration-complete inventory. Preserve continuous-good reset hold.
@@ -38,6 +39,13 @@
   drain guard and full synchronized gate demand; grace may overlap tracked native
   maintenance. Run guard handoff and ADC discard/offset/calibration checks.
   A copied clocked module is not migrated to async.
+  R4's matched 8637099/2e4169c comparison is complete and favors the smaller
+  clocked service island; further service migration is frozen. Follow
+  `docs/gf180-matched-comparison.md`. Keep both native CPUs, address R2b reset
+  distribution next and prioritize R3/R5 only for retained native services.
+  Preserve R1/R2 and every later correctness fix if reconstructing a clocked
+  island. Never infer energy savings
+  from clocked-bit or work-edge counts alone. Keep historical failures visible.
   Native completion presentation follows coordinated application reset. Its
   CPU-facing crossings retain POR ownership and rebase only while acknowledged
   closed; persistent accepted effects retain their existing POR ownership. Preserve the

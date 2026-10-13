@@ -202,9 +202,15 @@ def guard_floor(pdk):
     if value<=0: raise ValueError("INVALID_BUFFER_FLOOR")
     return value * 0.8 # additional headroom for the sub-20 ps input-slew boundary
 
-def physical_policy(export, manifest):
+def physical_policy(export, manifest, *, comparison_baseline=False):
     policy=json.loads((export/"physical-policy.json").read_text())
-    if policy.get("schema")!="riscay-physical-policy-v3": raise ValueError("PHYSICAL_POLICY_REEXPORT_REQUIRED")
+    if comparison_baseline:
+        if (policy.get("schema") != "riscay-comparison-baseline-v1" or
+            policy.get("source_commit") != "8637099bb603543b4d8e1d76de2bf165bbaa171a" or
+            policy.get("application_reset") != "historical-raw-reset-without-R1-R2"):
+            raise ValueError("UNSUPPORTED_COMPARISON_BASELINE")
+    elif policy.get("schema")!="riscay-physical-policy-v3":
+        raise ValueError("PHYSICAL_POLICY_REEXPORT_REQUIRED")
     if policy.get("policy_enabled") is not True: raise ValueError("DISABLED_ESTIMATE_POLICY")
     if (policy.get("timing_policy")!="current-supported-digital" or
         policy.get("qualification")!="unqualified" or policy.get("verification_layers")!="inline" or
@@ -218,13 +224,13 @@ def physical_policy(export, manifest):
         digital_delay_limit_fs="250000000", measured_local_guard_reset_max_fs="1550000000",
         minimum_native_hold_fs="3150000000", minimum_native_release_fs="3150000000",
         qualification="unqualified", scope="local-guard-margin-only")
-    if policy.get("service_max_hz") != 20000000 or policy.get("application_reset") != expected_reset:
+    if policy.get("service_max_hz") != 20000000 or (not comparison_baseline and policy.get("application_reset") != expected_reset):
         raise ValueError("UNSUPPORTED_APPLICATION_RESET_POLICY")
     if "native_reset_settlement_fs" in policy:
         raise ValueError("AMBIGUOUS_APPLICATION_RESET_POLICY")
     return policy
 
-def prepare(export,out,pdk):
+def prepare(export,out,pdk, *, comparison_baseline=False):
     if out.exists(): raise ValueError("OUTPUT_ALREADY_EXISTS")
     pdk_verify(pdk)
     from sram_assets import verify
@@ -235,7 +241,7 @@ def prepare(export,out,pdk):
         verify((ROOT/".tools/gf180-sram"/name).read_bytes(),asset["sha256"])
     manifest,sources,groups=inventory(export)
     roles=resolve_roles(manifest["design"])
-    policy=physical_policy(export,manifest)
+    policy=physical_policy(export,manifest,comparison_baseline=comparison_baseline)
     floor=guard_floor(pdk)
     out.mkdir(parents=True)
     bindings=[]; circuits=[]; filelist=[]
@@ -288,6 +294,7 @@ def prepare(export,out,pdk):
     shutil.copyfile(export/"physical-policy.json",out/"physical-policy.json")
     timing_contract(out,manifest,bindings)
     write_json(out/"mapping.json",dict(schema="riscay-gf180-mapping-v1",status="mapped-unqualified",
+        comparison_baseline=comparison_baseline, physical_policy_sha256=sha(export/"physical-policy.json"),
         top="RiscayMcuDigital",variant=policy["variant"],matched_delay_cell="dlyd_1",matched_delay_floor_ns=floor,
         bindings=bindings,inputs={p.name:sha(p) for p in sources},
         control_roles_sha256=sha(CATALOGUE),

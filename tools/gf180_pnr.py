@@ -3,6 +3,7 @@
 import argparse
 import hashlib
 import json
+import math
 from pathlib import Path
 import re
 import shutil
@@ -27,6 +28,17 @@ MAPPING_INPUTS = ("mapping.json", "netlist.v", "netlist.json", "base.sdc", "cloc
                   "feedback-cuts.tcl", "async.sdc", "preserve-mapped.tcl", "constraints-bound.json")
 FLOW_INPUTS = ("pnr.tcl", "pnr-pdn.tcl", "power.tcl")
 GENERATED_INPUTS = ("config.tcl", "async-pnr.sdc", "protected.tcl")
+RC_CORNERS = ("nom", "min", "max")
+
+
+def geometry(side):
+    if not math.isfinite(side) or side < 1440:
+        raise ValueError("INVALID_COMMON_OUTLINE")
+    return dict(die_um=[0,0,side,side], core_um=[30,30,side-30,side-30],
+        placement_density=0.50,
+        macro_locations=[["soc/fabric_"+name, x, side-576]
+            for name,x in zip(("program_macros_0","program_macros_1","ram_macros_0"),
+                             (100, (side-301.3)/2, side-400))])
 
 
 def mapping_hashes(mapping):
@@ -74,7 +86,22 @@ def validate_provenance(mapping,out,stage,flow_sources=None):
         raise ValueError("PNR_PROTECTED_BASELINE_CHANGED")
     if stage=="extract" and checkpoint.get("spef_sha256")!=sha(out/"routed.spef"):
         raise ValueError("PNR_SPEF_CHANGED")
+    if stage=="extract" and meta.get("wire_corners"):
+        corners=checkpoint.get("rc_corners",{})
+        if set(corners)!=set(RC_CORNERS): raise ValueError("PNR_RC_CORNERS_MISSING")
+        for rc,receipt in corners.items():
+            odb=out/('extract'+('' if rc=='nom' else '-'+rc)+'.odb')
+            if receipt.get('odb_sha256')!=sha(odb) or receipt.get('spef_sha256')!=sha(out/('routed-'+rc+'.spef')):
+                raise ValueError("PNR_RC_INPUT_CHANGED_"+rc)
     return meta
+
+
+def rc_inputs(mapping,out,corner):
+    meta=validate_provenance(mapping,out,"extract")
+    if corner not in RC_CORNERS or set(meta.get('wire_corners',[]))!=set(RC_CORNERS):
+        raise ValueError("PNR_RC_CORNERS_MISSING")
+    return (out/('extract'+('' if corner=='nom' else '-'+corner)+'.odb'),
+            out/('routed-'+corner+'.spef'))
 
 def assets():
     dest=ROOT/".tools/physical/routing"; dest.mkdir(exist_ok=True)
@@ -91,13 +118,19 @@ def assets():
                                 source_files=ASSETS,files=observed))
     return dest
 
-def configuration(mapping,out,routing,threads):
+def configuration(mapping,out,routing,threads,side=1440):
     pdk=ROOT/".tools/physical/pdk"; pdk_verify(pdk); audit(mapping)
     lines=[]
     for name,path in dict(mapping=mapping,out=out,pdk=pdk,routing=routing,
                           sram=ROOT/".tools/gf180-sram",source=ROOT/"physical/gf180").items():
         lines.append(f'set {name} {brace(linux(path))}')
     lines.extend([f'set threads {threads}',f'set sc {SC}',f'set sram_cell {SRAM}'])
+    g=geometry(side)
+    lines += ['set die_area {'+' '.join(map(str,g['die_um']))+'}',
+              'set core_area {'+' '.join(map(str,g['core_um']))+'}',
+              'set placement_density '+str(g['placement_density']),
+              'set macro_locations {'+' '.join('{'+name+' '+str(x)+' '+str(y)+'}'
+                  for name,x,y in g['macro_locations'])+'}']
     (out/"config.tcl").write_text("\n".join(lines)+"\n")
     # Compare every protected signal-pin connection at each checkpoint. Capture
     # after constant tie-cell insertion; power/well connections are separate.
@@ -138,7 +171,7 @@ def bind_flat_interfaces(modules,sdc):
                 if portmap.get(name):
                     if len(portmap[name])!=len(port["bits"]): raise ValueError("PARTIAL_BOUNDARY_"+path+name)
                     union(net(bit),portmap[name][i])
-        for name,port in mod["ports"].items(): boundaries[path+name]=[net(b) for b in port["bits"]]
+        for name,port in {**mod.get('netnames',{}),**mod['ports']}.items(): boundaries[path+name]=[net(b) for b in port["bits"]]
         for name,cell in mod.get("cells",{}).items():
             instance=path+name
             connections={p:[net(b) for b in bits] for p,bits in cell["connections"].items()}
@@ -164,9 +197,10 @@ def bind_flat_interfaces(modules,sdc):
         return '[concat '+" ".join('[rp '+brace(p)+']' for p in sorted(set(selected)))+']'
     return re.sub(r'\[rbus \{([^}]+)\} (\d+)\]',bind,sdc)
 
-def run(mapping,out,from_stage,to_stage,threads):
+def run(mapping,out,from_stage,to_stage,threads,side=1440):
     mapping=mapping.resolve(); out=out.resolve()
     begin,end=STAGES.index(from_stage),STAGES.index(to_stage)
+    g=geometry(side)
     if begin>end: raise ValueError("STAGE_ORDER")
     files=[ROOT/"physical/gf180"/n for n in FLOW_INPUTS]
     hashes={file.name:sha(file) for file in files}
@@ -177,13 +211,15 @@ def run(mapping,out,from_stage,to_stage,threads):
             raise ValueError("PNR_RUN_CONFIGURATION_CHANGED")
         if meta.get("mapping_directory")!=str(mapping) or meta.get("output_directory")!=str(out):
             raise ValueError("PNR_RESUME_DIRECTORY_CHANGED")
+        if meta.get("geometry",geometry(1440))!=g:
+            raise ValueError("PNR_GEOMETRY_CHANGED")
         pdk_verify(ROOT/".tools/physical/pdk")
     if from_stage=="floorplan": out.mkdir(parents=True,exist_ok=False)
     elif not out.is_dir(): raise ValueError("MISSING_RESUME_DIRECTORY")
     routing=assets()
     snapshot,hashes=snapshot_flow(out,files)
     if not begin:
-        configuration(mapping,out,routing,threads)
+        configuration(mapping,out,routing,threads,side)
         with (out/"config.tcl").open("a") as config: config.write('set source '+brace(linux(snapshot))+'\n')
         meta=dict(status="running-unqualified",source_commit=subprocess.check_output(
         ["git","rev-parse","HEAD"],cwd=ROOT,text=True).strip(),mapping_sha256=sha(mapping/"mapping.json"),
@@ -193,7 +229,8 @@ def run(mapping,out,from_stage,to_stage,threads):
         mapping_directory=str(mapping),output_directory=str(out),
         generated_inputs_sha256={name:sha(out/name) for name in GENERATED_INPUTS},
         routing_lock_sha256=sha(ROOT/"physical/gf180/routing-lock.json"),
-        die_um=[0,0,1440,1440],core_um=[30,30,1410,1410],threads=threads,
+        wire_corners=list(RC_CORNERS),
+        die_um=g['die_um'],core_um=g['core_um'],geometry=g,threads=threads,
         limits=["digital block only; no pads/analog", "no async timing closure",
                 "initial placement and routing, no density/antenna/LVS signoff"])
     else:
@@ -212,7 +249,7 @@ def run(mapping,out,from_stage,to_stage,threads):
     for i in range(begin,end+1):
         stage=STAGES[i]
         driver=out/(stage+".tcl")
-        driver.write_text(f'source {brace(linux(out/"config.tcl"))}\nset stage {stage}\n'
+        driver.write_text(f'source {brace(linux(out/"config.tcl"))}\nset stage {stage}\nset checkpoint {stage}\nset rc_corner nom\n'
             +f'set previous {STAGES[i-1] if i else "none"}\n'
             +f'source {brace(linux(snapshot/"pnr.tcl"))}\n')
         print("START",stage,flush=True)
@@ -228,7 +265,25 @@ def run(mapping,out,from_stage,to_stage,threads):
         for later in STAGES[i+1:]: meta["checkpoints"].pop(later,None)
         meta["checkpoints"][stage]=dict(odb_sha256=sha(out/(stage+".odb")),
             protected_baseline_sha256=sha(out/"protected-baseline.tcl"))
-        if stage=="extract": meta["checkpoints"][stage]["spef_sha256"]=sha(out/"routed.spef")
+        if stage=="extract":
+            meta["checkpoints"][stage]["spef_sha256"]=sha(out/"routed.spef")
+            # Independent fresh OpenROAD processes read the identical routed
+            # checkpoint; never rescale nominal SPEF to invent min/max RC.
+            rc_evidence={"nom":dict(spef_sha256=sha(out/"routed-nom.spef"),
+                                   odb_sha256=sha(out/"extract.odb"))}
+            for rc in ("min","max"):
+                checkpoint="extract-"+rc; rc_driver=out/(checkpoint+".tcl")
+                rc_driver.write_text(f'source {brace(linux(out/"config.tcl"))}\nset stage extract\n'
+                    +f'set checkpoint {checkpoint}\nset previous route\nset rc_corner {rc}\n'
+                    +f'source {brace(linux(snapshot/"pnr.tcl"))}\n')
+                with (out/(checkpoint+".log")).open("w") as log:
+                    r=subprocess.run(["wsl","-d","nixos-librelane","-e",OPENROAD,"-exit",linux(rc_driver)],stdout=log,stderr=subprocess.STDOUT)
+                if r.returncode or 'PNR_STAGE_COMPLETE extract' not in (out/(checkpoint+".log")).read_text():
+                    meta.update(status="stopped-unqualified",failed_stage=checkpoint,returncode=r.returncode)
+                    write_json(out/"run.json",meta)
+                    raise RuntimeError("PNR_RC_EXTRACTION_FAILED_"+rc)
+                rc_evidence[rc]=dict(spef_sha256=sha(out/("routed-"+rc+".spef")),odb_sha256=sha(out/(checkpoint+".odb")))
+            meta["checkpoints"][stage]["rc_corners"]=rc_evidence
         meta.update(last_completed_stage=stage); write_json(out/"run.json",meta)
         print("COMPLETE",stage,flush=True)
     meta["status"]="experiment-complete-timing-unqualified" if to_stage=="extract" else "checkpoint-unqualified"
@@ -240,4 +295,5 @@ if __name__=="__main__":
     p.add_argument("--from-stage",choices=STAGES,default="floorplan")
     p.add_argument("--to-stage",choices=STAGES,default="extract")
     p.add_argument("--threads",type=int,default=8)
-    a=p.parse_args(); run(a.mapping,a.output,a.from_stage,a.to_stage,a.threads)
+    p.add_argument("--die-side-um",type=float,default=1440)
+    a=p.parse_args(); run(a.mapping,a.output,a.from_stage,a.to_stage,a.threads,a.die_side_um)

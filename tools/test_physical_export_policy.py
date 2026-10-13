@@ -58,6 +58,20 @@ class PhysicalExportPolicy(unittest.TestCase):
                         mutant = copy.deepcopy(policy); del mutant[field]
                         with self.assertRaises(ValueError): check(mutant)
 
+                historical = dict(policy, schema="riscay-comparison-baseline-v1",
+                    source_commit="8637099bb603543b4d8e1d76de2bf165bbaa171a",
+                    application_reset="historical-raw-reset-without-R1-R2")
+                with self.assertRaisesRegex(ValueError, "PHYSICAL_POLICY_REEXPORT_REQUIRED"):
+                    check(historical)
+                self.assertEqual(physical_policy(out, dict(top=top), comparison_baseline=True), historical)
+                for field, value in (("source_commit", "HEAD"), ("application_reset", policy["application_reset"]),
+                                     ("schema", policy["schema"]), ("contract_sha256", "stale"),
+                                     ("qualification", "qualified")):
+                    mutant=dict(historical); mutant[field]=value
+                    (out / "physical-policy.json").write_text(json.dumps(mutant))
+                    with self.assertRaises(ValueError):
+                        physical_policy(out, dict(top=top), comparison_baseline=True)
+
     def test_assertion_layer_label_does_not_admit_unregistered_sources(self):
         with tempfile.TemporaryDirectory() as folder:
             out = Path(folder)

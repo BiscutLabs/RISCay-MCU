@@ -105,9 +105,18 @@ the measured local propagation but cannot establish a full reset-tree bound.
 Successful export, synthesis or cell
 truth-table checks cannot close those mismatches. Current hierarchy and
 related-clock constraint repair, complete transforms, pulse/hold/reset envelopes,
-electrical limits and extracted timing remain mandatory. No convenience boundary
-is thereby exempted from further asynchronous migration.
+electrical limits and extracted timing remain mandatory. Further service-island
+migration is frozen by the R4 cost gate, independently of these qualification
+obligations.
 The independent review of `c4b7f44` additionally reopens reset-domain crossing
 and frame-copy completion assumptions. The corrective gates in the migration
 checklist must close before further state removal; export validation does not
 resolve those design issues.
+
+The R4 historical comparison has a separate, explicit baseline-policy option.
+It admits only the pinned `8637099` revision with the comparison schema and
+historical reset declaration, while checking the supported core timing, enabled
+board policy, inline assertions and source/contract hashes. Default production
+validation still requires v3 and rejects this historical policy. Its two-file
+harness patch is recorded in the comparison evidence; it neither upgrades the
+old reset architecture nor qualifies that RTL for production.
