@@ -154,14 +154,6 @@ abstract class ClickPlatform(p: SocParameters, board: SocParameters => BoardProf
   }
   val ramSourceEmpty=ramOwnerIdle && !ramAccess.io.busy && ramReserve.in.ready &&
     ramDecision.in.ready && !ramGrant.out.valid
-  val ramResetDebt=withClockAndReset(workClock,fabric.io.cpuReset.asAsyncReset) {
-    val debt=RegInit(true.B)
-    // Restart the release history on EVERY raw pulse, even between clock edges.
-    val previousSafe=RegInit(false.B)
-    previousSafe:=ramSourceEmpty && !fabric.io.cpuResetActive
-    when(previousSafe && ramSourceEmpty && !fabric.io.cpuResetActive) { debt:=false.B }
-    debt
-  }
   val ramServiceDebt=withClockAndReset(workClock,reset) {
     val debt=RegInit(true.B); val previousSafe=RegInit(false.B)
     previousSafe:=ramSourceEmpty && !applicationCancel
@@ -207,14 +199,6 @@ abstract class ClickPlatform(p: SocParameters, board: SocParameters => BoardProf
   }
   val programSourceEmpty=programOwnerIdle && !programAccess.io.busy && programReserve.in.ready &&
     programDecision.in.ready && !programGrant.out.valid && !programStored.out.valid
-  val programResetDebt=withClockAndReset(workClock,fabric.io.cpuReset.asAsyncReset) {
-    val debt=RegInit(true.B)
-    // Restart the release history on EVERY raw pulse, even between clock edges.
-    val previousSafe=RegInit(false.B)
-    previousSafe:=programSourceEmpty && !fabric.io.cpuResetActive
-    when(previousSafe && programSourceEmpty && !fabric.io.cpuResetActive) { debt:=false.B }
-    debt
-  }
   val programServiceDebt=withClockAndReset(workClock,reset) {
     val debt=RegInit(true.B); val previousSafe=RegInit(false.B)
     previousSafe:=programSourceEmpty && !applicationCancel
@@ -326,7 +310,6 @@ abstract class ClickPlatform(p: SocParameters, board: SocParameters => BoardProf
   fabric.io.telemetrySource.eligible:=telemetryBoundary.io.eligible
   fabric.io.telemetrySource.ownerRecovery:=telemetryBoundary.io.recovery
   fabric.io.telemetrySource.recoveryDebt:=telemetryBoundary.io.debt
-  val telemetryReturnFence=applicationIsolation || telemetrySource.recoveryDebt || telemetrySource.recoveryReturning
   fabric.io.telemetrySource.occupied:=telemetryBoundary.io.occupied
   fabric.io.telemetrySource.returnFence:=telemetryBoundary.io.debt
   fabric.io.telemetrySource.draining:=telemetryBoundary.io.debt || telemetryBoundary.io.occupied
@@ -390,7 +373,6 @@ abstract class ClickPlatform(p: SocParameters, board: SocParameters => BoardProf
   fabric.io.housekeepingSource.eligible:=housekeepingBoundary.io.eligible
   fabric.io.housekeepingSource.ownerRecovery:=housekeepingBoundary.io.recovery
   fabric.io.housekeepingSource.recoveryDebt:=housekeepingBoundary.io.debt
-  val housekeepingReturnFence=applicationIsolation || housekeepingSource.recoveryDebt || housekeepingSource.recoveryReturning
   fabric.io.housekeepingSource.occupied:=housekeepingBoundary.io.occupied
   fabric.io.housekeepingSource.returnFence:=housekeepingBoundary.io.debt
   fabric.io.housekeepingSource.draining:=housekeepingBoundary.io.debt || housekeepingBoundary.io.occupied

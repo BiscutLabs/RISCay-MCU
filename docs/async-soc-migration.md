@@ -74,8 +74,8 @@ digital passes remain evidence of their tested scope, not RDC or physical proof.
   original failures under `build/async-reset-domain-migration/`. The change adds
   forty periodic-clocked bits per variant. This closes digital containment only;
   physical CDC, related-clock timing and reset propagation remain unqualified.
-  - [ ] Remove unused raw-reset return fences and move the test-only RAM/program
-    reset-debt observers into fixtures, preserving their reset-coverage oracles.
+  - [x] Remove unused raw-reset return fences and move the test-only RAM/program
+    reset-debt observers into fixtures, preserving their diagnostic oracles (C1c).
 - [ ] **R2. Reset intervals and complete physical recovery bounds.**
   - [x] **R2a. Extend assertion and release intervals — digitally verified.**
     Retain the eight-edge raw qualifier and unchanged 250 ns supported digital
@@ -227,15 +227,47 @@ digital passes remain evidence of their tested scope, not RDC or physical proof.
   failures and interrupted runs. The final evidence index binds passing runs and
   review to the final sources; physical capture timing and native service
   scheduling remain open.
-- [ ] **C1c. Remove test-only Platform reset diagnostics.** Move raw-reset
+- [x] **C1c. Remove test-only Platform reset diagnostics — verified, 2026-10-13.** Move raw-reset
   `ramResetDebt`/`programResetDebt` mirrors and unused return-fence expressions
   into verification fixtures, preserving fault controls. Expect source clarity,
-  not mapped savings: these have no production consumers.
+  not mapped savings: these have no production consumers. Both variants now
+  keep the observers in RAM/program/publication fixtures; RecoveryOwnership
+  inherits the publication observers. The 52 affected tests and 468 Python tests
+  pass. Six positive and six exact-fatal observer controls pass. The old RAM
+  early-release mutant exposed a 12-edge test window shorter than the current
+  reset sequence; extending the unchanged assertions to 200 edges detects it.
+  All 11 RAM tests pass again after this strengthening. Four fresh production
+  exports have identical preprocessed default/synthesis/recorded-strict inputs
+  and identical contract fields except derived RTL hashes from unused random
+  initialization indices. Prior strict evidence is reused under those exact
+  flags; it is not a newly executed strict run. State totals and mapped logic
+  remain unchanged. Fresh independent review and evidence, including failed
+  compile/control attempts, are retained in `build/async-platform-diagnostic-cleanup/`.
+  See the [reset contract](application-reset-boundary.md#verification-only-observers-c1c).
 - [ ] **C1d. Compact the fixed SPI waveform player.** Evaluate replacing its
   96 recipe shift bits with a slot index and busy state. Preserve all 32 samples,
   exact half-phases, first-frame discard, source retention and full drain.
   Keep this distinct from removing the native conversion owner or physical I/O
   timing; require matched total cost and independent wire-oracle checks.
+- [ ] **C1e. Remove retained request/grant copies where ownership permits.**
+  Audit the 70-bit CPU request in each quiescing receiver and ten nominal bits
+  across six grant/drain receivers. Preserve R1 close/closed/rebase/withdrawal,
+  unchanged acceptance cadence, source hold through actual capture and
+  valid-qualified bus use. Do not substitute a POR-only receipt for the
+  quiescing receiver. Require stopped-clock/reset tests, compiled inventories,
+  strict wiring/RDC controls and matched total cost.
+- [ ] **C1f. Narrow internal SRAM saved addresses.** Keep full-width validation
+  on each actual firing lane and the external request schema. Check one-word,
+  non-power-of-two and production bank sizes, falling-edge launch, full-cycle
+  result capture and lane/reset/stall behavior. The nominal Groundlark reduction
+  is 43 bits per variant; establish emitted and mapped savings before claiming it.
+- [ ] **C1g. Make I2C snapshot consumer-clock acceptance explicit.** The receipt
+  runs on service clock and the snapshot owner on gated work clock. No reachable
+  production loss has been demonstrated: START/address activity supplies wake
+  demand. Extend FrameWakeSpec with reads from real sleep, source stopping on/off,
+  3.2/20 MHz and maximum native delays; prove ACK coincides with actual snapshot
+  capture. A forced stopped gate establishes robustness, not a production bug.
+  Qualify acceptance without adding periodic state if the interface is hardened.
 - [ ] **C2. Narrow native loader CRC feedback.** The four CRC stages currently
   carry the whole 337-bit `ControlToken`. Keep public reply timing, transition
   logic and the seeded state owner, but retain the 305-bit context in a native

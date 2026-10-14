@@ -22,9 +22,14 @@
   service coordination, observation reduction, publication, direct interconnect
   and physically justified boundary minimization. Audit every remaining clocked
   state owner; a boundary label alone is not a reason to retain synchronous logic.
-  Keep independent watchdog/time and physical I/O obligations. Physical
-  requalification is item 17; the corrective gates below take priority over
-  further residual-state removal.
+  Keep independent watchdog/time and physical I/O obligations. Boundary
+  acceptance must coincide with the actual consumer clock: snapshot receipts
+  need explicit work-clock qualification or a verified wake invariant, just
+  like frame/head receipts. Track C1d–g before claiming minimum boundary state.
+  Keep raw-reset diagnostic mirrors in verification fixtures only; production
+  cancellation/debt remains POR-owned. Preserve diagnostic fault controls.
+  Physical requalification is item 17; the corrective gates below take priority
+  over further residual-state removal.
   Audit generated chip reset-hold state separately and cover supported parameter/
   profile configurations; the Groundlark low-power emitter is not a whole-chip
   or configuration-complete inventory. Preserve continuous-good reset hold.

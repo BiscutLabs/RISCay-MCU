@@ -54,7 +54,9 @@ Clocked service coordination, observation and publication boundaries remain,
 along with synchronous SRAM macro access, wire sampling and the independent
 LF timebase/watchdog. The [remaining-state ledger](docs/async-residual-state.md)
 tracks removal candidates; a smaller clocked-bit count does not establish lower
-area or power. Each migration item requires fresh independent review, fixes,
+area or power. The follow-up audit identifies remaining SPI recipe storage,
+quiescing request copies, SRAM address widths and I2C snapshot clock assumptions.
+Each migration item requires fresh independent review, fixes,
 verification, documentation and a separate commit/push.
 
 The reset-domain and reset-interval corrections pass digital verification and

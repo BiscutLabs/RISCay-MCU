@@ -46,6 +46,9 @@ class BdPublicationSourceFixture(p: SocParameters) extends MemoryResetFixture(p)
   grantWaiting:=Cat(grants.reverse.map(_.out.valid))
   replyWaiting:=Cat(housekeepingReplyBridge.out.valid && housekeepingReplyBridge.out.bits.cpuCompletion,
     telemetryReplyBridge.out.valid && telemetryReplyBridge.out.bits.kind === TelemetryKind.Commit.U)
+  // Observe native recovery levels only in this verification fixture.
+  val telemetryReturnFence=applicationIsolation || telemetrySource.recoveryDebt || telemetrySource.recoveryReturning
+  val housekeepingReturnFence=applicationIsolation || housekeepingSource.recoveryDebt || housekeepingSource.recoveryReturning
   sourceDebt:=Cat(housekeepingReturnFence,telemetryReturnFence); sourceBusy:=Cat(sources.reverse.map(_.occupied))
   reserveAccepted:=Cat(sources.reverse.map(s => s.reserve.fire && !s.reserve.bits.recovery))
   decisionAccepted:=Cat(sources.reverse.map(s => s.decision.fire && !s.ownerRecovery))
@@ -97,6 +100,9 @@ class ClickPublicationSourceFixture(p: SocParameters) extends ClickMemoryResetFi
   grantWaiting:=Cat(grants.reverse.map(_.out.valid))
   replyWaiting:=Cat(housekeepingReplyBridge.out.valid && housekeepingReplyBridge.out.bits.cpuCompletion,
     telemetryReplyBridge.out.valid && telemetryReplyBridge.out.bits.kind === TelemetryKind.Commit.U)
+  // Observe native recovery levels only in this verification fixture.
+  val telemetryReturnFence=applicationIsolation || telemetrySource.recoveryDebt || telemetrySource.recoveryReturning
+  val housekeepingReturnFence=applicationIsolation || housekeepingSource.recoveryDebt || housekeepingSource.recoveryReturning
   sourceDebt:=Cat(housekeepingReturnFence,telemetryReturnFence); sourceBusy:=Cat(sources.reverse.map(_.occupied))
   reserveAccepted:=Cat(sources.reverse.map(s => s.reserve.fire && !s.reserve.bits.recovery))
   decisionAccepted:=Cat(sources.reverse.map(s => s.decision.fire && !s.ownerRecovery))

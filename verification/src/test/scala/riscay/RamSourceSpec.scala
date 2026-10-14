@@ -24,6 +24,15 @@ class BdRamSourceFixture(p: SocParameters) extends SramCrossingFixture(p) {
   val nativeClick=IO(Output(Bool())); nativeClick:=false.B
   val reserved=IO(Output(Bool())); reserved:=ramReserve.in.fire
   val grantWaiting=IO(Output(Bool())); grantWaiting:=ramGrant.out.valid
+  // Test-only raw-reset history; production cancellation is POR-owned.
+  val ramResetDebt=withClockAndReset(workClock,fabric.io.cpuReset.asAsyncReset) {
+    val debt=RegInit(true.B)
+    // Restart the release history on EVERY raw pulse, even between clock edges.
+    val previousSafe=RegInit(false.B)
+    previousSafe:=ramSourceEmpty && !fabric.io.cpuResetActive
+    when(previousSafe && ramSourceEmpty && !fabric.io.cpuResetActive) { debt:=false.B }
+    debt
+  }
   val sourceDebt=IO(Output(Bool())); sourceDebt:=ramResetDebt
   val sourceEmpty=IO(Output(Bool())); sourceEmpty:=ramSourceEmpty
   val sourceDraining=IO(Output(Bool())); sourceDraining:=fabric.io.ramSource.draining
@@ -51,6 +60,15 @@ class ClickRamSourceFixture(p: SocParameters) extends ClickSramCrossingFixture(p
   val nativeClick=IO(Output(Bool())); nativeClick:=true.B
   val reserved=IO(Output(Bool())); reserved:=ramReserve.in.fire
   val grantWaiting=IO(Output(Bool())); grantWaiting:=ramGrant.out.valid
+  // Test-only raw-reset history; production cancellation is POR-owned.
+  val ramResetDebt=withClockAndReset(workClock,fabric.io.cpuReset.asAsyncReset) {
+    val debt=RegInit(true.B)
+    // Restart the release history on EVERY raw pulse, even between clock edges.
+    val previousSafe=RegInit(false.B)
+    previousSafe:=ramSourceEmpty && !fabric.io.cpuResetActive
+    when(previousSafe && ramSourceEmpty && !fabric.io.cpuResetActive) { debt:=false.B }
+    debt
+  }
   val sourceDebt=IO(Output(Bool())); sourceDebt:=ramResetDebt
   val sourceEmpty=IO(Output(Bool())); sourceEmpty:=ramSourceEmpty
   val sourceDraining=IO(Output(Bool())); sourceDraining:=fabric.io.ramSource.draining
@@ -226,7 +244,10 @@ class RamSourceSpec extends AnyFunSuite {
           offer(2,32'h76540000+n); admitted(); wait(wordWaiting); @(negedge serviceClock);
           two_short_resets();
           offer(1,0);
-          repeat(12) begin @(negedge serviceClock);
+          // Keep the old publication blocked beyond both 64-edge reset phases.
+          // Twelve edges only exercised cancellation while the observer was
+          // still held in reset, hiding an early-release diagnostic mutation.
+          repeat(200) begin @(negedge serviceClock);
             if(!sourceDebt || request_ready || response_valid || words-beforeWords != 1)
               $fatal(1,"RAM_SOURCE_PUBLICATION_FENCE_BYPASS");
           end

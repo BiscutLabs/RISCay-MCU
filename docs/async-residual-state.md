@@ -1,5 +1,31 @@
 # Remaining clocked-state audit
 
+## Follow-up source review, 2026-10-13
+
+Two independent audits of `535f781` found no new periodic-clock storage inside
+the native controller bodies and no hidden four-phase adapter in Click. R3b's
+frame route remains native; the publisher joins the native copy and receipt
+ACKs directly. This is a source review, not new physical qualification or a
+claim that the clocked shell is minimal.
+
+| Remaining candidate, per variant | Finding and required proof | Checklist |
+| --- | --- | --- |
+| SPI player: three 32-bit recipe/occupancy registers | POR-immutable native recipe permits evaluating a five-bit slot and one active bit. Preserve registered pins, all 32 samples, divider cadence and return drainage; measure compiled and mapped cost. | C1d |
+| Quiescing CPU request receiver: 70-bit payload copy | Evaluate direct retained-bus capture while preserving close/rebase, source hold, acceptance cadence and invalid-bus isolation. A POR-only receipt is not a drop-in replacement. | C1e |
+| SRAM saved byte address: 32 bits in each bank | Groundlark needs 11/10 address bits. Narrow only after full-width validation; preserve small/non-power-of-two capacities and the macro launch/capture contract. Nominal 43-bit reduction may already partly optimize away. | C1f |
+| I2C snapshot receipt | Runs on service clock; Services captures on gated work clock. Unlike frame/head receipts, readiness does not explicitly include work-clock enable. START/address activity appears to establish the required wake invariant; no production failure was demonstrated. Add read-from-sleep coverage and make acceptance ownership explicit. | C1g |
+| Six smaller grant/drain receivers | Ten nominal copied payload bits; constants may optimize away. Preserve POR ownership, phase/return and actual consumer capture before replacing them. | C1e |
+| I2C reset history | Eight sampled-edge slots carry 512 clocked epoch bits, plus the 64-bit current epoch and native copies. A stale-history redesign must preserve every queued descriptor's reset history; truncating the epoch is insufficient. | R5, 11a2b |
+| Services queues, histories and coherent snapshots | Still clocked. Removing the crossing requires moving the corresponding scheduler and acceptance/order/freshness ownership together. | C3, 11–14 |
+
+These are candidates, not measured savings. The native frame store's private
+AND binding in BD is a separate R6 maintenance issue, not a clock intrusion.
+Independent time/watchdog progress, physical wire sampling, macro access,
+clock-gate synchronization and coordinated reset closure remain required;
+their surrounding storage and bookkeeping still need individual justification.
+
+## Verified cleanup history
+
 C1b's cleanup is **digitally verified, 2026-10-13**. Compiled inventories prove **538
 fewer periodic-clock payload bits per variant**, giving **6,000 BD / 6,001 Click**
 portable totals, excluding the unchanged SDA-edge bit. Enabled-policy physical

@@ -84,6 +84,15 @@ class BdProgramSourceFixture(p: SocParameters, directIngress: Boolean = true) ex
   injectedAccepted:=fabric.io.hostFrameAccepted
   val grantWaiting=IO(Output(Bool())); grantWaiting:=programGrant.out.valid
   val reserved=IO(Output(Bool())); reserved:=programReserve.in.fire
+  // Test-only raw-reset history; production cancellation is POR-owned.
+  val programResetDebt=withClockAndReset(workClock,fabric.io.cpuReset.asAsyncReset) {
+    val debt=RegInit(true.B)
+    // Restart the release history on EVERY raw pulse, even between clock edges.
+    val previousSafe=RegInit(false.B)
+    previousSafe:=programSourceEmpty && !fabric.io.cpuResetActive
+    when(previousSafe && programSourceEmpty && !fabric.io.cpuResetActive) { debt:=false.B }
+    debt
+  }
   val sourceDebt=IO(Output(Bool())); sourceDebt:=programResetDebt
   val sourceDraining=IO(Output(Bool())); sourceDraining:=fabric.io.programSource.draining
   val wordAccepted=IO(Output(Bool())); wordAccepted:=programAccess.io.request.fire
@@ -157,6 +166,15 @@ class ClickProgramSourceFixture(p: SocParameters, directIngress: Boolean = true)
   injectedAccepted:=fabric.io.hostFrameAccepted
   val grantWaiting=IO(Output(Bool())); grantWaiting:=programGrant.out.valid
   val reserved=IO(Output(Bool())); reserved:=programReserve.in.fire
+  // Test-only raw-reset history; production cancellation is POR-owned.
+  val programResetDebt=withClockAndReset(workClock,fabric.io.cpuReset.asAsyncReset) {
+    val debt=RegInit(true.B)
+    // Restart the release history on EVERY raw pulse, even between clock edges.
+    val previousSafe=RegInit(false.B)
+    previousSafe:=programSourceEmpty && !fabric.io.cpuResetActive
+    when(previousSafe && programSourceEmpty && !fabric.io.cpuResetActive) { debt:=false.B }
+    debt
+  }
   val sourceDebt=IO(Output(Bool())); sourceDebt:=programResetDebt
   val sourceDraining=IO(Output(Bool())); sourceDraining:=fabric.io.programSource.draining
   val wordAccepted=IO(Output(Bool())); wordAccepted:=programAccess.io.request.fire

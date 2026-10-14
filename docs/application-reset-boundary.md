@@ -138,6 +138,38 @@ exempt from loader/no-unsolicited-response assertions.
 
 ## Verification and physical limits
 
+### Verification-only observers (C1c)
+
+`ramResetDebt` and `programResetDebt` are raw-reset history observers used only
+by the RAM/program test fixtures. The raw native telemetry/housekeeping return
+fence expressions likewise live in PublicationSource fixtures and are inherited
+by RecoveryOwnership fixtures. None belong in the production Platform.
+Production cancellation uses the unchanged POR-owned service debt and publication
+boundary state. Moving these observers removes no implemented storage or clocks.
+
+The four affected suites pass 52 tests; all 468 Python tests pass. Six positive
+replays and six exact-fatal mutations preserve the relocated diagnostics. The
+RAM early-release mutation initially survived: the historical 12-edge window
+ended while the new 64+64-edge recovery still held the observer in reset. Keeping
+the same held-publication assertions active for 200 edges closes that test gap;
+all 11 RAM tests pass again. These controls verify diagnostic sensitivity, not
+additional production reset-fault coverage.
+
+Evidence is `build/async-platform-diagnostic-cleanup/`: `regression-exports-r3.log`,
+`ram-regression-r4.log`, `python-r1.log`, `observer-controls-r2/receipt.json` and
+`export-identity.json`. Fresh portable/physical exports for both variants retain
+the same executable inputs under default, `SYNTHESIS` and the recorded strict
+compile flags. Every contract field matches except the derived top RTL hash and
+aggregate hash: FIRRTL renumbers simulation-only random initialization slices
+when unused source registers disappear. Comparison preserves strings, validates
+the historical probe/binary/log attestations and includes verification auxiliaries
+and chip wrappers. `RANDOMIZE_REG_INIT` is disabled in this scoped equivalence;
+the previous strict PASS is reused, not relabeled as a new execution. Compiled
+periodic totals remain 6,000/6,001 portable and 6,010/6,011 enabled-policy physical.
+No new area, energy or physical timing qualification is claimed.
+
+### Production boundary coverage
+
 Bridge tests cover native payload/phase retention, each capture/return state,
 both Click parities, pause/resume, stopped receiving clocks, illegal early
 rebase and reset retriggering. Production tests must additionally cover the
