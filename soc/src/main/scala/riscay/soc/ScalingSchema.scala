@@ -18,11 +18,18 @@ class SampleScalingPort extends Bundle {
 class ElapsedState(lanes: Int) extends Bundle {
   val consumed = UInt(32.W); val fraction = Vec(lanes, UInt(10.W))
 }
-class ElapsedWork(lanes: Int) extends Bundle {
-  // The old consumed count is used only to form delta before this token.
-  val fraction = Vec(lanes, UInt(10.W))
+class ElapsedLoopState(lanes: Int, modeWidth: Int) extends Bundle {
+  // target is the previous consumed count while idle, and the active target
+  // while running. Quotients become the held result on the final nibble.
   val target = UInt(32.W); val delta = UInt(32.W)
+  val fraction = Vec(lanes, UInt(10.W))
   val quotient = Vec(lanes, UInt(32.W)); val remainder = Vec(lanes, UInt(10.W))
+  val index = UInt(3.W); val single = Bool()
+  val commandPhase = Bool(); val replyPhase = Bool(); val mode = UInt(modeWidth.W)
+}
+class ElapsedLoopInput(lanes: Int, modeWidth: Int) extends Bundle {
+  val state = new ElapsedLoopState(lanes, modeWidth)
+  val target = UInt(32.W); val commandPhase = Bool()
 }
 class ElapsedResult(lanes: Int) extends Bundle {
   val state = new ElapsedState(lanes)

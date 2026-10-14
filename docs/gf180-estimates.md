@@ -6,6 +6,17 @@ are independently audited. The subsequent corrective work targets redundant
 storage and clocked coordination while preserving native BD/Click; see the
 [migration checklist](async-soc-migration.md). Physical timing remains unqualified.
 
+The latest [A1b elapsed-loop comparison](native-area-reduction.md#a1b-bounded-native-elapsed-loop)
+uses the same mapper and five-corner accounting against `0f6e26f`. Logic area
+falls **5.5516% BD / 5.4050% Click**, to **3.102377 / 3.915477 mm²** excluding
+SRAM. TT listed-state leakage including SRAM becomes **8.176051–10.596532 /
+9.763012–13.152871 µW**. Periodic state and its clock-pin load are unchanged.
+All 27 matched wake windows per variant retain their classes and effects and
+lose one fast/work edge; firmware wakes retire 43 instructions in **3,255 /
+3,160 work-clock edges**. Functional and strict export checks pass. Arithmetic
+data-budget failures remain explicit; these numbers do not update P&R, qualify
+physical timing or measure reachable deep-sleep power or wake energy.
+
 The [C1b retained peripheral/SRAM cleanup](held-peripheral-capture-contract.md#matched-cost)
 is digitally verified. Against `2676845`, the same mapper and five-corner
 Liberty accounting show logic area falling **1.78% BD / 1.41% Click**, to
@@ -50,7 +61,7 @@ duplicate clocked payload banks and reduces mapped logic area to 3.351844 mm²
 BD / 4.206056 mm² Click. These mapped results do not update the historical P&R
 or establish energy savings.
 
-## Current mapped candidate and activity, 2026-10-12
+## Historical mapped candidate and activity, 2026-10-12
 
 This refresh covers controller RTL at `c4b7f44`, the supported physical export
 under review in 17a2a, and the enabled Groundlark evaluation policy. It precedes

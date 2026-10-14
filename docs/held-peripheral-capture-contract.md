@@ -11,7 +11,7 @@ The actual downstream consumer captures the held source bus at `out.fire`.
 
 | Production receiver | Removed payload bits per variant | Retaining source |
 | --- | ---: | --- |
-| Elapsed result, three Groundlark lanes | 159 | Native final arithmetic stage |
+| Elapsed result, three Groundlark lanes | 159 | Native elapsed owner; see the [A1b contract](native-elapsed-contract.md) |
 | ADC result | 34 | Native conversion final stage |
 | ADC waveform token | 1 | Native Join command-input buffer in each protocol |
 | I2C read snapshot notification | 8 | Native publication snapshot register |
@@ -24,6 +24,14 @@ valid with `valid`; ADC fields with `result.valid`. The standalone `SampleScaler
 also removes its 32-bit reply copy: capture `value` on `done`. Standalone
 `SramAccess` removes its 32-bit word reply and four 42-bit byte request copies.
 These standalone changes are excluded from the production total.
+
+A1b changes the elapsed producer to a bounded native loop. The receiver still
+captures the same 159-bit result at acceptance. Its structural catalog now
+selects target, fractions, quotients and `single` from the real 228-bit BD or
+227-bit Click owner, using independently checked field offsets. The receiver's
+seven control bits and capture cadence are unchanged. A1b has separate
+verification and matched-cost evidence; the C1b measurements below describe
+the original receiver-copy removal.
 
 The SRAM macro controller still captures `saved` and `tag` at byte acceptance,
 launches macro inputs on the falling edge and captures Q after a full cycle.

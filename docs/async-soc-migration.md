@@ -31,10 +31,12 @@ for implementation only after the macro timing and reset/pulse gates in A4;
 the existing service-clock implementation remains current until qualified.
 Then address native I2C storage, residual widths/copies, guards and data-delay
 mapping. Proposal estimates remain hypotheses; record matched costs at every
-accepted step. C1g and A1a are digitally verified. A1a removes 96 unused native
-elapsed payload bits per variant, with measured logic-area reductions of 0.2472%
-BD / 0.2585% Click and unchanged matched wake activity; the full elapsed-loop
-replacement remains open. See the plan for exact evidence and physical limits.
+accepted step. C1g and A1 are digitally verified. After A1a removes unused native
+context, A1b replaces unrolled elapsed arithmetic with a bounded native loop,
+reducing mapped logic area a further 5.5516% BD / 5.4050% Click. Periodic state
+is unchanged; each matched wake loses one fast/work edge. Whole-transform
+physical timing still fails its existing allowance. See the plan for exact
+evidence and qualification limits.
 
 The subsequent user instruction on 2026-10-13 authorizes correcting the
 clocked coordination around native services and adapting timing analysis to
@@ -1341,9 +1343,13 @@ counterexample. See the review evidence in [build and test](build-and-test.md).
 ## Scaling/CRC scope and contract
 
 Each design owns its native elapsed and sample datapaths and clocked boundary
-wrappers in `ConstantScaling.scala`. Four elapsed stages consume eight radix-2
-bits apiece; three sample stages consume four bits apiece after input capture.
-Elapsed fraction and target state remain in a seeded native feedback loop.
+wrappers in `ConstantScaling.scala`. A1b's elapsed implementation replaces the
+four unrolled eight-bit transforms with one four-bit transform and a seeded
+owner, taking one through eight turns for any unsigned 32-bit delta. The
+[elapsed contract](native-elapsed-contract.md) records its independent external
+histories, passing digital checks and open physical timing gates. Three sample stages
+still consume four bits apiece after input capture. Elapsed fraction and target
+state remain in the native owner.
 Interfaces and payload schemas alone are shared. Click stays native throughout.
 The explicit wrappers capture requests and publish replies; no service clock
 advances the arithmetic. All stages, fractions and both crossings are POR-only.

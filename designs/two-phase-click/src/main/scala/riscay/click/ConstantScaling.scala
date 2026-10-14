@@ -7,6 +7,7 @@ import chiselasync.bundled._
 import chiselasync.clocked._
 import chiselasync.core.{AsyncModule, ResetDomain}
 import chiselasync.metadata.{BundledTiming, ClickTiming, ModelTime}
+import chiselasync.primitives.{EventRegister, XorGate}
 import chiselasync.protocol.TwoPhase
 import riscay.soc._
 
@@ -23,76 +24,97 @@ object ConstantScaling {
 }
 
 
-/** Clockless fractional time. Four native stages each consume eight radix-2
-  * bits. The retained state token serializes targets, including count wrap.
-  * Simulation data budgets cover complete transforms; physical closure is separate.
+/** Bounded native nibble feedback; one through eight arithmetic turns per
+  * unsigned 32-bit delta. Publication and retained fractions keep the ms ABI.
+  * Digital timing is explicit; complete physical closure remains separate.
   */
 class ClickElapsed(micros: Seq[Int], domain: ResetDomain) extends AsyncModule(domain) {
   require(micros.nonEmpty && micros.forall(_ > 0))
   private val lanes = micros.size
+  private val modeWidth = 1
+  private val idleMode = 0.U(modeWidth.W)
+  private val runMode = 1.U(modeWidth.W)
   val command = twoPhaseInput("command", UInt(32.W))
   val reply = twoPhaseOutput("reply", new ElapsedResult(lanes))
-  val start = IO(Input(Bool()))
   private val timing = ClickTiming.Simulation
   private val cell = ModelTime.ps(1000)
-  private val state = asyncChild("state")(d => new PhaseDecoupledClickBuffer(new ElapsedState(lanes), timing, Some(0.U.asTypeOf(new ElapsedState(lanes))), d))
-  private val join = asyncChild("join")(d => new ClickJoin(new ElapsedState(lanes), UInt(32.W), timing, d))
-  private val prepare = asyncChild("prepare")(d => new ClickStage(new Joined(new ElapsedState(lanes), UInt(32.W)),
-    new ElapsedWork(lanes), (x: Joined[ElapsedState, UInt]) => {
-      val w = WireDefault(0.U.asTypeOf(new ElapsedWork(lanes)))
-      val delta = x.right - x.left.consumed
-      w.fraction := x.left.fraction; w.target := x.right; w.delta := delta
-      for((us,lane) <- micros.zipWithIndex) {
-        var q = 0.U(32.W); var r = 0.U(10.W)
-        for(bit <- 31 to 24 by -1) {
-          val next = ConstantScaling.step(q, r, delta(bit), us, 1000)
-          q = next._1; r = next._2(9,0)
-        }
-        w.quotient(lane) := q; w.remainder(lane) := r
+  private val resetRef = contract.endpoint("reset", reset)
+  val start = IO(Input(Bool()))
+  private val owner = asyncChild("owner")(d => new PhaseDecoupledClickBuffer(
+    new ElapsedLoopState(lanes, modeWidth), timing,
+    Some(0.U.asTypeOf(new ElapsedLoopState(lanes, modeWidth))), d))
+  owner.start.get := start; contract.endpoint("start", start)
+  private val step = asyncChild("step")(d => new ClickStage(
+    new ElapsedLoopInput(lanes, modeWidth), new ElapsedLoopState(lanes, modeWidth),
+    (x: ElapsedLoopInput) => {
+      val r = WireDefault(x.state)
+      val first = x.state.mode === idleMode
+      val delta = Mux(first, x.target - x.state.target, x.state.delta)
+      val leading = WireDefault(0.U(3.W))
+      for(i <- 0 until 8) { when(delta(i*4+3, i*4).orR) { leading := i.U } }
+      val index = Mux(first, leading, x.state.index)
+      val nibble = Mux1H((0 until 8).map(i => (index === i.U) -> delta(i*4+3, i*4)))
+      val last = index === 0.U
+      r.delta := delta; r.index := index - 1.U
+      when(first) {
+        r.target := x.target; r.single := delta === 1.U
+        r.commandPhase := x.commandPhase
       }
-      w
-    }, timing, d))
-  private val steps = (1 until 3).map { group =>
-    asyncChild(s"radix_$group")(d => new ClickStage(new ElapsedWork(lanes), new ElapsedWork(lanes),
-      (x: ElapsedWork) => {
-        val w = WireDefault(x)
-        for((us, lane) <- micros.zipWithIndex) {
-          var q = x.quotient(lane); var r = x.remainder(lane)
-          for(bit <- (31 - group * 8) to (24 - group * 8) by -1) {
-            val next = ConstantScaling.step(q, r, x.delta(bit), us, 1000)
-            q = next._1; r = next._2(9,0)
-          }
-          w.quotient(lane) := q; w.remainder(lane) := r
-        }
-        w
-      }, timing, d))
-  }
-  private val finish = asyncChild("finish")(d => new ClickStage(new ElapsedWork(lanes), new ElapsedResult(lanes),
-    (x: ElapsedWork) => {
-      val r = Wire(new ElapsedResult(lanes))
-      r.state.consumed := x.target; r.single := x.delta === 1.U
-      for((us,lane) <- micros.zipWithIndex) {
-        var q = x.quotient(lane); var rem = x.remainder(lane)
-        for(bit <- 7 to 0 by -1) {
-          val next = ConstantScaling.step(q, rem, x.delta(bit), us, 1000)
+      for((us, lane) <- micros.zipWithIndex) {
+        var q = Mux(first, 0.U(32.W), x.state.quotient(lane))
+        var rem = Mux(first, 0.U(10.W), x.state.remainder(lane))
+        for(bit <- 3 to 0 by -1) {
+          val next = ConstantScaling.step(q, rem, nibble(bit), us, 1000)
           q = next._1; rem = next._2(9,0)
         }
-        val sum = rem +& x.fraction(lane); val carry = sum >= 1000.U
-        r.state.fraction(lane) := Mux(carry, sum - 1000.U, sum)
-        r.elapsed(lane) := q + carry
+        val sum = rem +& x.state.fraction(lane)
+        val carry = sum >= 1000.U
+        r.remainder(lane) := rem
+        r.quotient(lane) := Mux(last, q + carry, q)
+        when(last) { r.fraction(lane) := Mux(carry, sum - 1000.U, sum) }
       }
+      r.mode := Mux(last, idleMode, runMode)
+      when(last) { r.replyPhase := !x.state.replyPhase }
       r
     }, timing, d))
-  private val fork = asyncChild("fork")(d => new ClickFork(new ElapsedResult(lanes), d))
-  dontTouch(fork.left)
-  state.start.get := start; contract.endpoint("start", start)
-  TwoPhase.connect(join.left, state.out); TwoPhase.connect(join.right, command)
-  TwoPhase.connect(prepare.in, join.out)
-  TwoPhase.connect(steps.head.in, prepare.out)
-  steps.sliding(2).foreach { pair => TwoPhase.connect(pair(1).in, pair(0).out) }
-  TwoPhase.connect(finish.in, steps.last.out); TwoPhase.connect(fork.in, finish.out)
-  state.in.bits := fork.left.bits.state; state.in.req := fork.left.req; fork.left.ack := state.in.ack
-  TwoPhase.connect(reply, fork.right)
+
+  // Source reuse is allowed after command ACK; unused live source fields must
+  // not enter a pending arithmetic token during later feedback turns.
+  private val admitting = owner.out.bits.mode === idleMode
+  step.in.bits.state := owner.out.bits
+  step.in.bits.target := Mux(admitting, command.bits, 0.U)
+  step.in.bits.commandPhase := admitting && command.req
+  private val available = !admitting ||
+    (reply.ack === owner.out.bits.replyPhase && command.req =/= owner.out.bits.commandPhase)
+  step.in.req := Mux(available, owner.out.req, step.in.ack)
+  owner.out.ack := step.in.ack
+  TwoPhase.connect(owner.in, step.out)
+
+  // Capture only a published, held owner token. In particular, the BD owner's
+  // transparent latch q is not a valid external handshake transition.
+  private val history = Module(new EventRegister(2, cell))
+  history.reset := reset
+  contract.primitive("history", history, Map("WIDTH" -> BigInt(2),
+    "DELAY_FS" -> BigInt(cell.fs), "RESET_VALUE" -> BigInt(0)), resetRef,
+    "independent external command/reply history captured on native owner publication")
+  private val historyData = WireDefault(UInt(2.W), Cat(owner.out.bits.replyPhase, owner.out.bits.commandPhase))
+  private val publication = Module(new XorGate(cell))
+  publication.reset := reset; publication.a := owner.out.req; publication.b := owner.out.ack
+  contract.primitive("publication_compare", publication, Map("DELAY_FS" -> BigInt(cell.fs)), resetRef,
+    "one retained publication pulse per native owner token, independent of phase polarity")
+  private val publicationEvent = WireDefault(publication.q)
+  history.d := historyData; history.trigger := publicationEvent
+  command.ack := history.q(0); reply.req := history.q(1)
+  reply.bits.state.consumed := owner.out.bits.target
+  reply.bits.state.fraction := owner.out.bits.fraction
+  reply.bits.single := owner.out.bits.single; reply.bits.elapsed := owner.out.bits.quotient
+  private val historyCaptured = WireDefault(UInt(2.W), history.q)
+  private val ownerRequest = WireDefault(owner.out.req)
+  contract.endpoint("owner_request", ownerRequest)
+  contract.endpoint("history_sources", historyData); contract.endpoint("history_data", historyData)
+  contract.endpoint("publication_event", publicationEvent); contract.endpoint("history_captured", historyCaptured)
+  contract.setupHold("history_aperture", "owner_request", "history_sources", "history_data",
+    "publication_event", "history_captured", ModelTime.ps(100), ModelTime.ps(100))
 }
 
 /** Three clockless four-bit rational transforms; no multiplier or divider. */

@@ -82,7 +82,7 @@ class AsyncScalingSpec extends AnyFunSuite {
         AsyncTest.run(elapsed(click),Seq(1L,2L,19L),fresh(name+"-por")) { _ => s"""
           ${if(click) "start=1;" else ""}
           command_bits=32'hffffffff; #2; command_req=1;
-          ${if(held) "wait(reply_req); #100000000;" else "wait(dut.ca_child_prepare.out_req); #1; if(reply_req) $fatal(1,\"NOT_MID_ARITHMETIC\");"}
+          ${if(held) "wait(reply_req); #100000000;" else "wait(dut.ca_child_step.out_req); #1; if(reply_req) $fatal(1,\"NOT_MID_ARITHMETIC\");"}
           reset=1; command_req=0; reply_ack=0; ${if(click) "start=0;" else ""}
           #1000000000; reset=0; #1000000000; ${if(click) "start=1;" else ""}
           fork begin ${source(click,targets)} end begin ${sink(click,expected)} end join

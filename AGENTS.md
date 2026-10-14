@@ -42,10 +42,16 @@
   arithmetic changes; preserve exhaustive sample and independent CRC oracles.
   ConsumedGray advances on service publication, never internal native completion.
   Keep stale single-tick replies from granting supervisor observation credit;
-  scaling work and bridge drainage inhibit sleep. A1a removes only unused old
-  consumed context from native elapsed work; preserve full-width target/delta,
-  retained fractions and publication ownership. Larger arithmetic feedback needs
-  separate handshake, capture-aperture and matched-cost verification.
+  scaling work and bridge drainage inhibit sleep. Preserve full-width target/
+  delta, retained fractions and publication ownership through A1 elapsed
+  reductions. Bounded native feedback must handle every 32-bit delta without
+  work proportional to elapsed ticks, and retain external handshake histories
+  independently of iteration parity. Run AsyncElapsedLoopSpec and
+  tools/check_elapsed_capture_controls.py against the complete freshly generated
+  fixture cohort, including phase-zero publication, independent BD returns,
+  actual capture pins, opposing skew and exact-fatal controls. Follow
+  docs/native-elapsed-contract.md; digital passes do not close the measured
+  whole-transform data-budget or physical capture/reset obligations.
   Keep the seven-edge ordinary drain guard and full synchronized gate demand;
   grace may overlap tracked native
   maintenance. Run guard handoff and ADC discard/offset/calibration checks.

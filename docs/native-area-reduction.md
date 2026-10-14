@@ -16,12 +16,14 @@ periodic-clock staging. Measure each accepted step against its exact parent.
   did not demonstrate a reachable production loss. The completed tests, strict
   exports and matched cost are recorded in
   [the capture contract](held-peripheral-capture-contract.md#snapshot-consumer-clock-c1g).
-- [ ] **A1: shrink elapsed arithmetic without changing the time ABI (proposal 2).**
+- [x] **A1: shrink elapsed arithmetic without changing the time ABI (proposal 2), digitally verified.**
   A1a's unused old-consumed context removal is digitally verified below: three
-  native work stores narrow from 252 to 220 bits. Next evaluate
-  bounded native radix feedback (one bit or nibble per turn, leading-zero skip)
-  against direct constant arithmetic. Reuse the transform rather than unroll
-  all 32 positions. Preserve exact full-width deltas, fractional accumulation,
+  native work stores narrow from 252 to 220 bits. A1b replaces the unrolled
+  arithmetic with a bounded native nibble loop and leading-zero skip. Its digital
+  checks and matched measurement pass; physical timing remains open. See
+  [its contract](native-elapsed-contract.md).
+  It reuses one four-bit transform for one through eight arithmetic turns.
+  Preserve exact full-width deltas, fractional accumulation,
   wrap, stalled publication, `single` freshness and consumedGray ownership.
   Current code already computes coefficients at elaboration and contains no
   hardware division operator: its cost is unrolled quotient/remainder logic.
@@ -133,7 +135,7 @@ field: 252→220 bits each for the production three-lane configuration. This
 removes 96 native payload bits and 96 data-allowance lanes per variant. Surviving
 transform cones, output schema, fractional arithmetic, public ABI, handshake,
 reset ownership and timing parameters are unchanged. No periodic state is
-added or removed. The larger bounded arithmetic loop remains A1b work.
+added or removed. The bounded arithmetic replacement is recorded separately as A1b.
 
 | Quantity | BD before → after | Click before → after |
 | --- | ---: | ---: |
@@ -175,3 +177,78 @@ two activity-auditor attempts rejected the fixed SRAM's conditional declarations
 and the exact firtool resource wrapper. Their logs remain; the corrected audit
 resolves every compiled elapsed model uniquely and matches primitive bytes to
 the manifest's pinned resource hashes, allowing only that exact exporter wrapper.
+
+## A1b: bounded native elapsed loop
+
+Digitally verified against parent `0f6e26f`. A1b replaces four unrolled eight-bit transforms with a seeded native
+owner and one four-bit transform. Leading-zero skip bounds every unsigned
+32-bit delta to one through eight arithmetic turns. Full-width targets, exact
+fractional accumulation, the millisecond ABI, publication ownership and separate
+BD/Click handshake histories are preserved. See the
+[elapsed contract](native-elapsed-contract.md). Functional verification, strict
+exports and matched cost/activity audits pass; physical qualification remains open.
+
+| Quantity | BD before → after | Click before → after |
+| --- | ---: | ---: |
+| Logic area excluding SRAM (mm²) | 3.284733 → 3.102377 | 4.139201 → 3.915477 |
+| Logic area reduction | 5.5516% | 5.4050% |
+| Mapped leaf cells, including three SRAMs | 120,770 → 112,677 | 122,775 → 113,495 |
+| TT listed-state leakage including SRAM (µW) | 8.585811–11.201928 → 8.176051–10.596532 | 10.272885–13.919129 → 9.763012–13.152871 |
+| Elapsed matched-guard area (mm²) | 0.022062 → 0.006889 | 0.035325 → 0.010010 |
+| Elapsed native payload + custom history bits | 975 → 458 | 975 → 456 |
+| Portable periodic RTL bits | 6,000 → 6,000 | 6,001 → 6,001 |
+| Firmware work-clock edges per 43-instruction wake | 3,256 → 3,255 | 3,161 → 3,160 |
+
+The matched mapper uses exact parent `0f6e26f`, the same binaries, physical
+policy and five pinned Liberty corners. Unrelated native cells and guards,
+three SRAMs, periodic storage and its clock-pin capacitance are unchanged.
+Physical exports retain 6,010/6,011 periodic bits. Both variants retain all
+27 wake windows in the same order, with the same classes and effects; each
+window loses one fast/work edge and 83.334 ns. Firmware wake durations become
+271,607.839 ns BD / 263,691.109 ns Click. This is native-model activity, not
+measured wake energy. Listed-state leakage is not reachable standby power.
+
+The native-bit row counts payload storage and A1b's two custom history bits,
+excluding C-elements, other control memory and delay-model variables. Click's
+separate primitive phase-history bits fall from eight to three. Total matched
+guard area falls from 0.594065 to 0.578892 mm² BD and from 1.146281 to
+1.120966 mm² Click; only the elapsed subtree changes.
+
+Whole-transform physical timing remains **open and failing**: the new step
+measures 141.627808 ns BD / 127.252151 ns Click against the unchanged 10 ns
+data allowance; BD's conservative merge path measures 90.335281 ns. The prior
+unrolled arithmetic also failed its allowance. Local adapter checks do not
+close complete capture, earliest release, reset distribution or routed timing.
+No periodic-clock stage or timing exemption was added to obtain a digital pass.
+
+Evidence is retained under `build/async-elapsed-loop/`. Functional runs cover
+206 distinct ScalaTest cases, including 11 new elapsed-loop cases, and 500
+Python tests. Actual-pin capture checks pass 367 cases: 159 original seed
+replays, 162 opposing-delay cases, 27 legal-distribution cases and 19 exact-fatal
+controls. Arithmetic controls retain four passing baselines and ten exact-fatal
+mutants. Each portable export also passes 126 structural negative controls and
+12 compiled wiring mutants for its held-payload receivers. These supplementary
+campaigns do not replace the four mandatory generic export campaigns.
+
+All four strict SoC exports pass with sleep-clock background and three SRAMs:
+BD 764,607,360 portable / 764,819,280 physical mapping checks; Click
+659,440,575 / 659,631,375. Each retains all four mandatory generic campaigns.
+The export audit binds their actual executed probes, binaries, source files,
+reset-crossing checks and logs. Reduced check totals follow the changed native
+topology and widths; no mandatory campaign or dynamic-polarity requirement was
+removed. Independent review and acceptance records are `review-final-r1.json`
+and `final-evidence-r1.json`; the constituent receipts are `mapped-cost-r2/receipt.json`,
+`state-r2.json`, `activity-r2-receipt.json`, `exports-r2.json`,
+`capture-r7/seal.json`, `arithmetic-controls/r7/seal.json` and
+`physical-diagnostics-r2.json`.
+
+Earlier failures remain in the evidence directory: an unsized history wire,
+an unsupported dynamic packed index, invalid metadata references, an outdated
+held-receipt source catalogue, and new BD stimulus that reused data before full
+return-to-zero. Implementation or new-fixture fixes preserve the original
+functional oracles. The broad regression predates only the local metadata-alias
+repair; `rtl-alias-equivalence-r2.json` proves every emitted HDL file is identical
+apart from comments/formatting. The final focused/activity runs use the repaired
+source. The older r6 capture receipt is not final source attestation: its source
+inventory was written after a test edit. The final r7 cohort is freshly generated
+and rejects sources newer than generation.
