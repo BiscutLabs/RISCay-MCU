@@ -19,7 +19,8 @@ class ElapsedState(lanes: Int) extends Bundle {
   val consumed = UInt(32.W); val fraction = Vec(lanes, UInt(10.W))
 }
 class ElapsedWork(lanes: Int) extends Bundle {
-  val state = new ElapsedState(lanes)
+  // The old consumed count is used only to form delta before this token.
+  val fraction = Vec(lanes, UInt(10.W))
   val target = UInt(32.W); val delta = UInt(32.W)
   val quotient = Vec(lanes, UInt(32.W)); val remainder = Vec(lanes, UInt(10.W))
 }

@@ -42,8 +42,12 @@
   arithmetic changes; preserve exhaustive sample and independent CRC oracles.
   ConsumedGray advances on service publication, never internal native completion.
   Keep stale single-tick replies from granting supervisor observation credit;
-  scaling work and bridge drainage inhibit sleep. Keep the seven-edge ordinary
-  drain guard and full synchronized gate demand; grace may overlap tracked native
+  scaling work and bridge drainage inhibit sleep. A1a removes only unused old
+  consumed context from native elapsed work; preserve full-width target/delta,
+  retained fractions and publication ownership. Larger arithmetic feedback needs
+  separate handshake, capture-aperture and matched-cost verification.
+  Keep the seven-edge ordinary drain guard and full synchronized gate demand;
+  grace may overlap tracked native
   maintenance. Run guard handoff and ADC discard/offset/calibration checks.
   A copied clocked module is not migrated to async.
   R4's matched 8637099/2e4169c comparison is complete and favors the smaller

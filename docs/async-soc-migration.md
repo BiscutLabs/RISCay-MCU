@@ -30,7 +30,11 @@ a publication-latency/overflow proof. Self-timed SRAM macro clocks are authorize
 for implementation only after the macro timing and reset/pulse gates in A4;
 the existing service-clock implementation remains current until qualified.
 Then address native I2C storage, residual widths/copies, guards and data-delay
-mapping. Estimates are unmeasured; record matched costs at every accepted step.
+mapping. Proposal estimates remain hypotheses; record matched costs at every
+accepted step. C1g and A1a are digitally verified. A1a removes 96 unused native
+elapsed payload bits per variant, with measured logic-area reductions of 0.2472%
+BD / 0.2585% Click and unchanged matched wake activity; the full elapsed-loop
+replacement remains open. See the plan for exact evidence and physical limits.
 
 The subsequent user instruction on 2026-10-13 authorizes correcting the
 clocked coordination around native services and adapting timing analysis to

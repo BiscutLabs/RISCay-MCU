@@ -17,8 +17,8 @@ periodic-clock staging. Measure each accepted step against its exact parent.
   exports and matched cost are recorded in
   [the capture contract](held-peripheral-capture-contract.md#snapshot-consumer-clock-c1g).
 - [ ] **A1: shrink elapsed arithmetic without changing the time ABI (proposal 2).**
-  Remove unused old-consumed context from intermediate native work first; three
-  252-bit stores currently carry it, a nominal 96-bit opportunity. Then evaluate
+  A1a's unused old-consumed context removal is digitally verified below: three
+  native work stores narrow from 252 to 220 bits. Next evaluate
   bounded native radix feedback (one bit or nibble per turn, leading-zero skip)
   against direct constant arithmetic. Reuse the transform rather than unroll
   all 32 positions. Preserve exact full-width deltas, fractional accumulation,
@@ -123,3 +123,55 @@ claim that all these cells can be removed. Reset behavior, endpoint resolution
 and complete physical bundling still gate passive mapping. Evidence:
 `build/async-snapshot-clock-qualification/transform-cells-r1.json` and its
 hashed `count_transform_cells.py` audit.
+
+## A1a: unused elapsed context removed
+
+Digitally verified against parent `368b342`. Both implementations use the old
+consumed count only when preparing the tick delta. The three intermediate
+native work stores now retain the fractional state without that unused 32-bit
+field: 252→220 bits each for the production three-lane configuration. This
+removes 96 native payload bits and 96 data-allowance lanes per variant. Surviving
+transform cones, output schema, fractional arithmetic, public ABI, handshake,
+reset ownership and timing parameters are unchanged. No periodic state is
+added or removed. The larger bounded arithmetic loop remains A1b work.
+
+| Quantity | BD before → after | Click before → after |
+| --- | ---: | ---: |
+| Logic area excluding SRAM (mm²) | 3.292872 → 3.284733 | 4.149929 → 4.139201 |
+| Logic area reduction | 0.2472% | 0.2585% |
+| TT listed-state leakage including SRAM (µW) | 8.606112–11.228103 → 8.585811–11.201928 | 10.300147–13.960620 → 10.272885–13.919129 |
+| Matched guard area (mm²) | 0.594065 → 0.594065 | 1.146281 → 1.146281 |
+| Portable periodic RTL bits | 6,000 → 6,000 | 6,001 → 6,001 |
+| Firmware work-clock edges per 43-instruction wake | 3,256 → 3,256 | 3,161 → 3,161 |
+
+Physical exports retain 6,010/6,011 periodic bits. The same mapper, binaries,
+physical policy and pinned five-corner Liberty accounting are used on both
+sides. All periodic storage clock-pin loads remain unchanged. The mapped
+reduction is 306 cells for BD and 289 for Click; both remove 306 preserved native
+cells, with 17 extra ordinary cells in Click's remapped combinational logic.
+All 27 matched wake windows per variant retain their ordering, counts and
+duration. Firmware windows remain 271,691.173 ns BD / 263,774.443 ns Click.
+Leakage is a listed-state envelope, not measured reachable standby power;
+unchanged clock activity is not an energy measurement. Physical capture/reset
+distribution and complete routed timing remain unqualified.
+
+Completed evidence is under `build/async-elapsed-context-reduction/`. The
+focused arithmetic/physical and composed regression runs pass 195 distinct
+ScalaTest cases, including both core references, retained sleep, permanent
+supervision, loader/firmware and actual snapshot-clock capture; 468 Python
+tests pass. All four strict SoC exports pass with sleep-clock background and
+three SRAMs: BD 802,700,736 portable / 802,917,776 physical mapping checks;
+Click 697,401,074 / 697,596,754. Independent exact-delta review verifies every
+surviving transform cone and all four mandatory generic campaigns. Reduced
+coverage counts follow only the 96 removed payload bits and 96 data-allowance
+lanes, not exemptions.
+
+The hash-bound receipts are `export-delta-r1.json`,
+`mapped-cost-review-r1/receipt.json`, `review-cost-summary-r1.json`, `activity-r1-receipt.json`,
+`review-final-r1.json` and `final-evidence-r1.json`. The prepared export-auditor
+controls reject the old exports as lacking the claimed reduction; incomplete
+preflight evidence and all earlier failure records remain retained. The first
+two activity-auditor attempts rejected the fixed SRAM's conditional declarations
+and the exact firtool resource wrapper. Their logs remain; the corrected audit
+resolves every compiled elapsed model uniquely and matches primitive bytes to
+the manifest's pinned resource hashes, allowing only that exact exporter wrapper.

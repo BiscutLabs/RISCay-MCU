@@ -41,7 +41,7 @@ class FourPhaseElapsed(micros: Seq[Int], domain: ResetDomain) extends AsyncModul
     new ElapsedWork(lanes), (x: Joined[ElapsedState, UInt]) => {
       val w = WireDefault(0.U.asTypeOf(new ElapsedWork(lanes)))
       val delta = x.right - x.left.consumed
-      w.state := x.left; w.target := x.right; w.delta := delta
+      w.fraction := x.left.fraction; w.target := x.right; w.delta := delta
       for((us,lane) <- micros.zipWithIndex) {
         var q = 0.U(32.W); var r = 0.U(10.W)
         for(bit <- 31 to 24 by -1) {
@@ -69,7 +69,7 @@ class FourPhaseElapsed(micros: Seq[Int], domain: ResetDomain) extends AsyncModul
   }
   private val finish = asyncChild("finish")(d => new FourPhaseStage(new ElapsedWork(lanes), new ElapsedResult(lanes),
     (x: ElapsedWork) => {
-      val r = Wire(new ElapsedResult(lanes)); r.state := x.state
+      val r = Wire(new ElapsedResult(lanes))
       r.state.consumed := x.target; r.single := x.delta === 1.U
       for((us,lane) <- micros.zipWithIndex) {
         var q = x.quotient(lane); var rem = x.remainder(lane)
@@ -77,7 +77,7 @@ class FourPhaseElapsed(micros: Seq[Int], domain: ResetDomain) extends AsyncModul
           val next = ConstantScaling.step(q, rem, x.delta(bit), us, 1000)
           q = next._1; rem = next._2(9,0)
         }
-        val sum = rem +& x.state.fraction(lane); val carry = sum >= 1000.U
+        val sum = rem +& x.fraction(lane); val carry = sum >= 1000.U
         r.state.fraction(lane) := Mux(carry, sum - 1000.U, sum)
         r.elapsed(lane) := q + carry
       }
