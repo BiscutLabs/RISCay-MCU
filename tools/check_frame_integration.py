@@ -683,6 +683,9 @@ def validate_frame_integration(manifest, scopes, directory):
     require(len(te) == len(target["endpoints"]) and type(te.get("frame_accept_enable", {}).get("width")) is int and
             te["frame_accept_enable"]["width"] == 1 and
             te["frame_accept_enable"].get("source") == f"~|{target['module']}>frameAcceptEnable", "ENABLE_ENDPOINT")
+    require(type(te.get("snapshot_accept_enable", {}).get("width")) is int and
+            te["snapshot_accept_enable"]["width"] == 1 and
+            te["snapshot_accept_enable"].get("source") == f"~|{target['module']}>snapshotAcceptEnable", "SNAPSHOT_ENABLE_ENDPOINT")
     tr = (directory / (target["module"] + ".sv")).read_text(encoding="utf-8")
     nr = (directory / (native["module"] + ".sv")).read_text(encoding="utf-8")
     sr = (directory / (root["module"] + ".sv")).read_text(encoding="utf-8")
@@ -692,6 +695,12 @@ def validate_frame_integration(manifest, scopes, directory):
     np = pins(tr, native["rtl_path"].rsplit(".", 1)[1], native["module"])
     pp = pins(nr, publication["rtl_path"].rsplit(".", 1)[1], publication["module"])
     tp = pins(sr, target["rtl_path"].rsplit(".", 1)[1], target["module"])
+    snapshot_model = scopes.get(snapshot["rtl_path"], {}).get("model", snapshot["module"])
+    require(re.fullmatch(prefix + r"ServiceReplyReceipt(?:_[0-9]+)?", snapshot_model), "SNAPSHOT_RECEIPT_MODEL")
+    xp = pins(tr, snapshot["rtl_path"].rsplit(".", 1)[1], snapshot_model)
+    require(xp.get("clock") == "clock" and xp.get("reset") == "reset" and
+            xp.get("out_ready") == "ca_child_snapshot_bridge_out_ready" and
+            xp.get("out_valid") == "_ca_child_snapshot_bridge_out_valid", "SNAPSHOT_RECEIPT_PINS")
     jp = pins(tr, "ca_primitive_frame_completion", completion["model"], completion_parameters)
     pairs = []; r = receipt["rtl_path"]; t = target["rtl_path"]; n = native["rtl_path"]; p = publication["rtl_path"]
     for node in (native, receipt, publication): pairs.append((node["rtl_path"] + ".reset", top + ".reset"))
@@ -759,6 +768,8 @@ def validate_frame_integration(manifest, scopes, directory):
         driver(tr, local_reset, "localReset_release_1")
         driver(tr, ready_reset, local_reset)
     for name, value in dict(ca_child_frame_bridge_out_ready="~" + ready_reset + "&frameAcceptEnable",
+                           ca_child_snapshot_bridge_out_ready="~" + ready_reset + "&snapshotAcceptEnable",
+                           host_readStart="ca_child_snapshot_bridge_out_ready&_ca_child_snapshot_bridge_out_valid",
                            packed_probe="reset",
                            **{rising: "host_resetActive&~resetEpoch_previous"},
                            resetEpoch=rising + "?resetEpoch_epoch+64'h1:resetEpoch_epoch",
@@ -788,6 +799,8 @@ def validate_frame_integration(manifest, scopes, directory):
     pairs += [(te[identity]["rtl_path"], t + "." + net) for identity, net in
               dict(frame_completion_reset="reset").items()]
     gate = tp.get("frameAcceptEnable"); require(gate in ("gate_enabled", "1'h1"), "WORK_ENABLE_BINDING")
+    require(tp.get("snapshotAcceptEnable") == gate and tp.get("host_readStart") == "_ca_child_i2c_host_readStart",
+            "SNAPSHOT_CONSUMER_BINDING")
     if gate == "gate_enabled":
         driver(sr, "gate__enabled_T_3", "~serviceClock")
         expected = "always@(posedgegate__enabled_T_3orposedgereset)beginif(reset)gate_enabled<=1'h1;elsegate_enabled<=(|{gate_needClock,gate_grace})|reset;end"
@@ -815,6 +828,13 @@ def validate_frame_integration(manifest, scopes, directory):
         driver(sr, spell("fabric_clock"), "workClock" if coordinated and not inline else "serviceClock")
         gate_path = "1'b1"
     pairs += [(t + ".frameAcceptEnable", gate_path), (top + ".fabric_clock", f"({top}.serviceClock & {gate_path})")]
+    x = snapshot["rtl_path"]
+    pairs += [(t + ".snapshotAcceptEnable", gate_path),
+              (te["snapshot_accept_enable"]["rtl_path"], t + ".snapshotAcceptEnable"),
+              (x + ".clock", top + ".serviceClock"), (x + ".reset", top + ".reset"),
+              (x + ".out_ready", f"(!{t}.localReset_release_1 && {t}.snapshotAcceptEnable)"),
+              (t + ".host_readStart", f"({x}.out_valid && {x}.out_ready)"),
+              (top + "._ca_child_i2c_host_readStart", t + ".host_readStart")]
     # Explicitly pin the old pre-edge admission context. Alias names are compiler
     # spelling, not substitute observations or new producer inputs.
     expected_top = dict(
@@ -881,7 +901,8 @@ def validate_frame_integration(manifest, scopes, directory):
                 pairs=[(spell(a), spell(b)) for a, b in pairs],
                 reset_context=top + ".fabric_hostFrames_io_enq_bits_resetActive",
                 busy_context=top + ".fabric_hostFrames_io_enq_bits_programBusy",
-                literal_enable_endpoint=te["frame_accept_enable"]["rtl_path"] if gate == "1'h1" else None)
+                literal_enable_endpoint=te["frame_accept_enable"]["rtl_path"] if gate == "1'h1" else None,
+                literal_snapshot_enable_endpoint=te["snapshot_accept_enable"]["rtl_path"] if gate == "1'h1" else None)
 
 
 def frame_receipt_probe(source, manifest, scopes, directory):
@@ -896,13 +917,14 @@ def frame_receipt_probe(source, manifest, scopes, directory):
     record = validate_frame_integration(manifest, scopes, directory)
     if record:
         pairs.extend(record["pairs"])
-        endpoint = record["literal_enable_endpoint"]
-        if endpoint:
+        for endpoint, net in ((record["literal_enable_endpoint"], "frameAcceptEnable"),
+                              (record["literal_snapshot_enable_endpoint"], "snapshotAcceptEnable")):
+          if endpoint:
             pattern = r'^if \(ones_(\d+) !== 1\'h1 \|\| zeros_\1 !== 1\'h1\) \$fatal\(1, "INACTIVE_ENDPOINT:' + re.escape(endpoint) + r'"\);$'
             matches = list(re.finditer(pattern, source, re.M)); require(len(matches) == 1, "ENABLE_LITERAL_COVERAGE")
             match = matches[0]
             source = source[:match.start()] + match[0].replace("zeros_" + match[1] + " !== 1'h1", "zeros_" + match[1] + " !== 1'h0") + source[match.end():]
-            pairs += [(endpoint, "1'b1"), (record["target"] + ".frameAcceptEnable", "1'b1")]
+            pairs += [(endpoint, "1'b1"), (record["target"] + "." + net, "1'b1")]
     if not pairs: return source
     anchor = "task check; begin"; require(source.count(anchor) == 1, "PROBE_SHAPE")
     comparisons = [f'if ({a} !== {b}) $fatal(1,"FRAME_RECEIPT_BINDING:{a}");' for a, b in pairs]

@@ -306,6 +306,12 @@ def actual_controls(directory, saved):
         check(label, key, texts[key][:match.start(1)] + body + texts[key][match.end(1):], expected)
 
     # Native route ownership must not turn admission into a copy crossing.
+    mutate_pin("snapshot-ready-bypasses-work-clock", "target", "ca_child_snapshot_bridge", "out_ready",
+               "1'h1", "SNAPSHOT_RECEIPT_PINS")
+    mutate_pin("snapshot-clock-disconnected", "target", "ca_child_snapshot_bridge", "clock",
+               "1'h0", "SNAPSHOT_RECEIPT_PINS")
+    mutate_pin("snapshot-accept-enable-always", "top", "ca_child_i2c", "snapshotAcceptEnable",
+               "1'h1", "SNAPSHOT_CONSUMER_BINDING")
     click = receipt["module"].startswith("Click")
     copy_input = "_ca_child_frame_store_in_ack"
     mutate_pin("original-offer-hidden-behind-copy", "target", "ca_child_frame_bridge", "in_req",
@@ -578,14 +584,18 @@ def actual_controls(directory, saved):
     inject("descriptor-hidden-memory", "top", "reg [336:0] fabric_hostFrames_shadow[0:1];", "MAILBOX_REGISTER_INVENTORY")
     # Dynamic enable cannot be changed to a literal by metadata or probe alone.
     endpoint = next(e["rtl_path"] for e in target["endpoints"] if e["id"]=="frame_accept_enable")
+    snapshot_endpoint = next(e["rtl_path"] for e in target["endpoints"] if e["id"]=="snapshot_accept_enable")
     scopes={c["contract"]["rtl_path"]:dict(registers=registers()) for c in target["children"] if "FrameReceipt" in c["contract"]["module"]}
     probe="task check; begin\nend endtask\n" + f'if (ones_7 !== 1\'h1 || zeros_7 !== 1\'h1) $fatal(1, "INACTIVE_ENDPOINT:{endpoint}");'
+    probe += '\n' + f'if (ones_8 !== 1\'h1 || zeros_8 !== 1\'h1) $fatal(1, "INACTIVE_ENDPOINT:{snapshot_endpoint}");'
     generated=frame_receipt_probe(probe,manifest,scopes,directory)
     if "zeros_7 !== 1'h1" not in generated: raise AssertionError("Dynamic gate coverage was masked")
     # Validate a deliberately ungated exact literal binding independently of the
     # production baseline, with all other existing gates retained but unused.
     changed, count=re.subn(r"(\.frameAcceptEnable\s*\()gate_enabled(\))",r"\g<1>1'h1\g<2>",texts["top"])
     if count!=1:raise AssertionError("Enable pin shape")
+    changed,count=re.subn(r"(\.snapshotAcceptEnable\s*\()gate_enabled(\))",r"\g<1>1'h1\g<2>",changed)
+    if count!=1:raise AssertionError("Snapshot enable pin shape")
     changed=changed.replace("serviceClock & gate_enabled","serviceClock").replace("gate_enabled & fabric_hostFrames_io_deq_ready", "fabric_hostFrames_io_deq_ready")
     record=validate_overlay("top",changed)
     if record["literal_enable_endpoint"]!=endpoint or record["gate"]!="1'b1":raise AssertionError("Literal endpoint binding missing")
@@ -593,6 +603,7 @@ def actual_controls(directory, saved):
     with patch.object(Path,"read_text",lambda path,*a,**kw:changed if path.resolve()==selected else real_read(path,*a,**kw)):
         generated=frame_receipt_probe(probe,manifest,scopes,directory)
     if "zeros_7 !== 1'h0" not in generated or generated.count(endpoint+" !== 1'b1")!=1:raise AssertionError("Literal coverage/check mismatch")
+    if "zeros_8 !== 1'h0" not in generated or generated.count(snapshot_endpoint+" !== 1'b1")!=1:raise AssertionError("Snapshot literal coverage/check mismatch")
     result["literal_enable_policy"]="PASS: dynamic unmasked; exact literal-one zero mask and comparisons"
     for key,path in paths.items():
         if (directory/path).read_bytes()!=original_bytes[key]:raise AssertionError("Original export changed")

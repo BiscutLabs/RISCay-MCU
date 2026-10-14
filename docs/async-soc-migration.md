@@ -23,6 +23,15 @@ when no next item has been chosen. Both implementations remain active throughout
 
 ## Corrective gates from the independent reviews
 
+The area proposal against `c71b234` is tracked in the
+[native area reduction plan](native-area-reduction.md). Begin with C1g, then
+ABI-preserving elapsed arithmetic and CRC reduction. LF width reduction needs
+a publication-latency/overflow proof. Self-timed SRAM macro clocks are authorized
+for implementation only after the macro timing and reset/pulse gates in A4;
+the existing service-clock implementation remains current until qualified.
+Then address native I2C storage, residual widths/copies, guards and data-delay
+mapping. Estimates are unmeasured; record matched costs at every accepted step.
+
 The subsequent user instruction on 2026-10-13 authorizes correcting the
 clocked coordination around native services and adapting timing analysis to
 their actual protocols. This supersedes the R4 migration freeze as a work
@@ -261,13 +270,20 @@ digital passes remain evidence of their tested scope, not RDC or physical proof.
   non-power-of-two and production bank sizes, falling-edge launch, full-cycle
   result capture and lane/reset/stall behavior. The nominal Groundlark reduction
   is 43 bits per variant; establish emitted and mapped savings before claiming it.
-- [ ] **C1g. Make I2C snapshot consumer-clock acceptance explicit.** The receipt
-  runs on service clock and the snapshot owner on gated work clock. No reachable
-  production loss has been demonstrated: START/address activity supplies wake
-  demand. Extend FrameWakeSpec with reads from real sleep, source stopping on/off,
-  3.2/20 MHz and maximum native delays; prove ACK coincides with actual snapshot
-  capture. A forced stopped gate establishes robustness, not a production bug.
-  Qualify acceptance without adding periodic state if the interface is hardened.
+- [x] **C1g. Make I2C snapshot consumer-clock acceptance explicit.** Both
+  receipts qualify acceptance with the actual work-clock gate; no storage or
+  handshake stage is added. SnapshotWakeSpec covers reads from real sleep,
+  source stopping on/off, 3.2/8/20 MHz, maximum native delays and deliberately
+  stopped consumers. A real SELECT changes the second snapshot; ACK must
+  coincide with actual capture. All 26 strengthened cases and two positive/
+  four exact-fatal controls pass. Full verification/physical checks total 690
+  distinct tests; Python controls total 468. Four strict exports and 1,890
+  portable/1,884 physical structural controls pass. Matched native/periodic
+  state, guard cells and all 27 wake windows per variant are unchanged; mapped
+  logic changes +0.0293% BD/+0.0470% Click. This hardens an implicit invariant,
+  not a demonstrated production loss. See the
+  [capture contract](held-peripheral-capture-contract.md#snapshot-consumer-clock-c1g)
+  and `build/async-snapshot-clock-qualification/final-evidence-r1.json`.
 - [ ] **C2. Narrow native loader CRC feedback.** The four CRC stages currently
   carry the whole 337-bit `ControlToken`. Keep public reply timing, transition
   logic and the seeded state owner, but retain the 305-bit context in a native

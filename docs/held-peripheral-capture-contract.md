@@ -127,3 +127,70 @@ register. Measure complete source-to-consumer setup/hold, source retention,
 earliest release after ACK, reset distribution and load/slew across physical
 corners before accepting silicon timing. Do not add periodic staging to evade
 these obligations.
+
+## Snapshot consumer clock (C1g)
+
+The snapshot receipt runs on the service clock; the coherent host register bank
+captures on the gated work clock. Both independent I2C targets now take an
+explicit `snapshotAcceptEnable`, bound to the actual falling-edge work-gate
+state. Receipt `ready` requires that enable and completed local POR release.
+Thus `host.readStart` and receipt ACK coincide with a real snapshot capture edge.
+The enable is independent of frame-only admission stalls. Pending native work
+still supplies ungated wake demand, and a stopped consumer leaves the native
+snapshot token and ACK retained. No periodic state, native adapter or additional
+handshake stage is added. This hardens the boundary contract; the review did not
+establish a reachable production failure under the existing wake behavior.
+
+`SnapshotWakeSpec` exercises real I2C reads from retained sleep, service-source
+stopping on/off, nominal/maximum native delay and a deliberately stopped work
+clock. It observes the actual snapshot register and checks ACK on its capture
+edge. A real SELECT changes the second read from ABI_VERSION to boot MODE so
+reusing the first snapshot fails. The 8/20 MHz cases use the generated chip
+oscillator; 3.2 MHz uses an external demand-following test clock because that
+frequency is outside the on-chip oscillator model's supported range. The model's
+range and original failed attempts remain unchanged.
+
+The strict integration check binds the receipt's actual clock/reset/ready,
+readStart and work-gate connection. Its literal mask is allowed only for an
+exact proved ungated consumer; dynamic gate coverage remains mandatory.
+Completed evidence is collected in `build/async-snapshot-clock-qualification/`.
+The migration checklist marks this digital qualification complete; physical
+source-to-consumer timing remains open.
+
+The independently reviewed matched mapping compares against `c71b234`, using
+its verified executable equivalence to the `535f781` mapped baseline. The
+mapper, binaries, physical policy and Liberty inputs are identical. Native
+bindings, guard cells, state counts, clock-pin loads and public ABI are unchanged;
+the difference is ordinary combinational mapping around the explicit qualifier.
+
+| Quantity | BD before → after | Click before → after |
+| --- | ---: | ---: |
+| Logic area excluding SRAM (mm²) | 3.291909 → 3.292872 | 4.147977 → 4.149929 |
+| Area change | +0.0293% | +0.0470% |
+| TT listed-state leakage including SRAM (µW) | 8.603006–11.223379 → 8.606112–11.228103 | 10.293397–13.952939 → 10.300147–13.960620 |
+| Portable periodic RTL bits | 6,000 → 6,000 | 6,001 → 6,001 |
+
+Enabled-policy physical exports remain 6,010/6,011 periodic bits. C1g is a
+correctness hardening step, not an area reduction. The same leakage, whole-chip
+area and physical timing limitations stated above apply. Reviewed receipts are
+`review-source-exports-r1.json`, `mapped-cost-review-r1/receipt.json`,
+`emitted-state-review-r1/receipt.json` and `review-cost-summary-r1.json`.
+
+The completed C1g campaign passes 686 verification tests and four physical
+policy tests (690 distinct cases), plus 468 Python tests. The strengthened
+26-case snapshot rerun overlaps that total. Two compiled positive controls and
+four actual ready-bypass/stale-capture mutations pass their unchanged oracles
+and exact fatal-site checks. Immutable export controls reject 1,890 portable
+and 1,884 physical wiring/policy faults. All four strict exports retain mandatory
+generic campaigns, sleep-clock background activity and three SRAMs: BD has
+806,867,904 portable / 807,084,944 physical checks; Click has 701,158,130 /
+701,353,810. The probes, compiled binaries and input hashes are retained.
+
+All 27 matched native-model wake windows per variant retain their order,
+counts and duration. The 43-instruction firmware wakes remain 3,256 BD and
+3,161 Click work-clock edges; no wake-energy reduction is claimed. The activity
+audit binds the actual executed snapshot receipt and work gate, not merely a
+matching module file. Final independent review and evidence are recorded in
+`review-final-r2.json` and `final-evidence-r1.json`. The initial unsupported
+oscillator cases and failed evidence-integrity attempts remain in the directory;
+none count as passing tests or relaxed timing limits.

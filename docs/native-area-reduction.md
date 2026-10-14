@@ -1,0 +1,125 @@
+# Native area reduction plan
+
+The proposal against `c71b234` is authorized for implementation, subject to
+the existing ABI, reset, retention and independent-review requirements. Its
+area estimates and target of roughly halving logic area are hypotheses, not
+mapped results. Keep native BD and Click; do not replace native work with
+periodic-clock staging. Measure each accepted step against its exact parent.
+
+## Order and acceptance gates
+
+- [x] **C1g: snapshot consumer-clock acceptance, digitally verified.** Qualify the service
+  receipt using the actual work-clock running state. Keep acceptance independent
+  of frame-only stalls, retain native request/data until capture and prove ACK
+  on the actual capture edge. Include real read-from-sleep and deliberately
+  stopped-consumer tests. This hardens an implicit invariant; the source review
+  did not demonstrate a reachable production loss. The completed tests, strict
+  exports and matched cost are recorded in
+  [the capture contract](held-peripheral-capture-contract.md#snapshot-consumer-clock-c1g).
+- [ ] **A1: shrink elapsed arithmetic without changing the time ABI (proposal 2).**
+  Remove unused old-consumed context from intermediate native work first; three
+  252-bit stores currently carry it, a nominal 96-bit opportunity. Then evaluate
+  bounded native radix feedback (one bit or nibble per turn, leading-zero skip)
+  against direct constant arithmetic. Reuse the transform rather than unroll
+  all 32 positions. Preserve exact full-width deltas, fractional accumulation,
+  wrap, stalled publication, `single` freshness and consumedGray ownership.
+  Current code already computes coefficients at elaboration and contains no
+  hardware division operator: its cost is unrolled quotient/remainder logic.
+  Never catch up by repeating once per delta tick: valid deltas include
+  `0xffffffff`. Native Click feedback must not use phase-adapting library
+  TwoPhaseMux/Merge. Preserve nominal milliseconds and published scaled ADC
+  values; internal raw/tick policy requires equivalence of boundary conversion
+  and conservative rounding. Specialize integer/duplicate coefficients only
+  while preserving all generic positive parameter configurations.
+- [ ] **A2: reduce CRC token storage and arithmetic (proposal 6 / C2).** Compare
+  one whole-word linear XOR transform with narrow CRC/word feedback. Retain
+  command context once, independent CRC32 oracles, exact Stored publication,
+  loader/reset/lock semantics and physical transform timing. Validate full-width
+  host length/entry/count before narrowing retained state. Derive widths from
+  configured capacity, including the representable full-capacity count.
+- [ ] **A3: prove LF narrowing, or retain width (proposal 8).** Wake on each tick
+  does not bound final Housekeeping publication latency. An 8/10-bit count can
+  wrap in 256/1024 ms in 1 kHz fixtures, or 21.3/85.3 s at production's fastest
+  12 Hz. A post-wrap assertion in the stalled service domain cannot detect a
+  full missed wrap. Require a proved maximum gap or independent retained
+  overflow/fault handling before reducing the current tolerance. This gate is
+  unresolved; do not block other safe area reductions waiting for an assumption.
+- [ ] **A4: self-timed SRAM macro access (proposal 1).** The user authorizes
+  reversing the service-clock-only rule after a concrete timing proof. First
+  characterize the pinned macro across every available PVT corner: CLK high/low,
+  all A/D/CEN/GWEN/WEN setup and hold, CLK-to-Q, load/slew and reset/abort behavior.
+  Design separate native BD/Click word owners and byte loops with one retained
+  request and assembled result, rather than four full-width lane tokens. An
+  internally generated macro pulse is still a real timed clock at the macro.
+  Prove no runt/double pulse or idle CEN glitch and POR-safe quiescence, including
+  POR during the pulse. Keep SRAM contents and accepted effects retained through
+  application reset. Do not change the production macro clock until these
+  physical constraints and all lane/mask/back-to-back/loader tests are covered.
+- [ ] **A5: addressed native I2C byte storage (proposal 4).** Move frame bytes
+  out of the per-edge state/observation token, publish completed bank identity
+  and keep immutable ownership through both copy and admission/dispatch. Reduce
+  readWord transport only after proving per-edge byte selection across word
+  boundaries. Replace accepted-descriptor epochs with sticky stale history only
+  after checking every reset ordering; pre-acceptance epoch narrowing requires
+  an actual worst-case latency bound, including stopped consumers and POR-only
+  work. Preserve two logical credits, native bank rotation, overflow and reset/
+  busy context at their original linearization points.
+- [ ] **A6: widths and duplicate ownership (proposal 7 / C1d–f).** Evaluate the
+  fixed SPI player, quiescing request receipt, saved SRAM address, profile-sized
+  GPIO/wake fields and bounded statistics. Remove queued/ordered/bridge copies
+  together with their ownership, preserving ordering and independent stalls.
+  Audit verification-only payload and dontTouch retention. Any trace-disabled
+  physical export must be an explicit configuration compared on both sides,
+  retain verification builds and keep architectural/debug interface obligations
+  explicit; do not silently prune a live output to improve area figures.
+- [ ] **A7: replace guards with proved completion (proposal 3 / R5).** Record each
+  guard's ordering/hold/reset obligation. Replace it only with completion that
+  proves that obligation under skew, backpressure, phase return and reset. Keep
+  guard-removal fault controls; account for the cells and energy of retained
+  delays. Synchronous STA complaints alone are not grounds to add registers or
+  waive real timing.
+- [ ] **A8: qualify transform data allowances (proposal 5).** First count mapped
+  leaf cells under each data_delay, separately from actual control delays. A
+  library change may make an allowance a passive timing annotation only when
+  exact upstream/capture endpoints, reset semantics and bundling checks replace
+  the current active mapping. Do not remove reset gates or per-bit buffers on
+  the assumption that every source/storage path already supplies their behavior.
+  Keep mandatory export coverage and digital model obligations intact. Present
+  the concrete library contract change for review before upstreaming it.
+
+## Evidence required per completed step
+
+Record native and periodic-clocked state separately, mapped logic and guard
+area, the same TT leakage method with its state assumptions, all matched wake
+window durations and work-clock edges, and source/export/tool hashes. Include
+both variants, the real workload and retained old failures. Bit counts alone
+are not area or energy measurements. Fresh review, fixes, affected regressions,
+strict exports, documentation, commit and push complete each item. Physical
+timing, reset distribution and reachable standby energy remain separate gates.
+
+The LF source/watchdog, bounded wire sampling, timed SPI pins and safe reset
+coordination retain their independent progress obligations. The service
+oscillator cannot be declared unnecessary until every remaining client is
+removed or independently clocked. Services scheduling remains a later native
+ownership change; optimizing SRAM alone does not remove it.
+
+## Initial mapped allowance inventory
+
+The C1g mapped netlists provide A8's preliminary component count. The audit
+resolves each preserved adapter to actual mapped leaves and uses pinned TT
+Liberty cell areas, separately from matched control-delay chains.
+
+| Component | BD | Click |
+| --- | ---: | ---: |
+| Instances with primitive ID `data_delay` | 104 | 104 |
+| Data lanes in those instances | 13,733 | 13,756 |
+| Actual cells beneath those instances | 28,595 | 28,643 |
+| Their cell area (mm²) | 0.457207 | 0.457976 |
+| All whole-transform allowance area, including other IDs (mm²) | 0.513383 | 0.461567 |
+
+Each named lane has an AND reset gate and buffer; the totals also include
+shared reset inversion/distribution. This is existing component cost, not a
+claim that all these cells can be removed. Reset behavior, endpoint resolution
+and complete physical bundling still gate passive mapping. Evidence:
+`build/async-snapshot-clock-qualification/transform-cells-r1.json` and its
+hashed `count_transform_cells.py` audit.

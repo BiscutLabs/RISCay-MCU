@@ -19,6 +19,7 @@ class I2cTarget(address: Int,idleCycles: Int,domain: ResetDomain) extends Clocke
   val scl=IO(Input(Bool())); val sda=IO(Input(Bool())); val pullLow=IO(Output(Bool()))
   val host=IO(new I2cHostPort)
   val frameAcceptEnable=IO(Input(Bool()))
+  val snapshotAcceptEnable=IO(Input(Bool()))
   val native=asyncChild("native")(d => new FourPhaseI2c(address,d))
   val frames=asyncChild("frame_bridge")(d => new FourPhaseFrameReceipt(d))
   val frameStore=asyncChild("frame_store")(d => new FourPhaseFrameStore(d))
@@ -56,7 +57,9 @@ class I2cTarget(address: Int,idleCycles: Int,domain: ResetDomain) extends Clocke
   // Receipt ACK and mailbox enqueue share a real work-clock edge. A held frame
   // still contributes ungated busy/wake demand while the work gate is stopped.
   frames.out.ready:= !localReset.asBool && frameAcceptEnable
-  snapshots.out.ready:= !localReset.asBool
+  // The receipt runs on service clock; its snapshot consumer uses work clock.
+  // ACK is permitted only when that consumer will see this same rising edge.
+  snapshots.out.ready:= !localReset.asBool && snapshotAcceptEnable
   host.frame.valid:=frames.out.fire; host.frame.bits:=frames.out.bits.ingress
   host.readStart:=snapshots.out.fire
   dontTouch(frames.out); dontTouch(snapshots.out)
@@ -129,6 +132,7 @@ class I2cTarget(address: Int,idleCycles: Int,domain: ResetDomain) extends Clocke
     dontTouch(slots); dontTouch(tailGray)
   }
   contract.endpoint("frame_accept_enable",frameAcceptEnable)
+  contract.endpoint("snapshot_accept_enable",snapshotAcceptEnable)
   contract.endpoint("reset",reset)
   private val wireInputs=WireDefault(UInt(2.W),Cat(scl,sda)); dontTouch(wireInputs)
   contract.endpoint("wire_inputs",wireInputs); contract.endpoint("pull_low",pullLow)

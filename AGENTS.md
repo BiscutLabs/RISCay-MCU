@@ -25,7 +25,9 @@
   Keep independent watchdog/time and physical I/O obligations. Boundary
   acceptance must coincide with the actual consumer clock: snapshot receipts
   need explicit work-clock qualification or a verified wake invariant, just
-  like frame/head receipts. Track C1d–g before claiming minimum boundary state.
+  like frame/head receipts. C1g is digitally verified with actual snapshot
+  capture, stopped-consumer and exact-fault controls. Track C1d–f before claiming
+  minimum boundary state.
   Keep raw-reset diagnostic mirrors in verification fixtures only; production
   cancellation/debt remains POR-owned. Preserve diagnostic fault controls.
   Physical requalification is item 17; the corrective gates below take priority
@@ -308,8 +310,14 @@
   Run AsyncSramSpec and actual-lane SRAM reset/stall checks. Native execution
   credit serializes words until response acceptance; all SRAM crossings are
   POR-only. The clocked macro boundary performs one byte access/capture only.
-  Keep CLK on the service clock, falling-edge input launch, full-cycle Q capture
-  and busy through every crossing's return. Do not call old cycle-offset tests
+  The current implementation keeps CLK on the service clock, falling-edge input
+  launch, full-cycle Q capture and busy through every crossing's return. The
+  user authorizes self-timed macro clocks under A4 in
+  `docs/native-area-reduction.md`: qualify all macro pulse/setup/hold/access and
+  POR-abort constraints before replacing this boundary. Never substitute a
+  guessed request pulse. Preserve the full-width millisecond/scaled-value ABI;
+  narrow LF state only with a proven publication gap or retained overflow logic.
+  Do not call old cycle-offset tests
   exhaustive native phase coverage.
   Offer the full RAM payload independently of valid; admission checks alone
   authorize capture. Strict mapping stimuli may force catalogued source registers,

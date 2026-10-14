@@ -54,8 +54,10 @@ Clocked service coordination, observation and publication boundaries remain,
 along with synchronous SRAM macro access, wire sampling and the independent
 LF timebase/watchdog. The [remaining-state ledger](docs/async-residual-state.md)
 tracks removal candidates; a smaller clocked-bit count does not establish lower
-area or power. The follow-up audit identifies remaining SPI recipe storage,
-quiescing request copies, SRAM address widths and I2C snapshot clock assumptions.
+area or power. The [native area reduction plan](docs/native-area-reduction.md)
+targets elapsed/CRC arithmetic, wide payload transport and duplicate storage,
+with measured cost gates. Self-timed SRAM access requires a complete macro timing
+contract; the millisecond and scaled-value ABI remains unchanged.
 Each migration item requires fresh independent review, fixes,
 verification, documentation and a separate commit/push.
 
