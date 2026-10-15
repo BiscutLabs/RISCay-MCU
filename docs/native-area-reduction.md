@@ -67,10 +67,12 @@ periodic-clock staging. Measure each accepted step against its exact parent.
   physical constraints and all lane/mask/back-to-back/loader tests are covered.
   The reviewed [macro preflight](native-sram-clock-contract.md) is complete;
   an isolated digital byte-owner experiment can use the public Mutex model now.
-  Its missing physical implementation is a separate
-  [library proposal](mutex-physical-binding-proposal.md), now approved for
-  isolated library implementation and review. Neither preflight nor grant-only
-  probes qualify SRAM pins.
+  The approved [library work](mutex-physical-binding-proposal.md) is implemented
+  and independently reviewed in [draft chisel-async PR #4](https://github.com/BiscutLabs/chisel-async/pull/4):
+  ownership/reset contracts, digital tests and an experimental GF180 schematic
+  cell. Layout, extraction, Liberty and reliability qualification remain open.
+  The draft is not merged; the MCU dependency and generic mapper are unchanged.
+  Neither this schematic experiment nor the byte-owner tests qualify SRAM pins.
 - [ ] **A5: addressed native I2C byte storage (proposal 4).** Move frame bytes
   out of the per-edge state/observation token, publish completed bank identity
   and keep immutable ownership through both copy and admission/dispatch. Reduce
@@ -360,9 +362,11 @@ length/entry/count narrowing is A2b under A6.
   Click wrapper is added. The 47 source/runtime/graph binding tests pass.
   See the [experimental byte-owner contract](experimental-native-sram-byte.md).
   Physical qualification and production word/bank/reset integration remain A4c/d.
-- [ ] **A4c: physical primitive and complete byte-cycle qualification.** Review
-  the approved reusable Mutex implementation independently; characterize its technology
-  implementation and complete owner/macro pin paths. Unresolved arbitration has
+- [ ] **A4c: physical primitive and complete byte-cycle qualification.** The
+  reusable Mutex contract/tests and experimental GF180 schematic have received
+  independent review in [draft PR #4](https://github.com/BiscutLabs/chisel-async/pull/4).
+  Qualify layout/extraction, electrical and reliability behavior, then the
+  complete owner/macro pin paths. Unresolved arbitration has
   no finite physical deadline. Keep load/slew, setup/hold, pulse, reset and routed
   failures explicit. Do not bypass a missing primitive recipe with priority logic.
 - [ ] **A4d: native word loop and production integration.** After qualification,

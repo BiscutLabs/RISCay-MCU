@@ -1,4 +1,4 @@
-# Minimal reusable Mutex improvement for review
+# Reusable Mutex contract and experimental GF180 cell
 
 The missing piece is a physical implementation contract and GF180 binding for
 the library's **existing public two-request Mutex**. The input/output API already
@@ -51,6 +51,16 @@ and capture pins. Those tests can expose logical errors now. They cannot qualify
 the missing physical cell, and they do not authorize replacing production SRAM
 controllers before the measured pulse/reset envelopes pass.
 
-This is a proposal for upstream work, not an implemented library change. The
-user's review of this scope comes before chisel-async edits; it does not need to
-halt the independent MCU digital experiment.
+The approved library work is implemented in [draft chisel-async PR #4](https://github.com/BiscutLabs/chisel-async/pull/4), at commit
+[`ff128841`](https://github.com/BiscutLabs/chisel-async/commit/ff128841315d6fe83d57881b092702c431a50da6).
+It adds the ownership/reset contract, digital tests and an experimental GF180
+schematic cell. The public API and digital model remain unchanged. Independent
+review and bounded digital/SPICE campaigns completed; the earlier asymmetric-load
+circuit failure is retained in its evidence.
+
+This is **not a qualified physical binding**. Layout, extracted parasitics,
+Liberty characterization, noise/mismatch/aging, reliability/MTBF and routed
+integration remain open. The draft is not merged. The MCU dependency and generic
+GF180 mapper remain unchanged, and production self-timed SRAM access is not
+accepted by this library result. The MCU integration described in item 3 remains
+a separate step after physical qualification.
