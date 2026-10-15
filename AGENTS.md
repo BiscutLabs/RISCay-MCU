@@ -290,7 +290,12 @@
   and tools/check_i2c_wiring_controls.py against both standalone publication exports.
 - SPI ADC uses separate native conversion/priming/assembly/scaling loops and a
   fixed-rate clocked waveform player. Preserve the immutable native pin recipe,
-  all 32 observations, exact half-phases, first-complete-frame discard and busy
+  indexed playback and registered pins; follow `docs/spi-player-contract.md`.
+  Keep highest-occupied-slot behavior, including empty/holey recipes, and all
+  source constant/connection checks. Run SpiRecipeReplaySpec at half-periods
+  2/3/5 alongside the unchanged wall-clock SpiAdcSpec oracles. Artificial clock
+  pauses prove retention, not valid real-time ADC waveforms.
+  Preserve all 32 observations, exact half-phases, first-complete-frame discard and busy
   through every crossing's return. All state/crossings are POR-only. Carry elapsed
   conversion age into both telemetry and supervisor histories; a buffered old
   frame must not acquire age zero on publication. Run AsyncSpiAdcSpec, SpiAdcSpec,

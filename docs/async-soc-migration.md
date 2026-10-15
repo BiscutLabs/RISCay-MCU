@@ -259,11 +259,17 @@ digital passes remain evidence of their tested scope, not RDC or physical proof.
   remain unchanged. Fresh independent review and evidence, including failed
   compile/control attempts, are retained in `build/async-platform-diagnostic-cleanup/`.
   See the [reset contract](application-reset-boundary.md#verification-only-observers-c1c).
-- [ ] **C1d. Compact the fixed SPI waveform player.** Evaluate replacing its
-  96 recipe shift bits with a slot index and busy state. Preserve all 32 samples,
-  exact half-phases, first-frame discard, source retention and full drain.
-  Keep this distinct from removing the native conversion owner or physical I/O
-  timing; require matched total cost and independent wire-oracle checks.
+- [x] **C1d. Compact the fixed SPI waveform player.** Digitally verified:
+  replace its 96 recipe shift bits with a five-bit slot and active bit, preserving
+  all 32 samples, exact half-phases, first-frame discard, immutable source recipe
+  and full drain. See the [player contract](spi-player-contract.md). Verification
+  passes 167 Scala tests, 519 Python controls, four strict exports and four
+  actual-wiring baselines with 30 exact-fatal mutations. Matched logic falls
+  0.2730% BD / 0.3012% Click; all 27 wake windows per variant are unchanged.
+  Fresh independent review and source/evidence inventories are recorded in
+  `build/async-spi-recipe-reduction/review-final-r1.json` and `final-evidence-r1.json`.
+  The physical pin boundary remains clocked. Selected local setup/hold passes;
+  slew, capacitance and complete physical qualification remain open.
 - [ ] **C1e. Remove retained request/grant copies where ownership permits.**
   Audit the 70-bit CPU request in each quiescing receiver and ten nominal bits
   across six grant/drain receivers. Preserve R1 close/closed/rebase/withdrawal,
@@ -1559,12 +1565,13 @@ does not publish; an incomplete frame cannot prime it. The feedback credit retur
 only after the consumer accepts the reply. All four crossings and all native
 state are POR-only; application watchdog reset cannot discard or replay them.
 
-The clocked boundary admits a conversion, copies the native recipe, emits exactly
+The clocked boundary admits a conversion, indexes the immutable native recipe, emits exactly
 32 half-period slots and buffers every MISO observation. It never waits for a
 native per-edge acknowledgement while CS is low. CS asserts with SCLK low; the
 first rising edge follows one complete half-period. The sixteenth falling edge
-releases CS after the final complete high phase. Clocked state contains a shift
-mask, pin vectors, divider and retained observations, not ADC field extraction,
+releases CS after the final complete high phase. C1d replaces copied shift
+mask/pin vectors with a slot and active bit; its acceptance is tracked above.
+Clocked state retains the divider, pins and observations, not ADC field extraction,
 priming or scaling state. Native backpressure can delay admission or publication,
 but cannot stretch a half-period. Busy includes every phase through complete
 command/wave/capture/reply return. Neither another start nor retained sleep may

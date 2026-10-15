@@ -92,6 +92,9 @@ periodic-clock staging. Measure each accepted step against its exact parent.
   physical export must be an explicit configuration compared on both sides,
   retain verification builds and keep architectural/debug interface obligations
   explicit; do not silently prune a live output to improve area figures.
+  C1d's compact SPI player is digitally verified and measured: 90 fewer periodic
+  bits per variant, with unchanged wake activity. See the [player contract](spi-player-contract.md).
+  See its [matched cost and timing evidence](spi-player-contract.md).
 - [ ] **A7: replace guards with proved completion (proposal 3 / R5).** Record each
   guard's ordering/hold/reset obligation. Replace it only with completion that
   proves that obligation under skew, backpressure, phase return and reset. Keep

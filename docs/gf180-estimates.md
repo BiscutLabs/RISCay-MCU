@@ -6,7 +6,17 @@ are independently audited. The subsequent corrective work targets redundant
 storage and clocked coordination while preserving native BD/Click; see the
 [migration checklist](async-soc-migration.md). Physical timing remains unqualified.
 
-The latest [A5a observation comparison](native-area-reduction.md#a5a-native-i2c-observation-projection)
+The latest [C1d SPI comparison](spi-player-contract.md#matched-cost)
+uses the same mapper and five-corner accounting against `a8c0300`. Logic area
+falls **0.2730% BD / 0.3012% Click**, to **2.931040 / 3.699481 mm²** excluding
+SRAM. TT listed-state leakage including SRAM becomes **7.752528–10.033946 /
+9.222217–12.361046 µW**. Each variant loses 90 periodic bits and 0.290708 pF
+of mapped storage clock-pin load. All 27 matched wake windows remain unchanged.
+Functional, actual-wiring and strict export checks pass. Local selected
+setup/hold paths pass, while slew and capacitance failures remain explicit.
+These figures do not update P&R or measure reachable deep-sleep power or wake energy.
+
+The prior [A5a observation comparison](native-area-reduction.md#a5a-native-i2c-observation-projection)
 uses the same mapper and five-corner accounting against `5e1406b`. Logic area
 falls **1.2155% BD / 1.0008% Click**, to **2.939063 / 3.710656 mm²** excluding
 SRAM. TT listed-state leakage including SRAM becomes **7.772042–10.062488 /

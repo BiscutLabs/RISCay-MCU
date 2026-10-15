@@ -71,7 +71,8 @@ class ClickSpiAdc(p: AdcParameters,domain: ResetDomain) extends AsyncModule(doma
 
 /** POR-only admission/publication plus a fixed-rate waveform player.
   * No ADC bit count, field extraction, priming or scaling state lives here.
-  * The complete pin recipe and all 32 observations are retained until consumed.
+  * The native pin recipe is POR-immutable. Only its playback position and
+  * all 32 observations are retained at this physical boundary.
   */
 class SpiAdc(p: AdcParameters,autonomous: Boolean,domain: ResetDomain) extends ClockedBridge(domain,2) {
   val io=IO(new SpiAdcPort); dontTouch(io)
@@ -95,29 +96,32 @@ class SpiAdc(p: AdcParameters,autonomous: Boolean,domain: ResetDomain) extends C
     val interval=RegInit(0.U(log2Ceil(p.intervalCycles).W))
     val age=RegInit(0.U(32.W)); val aged=age +& io.ageStep
     val ageNow=Mux(aged(32),"hffffffff".U,aged(31,0))
-    val occupied=RegInit(0.U(32.W)); val csLevels=Reg(UInt(32.W)); val clockLevels=Reg(UInt(32.W))
+    val slot=RegInit(0.U(5.W)); val playing=RegInit(false.B)
+    // Preserve the recipe's original highest-occupied-slot semantics,
+    // including holes or an empty recipe; do not hard-code 32 transfers.
+    val remaining=recipe.occupied >> slot
     val divider=RegInit(0.U(log2Ceil(p.halfPeriodCycles).max(1).W))
     val cs=RegInit(true.B); val clockLevel=RegInit(false.B)
     val samples=RegInit(0.U(32.W)); val sampled=RegInit(false.B); val complete=RegInit(false.B)
-    val drained=returned && waveReturned && command.in.ready && capture.in.ready && !occupied.orR && !sampled
+    val drained=returned && waveReturned && command.in.ready && capture.in.ready && !playing && !sampled
     val launch= !active && drained && (if(autonomous) interval === 0.U else io.start)
     command.in.valid:=pending; command.in.bits:=active
     when(launch) { active:=true.B; pending:=true.B; interval:=(p.intervalCycles-1).U; age:=0.U }
       .elsewhen(!active && drained) { when(interval =/= 0.U) { interval:=interval-1.U } }
     when(active) { age:=ageNow }
     when(command.in.fire) { pending:=false.B }
-    wave.out.ready:=active && !occupied.orR && !sampled && !localReset.asBool
+    wave.out.ready:=active && !playing && !sampled && !localReset.asBool
     when(wave.out.fire) {
-      occupied:=recipe.occupied; csLevels:=recipe.csN; clockLevels:=recipe.sclk
+      slot:=0.U; playing:=recipe.occupied.orR
       cs:=recipe.initialCsN; clockLevel:=recipe.initialSclk
       divider:=0.U; samples:=0.U; complete:=false.B
     }
-    when(occupied.orR) {
+    when(playing) {
       when(divider === (p.halfPeriodCycles-1).U) {
-        divider:=0.U; cs:=csLevels(0); clockLevel:=clockLevels(0)
-        csLevels:=csLevels >> 1; clockLevels:=clockLevels >> 1
-        samples:=Cat(miso,samples(31,1)); occupied:=occupied >> 1
-        when(occupied === 1.U) { sampled:=true.B; complete:=true.B }
+        divider:=0.U; cs:=recipe.csN(slot); clockLevel:=recipe.sclk(slot)
+        samples:=Cat(miso,samples(31,1))
+        when(remaining === 1.U) { playing:=false.B; sampled:=true.B; complete:=true.B }
+          .otherwise { slot:=slot+1.U }
       }.otherwise { divider:=divider+1.U }
     }
     capture.in.valid:=sampled; capture.in.bits.samples:=samples; capture.in.bits.complete:=complete
@@ -129,7 +133,7 @@ class SpiAdc(p: AdcParameters,autonomous: Boolean,domain: ResetDomain) extends C
     io.result.bits.calibrated:=p.calibrated.B; io.age:=ageNow
     io.busy:=active || pending || !drained || localReset.asBool
     csN:=cs; sclk:=clockLevel
-    dontTouch(occupied); dontTouch(samples)
+    dontTouch(slot); dontTouch(playing); dontTouch(samples)
   }
   contract.endpoint("reset",reset)
 }

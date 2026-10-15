@@ -10,7 +10,7 @@ claim that the clocked shell is minimal.
 
 | Remaining candidate, per variant | Finding and required proof | Checklist |
 | --- | --- | --- |
-| SPI player: three 32-bit recipe/occupancy registers | POR-immutable native recipe permits evaluating a five-bit slot and one active bit. Preserve registered pins, all 32 samples, divider cadence and return drainage; measure compiled and mapped cost. | C1d |
+| SPI player: copied recipe/occupancy registers | Digitally verified removal: a five-bit slot and one active bit index the POR-immutable native recipe. Registered pins, all 32 samples, divider cadence and return drainage are preserved; see the [player contract](spi-player-contract.md). | C1d |
 | Quiescing CPU request receiver: 70-bit payload copy | Evaluate direct retained-bus capture while preserving close/rebase, source hold, acceptance cadence and invalid-bus isolation. A POR-only receipt is not a drop-in replacement. | C1e |
 | SRAM saved byte address: 32 bits in each bank | Groundlark needs 11/10 address bits. Narrow only after full-width validation; preserve small/non-power-of-two capacities and the macro launch/capture contract. Nominal 43-bit reduction may already partly optimize away. | C1f |
 | I2C snapshot receipt | Runs on service clock; Services captures on gated work clock. C1g digitally verifies an explicit work-clock qualifier with no storage, actual capture and stopped-consumer controls; see the capture contract. Native coherent snapshot ownership remains a separate migration. | C1g, 13c |
@@ -25,6 +25,13 @@ clock-gate synchronization and coordinated reset closure remain required;
 their surrounding storage and bookkeeping still need individual justification.
 
 ## Verified cleanup history
+
+C1d's compiled and matched measurement removes another **90 periodic bits per
+variant**, giving **5,910 BD / 5,911 Click** portable bits and **5,920 / 5,921**
+enabled-policy physical bits. Native primitives, SRAMs and public schemas are
+unchanged. Functional, actual-wiring and strict export checks pass; see the
+[SPI player contract](spi-player-contract.md). These are declaration
+counts, separate from mapped storage, area and clock-pin load.
 
 C1b's cleanup is **digitally verified, 2026-10-13**. Compiled inventories prove **538
 fewer periodic-clock payload bits per variant**, giving **6,000 BD / 6,001 Click**
@@ -116,10 +123,11 @@ The increase is nine coordinator bits, twenty publication-client mirror bits,
 ten actual bridge close/rebase acknowledgments, and one additional completion
 return observation bit. The 120 application-projection bits retain their width
 but now have POR ownership and synchronous cancellation. Existing bridge POR
-release chains retain 128 bits. Current disjoint emitted totals are top
+release chains retain 128 bits. The R1 disjoint emitted totals were top
 2,765/2,766, 64 crossings 3,838 each, and five wrappers 1,187 each; subtract the
 one SDA-edge bit for the periodic totals. This is containment overhead, not
-asynchronous state removal or area/power evidence. R4 must refresh mapped costs.
+asynchronous state removal or area/power evidence. The later R4 matched
+comparison and C1d cost reports supersede that historical mapping baseline.
 
 Do not compare these portable counts directly with enabled-policy physical
 exports: their baseline has ten additional emitted bits from configuration and
@@ -147,7 +155,7 @@ clocked subsets are therefore 7,749 and 7,750 bits. The wrappers contain I2C
 
 The following groups partition the flattened top. Crossing and wrapper counts
 above are separate storage; replacing their clients enables further removals.
-These are present-state counts, not guaranteed net savings: native owners still
+These are the 2026-10-12 baseline counts, not guaranteed net savings: native owners still
 need retained storage and can temporarily require new receipt/synchronizer bits.
 
 | Top-level state | Bits BD / Click | Checklist |
@@ -201,7 +209,9 @@ candidates, but must retain full watchdog-episode identity, immutable bytes,
 overflow proof and maximum-rate capture. Sampling/filtering and abandoned-bus
 timeout need a separately verified replacement.
 
-SPI's 175 bits include 96 recipe/occupancy bits, 32 samples and 32 age bits.
+The pre-C1d SPI inventory's 175 bits includes 96 recipe/occupancy bits,
+32 samples and 32 age bits. Verified C1d replaces the 96-bit copy with six
+playback bits, leaving 85 bits in this boundary's declared inventory.
 Admission, age and return bookkeeping can be investigated independently of timed
 pin playback. Preserve both half-phases, MISO capture and first-frame discard.
 
