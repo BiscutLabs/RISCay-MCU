@@ -335,7 +335,10 @@
   `docs/native-area-reduction.md`: qualify all macro pulse/setup/hold/access and
   POR-abort constraints before replacing this boundary. Never substitute a
   guessed request pulse. Preserve the full-width millisecond/scaled-value ABI;
-  narrow LF state only with a proven publication gap or retained overflow logic.
+  narrow LF state only with bounded observation/scaler progress, safe retained
+  accumulation and wake ownership, or independent retained overflow logic. A3
+  retains 32 bits; follow `docs/lf-counter-width-decision.md`. Waking on each tick
+  alone is not that bound, and a post-wrap assertion cannot recover a missed wrap.
   Do not call old cycle-offset tests
   exhaustive native phase coverage.
   Offer the full RAM payload independently of valid; admission checks alone

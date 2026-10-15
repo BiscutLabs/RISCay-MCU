@@ -43,13 +43,17 @@ periodic-clock staging. Measure each accepted step against its exact parent.
   validation and schema changes receive a separate review and measurement.
   Validate full-width host fields first and derive retained widths from configured
   capacity, including its representable full-capacity count.
-- [ ] **A3: prove LF narrowing, or retain width (proposal 8).** Wake on each tick
-  does not bound final Housekeeping publication latency. An 8/10-bit count can
+- [x] **A3: prove LF narrowing, or retain width (proposal 8): retain 32 bits.** Wake on each tick
+  does not prove a maximum observation/progress gap. An 8/10-bit count can
   wrap in 256/1024 ms in 1 kHz fixtures, or 21.3/85.3 s at production's fastest
   12 Hz. A post-wrap assertion in the stalled service domain cannot detect a
-  full missed wrap. Require a proved maximum gap or independent retained
-  overflow/fault handling before reducing the current tolerance. This gate is
-  unresolved; do not block other safe area reductions waiting for an assumption.
+  full missed wrap. Require bounded observation/scaler progress with safe elapsed
+  accumulation and wake ownership, or independent retained overflow/fault handling,
+  before reducing the current tolerance. A bound through final Housekeeping
+  publication is sufficient but stronger than necessary. The reviewed decision
+  changes no hardware and claims no area or power saving; see the
+  [LF width decision](lf-counter-width-decision.md). Narrowing can be reopened
+  with the missing proof without blocking independent reductions.
 - [ ] **A4: self-timed SRAM macro access (proposal 1).** The user authorizes
   reversing the service-clock-only rule after a concrete timing proof. First
   characterize the pinned macro across every available PVT corner: CLK high/low,
