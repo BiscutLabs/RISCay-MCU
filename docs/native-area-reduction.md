@@ -65,6 +65,11 @@ periodic-clock staging. Measure each accepted step against its exact parent.
   POR during the pulse. Keep SRAM contents and accepted effects retained through
   application reset. Do not change the production macro clock until these
   physical constraints and all lane/mask/back-to-back/loader tests are covered.
+  The reviewed [macro preflight](native-sram-clock-contract.md) is complete;
+  an isolated digital byte-owner experiment can use the public Mutex model now.
+  Its missing physical implementation is a separate
+  [library proposal](mutex-physical-binding-proposal.md), requiring user review
+  before upstream edits. Neither preflight nor grant-only probes qualify SRAM pins.
 - [ ] **A5: addressed native I2C byte storage (proposal 4).** Move frame bytes
   out of the per-edge state/observation token, publish completed bank identity
   and keep immutable ownership through both copy and admission/dispatch. Reduce
@@ -317,3 +322,30 @@ The failed focused r2 compilation remains in its original log: a new test
 constant shadowed ScalaTest's `pending` member. Renaming the constant preserved
 the implementation and expected values; focused r3 passes. Retained loader
 length/entry/count narrowing is A2b under A6.
+
+## A4 progress and physical gates
+
+- [x] **A4a: fixed-macro preflight and ownership contract.** Preserve the eleven
+  pinned assets. Five-corner checks reproduce 640 input/output timing reports
+  and 45 intended violations. Full-macro SPICE produced no functional measurement;
+  all failed/timed-out attempts remain evidence. The revised admission proposal
+  separates bootstrap reset, retained stop, source quiescence and rearm. Independent
+  review reproduces seven public-Mutex model probes and two exact wiring faults,
+  with two additional witnesses for old-request replay and premature reuse.
+  These checks contain no byte owner or actual SRAM-pin coverage.
+- [ ] **A4b: isolated BD/Click native byte owners.** Use the unchanged public
+  Mutex digital model for a clearly unqualified experiment. Test actual macro
+  and receiver pins, source/payload ownership, pulse completion, independent
+  returns, held results and stop/rearm. Observe grant low before contender reuse;
+  clear/rebase old requests before electrical reset release. No periodic pipeline
+  or four-phase Click wrapper is permitted.
+- [ ] **A4c: physical primitive and complete byte-cycle qualification.** Review
+  the reusable Mutex scope before library edits; characterize its technology
+  implementation and complete owner/macro pin paths. Unresolved arbitration has
+  no finite physical deadline. Keep load/slew, setup/hold, pulse, reset and routed
+  failures explicit. Do not bypass a missing primitive recipe with priority logic.
+- [ ] **A4d: native word loop and production integration.** After qualification,
+  replace the four lane contexts with retained word/lane/assembly ownership and
+  preserve the reviewed commit/POR policy, masks, capacity checks, loader,
+  watchdog, retention and sleep behavior. Measure cost and all wake windows,
+  rerun affected tests/strict exports, obtain fresh review, commit and push.

@@ -63,8 +63,9 @@ reduces mapped logic area a further **4.10% BD / 4.27% Click**, to
 Functional and strict export checks pass; complete physical timing remains open.
 See the [elapsed](docs/native-elapsed-contract.md) and
 [CRC](docs/native-crc-contract.md) contracts. Wider payload reductions remain
-open. Self-timed SRAM access requires a complete
-macro timing contract; the millisecond and scaled-value ABI remains unchanged.
+open. Self-timed SRAM access follows a separate
+[candidate contract](docs/native-sram-clock-contract.md) and requires complete
+macro timing qualification; the millisecond and scaled-value ABI remains unchanged.
 Each migration item requires fresh independent review, fixes,
 verification, documentation and a separate commit/push.
 
