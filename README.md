@@ -56,12 +56,14 @@ LF timebase/watchdog. The [remaining-state ledger](docs/async-residual-state.md)
 tracks removal candidates; a smaller clocked-bit count does not establish lower
 area or power. The [native area reduction plan](docs/native-area-reduction.md)
 targets elapsed/CRC arithmetic, wide payload transport and duplicate storage,
-with measured cost gates. The bounded native elapsed loop preserves the time ABI
-and reduces mapped logic area a further **5.55% BD / 5.41% Click**, to
-**3.102377 / 3.915477 mm²** excluding SRAM. Its functional and strict export
-checks pass; complete physical timing remains open. See the
-[elapsed contract](docs/native-elapsed-contract.md). CRC and wider payload
-reductions remain open. Self-timed SRAM access requires a complete
+with measured cost gates. The bounded native elapsed loop preserves the time ABI;
+compact native CRC feedback removes redundant command storage. The CRC change
+reduces mapped logic area a further **4.10% BD / 4.27% Click**, to
+**2.975227 / 3.748168 mm²** excluding SRAM, with unchanged measured wake activity.
+Functional and strict export checks pass; complete physical timing remains open.
+See the [elapsed](docs/native-elapsed-contract.md) and
+[CRC](docs/native-crc-contract.md) contracts. Wider payload reductions remain
+open. Self-timed SRAM access requires a complete
 macro timing contract; the millisecond and scaled-value ABI remains unchanged.
 Each migration item requires fresh independent review, fixes,
 verification, documentation and a separate commit/push.

@@ -5,8 +5,9 @@ import chisel3._
 import chisel3.util._
 import chiselasync.bundled._
 import chiselasync.core.{AsyncModule, ResetDomain}
-import chiselasync.metadata.ClickTiming
+import chiselasync.metadata.{ClickTiming, ModelTime}
 import chiselasync.protocol.TwoPhase
+import chiselasync.primitives.AsymmetricCElement
 import riscay._
 import riscay.soc._
 
@@ -24,33 +25,36 @@ class ClickControl(p: SocParameters, domain: ResetDomain) extends AsyncModule(do
   private val join = asyncChild("join")(d => new ClickJoin(new ControlToken, new ControlCommand, timing, d))
   private val update = asyncChild("update")(d => new ClickStage(new Joined(new ControlToken, new ControlCommand),
     new ControlReply, (x: Joined[ControlToken, ControlCommand]) => transition(x.left.state, x.right, x.left.pendingCrc), timing, d))
-  // Precompute the pending word in the feedback branch. Host/MMIO replies
-  // retain their original latency; the next command waits for all four bytes.
-  // Only Stored publishes the candidate into architectural CRC/received state.
-  private val crc = (0 until 4).map { byte =>
-    asyncChild(s"crc_$byte")(d => new ClickStage(new ControlToken, new ControlToken, (x: ControlToken) => {
-      val r = WireDefault(x)
-      when(x.state.loaderPending) {
-        var value = x.pendingCrc
-        for(bit <- byte * 8 until byte * 8 + 8) {
-          value = (value >> 1) ^ Mux(value(0) ^ x.state.loaderWord(bit), "hedb88320".U(32.W), 0.U(32.W))
-        }
-        r.pendingCrc := value
-      }
-      r
-    }, timing, d))
-  }
+  // Compute only the candidate CRC here; update retains the entire context.
+  // Every feedback starts from architectural crc, even while loaderPending
+  // survives other commands. Only Stored commits the candidate to that state.
+  private val crc = asyncChild("crc")(ClickCrc32.stage)
   private val fork = asyncChild("fork")(d => new ClickFork(new ControlReply, d))
-  // The registered fork contract describes its complete payload on both branches.
+  // The unbuffered fork contract describes its complete payload on both branches.
   // Retain the fields that the state feedback branch does not consume.
   dontTouch(fork.left)
   state.start.get := start
   TwoPhase.connect(join.left, state.out); TwoPhase.connect(join.right, command)
   TwoPhase.connect(update.in, join.out); TwoPhase.connect(fork.in, update.out)
-  crc.head.in.bits.state := fork.left.bits.state; crc.head.in.bits.pendingCrc := fork.left.bits.state.crc
-  crc.head.in.req := fork.left.req; fork.left.ack := crc.head.in.ack
-  crc.sliding(2).foreach { pair => TwoPhase.connect(pair(1).in, pair(0).out) }
-  TwoPhase.connect(state.in, crc.last.out)
+  private val cell = ModelTime.ps(1000)
+  private def rendezvous(id: String, a: Bool, b: Bool): Bool = {
+    val gate = Module(new AsymmetricCElement(2, 0, 0, cell))
+    gate.reset := reset; gate.common := Cat(a,b); gate.rising := 1.U; gate.falling := 0.U
+    contract.primitive(id, gate, Map("COMMON" -> BigInt(2), "RISING" -> BigInt(0), "FALLING" -> BigInt(0),
+      "DELAY_FS" -> BigInt(cell.fs), "RESET_VALUE" -> BigInt(0), "COMMON_INVERT" -> BigInt(0),
+      "RISING_INVERT" -> BigInt(0), "FALLING_INVERT" -> BigInt(0)), contract.endpoint(id+"_reset", reset),
+      "retained CRC/context rendezvous with complete native phase acknowledgment")
+    gate.q
+  }
+  crc.in.bits.crc := fork.left.bits.state.crc
+  crc.in.bits.word := fork.left.bits.state.loaderWord
+  crc.in.bits.pending := fork.left.bits.state.loaderPending
+  crc.in.req := fork.left.req
+  state.in.bits.state := fork.left.bits.state; state.in.bits.pendingCrc := crc.out.bits
+  state.in.req := rendezvous("crc_context_request", fork.left.req, crc.out.req)
+  crc.out.ack := state.in.ack
+  // Both phase polarities require state capture and CRC ingress acceptance.
+  fork.left.ack := rendezvous("crc_context_return", state.in.ack, crc.in.ack)
   TwoPhase.connect(reply, fork.right)
   contract.endpoint("start", start)
 

@@ -40,6 +40,12 @@ object ControlToken {
   def initial: ControlToken = (new ControlToken).Lit(
     _.state -> ControlState.initial, _.pendingCrc -> "hffffffff".U)
 }
+/** Internal arithmetic input only; the state owner retains the loader context. */
+class Crc32Command extends Bundle {
+  val crc = UInt(32.W)
+  val word = UInt(32.W)
+  val pending = Bool()
+}
 object ControlKind {
   val Host = 0; val Stored = 1; val ResetApplication = 2; val Halt = 3; val Mmio = 4; val MmioCommit = 5
 }

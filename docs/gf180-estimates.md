@@ -6,7 +6,18 @@ are independently audited. The subsequent corrective work targets redundant
 storage and clocked coordination while preserving native BD/Click; see the
 [migration checklist](async-soc-migration.md). Physical timing remains unqualified.
 
-The latest [A1b elapsed-loop comparison](native-area-reduction.md#a1b-bounded-native-elapsed-loop)
+The latest [A2a CRC comparison](native-area-reduction.md#a2a-narrow-whole-word-crc-feedback)
+uses the same mapper and five-corner accounting against `7bb7b71`. Logic area
+falls **4.0985% BD / 4.2730% Click**, to **2.975227 / 3.748168 mm²** excluding
+SRAM. TT listed-state leakage including SRAM becomes **7.864666–10.202253 /
+9.346913–12.543369 µW**. Periodic storage, clock-pin loads and all 27 matched
+wake windows per variant remain unchanged; firmware wakes retire 43 instructions
+in **3,255 / 3,160 work-clock edges**. Functional, mutation and strict export
+checks pass. Measured CRC transform timing still fails its data allowance;
+complete capture/reset and routed qualification remain open. These figures do
+not update P&R or measure reachable deep-sleep power or wake energy.
+
+The prior [A1b elapsed-loop comparison](native-area-reduction.md#a1b-bounded-native-elapsed-loop)
 uses the same mapper and five-corner accounting against `0f6e26f`. Logic area
 falls **5.5516% BD / 5.4050% Click**, to **3.102377 / 3.915477 mm²** excluding
 SRAM. TT listed-state leakage including SRAM becomes **8.176051–10.596532 /

@@ -290,18 +290,19 @@ digital passes remain evidence of their tested scope, not RDC or physical proof.
   not a demonstrated production loss. See the
   [capture contract](held-peripheral-capture-contract.md#snapshot-consumer-clock-c1g)
   and `build/async-snapshot-clock-qualification/final-evidence-r1.json`.
-- [ ] **C2. Narrow native loader CRC feedback.** The four CRC stages currently
-  carry the whole 337-bit `ControlToken`. Keep public reply timing, transition
-  logic and the seeded state owner, but retain the 305-bit context in a native
-  Join operand while the four byte transforms carry only CRC, remaining bytes
-  and the pending flag. Proposed output widths 57/49/41/32 plus both Join operand
-  banks total 516 payload bits versus 1,348; the proposed 832-bit reduction is
-  an architectural count, not measured area. Count added controllers, guards,
-  fanout and feedback latency. Never borrow BD's update latch after its existing
-  ACK: it can reopen before the next valid token. Test independent branch stalls,
-  immediate reuse, POR at every byte/join boundary and mismatched-context
-  mutations; only Stored may publish CRC/received progress. Measure wake work
-  and mapped costs before accepting this separate correction.
+- [x] **C2. Narrow native loader CRC feedback (A2a, digitally verified).**
+  The selected implementation replaces four 337-bit stores with one 32-bit
+  whole-word CRC stage. The existing update stage retains context, with explicit
+  native request/return rendezvous delaying its acknowledgment through state
+  capture and CRC ingress return. This ownership change is necessary: borrowing
+  BD's update latch after its old ACK would permit premature reopening. The
+  measured candidate comparison favors this over both a wide whole-word stage
+  and narrow byte feedback. All 230 ScalaTest and 500 Python cases pass, with
+  four strict SoC exports and 27 original/27 exact-fatal rendezvous controls.
+  Logic area falls 4.10% BD / 4.27% Click; periodic storage and all 27 matched
+  wake windows per variant are unchanged. Physical timing remains open. Preserve
+  independent branch stalls, immediate source reuse, actual capture/POR checks
+  and Stored-only accounting. See [the CRC contract](native-crc-contract.md).
 - [ ] **C3. Remove the complete Supervisor command/reply crossing pair.** Move
   its observation/history scheduler, independent elapsed/ADC/GPIO delivery,
   applied-output owner and feedback, coherent status view, and drain/sleep
@@ -1365,10 +1366,12 @@ signed offset into native conversion loops; item 9 moves low-power cadence and
 timer consumers into native Housekeeping. Independent LF/watchdog, pin timing,
 legacy idle delay and ingress/publication remain clocked boundaries.
 
-Four native CRC byte stages precompute a candidate in each Control feedback
-branch. The internal token pairs architectural state with pendingCrc; the public
+The original migration used four native CRC byte stages in each Control feedback
+branch. Corrective A2 now integrates one narrow whole-word result stage with
+explicit retained-context rendezvous; its acceptance is tracked separately above.
+The internal token still pairs architectural state with pendingCrc; the public
 reply ABI is unchanged. Host/MMIO replies retain their original path, while the
-next command waits for all four byte stages. Only Stored with an accepted pending
+next command waits for feedback completion. Only Stored with an accepted pending
 loader word commits the completed candidate to architectural CRC, received bytes
 and loaderPending together. Intermediate candidates cannot appear in public
 state. Duplicate/early completions with no pending word are inert. Watchdog

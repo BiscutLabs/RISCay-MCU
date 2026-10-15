@@ -40,6 +40,15 @@
   service implementations' FabricSpec/ScalingSpec plus affected regressions;
   keep strict SoC exports valid. Run AsyncScalingSpec and ScalingSleepSpec after
   arithmetic changes; preserve exhaustive sample and independent CRC oracles.
+  Follow `docs/native-crc-contract.md`: Control retains the full update context
+  while one native whole-word CRC stage retains only its 32-bit candidate.
+  Join context/result requests and state/CRC-ingress acknowledgments with native
+  C-elements; preserve BD's independent falling returns and both Click phases.
+  Only Stored commits the candidate. Run AsyncCrcSpec, AsyncCrcControlSpec and
+  AsyncControlSpec, including exact rendezvous mutations, actual capture/POR,
+  immediate legal source reuse, queued Stored and held public replies. CRC
+  transform timing remains a separate physical gate; do not replace its native
+  rendezvous with periodic-clock stages.
   ConsumedGray advances on service publication, never internal native completion.
   Keep stale single-tick replies from granting supervisor observation credit;
   scaling work and bridge drainage inhibit sleep. Preserve full-width target/

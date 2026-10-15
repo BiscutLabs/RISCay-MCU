@@ -33,12 +33,16 @@ periodic-clock staging. Measure each accepted step against its exact parent.
   values; internal raw/tick policy requires equivalence of boundary conversion
   and conservative rounding. Specialize integer/duplicate coefficients only
   while preserving all generic positive parameter configurations.
-- [ ] **A2: reduce CRC token storage and arithmetic (proposal 6 / C2).** Compare
-  one whole-word linear XOR transform with narrow CRC/word feedback. Retain
-  command context once, independent CRC32 oracles, exact Stored publication,
-  loader/reset/lock semantics and physical transform timing. Validate full-width
-  host length/entry/count before narrowing retained state. Derive widths from
-  configured capacity, including the representable full-capacity count.
+- [x] **A2a: reduce CRC token storage and arithmetic (proposal 6 / C2), digitally verified.**
+  Matched comparison selects one narrow whole-word XOR stage over a wide stage
+  or byte loop. The existing update owner retains command context through native
+  request/return rendezvous. Independent CRC32 oracles, Stored-only accounting
+  and loader/reset/lock semantics pass; physical timing remains open. Existing
+  full-width loader metadata is unchanged. See [the contract](native-crc-contract.md).
+  A2b's retained length/entry/count narrowing is tracked with A6 so its capacity
+  validation and schema changes receive a separate review and measurement.
+  Validate full-width host fields first and derive retained widths from configured
+  capacity, including its representable full-capacity count.
 - [ ] **A3: prove LF narrowing, or retain width (proposal 8).** Wake on each tick
   does not bound final Housekeeping publication latency. An 8/10-bit count can
   wrap in 256/1024 ms in 1 kHz fixtures, or 21.3/85.3 s at production's fastest
@@ -252,3 +256,60 @@ apart from comments/formatting. The final focused/activity runs use the repaired
 source. The older r6 capture receipt is not final source attestation: its source
 inventory was written after a test edit. The final r7 cohort is freshly generated
 and rejects sources newer than generation.
+
+## A2a: narrow whole-word CRC feedback
+
+Digitally verified against parent `7bb7b71`. Separate native
+BD and Click stages compute the fixed reflected CRC32 transform and retain one
+32-bit candidate. The existing update owner holds the full context through
+native request/return rendezvous. Only Stored commits the candidate. Four
+337-bit CRC stores become one 32-bit result store, removing 1,316 native payload
+bits per variant. See the [CRC contract](native-crc-contract.md).
+
+| Quantity | BD before → after | Click before → after |
+| --- | ---: | ---: |
+| Logic area excluding SRAM (mm²) | 3.102377 → 2.975227 | 3.915477 → 3.748168 |
+| Logic area reduction | 4.0985% | 4.2730% |
+| Mapped leaf cells, including three SRAMs | 112,677 → 107,992 | 113,495 → 108,714 |
+| TT listed-state leakage including SRAM (µW) | 8.176051–10.596532 → 7.864666–10.202253 | 9.763012–13.152871 → 9.346913–12.543369 |
+| Control native payload storage (bits) | 2,777 → 1,461 | 2,777 → 1,461 |
+| Portable periodic RTL bits | 6,000 → 6,000 | 6,001 → 6,001 |
+| Firmware work-clock edges per 43-instruction wake | 3,255 → 3,255 | 3,160 → 3,160 |
+
+The same mapper and five-corner accounting bind both sides. Physical exports
+retain 6,010/6,011 periodic bits and three SRAMs. Control alone saves
+0.126165/0.167983 mm²; unrelated ordinary mapper variation contributes
+−0.000986/+0.000674 mm². Unrelated native cells and guards stay unchanged.
+Control's matched guards lose 0.008930/0.015015 mm². Mapped periodic storage
+and clock-pin loads remain unchanged. All 27 matched wake windows per variant
+retain identical classes, effects, edge counts and durations. Firmware windows
+remain 271,607.839 ns BD / 263,691.109 ns Click. These are native-model activity
+and listed-state leakage measurements, not reachable standby power or wake energy.
+
+The selected narrow candidate is smaller than both the wide whole-word stage
+and narrow byte-loop candidates. Production RTL and mapped cell connections
+match that selected candidate exactly. Its measured CRC transform remains
+**open and failing**: 16.025093 ns BD / 16.021669 ns Click against the unchanged
+10 ns data allowance. The prior CRC path also failed. Complete context/candidate
+capture, both rendezvous returns, earliest release, reset distribution and routed
+timing remain unqualified. No periodic pipeline or timing exemption is added.
+
+Static, export and activity evidence is retained under
+`build/async-crc-reduction/`: `mapped-cost-r1/receipt.json`, `state-r1.json`,
+`exports-r1.json`, `activity-r1-receipt.json`, `timing-bound-r1.json` and
+`measurement-seal-r1.json`. All four strict SoC exports pass with sleep-clock
+background and three SRAMs: BD 701,002,176 portable / 701,211,856 physical
+mapping checks; Click 602,477,320 / 602,666,120. Every export retains all four
+mandatory generic campaigns. The removed CRC stores and changed topology
+explain reduced check totals; no dynamic-polarity exemption is introduced.
+Functional/physical runs pass 230 distinct ScalaTest cases and 500 Python tests.
+The directed context campaign covers 15 fixtures and 45 seed runs, including
+both Click phases and independent BD return. Actual rendezvous controls pass
+27 original replays and reject 27 isolated input faults at their exact first
+fatal sites, with unchanged testbenches. Fresh independent review and the final
+source/evidence inventory are recorded in `review-final-r1.json` and
+`final-evidence-r1.json`; controls are sealed in `gate-controls/r1/seal.json`.
+The failed focused r2 compilation remains in its original log: a new test
+constant shadowed ScalaTest's `pending` member. Renaming the constant preserved
+the implementation and expected values; focused r3 passes. Retained loader
+length/entry/count narrowing is A2b under A6.

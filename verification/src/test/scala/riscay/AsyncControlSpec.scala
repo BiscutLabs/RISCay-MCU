@@ -145,11 +145,22 @@ class AsyncControlSpec extends AnyFunSuite {
         if(delivered_reply != ${steps.size}) $$fatal(1,"CRC_EXACTLY_ONCE");
       """ }
     }
-    test(s"$name native CRC: POR during a byte stage aborts pending accounting") {
+    test(s"$name native CRC: POR after actual capture before publication aborts pending accounting") {
       val before=Seq(Step(0,frame(1,4,0,0,0x10000L,0,0,0,1),changes=Map(
         "mode"->1L,"imageLength"->4L,"imageId"->1L)))
       val after=Seq(Step(1),Step(0,frame(3),changes=Map("lastError"->6L)))
-      AsyncTest.run(top(click),Seq(1L,2L,19L),fresh(name+"-crc-por")) { _ => s"""
+      val directory=fresh(name+"-crc-por")
+      AsyncTest.run(top(click),Seq(1L,2L,19L),directory) { _ =>
+        val root=ujson.read(Files.readString(directory.resolve("export/contract.json")))("manifest")("design")
+        val nodes=root("children").arr.filter(_("id").str == "crc")
+        require(nodes.size == 1, "CRC_POR_CHILD_BINDING")
+        val payloads=nodes.head("contract")("primitives").arr.filter(_("id").str == "payload")
+        require(payloads.size == 1, "CRC_POR_PAYLOAD_BINDING")
+        val payload=payloads.head
+        require(payload("model").str == (if(click) "ChiselAsyncEventRegister_v1" else "ChiselAsyncClosingLatch_v1"),
+          "CRC_POR_CAPTURE_KIND")
+        val capture="dut."+payload("rtl_path").str.split('.').drop(1).mkString(".")+(if(click) ".trigger" else ".closed")
+        s"""
         ${if(click) "start=1;" else ""}
         fork begin ${source(click,before)} end begin ${sink(click,before)} end join
         #1000000000;
@@ -157,8 +168,8 @@ class AsyncControlSpec extends AnyFunSuite {
         command_bits_frame_bytes_1=0; command_bits_frame_bytes_2=0; command_bits_frame_bytes_3=0; command_bits_frame_bytes_4=0;
         command_bits_frame_bytes_5=1; command_bits_frame_bytes_6=239; command_bits_frame_bytes_7=205; command_bits_frame_bytes_8=171;
         #2; command_req=${if(click) 0 else 1};
-        wait(dut.ca_child_crc_0.out_req == ${if(click) 0 else 1}); #1;
-        if(dut.ca_child_crc_3.out_req == ${if(click) 0 else 1}) $$fatal(1,"CRC_ALREADY_COMPLETED");
+        @(posedge $capture); #1;
+        if(dut.ca_child_crc.out_req == ${if(click) 0 else 1}) $$fatal(1,"CRC_ALREADY_COMPLETED");
         reset=1; command_req=0; reply_ack=0; ${if(click) "start=0;" else ""}
         #1000000000; reset=0; #1000000000; ${if(click) "start=1;" else ""}
         fork begin ${source(click,after)} end begin ${sink(click,after)} end join
