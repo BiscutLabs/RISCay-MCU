@@ -21,12 +21,18 @@ class SramBank(bytes: Int) extends Module with InlineInstance {
   val state = RegInit(idle)
   val selected = PriorityEncoder(VecInit(io.request.map(_.valid)).asUInt)
   val tag = Reg(UInt(2.W))
-  val saved = Reg(new SramByteRequest)
+  private val addressWidth = log2Ceil(bytes).max(1)
+  // The incoming bus and admission assertions remain full width. Only a
+  // successfully admitted byte offset is compacted into this retained owner.
+  val saved = Reg(new Bundle {
+    val address = UInt(addressWidth.W)
+    val write = Bool(); val data = UInt(8.W); val enable = Bool()
+  })
   val result = Reg(UInt(8.W))
   val macros = Seq.fill((bytes + 1023) / 1024)(Module(new Gf180Sram1KiB))
-  val bankIndex = saved.address >> 10
+  val bankIndex = saved.address.pad(11) >> 10
   val falling = (!clock.asBool).asClock
-  val address = withClock(falling) { RegNext(saved.address(9,0)) }
+  val address = withClock(falling) { RegNext(saved.address.pad(10)(9,0)) }
   val data = withClock(falling) { RegNext(saved.data) }
   val gwen = withClock(falling) { RegNext(!saved.write, true.B) }
   for((macroCell, index) <- macros.zipWithIndex) {
@@ -43,11 +49,17 @@ class SramBank(bytes: Int) extends Module with InlineInstance {
     io.response(i).bits := result
     // Check each actual firing lane; avoids an Icarus-unsupported variable
     // array index followed by a packed slice in the inline assertion.
-    when(io.request(i).fire) { assert(io.request(i).bits.address < bytes.U) }
+    when(io.request(i).fire) {
+      assert(io.request(i).bits.address < bytes.U, s"SRAM_BYTE_ADDRESS_OUT_OF_RANGE_LANE_$i")
+    }
   }
   when(state === idle && io.request(selected).fire) {
     assert(PopCount(VecInit(io.request.map(_.valid))) === 1.U)
-    saved := io.request(selected).bits; tag := selected; state := access
+    saved.address := VecInit(io.request.map(_.bits.address(addressWidth-1,0)))(selected)
+    saved.write := io.request(selected).bits.write
+    saved.data := io.request(selected).bits.data
+    saved.enable := io.request(selected).bits.enable
+    tag := selected; state := access
   }
   when(state === access) { state := capture }
   when(state === capture) {

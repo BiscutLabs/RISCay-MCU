@@ -35,7 +35,13 @@ the original receiver-copy removal.
 
 The SRAM macro controller still captures `saved` and `tag` at byte acceptance,
 launches macro inputs on the falling edge and captures Q after a full cycle.
-Those registers are necessary for the physical synchronous macro interface.
+Those registers remain part of the synchronous macro interface. C1f narrows
+only `saved.address` to the configured byte-address width under the upstream valid-offset contract, while full 32-bit
+firing-lane assertions remain as verification diagnostics. Groundlark retains 11/10 program/RAM
+address bits; low-bit source identity, padding, capture muxes and all four
+production assertions are bound by the held/RDC controls. The full request ABI,
+other saved fields, tag and timing sequence remain unchanged. See the
+[C1f cost and timing evidence](sram-integration.md#c1f-saved-address-narrowing).
 `saved` and `tag` are unreset storage: POR resets the control state and suppresses
 acceptance; it does not erase SRAM. No raw application reset may destroy a
 producer while this consumer can capture it. All byte ownership remains POR-only.

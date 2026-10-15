@@ -6,7 +6,25 @@ are independently audited. The subsequent corrective work targets redundant
 storage and clocked coordination while preserving native BD/Click; see the
 [migration checklist](async-soc-migration.md). Physical timing remains unqualified.
 
-The latest [A5b addressed-byte measurement](native-i2c-byte-store-contract.md#matched-cost)
+The latest [C1f saved-address measurement](sram-integration.md#c1f-saved-address-narrowing)
+uses A5b `67b282cf` and the same mapper/assets/policies and five-corner accounting.
+Logic area changes **-0.1878% BD / -0.0782% Click**, to
+**2.869484 / 3.640572 mm²** excluding SRAM. TT listed-state
+leakage including SRAM becomes **7.595104–9.845576 / 9.071659–12.132237 µW**.
+Click FF125 high listed-state leakage increases **0.231845076 µW**
+from ordinary-logic cell composition (low changes -0.277877088 µW).
+Periodic RTL loses 43 bits per variant; native storage, ABI and macro topology
+remain unchanged. Of 27 ordinal windows per variant, **0 BD /
+0 Click** change; all values remain recorded. Bounded
+controller timing reports violations in **20/20**
+cases and missing coverage in **20/20**. Real native
+aperture, clock/reset distribution, route RC, SRAM and A7 qualification remain
+open. Setup timing worsens: largest matched endpoint slack changes are
+**-17.39656 ns BD / -21.38074 ns Click**
+at SS125; hold minima remain unchanged. These are unplaced estimates, not
+physical timing acceptance, deep-sleep power or wake energy.
+
+The prior [A5b addressed-byte measurement](native-i2c-byte-store-contract.md#matched-cost)
 uses the same mapper and five-corner accounting as C1d. Logic area falls
 **1.9160% BD / 1.5153% Click**, to **2.874882 / 3.643422 mm²** excluding SRAM.
 TT listed-state leakage including SRAM becomes **7.607764–9.867172 /

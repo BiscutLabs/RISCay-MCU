@@ -30,8 +30,11 @@ both writable banks use three pinned GF180 1 KiB SRAM macros, with a shared
 fixed macro model; each variant owns its byte-sequencing controller. See
 [SRAM integration](docs/sram-integration.md) and
 [memory architecture](docs/memory-architecture.md).
-Native SRAM requests retain full byte offsets until the checked macro boundary
-selects a bank and its ten-bit address. Native loader metadata
+Native SRAM requests retain full 32-bit byte offsets through upstream admission
+validation and the macro controller's firing-lane range assertions.
+The macro controller relies on that valid-offset contract and saves only the configured address width (11 program / 10
+working-RAM bits for Groundlark), then selects a bank and its ten-bit macro
+address; see the [C1f evidence](docs/sram-integration.md#c1f-saved-address-narrowing). Native loader metadata
 keeps full-width byte lengths, offsets and counts. Both
 cores use a 171-bit control token and derive pending load fields from the saved
 instruction, avoiding duplicate storage.

@@ -1,0 +1,13 @@
+real changed@BANK@=0;
+always @(macroAddress_@BANK@ or macroData_@BANK@ or macroCen_@BANK@ or macroGwen_@BANK@) if(!reset) begin
+  if(serviceClock!==0) $fatal(1,"SAVED_ADDRESS_NONFALLING_LAUNCH_@BANK@");
+  if(accessAt>0 && $realtime-accessAt<5) $fatal(1,"SAVED_ADDRESS_PIN_HOLD_@BANK@");
+  changed@BANK@=$realtime;
+end
+always @(posedge serviceClock) if(!reset && !macroCen_@BANK@) begin
+  if(!expectedEnable || expectedAddress/1024!=@BANK@ || macroAddress_@BANK@!==expectedAddress%1024 ||
+      macroData_@BANK@!==expectedData || macroGwen_@BANK@!==!expectedWrite)
+    $fatal(1,"SAVED_ADDRESS_MACRO_EFFECT_@BANK@");
+  if($realtime-changed@BANK@<5) $fatal(1,"SAVED_ADDRESS_PIN_SETUP_@BANK@");
+  accesses=accesses+1; if(!macroGwen_@BANK@) writes=writes+1; accessAt=$realtime;
+end

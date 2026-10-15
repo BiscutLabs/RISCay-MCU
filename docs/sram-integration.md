@@ -130,8 +130,12 @@ instances; smaller verification profiles still use the real macro model.
 
 The fabric validates the full byte address before native admission. Each native
 lane transform substitutes its literal low address bits; the macro boundary
-checks the full byte offset before selecting a macro and its ten-bit address.
-One-word and non-power-of-two logical banks retain their original bounds.
+asserts that all 32 address bits of each actual firing lane satisfy the upstream
+valid-offset contract before saving only
+`log2Ceil(bytes).max(1)` bits. The external request remains 32 bits. Macro address
+selection pads to ten bits; bank selection pads to at least eleven before
+shifting. Groundlark retains 11 program / 10 working-RAM address bits. One-word
+and non-power-of-two logical banks retain their original bounds.
 Native loader metadata retains full 32-bit byte lengths, entry offsets and received
 counts. Capacity/alignment/entry checks happen before any macro index conversion;
 the byte-based ABI and full-capacity/non-power-of-two checks remain unchanged.
@@ -236,3 +240,157 @@ requests and POR at each lane; old service-cycle offsets are not exhaustive
 native-phase coverage. Firmware tests upload compiler-built images through I2C into both native
 SoCs, checking startup, stack, retention, sleep and programming lock. The strict
 async export checks cover CPU contracts separately from macro physical timing.
+
+## C1f saved-address narrowing
+
+Both production controllers rely on upstream full-width admission validation and
+retain full-width assertions on each firing lane before narrowing the saved offset.
+These assertions diagnose contract violations in verification; C1f adds no
+synthesized range-rejection gate at the byte controller. Saved write/data/enable, lane tag, POR ownership and source
+capture remain unchanged. Falling-edge input launch, the following rising macro
+access, full-cycle Q capture and response stalls preserve the existing contract.
+Full-width firing-lane range assertions cover disabled requests and both
+read/write directions, failing on out-of-range addresses in verification. Four-byte banks retain two address bits; non-power-of-two bounds
+are checked before compaction and never inferred from retained width alone.
+
+Digital evidence contains 390 distinct Scala tests across 28 suites (24 primary,
+362 affected, four physical), plus two repeated PhysicalEstimateSpec cases:
+392 executions, not 392 distinct tests. All 587 Python controls pass. Twelve
+fresh fixtures cover both variants at 4, 12, 1024, 1028, 2048 and 3072 bytes;
+12 positive and 1,304 negative replays bind 48 actual production assertion sites.
+Four fresh strict exports retain four generic campaigns each, compiled proof,
+RDC and SRAM obligations. All eight held structural/actual-wiring commands pass.
+
+The matched baseline is A5b `67b282cf1a455465c7874a72fcd3dfea0044acfa`.
+The same mapper, assets, policy and five Liberty corners are used. Native
+primitives, public ABI and three actual SRAM macro topologies are unchanged.
+
+| Quantity | BD before → after | Click before → after |
+| --- | ---: | ---: |
+| Portable periodic RTL bits | 5910 → 5867 | 5911 → 5868 |
+| Physical-export periodic RTL bits | 5920 → 5877 | 5921 → 5878 |
+| Mapped work-clock storage pins (including 3 SRAM CLK pins) | 4111 → 4068 | 4162 → 4119 |
+| Native payload bits after | 11454 | 11607 |
+| Whole mapped area including SRAM (mm²) | 3.503083 → 3.497685 | 4.271623 → 4.268773 |
+| Mapped logic area excluding SRAM (mm²) | 2.874882 → 2.869484 | 3.643422 → 3.640572 |
+| Logic area change | -0.1878% | -0.0782% |
+| TT listed-state leakage including SRAM (µW) | 7.607764–9.867172 → 7.595104–9.845576 | 9.079021–12.144499 → 9.071659–12.132237 |
+| Total periodic storage clock-pin load (pF) | 19.207195 → 19.070326 | 19.392035 → 19.255166 |
+
+
+Click's FF 125 °C / 3.60 V listed-state high envelope **increases by
+0.231845076 µW**, although its low envelope changes by
+-0.277877088 µW. This is entirely ordinary-logic cell composition:
+more XOR3/NOR4/OR2/MUX2 cells outweigh reductions including 43 DFFQ cells in the
+sum of per-cell maximum leakage states. Native guards, other native cells and
+SRAM are unchanged. This sum does not prove jointly reachable worst-case states;
+no improvement across every corner or reachable standby-power claim is made.
+
+Exact workload/observer identity and all 27 ordinal wake windows are compared.
+Changed windows: 0 BD / 0 Click;
+all individual values and changes remain in the matched receipt. Native-model
+activity and clock load do not measure wake energy. Listed-state leakage does
+not establish reachable standby leakage. Area excludes placement/routing,
+clock/reset trees, analog and pads.
+
+The bounded controller timing campaign records 20 baseline/candidate cases,
+both variants at five matching corners. Complete coverage: 0
+cases; cases with violations: 20; cases with missing
+checks/paths: 20. Every raw result, signed setup/hold
+value, minimum-capacitance violation and native-ingress limitation is retained.
+The full hierarchy is bound by local pin/term inventories. Applicable local API
+checks and supplemental direct estimates remain distinct: direct capacitance/
+fanout reports can be finite and failing even when the API excludes an ideal
+clock or constant pin. Direct slew uses its own internal exclusions. Hierarchical
+API findings and top-level terms retain explicit classifications.
+
+Across the 20 cases, 1167270 electrical requests produce
+148705 finite applicable local reports and
+40 supplemental direct estimates, with
+76089 applicable and
+20 supplemental violations.
+314345 reports have unavailable/inapplicable API results;
+704180 are explicitly inapplicable non-driver checks.
+There are 0 hierarchical API findings
+(0 violations) and
+0 top-level-term reports outside local API
+enumeration. Pulse coverage records 5220 of
+5220 requested edge checks, including
+0 violations. Missing path requests total
+0. These totals count reports across cases, not unique
+physical pins. Optional library-limit absence is a coverage classification,
+not a process error or a passing physical check. Of the unavailable reports,
+37000 use the exact pinned binary32
+`1e30` numeric fanout initializer; its encoding is preserved separately from
+unit-formatted `INF`, and it is never treated as a finite measured value.
+
+**Measured setup timing worsens after C1f.** The worst recorded setup slack
+changes from -142.4398 to -152.7541 ns for BD at TT and
+-303.6563 to -318.8663 ns at SS125; Click changes
+from -172.3115 to -184.9705 ns at TT and
+-358.1870 to -377.1508 ns at SS125.
+The worst candidate paths run from `resetHold` Q to `fabric_ram_state[0]` D;
+baseline case minima instead end at `fabric_program_state[0]` D. These are
+case minima, not a claim that the same endpoint is worst before and after.
+The largest matched endpoint setup-slack changes are
+-17.39656 ns BD (`fabric_ram_saved_address[0]`)
+and -21.38074 ns Click
+(`fabric_ram_state[0]`), both at SS125. Hold minima are
+unchanged in all five corners for both variants, but individual hold margins
+also decline. At SS125, the saved-address path to program macro 1's falling-edge
+`CEN_REG` has hold slack 32.261597 → 28.479730 ns
+in BD (-3.781867 ns), and
+32.261597 → 28.479740 ns in Click
+(-3.781857 ns). These individual margins remain positive.
+Fewer violation records do not imply improved timing; these measured regressions remain explicit and
+physical qualification stays open.
+
+| Implementation / variant / corner | Minimum hold slack (ns) | Minimum setup slack (ns) | Violation report groups | Missing-coverage entries |
+| --- | ---: | ---: | ---: | ---: |
+| baseline/bd/tt_025C_3v30 | 0.7279879682906972 | -142.43983462561448 | 411 | 16634 |
+| baseline/bd/ss_n40C_3v00 | 1.2313761470130726 | -207.64563278772903 | 409 | 16634 |
+| baseline/bd/ss_125C_3v00 | 1.986479037489901 | -303.65627316549796 | 691 | 16634 |
+| baseline/bd/ff_n40C_3v60 | 0.19925744951343918 | -70.68576679609276 | 226 | 16634 |
+| baseline/bd/ff_125C_3v60 | 0.48541144699922806 | -126.52343530991155 | 485 | 16634 |
+| baseline/click/tt_025C_3v30 | 0.7279879682906972 | -172.31153525085878 | 411 | 17182 |
+| baseline/click/ss_n40C_3v00 | 1.2313761470130726 | -247.73161290207977 | 409 | 17182 |
+| baseline/click/ss_125C_3v00 | 1.986479037489901 | -358.18701907218883 | 679 | 17182 |
+| baseline/click/ff_n40C_3v60 | 0.19925744951343918 | -89.51329530967396 | 228 | 17182 |
+| baseline/click/ff_125C_3v60 | 0.48541144699922806 | -154.2077158503992 | 485 | 17182 |
+| candidate/bd/tt_025C_3v30 | 0.7279879682906972 | -152.7540874804698 | 142 | 14229 |
+| candidate/bd/ss_n40C_3v00 | 1.2313761470130726 | -211.08825507241485 | 144 | 14229 |
+| candidate/bd/ss_125C_3v00 | 1.986479037489901 | -318.8662935058946 | 245 | 14229 |
+| candidate/bd/ff_n40C_3v60 | 0.19925744951343918 | -78.70942875804121 | 124 | 14229 |
+| candidate/bd/ff_125C_3v60 | 0.48541144699922806 | -137.44349691840938 | 175 | 14229 |
+| candidate/click/tt_025C_3v30 | 0.7279879682906972 | -184.97047972405184 | 190 | 14824 |
+| candidate/click/ss_n40C_3v00 | 1.2313761470130726 | -252.5950222705194 | 148 | 14824 |
+| candidate/click/ss_125C_3v00 | 1.986479037489901 | -377.1508083700604 | 241 | 14824 |
+| candidate/click/ff_n40C_3v60 | 0.19925744951343918 | -99.27091607501954 | 129 | 14824 |
+| candidate/click/ff_125C_3v60 | 0.48541144699922806 | -167.50484140519157 | 181 | 14824 |
+
+These are ideal-clock, unplaced controller observations. Native held-bus aperture,
+real setup/hold/access and clock/reset distribution, minimum pulse/return,
+POR abort/recovery/removal, route RC, transistor models and A7 remain open.
+This evidence does not qualify the complete chip or authorize self-timed SRAM.
+
+Evidence: `build/async-sram-address-production-r2/execution.json` and its frozen
+417-source archive; `async-sram-address-validation-r1/` strict and saved/held
+receipts; `async-sram-address-measurement-r3/audit-receipt.json`; and
+`build/async-sram-address-timing-r5/execution-r1/receipt.json`. The failed timing-r2 execution remains at
+`build/async-sram-address-timing-r2/execution-r1/receipt.json`: its first STA
+process completed but parsing failed; 19 cases were not run. The sealed
+`build/async-sram-address-timing-diagnosis-r2/` preserves the raw-format diagnosis.
+Timing-r3 was rejected before execution for local API scope/applicability gaps;
+`build/async-sram-address-timing-review-r3/REPORT.md` remains separate from the
+accepted r4 preparation review. Timing-r4 subsequently stopped after its first
+baseline BD/TT process exited zero and the parser rejected the numeric fanout
+no-check initializer (`C1F_MEASUREMENT_NONFINITE_OR_SENTINEL_VALUE`); its receipt
+and complete raw log remain under `build/async-sram-address-timing-r4/execution-r1/`,
+with the other 19 cases marked `NOT_RUN`. Timing-r5 recognizes only the exact
+pinned initializer encoding; constraints, runtime assets and physical limits
+remain unchanged. The complete r4 log replay is a pure parser control, not a
+completed r5 case. No prior case was reused as completed r5 evidence.
+The original successful activity run stays at measurement-r2. Measurement-r3 records exactly two
+historical pointer reconstructions, with original hashes and A5 receipt recipes;
+the other 7,898 baseline references remain exact live hashes. Final documentation
+is separately bound to the executed archive by the C1f final collector.

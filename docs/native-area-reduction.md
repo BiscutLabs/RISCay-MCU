@@ -97,6 +97,13 @@ periodic-clock staging. Measure each accepted step against its exact parent.
   C1d's compact SPI player is digitally verified and measured: 90 fewer periodic
   bits per variant, with unchanged wake activity. See the [player contract](spi-player-contract.md).
   See its [matched cost and timing evidence](spi-player-contract.md).
+  C1f saves 43 periodic RTL bits per variant in the SRAM controllers under
+  upstream full-width admission validation and retained firing-lane assertions. Matched logic area changes -0.1878% BD /
+  -0.0782% Click; complete state, whole cost, 27-window activity and
+  five-corner controller timing results are in the
+  [SRAM contract](sram-integration.md#c1f-saved-address-narrowing). Preserve every
+  physical violation and missing check; Click FF125 high listed-state leakage
+  increases 0.231845076 µW despite lower area; C1e and the other A6 candidates stay open.
 - [ ] **A7: replace guards with proved completion (proposal 3 / R5).** Record each
   guard's ordering/hold/reset obligation. Replace it only with completion that
   proves that obligation under skew, backpressure, phase return and reset. Keep

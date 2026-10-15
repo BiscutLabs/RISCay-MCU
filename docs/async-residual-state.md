@@ -12,7 +12,7 @@ claim that the clocked shell is minimal.
 | --- | --- | --- |
 | SPI player: copied recipe/occupancy registers | Digitally verified removal: a five-bit slot and one active bit index the POR-immutable native recipe. Registered pins, all 32 samples, divider cadence and return drainage are preserved; see the [player contract](spi-player-contract.md). | C1d |
 | Quiescing CPU request receiver: 70-bit payload copy | Evaluate direct retained-bus capture while preserving close/rebase, source hold, acceptance cadence and invalid-bus isolation. A POR-only receipt is not a drop-in replacement. | C1e |
-| SRAM saved byte address: 32 bits in each bank | Groundlark needs 11/10 address bits. Narrow only after full-width validation; preserve small/non-power-of-two capacities and the macro launch/capture contract. Nominal 43-bit reduction may already partly optimize away. | C1f |
+| SRAM saved byte address | C1f retains 11/10 program/RAM bits under the upstream valid-offset contract with full-width firing-lane assertions: 43 fewer periodic RTL bits per variant. Small/non-power-of-two bounds, falling launch and capture are preserved; measured area, activity and remaining timing failures are in the [SRAM contract](sram-integration.md#c1f-saved-address-narrowing). | C1f |
 | I2C snapshot receipt | Runs on service clock; Services captures on gated work clock. C1g digitally verifies an explicit work-clock qualifier with no storage, actual capture and stopped-consumer controls; see the capture contract. Native coherent snapshot ownership remains a separate migration. | C1g, 13c |
 | Six smaller grant/drain receivers | Ten nominal copied payload bits; constants may optimize away. Preserve POR ownership, phase/return and actual consumer capture before replacing them. | C1e |
 | I2C reset history | Eight sampled-edge slots carry 512 clocked epoch bits, plus the 64-bit current epoch and native copies. A stale-history redesign must preserve every queued descriptor's reset history; truncating the epoch is insufficient. | R5, 11a2b |
@@ -25,6 +25,16 @@ clock-gate synchronization and coordinated reset closure remain required;
 their surrounding storage and bookkeeping still need individual justification.
 
 ## Verified cleanup history
+
+C1f removes 43 periodic RTL bits per variant from saved SRAM addresses only.
+Portable totals become **5867 BD / 5868 Click**;
+physical-export totals become **5877 / 5878**.
+Native payload totals remain **11454 / 11607**. The matched
+logic area changes **-0.1878% / -0.0782%**; the
+[SRAM contract](sram-integration.md#c1f-saved-address-narrowing) records complete
+cost/activity and bounded timing results. Physical timing failures, missing
+checks and native source aperture remain open; declared bit savings are not
+mapped-storage, energy or whole-chip qualification claims.
 
 A5b's addressed native receive store removes **513 native payload bits per
 variant**. Native payload totals become **11,454 BD / 11,607 Click**; periodic

@@ -285,11 +285,18 @@ digital passes remain evidence of their tested scope, not RDC or physical proof.
   valid-qualified bus use. Do not substitute a POR-only receipt for the
   quiescing receiver. Require stopped-clock/reset tests, compiled inventories,
   strict wiring/RDC controls and matched total cost.
-- [ ] **C1f. Narrow internal SRAM saved addresses.** Keep full-width validation
-  on each actual firing lane and the external request schema. Check one-word,
-  non-power-of-two and production bank sizes, falling-edge launch, full-cycle
-  result capture and lane/reset/stall behavior. The nominal Groundlark reduction
-  is 43 bits per variant; establish emitted and mapped savings before claiming it.
+- [x] **C1f. Narrow internal SRAM saved addresses.** Both controllers retain only
+  configured address bits under the upstream valid-offset contract, with full
+  32-bit firing-lane assertions retained for verification. No range-rejection
+  hardware is added at the byte controller.
+  Groundlark removes 43 periodic RTL bits per variant; native state, macro
+  topology, public schema, falling launch and full-cycle capture are preserved.
+  Twelve fresh fixtures cover one-word, non-power-of-two and production sizes;
+  1,304 exact negative controls bind all 48 production assertion sites. Regression,
+  strict and actual held wiring evidence and whole mapped cost/activity are in
+  the [SRAM contract](sram-integration.md#c1f-saved-address-narrowing). Five-corner
+  controller timing retains all violations and missing checks; physical source
+  aperture, clock/reset distribution, route RC, macro qualification and A7 stay open.
 - [x] **C1g. Make I2C snapshot consumer-clock acceptance explicit.** Both
   receipts qualify acceptance with the actual work-clock gate; no storage or
   handshake stage is added. SnapshotWakeSpec covers reads from real sleep,

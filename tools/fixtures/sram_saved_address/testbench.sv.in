@@ -1,0 +1,264 @@
+module Testbench;
+timeunit 1ns; timeprecision 1ps;
+reg [0:0] reset;
+reg [0:0] serviceClock;
+reg [0:0] watchdogClock;
+reg [0:0] scl;
+reg [0:0] sda;
+wire [0:0] sdaLow;
+reg [31:0] gpioIn;
+wire [31:0] gpioOut;
+wire [31:0] gpioOe;
+reg [0:0] adcMiso;
+wire [0:0] adcCsN;
+wire [0:0] adcSclk;
+wire [2:0] mode;
+wire [0:0] programmed;
+wire [0:0] locked;
+wire [0:0] systemReset;
+wire [0:0] resetReason;
+wire [0:0] sleeping;
+wire [31:0] sleepEntries;
+wire [0:0] serviceClockEnable;
+wire [3:0] trace_cause;
+wire [0:0] trace_trap;
+wire [0:0] trace_writeRegister;
+wire [31:0] trace_data;
+wire [3:0] trace_rd;
+wire [31:0] trace_instruction;
+wire [31:0] trace_pc;
+wire [0:0] trace_valid;
+wire [0:0] traceEvent;
+wire [3:0] commit_bits_mask;
+wire [31:0] commit_bits_data;
+wire [31:0] commit_bits_address;
+wire [1:0] commit_bits_operation;
+wire [0:0] commit_valid;
+reg [3:0] request_bits_mask;
+reg [31:0] request_bits_data;
+reg [31:0] request_bits_address;
+reg [1:0] request_bits_operation;
+reg [0:0] request_valid;
+wire [0:0] request_ready;
+wire [0:0] response_bits_error;
+wire [31:0] response_bits_data;
+wire [0:0] response_valid;
+reg [0:0] response_ready;
+wire [31:0] timeNow;
+reg [0:0] probeValid;
+wire [0:0] probeReady;
+reg [1:0] probeLane;
+reg [31:0] probeAddress;
+reg [0:0] probeWrite;
+reg [7:0] probeData;
+reg [0:0] probeEnable;
+wire [0:0] answerValid;
+reg [0:0] answerReady;
+wire [7:0] answerData;
+wire [41:0] captured;
+wire [1:0] capturedTag;
+wire [1:0] stateView;
+@MACRO_DECLARATIONS@
+reg hostLow=0;
+wire busSda = !(hostLow || sdaLow);
+always @* sda=busSda;
+SramSavedAddressFixture dut (.reset(reset),.serviceClock(serviceClock),.watchdogClock(watchdogClock),.scl(scl),.sda(sda),.sdaLow(sdaLow),.gpioIn(gpioIn),.gpioOut(gpioOut),.gpioOe(gpioOe),.adcMiso(adcMiso),.adcCsN(adcCsN),.adcSclk(adcSclk),.mode(mode),.programmed(programmed),.locked(locked),.systemReset(systemReset),.resetReason(resetReason),.sleeping(sleeping),.sleepEntries(sleepEntries),.serviceClockEnable(serviceClockEnable),.trace_cause(trace_cause),.trace_trap(trace_trap),.trace_writeRegister(trace_writeRegister),.trace_data(trace_data),.trace_rd(trace_rd),.trace_instruction(trace_instruction),.trace_pc(trace_pc),.trace_valid(trace_valid),.traceEvent(traceEvent),.commit_bits_mask(commit_bits_mask),.commit_bits_data(commit_bits_data),.commit_bits_address(commit_bits_address),.commit_bits_operation(commit_bits_operation),.commit_valid(commit_valid),.request_bits_mask(request_bits_mask),.request_bits_data(request_bits_data),.request_bits_address(request_bits_address),.request_bits_operation(request_bits_operation),.request_valid(request_valid),.request_ready(request_ready),.response_bits_error(response_bits_error),.response_bits_data(response_bits_data),.response_valid(response_valid),.response_ready(response_ready),.timeNow(timeNow),.probeValid(probeValid),.probeReady(probeReady),.probeLane(probeLane),.probeAddress(probeAddress),.probeWrite(probeWrite),.probeData(probeData),.probeEnable(probeEnable),.answerValid(answerValid),.answerReady(answerReady),.answerData(answerData),.captured(captured),.capturedTag(capturedTag),.stateView(stateView),@MACRO_CONNECTIONS@);
+
+
+reg clockEnabled=1;
+reg referenceEnabled=1;
+initial begin serviceClock=0; forever begin #25.0; if(clockEnabled) serviceClock=~serviceClock; end end
+initial begin watchdogClock=0; forever begin #250; if(referenceEnabled) watchdogClock=~watchdogClock; end end
+initial begin #100000000; $fatal(1,"SOC_DEADLINE"); end
+
+integer accesses=0,writes=0,lane,address,bitIndex,phase,negativeLane,unused;
+integer beforeAccess,beforeWrites;
+reg negativeCampaign=0,negativeEnable=1,negativeWrite=1,expectedEnable,expectedWrite;
+reg [31:0] expectedAddress,negativeAddress;
+reg [7:0] expectedData,heldAnswer;
+reg [41:0] sampledRequest,heldCapture;
+reg [1:0] sampledLane,heldState;
+real accessAt=0;
+always @(posedge serviceClock) if(!reset && !negativeCampaign && probeValid && probeReady) begin
+  sampledRequest={probeAddress,probeWrite,probeData,probeEnable}; sampledLane=probeLane;
+  #0.001;
+  if(captured!==sampledRequest || capturedTag!==sampledLane) $fatal(1,"SAVED_ADDRESS_FULL_CAPTURE");
+end
+task issue(input integer selectedLane,input [31:0] offset,input bit wr,input [7:0] data,input bit enabled); begin
+  @(negedge serviceClock); probeLane=selectedLane; probeAddress=offset; probeWrite=wr;
+  probeData=data; probeEnable=enabled; probeValid=1;
+  expectedAddress=offset; expectedData=data; expectedWrite=wr; expectedEnable=enabled;
+  beforeAccess=accesses; beforeWrites=writes;
+  @(posedge serviceClock); while(!probeReady) @(posedge serviceClock);
+  #1; probeValid=0; probeAddress=~offset; probeData=~data;
+end endtask
+task answer(input [7:0] value); begin
+  wait(answerValid); #1; heldAnswer=answerData;
+  if(answerData!==value || accesses-beforeAccess!==expectedEnable ||
+      writes-beforeWrites!==(expectedEnable && expectedWrite)) $fatal(1,"SAVED_ADDRESS_RESULT_OR_EFFECT_COUNT");
+  if(expectedEnable && $realtime-accessAt<50) $fatal(1,"SAVED_ADDRESS_EARLY_Q_CAPTURE");
+  repeat(4) begin @(negedge serviceClock);
+    if(!answerValid || answerData!==heldAnswer || probeReady) $fatal(1,"SAVED_ADDRESS_REPLY_HOLD");
+  end
+  answerReady=1; @(posedge serviceClock); #1; answerReady=0;
+end endtask
+
+@MACRO_MONITORS@
+
+
+
+reg [255:0] snapshot;
+reg [31:0] supported;
+task start_bus; begin
+  scl=0; hostLow=0; #1200; scl=1; #1200; hostLow=1; #1200; scl=0; #1200;
+end endtask
+task stop_bus; begin
+  scl=0; hostLow=1; #1200; scl=1; #1200; hostLow=0; #1200;
+end endtask
+task write_byte(input [7:0] value); integer b; begin
+  for(b=7;b>=0;b=b-1) begin
+    hostLow=!value[b]; #1000; scl=1; #1000; scl=0; #1000;
+  end
+  hostLow=0; #1000; scl=1; #1000;
+  if(busSda !== 0) $fatal(1,"I2C_NACK byte=%h",value);
+  scl=0; #1000;
+end endtask
+task read_byte(output [7:0] value, input last); integer b; begin
+  hostLow=0;
+  for(b=7;b>=0;b=b-1) begin
+    #1000; scl=1; #1000; value[b]=busSda; scl=0; #1000;
+  end
+  hostLow=!last; #1000; scl=1; #1000; scl=0; #1000; hostLow=0;
+end endtask
+task write_word(input [31:0] value); integer b; begin
+  for(b=0;b<4;b=b+1) write_byte(value[8*b+:8]);
+end endtask
+// Native acceptance and service publication are distinct. This bounded pin
+// observation is used only where a test asserts completion immediately after
+// STOP; wire timing and all architectural/error expectations remain unchanged.
+task await_ready; begin
+  fork
+    begin wait(programmed && mode==2); end
+    begin #5000; $fatal(1,"LOADER_COMPLETION_DEADLINE"); end
+  join_any
+  disable fork;
+end endtask
+
+task await_loading; begin
+  fork
+    begin wait(!programmed && mode==1); end
+    begin #5000; $fatal(1,"BEGIN_COMPLETION_DEADLINE"); end
+  join_any
+  disable fork;
+end endtask
+
+task await_locked; begin
+  fork
+    begin wait(programmed && locked); end
+    begin #5000; $fatal(1,"LOCK_COMPLETION_DEADLINE"); end
+  join_any
+  disable fork;
+end endtask
+
+task command(input [7:0] opcode); begin
+  start_bus(); write_byte(8'h6a); write_byte(opcode); stop_bus();
+end endtask
+task read_words(input [7:0] space, input [7:0] channelno, input [7:0] wordno);
+integer b; reg [7:0] value; begin
+  start_bus(); write_byte(8'h6a); write_byte(0); write_byte(space); write_byte(channelno); write_byte(wordno);
+  start_bus(); write_byte(8'h6b);
+  for(b=0;b<36;b=b+1) begin
+    read_byte(value,b==35);
+    if(b<32) snapshot[8*b+:8]=value; else supported[8*(b-32)+:8]=value;
+  end
+  stop_bus();
+end endtask
+task begin_image(input [31:0] length, input [31:0] entry, input [31:0] crc, input [31:0] abi);
+begin
+  start_bus(); write_byte(8'h6a); write_byte(1);
+  write_word(length); write_word(entry); write_word(crc); write_word(abi);
+  write_word(32); write_word(0); write_word(0); write_word(32'h12345678); stop_bus();
+end endtask
+task put_word(input [31:0] offset, input [31:0] value); begin
+  start_bus(); write_byte(8'h6a); write_byte(2); write_word(offset); write_word(value); stop_bus();
+end endtask
+task expect_error(input [31:0] error); begin
+  read_words(1,0,0);
+  if(snapshot[160+:32] !== error) $fatal(1,"LOADER_ERROR actual=%d expected=%d",snapshot[160+:32],error);
+end endtask
+
+initial begin
+reset=0;
+scl=0;
+gpioIn=0;
+adcMiso=0;
+request_bits_mask=0;
+request_bits_data=0;
+request_bits_address=0;
+request_bits_operation=0;
+request_valid=0;
+response_ready=0;
+probeValid=0;
+probeLane=0;
+probeAddress=0;
+probeWrite=0;
+probeData=0;
+probeEnable=0;
+answerReady=0;
+reset=1; scl=1; gpioIn=4; adcMiso=0;
+#2000; reset=0; #3000;
+
+        // This branch is reused by the external exact-fatal controls against
+        // this identical compiled binary; normal positive tests never enter it.
+        if($value$plusargs("invalidAddress=%h",negativeAddress)) begin
+          negativeCampaign=1; unused=$value$plusargs("invalidLane=%d",negativeLane);
+          unused=$value$plusargs("invalidEnable=%d",negativeEnable);
+          unused=$value$plusargs("invalidWrite=%d",negativeWrite);
+          issue(negativeLane,negativeAddress,negativeWrite,8'hac,negativeEnable);
+          #1000; $fatal(1,"SAVED_ADDRESS_INVALID_WAS_ACCEPTED");
+        end
+        for(lane=0;lane<4;lane=lane+1) begin
+          issue(lane,0,1,8'ha0+lane,1); answer(0);
+          issue(lane,0,0,0,1); answer(8'ha0+lane);
+          issue(lane,@CAPACITY@-1,1,8'hb0+lane,1); answer(0);
+          issue(lane,@CAPACITY@-1,0,0,1); answer(8'hb0+lane);
+          issue(lane,@CAPACITY@-1,1,8'hcc,0); answer(0);
+          issue(lane,@CAPACITY@-1,0,0,1); answer(8'hb0+lane);
+          issue(lane,@CAPACITY@-1,0,0,0); answer(0);
+          for(bitIndex=0;bitIndex<31;bitIndex=bitIndex+1) if((1<<bitIndex)<@CAPACITY@) begin
+            address=1<<bitIndex;
+            issue(lane,address,1,8'h31+bitIndex+lane,1); answer(0);
+            issue(lane,address,0,0,1); answer(8'h31+bitIndex+lane);
+          end
+        end
+        // Stop between acceptance, falling launch, macro access and Q capture.
+        // Original full-SoC mask/watchdog/POR tests remain unchanged.
+        for(phase=0;phase<4;phase=phase+1) begin
+          issue(phase,@CAPACITY@-1,1,8'hd0+phase,1);
+          case (phase)
+            0: begin end // issue returns at acceptance + 1 ns, before falling launch
+            1: begin @(negedge serviceClock); #1; end
+            2: begin @(posedge serviceClock); #1; end
+            3: begin repeat(2) @(posedge serviceClock); #1; end
+          endcase
+          clockEnabled=0;
+          if(stateView !== ((phase<2) ? 1 : ((phase==2) ? 2 : 3)))
+            $fatal(1,"SAVED_ADDRESS_STOP_PHASE");
+          if(accesses-beforeAccess !== ((phase<2) ? 0 : 1))
+            $fatal(1,"SAVED_ADDRESS_STOP_EFFECTS");
+          @MACRO_STOP_CHECKS@
+          heldCapture=captured; heldState=stateView; address=accesses;
+          #1000;
+          if(captured!==heldCapture || stateView!==heldState || accesses!=address)
+            $fatal(1,"SAVED_ADDRESS_STOPPED_CLOCK");
+          clockEnabled=1; answer(0);
+          issue(phase,@CAPACITY@-1,0,0,1); answer(8'hd0+phase);
+        end
+        // Controller POR must not clear stored bytes or replay an idle access.
+        beforeWrites=writes; reset=1; #2000; reset=0; #3000;
+        if(writes!=beforeWrites || answerValid) $fatal(1,"SAVED_ADDRESS_POR_REPLAY");
+        issue(0,@CAPACITY@-1,0,0,1); answer(8'hd3);
+
+$display("RISCAY_SOC_PASS"); $finish;
+end
+endmodule

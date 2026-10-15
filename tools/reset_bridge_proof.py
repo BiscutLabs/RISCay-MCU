@@ -105,7 +105,27 @@ def check_flop_reset(cell, clock, reset):
         raise ValueError('RDC_BRIDGE_CONTROL_RESET')
 
 
-def prove_sram_capture(module, bank, por_reset):
+def saved_sram_address_width(capacity):
+    if type(capacity) is not int or capacity <= 0 or capacity % 4 or capacity > 0x7fffffff:
+        raise ValueError('RDC_SRAM_CAPACITY')
+    return max(1, (capacity - 1).bit_length())
+
+
+def sram_capacities(inventory, top):
+    """Bind logical capacity from the independent emitter inventory, not Q width."""
+    if inventory.get('schema') != 'riscay-gf180-sram-v1' or \
+            inventory.get('macro') != 'gf180mcu_ocd_ip_sram__sram1024x8m8wm1':
+        raise ValueError('RDC_SRAM_INVENTORY')
+    capacities = dict(program=inventory.get('program_bytes'), ram=inventory.get('working_ram_bytes'))
+    for capacity in capacities.values(): saved_sram_address_width(capacity)
+    expected = [dict(path=f'{top}.fabric_{bank}_macros_{index}', bank=bank, index=index)
+                for bank, capacity in capacities.items() for index in range((capacity + 1023) // 1024)]
+    if inventory.get('instances') != expected:
+        raise ValueError('RDC_SRAM_INSTANCE_INVENTORY')
+    return capacities
+
+
+def prove_sram_capture(module, bank, por_reset, capacity):
     """Exact held-source -> unreset macro input storage, never a bank-wide waiver.
 
     Enumerate even illegal multi-valid masks: the functional native one-hot
@@ -122,6 +142,7 @@ def prove_sram_capture(module, bank, por_reset):
     if not por_reset(reset, clock): raise ValueError('RDC_SRAM_NOT_POR')
     check_flop_reset(state, clock, reset)
     fields = dict(address=32, write=1, data=8, enable=1)
+    retained_fields = dict(fields, address=saved_sram_address_width(capacity))
     inputs = {}
     for lane in range(4):
         receipt = access + '.ca_child_byte_request_' + str(lane)
@@ -135,7 +156,7 @@ def prove_sram_capture(module, bank, por_reset):
                 raise ValueError('RDC_SRAM_NATIVE_ALIAS')
             inputs[lane, field] = bits
     registers = {}
-    for field, width in {**fields, 'tag': 2}.items():
+    for field, width in {**retained_fields, 'tag': 2}.items():
         name = prefix + ('tag' if field == 'tag' else 'saved_' + field)
         q = cone.bits(name)
         drivers = {cone.drivers[b][0] for b in q}
@@ -179,7 +200,9 @@ def prove_sram_capture(module, bank, por_reset):
         for field in fields:
             _, pins = registers[field]
             leaves = set(pins['Q'] + sum([inputs[i, field] for i in range(4)], []))
-            expected = inputs[selected, field] if capture else pins['Q']
+            # Full native and receipt aliases were checked above. Only the
+            # capacity-proved low address prefix enters saved storage.
+            expected = inputs[selected, field][:retained_fields[field]] if capture else pins['Q']
             if [leaf(b, env, leaves) for b in pins['D']] != expected:
                 raise ValueError('RDC_SRAM_CAPTURE_' + field)
         _, tag = registers['tag']
@@ -187,7 +210,9 @@ def prove_sram_capture(module, bank, por_reset):
             tag_env = dict(env); cone.bind(tag_env, tag['Q'], old)
             if cone.evaluate(tag['D'], tag_env) != (selected if capture else old):
                 raise ValueError('RDC_SRAM_TAG')
-    return dict(prefix=prefix, rows=128, payload=[registers[f][0] for f in fields],
+    return dict(prefix=prefix, rows=128, capacity=capacity,
+                source_fields=fields, retained_fields=retained_fields,
+                payload=[registers[f][0] for f in fields],
                 contract='retained native byte bus, receipt ACK on exact macro-controller capture')
 
 

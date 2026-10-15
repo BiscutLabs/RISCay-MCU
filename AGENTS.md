@@ -372,6 +372,15 @@
   macro instances. Verify upstream asset hashes with tools/sram_assets.py.
   Validate full-width addresses and loader fields before narrowing to internal
   word indices/counts. Include full-capacity counts and small/non-power-of-two banks.
+  SRAM saved addresses use log2Ceil(bytes).max(1), with explicit padding before
+  macro address and bank selection. Check every actual firing lane at full
+  32-bit width, including disabled and read/write requests. Preserve the saved
+  owner/tag, falling launch, full-cycle result capture, source reuse, stalls and
+  POR. Run SramSavedAddressSpec, SramSpec, CoreSpec, standing affected suites,
+  and exact saved-address controls for
+  4/12/1024/1028/2048/3072-byte banks in both protocols. Bind all four production
+  firing-lane range assertions, held-bus/RDC aliases, strict generic campaigns and actual
+  held wiring controls; keep the C1f timing failures and missing coverage open.
 - Groundlark's permanent controller owns its power GPIOs. Keep its default policy
   disabled until qualified board/battery values are deliberately supplied.
 - Optional features are on hold. Follow `docs/features-and-ip.md` and

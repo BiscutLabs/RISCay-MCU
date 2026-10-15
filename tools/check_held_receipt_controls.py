@@ -10,7 +10,7 @@ import re
 import sys
 import tempfile
 from check_held_receipts import catalog, validate_held_receipts
-from reset_bridge_proof import Cone, prove_sram_capture
+from reset_bridge_proof import Cone, prove_sram_capture, sram_capacities, saved_sram_address_width
 
 
 def sha(p): return hashlib.sha256(Path(p).read_bytes()).hexdigest()
@@ -56,11 +56,22 @@ def main():
         validate_held_receipts(manifest,directory,scopes)
     graph_path=args.export/'reset-crossings/netlist.json'
     graph=json.loads(graph_path.read_text())['modules'][manifest['top']]
+    inventory_path=args.export/'sram.json'
+    capacities=sram_capacities(json.loads(inventory_path.read_text()),manifest['top'])
     for bank in ('program','ram'):
         prefix='fabric_'+bank+'_';access='ca_child_'+bank+'_access'
         cone=Cone(graph);state=cone.flop(prefix+'state')[1]['connections'];clock=state['CLK'];reset=state['ARST']
         por=lambda r,c:r==reset and c==clock
-        prove_sram_capture(graph,bank,por)
+        prove_sram_capture(graph,bank,por,capacities[bank])
+        for fault in ('saved-address-too-short','saved-address-upper-source'):
+            mutant=copy.deepcopy(graph);c=Cone(mutant);name=prefix+'saved_address'
+            reg=c.drivers[c.bits(name)[0]][0];pins=mutant['cells'][reg]['connections']
+            if fault=='saved-address-too-short':
+                mutant['netnames'][name]['bits']=list(c.bits(name)[:-1])
+                pins['Q']=list(pins['Q'][:-1]);pins['D']=list(pins['D'][:-1])
+            else:
+                pins['D'][-1]=c.bits(access+'.ca_child_byte_request_0.in_bits_address')[31]
+            reject(bank+':'+fault,lambda:prove_sram_capture(mutant,bank,por,capacities[bank]),'RDC_SRAM_')
         for fault in ('receipt-clock','saved-clock','saved-edge','wrong-ready','wrong-select','wrong-tag','capture-unconditionally'):
             mutant=copy.deepcopy(graph);c=Cone(mutant)
             if fault=='receipt-clock':mutant['netnames'][access+'.ca_child_byte_request_0.clock']['bits']=['0']
@@ -73,7 +84,7 @@ def main():
                 elif fault=='saved-edge':cell['parameters']['CLK_POLARITY']='0'
                 elif fault=='wrong-tag':cell['connections']['D']=['0','0']
                 else:cell['connections']['D']=c.bits(access+'.ca_child_byte_request_0.in_bits_address')
-            reject(bank+':'+fault,lambda:prove_sram_capture(mutant,bank,por),'RDC_SRAM_')
+            reject(bank+':'+fault,lambda:prove_sram_capture(mutant,bank,por,capacities[bank]),'RDC_SRAM_')
         for lane in range(4):
             for field,width in dict(address=32,write=1,data=8,enable=1).items():
                 for fault in ('source-alias','capture-bit'):
@@ -83,11 +94,11 @@ def main():
                         mutant['netnames'][name]['bits']=c.bits(access+f'.ca_child_native.byteRequest_{(lane+1)%4}_bits_{field}')
                     else:
                         reg=c.drivers[c.bits(prefix+'saved_'+field)[0]][0]
-                        mutant['cells'][reg]['connections']['D'][lane%width]='0'
-                    reject(f'{bank}:{lane}:{field}:{fault}',lambda:prove_sram_capture(mutant,bank,por),'RDC_SRAM_')
+                        mutant['cells'][reg]['connections']['D'][lane%(saved_sram_address_width(capacities[bank]) if field=='address' else width)]='0'
+                    reject(f'{bank}:{lane}:{field}:{fault}',lambda:prove_sram_capture(mutant,bank,por,capacities[bank]),'RDC_SRAM_')
     result=dict(status='PASS',scope='structural faults; not physical setup/hold qualification',
         bindings=len(bindings),negative_controls=len(records),records=records,
-        inputs={str(p):sha(p) for p in [args.export/'contract.json',args.export/'contract_probe.vvp',graph_path,
+        inputs={str(p):sha(p) for p in [args.export/'contract.json',args.export/'contract_probe.vvp',graph_path,inventory_path,
                 Path(__file__),Path(__file__).with_name('check_held_receipts.py'),Path(__file__).with_name('reset_bridge_proof.py')]})
     args.out.parent.mkdir(parents=True,exist_ok=True);args.out.write_text(json.dumps(result,indent=2)+'\n')
     print(json.dumps({k:result[k] for k in ('status','bindings','negative_controls')}))

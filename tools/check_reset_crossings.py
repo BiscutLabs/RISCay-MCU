@@ -14,7 +14,7 @@ from pathlib import Path
 import subprocess
 
 from gf180_estimate import ROOT, linux, sha, verify_hash
-from reset_bridge_proof import Cone, prove_receiver, prove_phase_pair, prove_completion_idle, prove_sram_capture
+from reset_bridge_proof import Cone, prove_receiver, prove_phase_pair, prove_completion_idle, prove_sram_capture, sram_capacities
 from reset_coordinator_proof import prove_coordinator
 
 NATIVE_STATE = frozenset({
@@ -98,7 +98,7 @@ def prepare_graph(export: Path, output: Path, manifest: dict) -> dict:
         converted_sha256=sha(output / "converted.v"), netlist_sha256=sha(output / "netlist.json"))
 
 
-def audit_graph(database: dict, top: str) -> dict:
+def audit_graph(database: dict, top: str, capacities: dict | None = None) -> dict:
     modules = database["modules"]
     module = modules[top]
     cells, nets = module["cells"], module["netnames"]
@@ -302,8 +302,10 @@ def audit_graph(database: dict, top: str) -> dict:
             receiver_proofs.append(proof)
             payload_exemptions.update({sink:proof for sink in proof['payload']})
             synchronizers[proof['first']]=proof['second']
+        if capacities is None or set(capacities) != {'program', 'ram'}:
+            raise ValueError('RDC_SRAM_MISSING_CAPACITIES')
         for bank in ('program', 'ram'):
-            proof = prove_sram_capture(module, bank, por_reset)
+            proof = prove_sram_capture(module, bank, por_reset, capacities[bank])
             receiver_proofs.append(proof)
             payload_exemptions.update({sink: proof for sink in proof['payload']})
         for part in ('plan','telemetry','housekeeping'):
@@ -348,7 +350,11 @@ def audit_graph(database: dict, top: str) -> dict:
 def check_reset_crossings(export: Path, manifest: dict) -> dict:
     output = export / "reset-crossings"
     inputs = prepare_graph(export, output, manifest)
-    result = audit_graph(json.loads((output / "netlist.json").read_text()), manifest["top"])
+    inventory_path = export / "sram.json"
+    capacities = sram_capacities(json.loads(inventory_path.read_text()), manifest["top"])
+    inputs["sram_inventory_sha256"] = sha(inventory_path)
+    inputs["sram_capacities"] = capacities
+    result = audit_graph(json.loads((output / "netlist.json").read_text()), manifest["top"], capacities)
     result["inputs"] = inputs
     (output / "report.json").write_text(json.dumps(result, indent=2) + "\n")
     if result["violations"]:
