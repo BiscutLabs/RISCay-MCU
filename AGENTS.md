@@ -28,6 +28,12 @@
   like frame/head receipts. C1g is digitally verified with actual snapshot
   capture, stopped-consumer and exact-fault controls. Track C1d–f before claiming
   minimum boundary state.
+  I2C's native observation contains only headGray, active, rejected, addressByte,
+  drive, ack and sent (15 bits). Preserve the complete publication input and
+  source/capture aperture, independent frame/snapshot retention and Click phase
+  feedback. Run AsyncI2cObservationSpec, AsyncI2cSpec and actual-pin wiring
+  controls for projection changes. The 340-bit protocol state, per-edge byte
+  buffer, frame publication and four banks remain separate A5 reductions.
   Keep raw-reset diagnostic mirrors in verification fixtures only; production
   cancellation/debt remains POR-owned. Preserve diagnostic fault controls.
   Physical requalification is item 17; the corrective gates below take priority

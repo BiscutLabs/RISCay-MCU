@@ -57,9 +57,10 @@ tracks removal candidates; a smaller clocked-bit count does not establish lower
 area or power. The [native area reduction plan](docs/native-area-reduction.md)
 targets elapsed/CRC arithmetic, wide payload transport and duplicate storage,
 with measured cost gates. The bounded native elapsed loop preserves the time ABI;
-compact native CRC feedback removes redundant command storage. The CRC change
-reduces mapped logic area a further **4.10% BD / 4.27% Click**, to
-**2.975227 / 3.748168 mm²** excluding SRAM, with unchanged measured wake activity.
+compact native CRC feedback removes redundant command storage. The latest I2C
+observation projection removes 325 native storage bits per variant and reduces
+mapped logic area a further **1.22% BD / 1.00% Click**, to
+**2.939063 / 3.710656 mm²** excluding SRAM, with unchanged measured wake activity.
 Functional and strict export checks pass; complete physical timing remains open.
 See the [elapsed](docs/native-elapsed-contract.md) and
 [CRC](docs/native-crc-contract.md) contracts. Wider payload reductions remain

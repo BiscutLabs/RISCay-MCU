@@ -15,6 +15,21 @@ below; neither qualifies the current change or complete physical implementation.
 
 ## Events, retention and acceptance
 
+The sampled-wire front observes a 15-bit native projection: headGray (4),
+active, rejected, addressByte, drive, ack and sent (6). Each variant explicitly
+selects these fields from the unchanged 340-bit protocol state. The observation
+register no longer retains the other 325 bits, including the byte buffer. This
+does not move byte storage out of the per-edge state, remove the publisher's
+337-bit retained frame, or change any bank or admission owner.
+
+The complete 687-bit publication input and 1,032/1,034-bit BD/Click timing source
+remain visible to the capture contract. Only the retained projection and its
+data-delay lanes narrow: register_data/captured are 360 bits BD and 362 Click.
+Click's two phase-feedback bits remain inside the same capture aperture. Guards,
+capture trigger, independent effect backpressure, source hold and POR ownership
+are unchanged. Actual-pin wiring checks independently reconstruct all retained
+fields; no activity or setup/hold requirement is removed with the unused bits.
+
 O is the original native I2C publisher's completed-frame offer. A is the receipt's
 original accepting service/work-clock edge, independent of native copy completion.
 C is actual native copy completion. D is the actual selected Host

@@ -68,8 +68,9 @@ periodic-clock staging. Measure each accepted step against its exact parent.
   The reviewed [macro preflight](native-sram-clock-contract.md) is complete;
   an isolated digital byte-owner experiment can use the public Mutex model now.
   Its missing physical implementation is a separate
-  [library proposal](mutex-physical-binding-proposal.md), requiring user review
-  before upstream edits. Neither preflight nor grant-only probes qualify SRAM pins.
+  [library proposal](mutex-physical-binding-proposal.md), now approved for
+  isolated library implementation and review. Neither preflight nor grant-only
+  probes qualify SRAM pins.
 - [ ] **A5: addressed native I2C byte storage (proposal 4).** Move frame bytes
   out of the per-edge state/observation token, publish completed bank identity
   and keep immutable ownership through both copy and admission/dispatch. Reduce
@@ -79,6 +80,10 @@ periodic-clock staging. Measure each accepted step against its exact parent.
   an actual worst-case latency bound, including stopped consumers and POR-only
   work. Preserve two logical credits, native bank rotation, overflow and reset/
   busy context at their original linearization points.
+  A5a is digitally verified: it narrows only the redundant observation from 340
+  to 15 native bits; its measured cost and evidence are recorded below. It does not move
+  the per-edge byte buffer or remove frame publication storage. A5b's addressed
+  receive store, publication/bank reduction and reset-epoch reduction remain open.
 - [ ] **A6: widths and duplicate ownership (proposal 7 / C1d–f).** Evaluate the
   fixed SPI player, quiescing request receipt, saved SRAM address, profile-sized
   GPIO/wake fields and bounded statistics. Remove queued/ordered/bridge copies
@@ -340,7 +345,7 @@ length/entry/count narrowing is A2b under A6.
   clear/rebase old requests before electrical reset release. No periodic pipeline
   or four-phase Click wrapper is permitted.
 - [ ] **A4c: physical primitive and complete byte-cycle qualification.** Review
-  the reusable Mutex scope before library edits; characterize its technology
+  the approved reusable Mutex implementation independently; characterize its technology
   implementation and complete owner/macro pin paths. Unresolved arbitration has
   no finite physical deadline. Keep load/slew, setup/hold, pulse, reset and routed
   failures explicit. Do not bypass a missing primitive recipe with priority logic.
@@ -349,3 +354,67 @@ length/entry/count narrowing is A2b under A6.
   preserve the reviewed commit/POR policy, masks, capacity checks, loader,
   watchdog, retention and sleep behavior. Measure cost and all wake windows,
   rerun affected tests/strict exports, obtain fresh review, commit and push.
+
+## A5a: native I2C observation projection
+
+Digitally verified against parent `5e1406b`; complete physical qualification
+remains open.
+Each separate native implementation retains only the seven observation fields
+used by the wire front end: headGray, active, rejected, addressByte, drive, ack
+and sent. The observation store narrows from 340 to 15 bits, removing 325 native
+storage bits and 325 data-allowance lanes per variant. No periodic storage is
+added. The 340-bit protocol state, 687-bit update result, per-edge byte buffer,
+337-bit held frame and four frame banks remain unchanged. See the
+[frame-admission contract](frame-admission-contract.md).
+
+| Quantity | BD before → after | Click before → after |
+| --- | ---: | ---: |
+| Logic area excluding SRAM (mm²) | 2.975227 → 2.939063 | 3.748168 → 3.710656 |
+| Logic area reduction | 1.2155% | 1.0008% |
+| Mapped leaf cells, including three SRAMs | 107,992 → 106,954 | 108,714 → 107,676 |
+| TT listed-state leakage including SRAM (µW) | 7.864666–10.202253 → 7.772042–10.062488 | 9.346913–12.543369 → 9.252447–12.399941 |
+| Observation native payload storage (bits) | 340 → 15 | 340 → 15 |
+| Portable periodic RTL bits | 6,000 → 6,000 | 6,001 → 6,001 |
+
+Firmware wakes retain 43 retired instructions and 3,255 BD / 3,160 Click
+work-clock edges, with durations 271,607.839 / 263,691.109 ns. Every ordinal
+of all 27 matched wake windows per variant retains its class, effects, edge
+counts and duration. This native-model activity does not measure wake energy.
+
+The same mapper and five-corner accounting bind both sides. The parent uses the
+same production RTL and mapping tools as the preceding A2a measurement; the
+intervening A3/A4a commits changed documentation only. I2C alone saves
+0.036151 mm² per variant. Unrelated ordinary mapper variation contributes
+−0.000013 mm² BD / −0.001361 mm² Click. Control guard area is unchanged at
+0.569962 / 1.105951 mm². Physical exports retain 6,010/6,011 periodic bits,
+all three SRAMs and unchanged mapped storage clock-pin loads. Listed-state
+leakage is not reachable deep-sleep power; these results do not update P&R.
+
+The complete publication input and source/capture aperture remain intact,
+including independent frame/snapshot retention and Click phase feedback.
+All 15 projection lanes have actual emitted-RTL fault controls. The original
+35 BD / 29 Click publication pin assertions remain present. Both strict
+standalone baselines and 43 isolated wire mutations pass their expected verdicts;
+each mutant must fail at its exact first assertion site with unchanged probes.
+Source, compile, binary and execution evidence are hashed before and after use.
+The new POR cases complete a fresh, different frame and snapshot after all
+three abort scenarios, preventing an inactive post-reset design from passing.
+
+Evidence is under `build/async-i2c-observation/`: `mapped-cost-r1/receipt.json`,
+`state-r1.json`, `exports-r1.json`, `wiring-controls-r2/results.json` and
+`review-runner-r2.json`. Fresh activity and the complete measurement inventory
+are sealed in `activity-r1-receipt.json` and `measurement-seal-r1.json`.
+Functional/physical runs pass 226 distinct ScalaTest cases across 23 suites;
+509 Python tests pass. Fresh independent acceptance and the final source/
+evidence inventory are recorded in `review-final-r1.json` and
+`final-evidence-r1.json`. All four strict SoC exports pass with sleep-clock
+background, three SRAMs and all four mandatory generic campaigns: BD
+687,372,976 portable / 687,582,656 physical mapping checks; Click
+590,205,320 / 590,394,120. The exact projection reduces covered native lanes;
+no campaign or dynamic-polarity obligation is removed. The alias-resolution
+failure from wiring r1 and the state auditor's initially missing Click history
+classification remain in their original logs. The fixes use resolved public
+probe references and classify the two existing one-bit publication histories
+separately from payload storage. Complete publication/capture/return/reset
+distribution and routed timing remain open, as do the earlier elapsed and CRC
+physical data-budget failures.

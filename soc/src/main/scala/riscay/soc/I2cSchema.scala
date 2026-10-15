@@ -15,6 +15,14 @@ class I2cEdge extends Bundle {
   val readWord = UInt(32.W)
   val resetActive = Bool(); val programBusy = Bool(); val resetEpoch = UInt(64.W)
 }
+/** Native publication projection consumed by the sampled-wire front.
+  * Protocol and payload state remain in their native owners.
+  */
+class I2cObservation extends Bundle {
+  val headGray = UInt(4.W)
+  val active = Bool(); val rejected = Bool(); val addressByte = Bool()
+  val drive = Bool(); val ack = Bool(); val sent = UInt(6.W)
+}
 class I2cState extends Bundle {
   val head = UInt(4.W); val headGray = UInt(4.W)
   val mode = UInt(4.W); val active = Bool(); val rejected = Bool()

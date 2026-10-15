@@ -760,13 +760,13 @@ def validate_i2c_publication(node):
                     data_valid="register_data",capture="capture",captured="captured",setup_fs="100000",hold_fs="100000")
     if any(timing["projection_aperture"].get(k) != v for k,v in expected.items()):
         raise ValueError("MCU_I2C_APERTURE")
-    width=687 if click else 685
+    width=362 if click else 360
     endpoints={e["id"]: e["width"] for e in node["endpoints"]}
-    for name,w in dict(in_data=687,frame_data=337,snapshot_data=8,observed=340,capture=1,
+    for name,w in dict(in_data=687,frame_data=337,snapshot_data=8,observed=15,capture=1,
                        sources=1034 if click else 1032,register_data=width,captured=width).items():
         if endpoints.get(name) != w: raise ValueError("MCU_I2C_PATH_WIDTH")
     cells={p["id"]: p for p in node["primitives"] if p["model"] != "ChiselAsyncTimingMarker_v1"}
-    expected={"observation": ("EventRegister",340),"frame_payload": ("EventRegister",337),
+    expected={"observation": ("EventRegister",15),"frame_payload": ("EventRegister",337),
               "snapshot_payload": ("EventRegister",8),"data_delay": ("ControlGate",width)}
     expected.update({n:("ControlGate",1) for n in ("request_delay","acknowledge_guard","output_guard","return_guard")})
     if click:
@@ -818,7 +818,11 @@ def i2c_path_bindings(node):
         ("snapshot_phase" if click else "snapshot_pending","return_guard"))]
     # Check the complete mux and phase feedback before the declared data delay.
     d=e["in_data"]; frame=c["frame_payload"]+".q"; snap=c["snapshot_payload"]+".q"
-    parts=[d+"[686:347]",f"({d}[346] ? {d}[345:9] : {frame})",f"({d}[8] ? {d}[7:0] : {snap})"]
+    # Independently packed observation: headGray, active, rejected, addressByte,
+    # drive, ack and sent. The input retains the full 340-bit protocol state.
+    projection=cat([d+"[682:679]",d+"[674]",d+"[673]",d+"[672]",
+                    d+"[659]",d+"[658]",d+"[352:347]"])
+    parts=[projection,f"({d}[346] ? {d}[345:9] : {frame})",f"({d}[8] ? {d}[7:0] : {snap})"]
     if click: parts += [f"({c['frame_phase']}.q ^ {d}[346])",f"({c['snapshot_phase']}.q ^ {d}[8])"]
     pairs.append((c["data_delay"]+".a",cat(parts)))
     pairs += [(e["in_request"],c["request_delay"]+".a"),

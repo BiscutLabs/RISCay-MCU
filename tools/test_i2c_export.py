@@ -13,11 +13,11 @@ from check_export import (I2C_PROJECTION_PATH, validate_i2c_publication,
 
 def fixture(click):
     protocol = "two-phase-bundled-v1" if click else "four-phase-bundled-v1"
-    width = 687 if click else 685
+    width = 362 if click else 360
     n = dict(module="I2cPublication", children=[], channels=[dict(id=i,role=r,protocol=protocol)
              for i,r in (("in","input"),("frame","output"),("snapshot","output"))],primitives=[],
              endpoints=[dict(id=i,width=w,rtl_path="Top."+i) for i,w in
-               dict(in_data=687,frame_data=337,snapshot_data=8,observed=340,capture=1,
+               dict(in_data=687,frame_data=337,snapshot_data=8,observed=15,capture=1,
                     sources=1034 if click else 1032,register_data=width,captured=width,
                     in_request=1,in_acknowledge=1,frame_request=1,snapshot_request=1,frame_acknowledge=1,snapshot_acknowledge=1).items()],
              timing=[dict(id="projection",kind="bundled-data-path-v1",logic=I2C_PROJECTION_PATH,
@@ -30,7 +30,7 @@ def fixture(click):
         if width is not None: p["WIDTH"]=str(width)
         n["primitives"].append(dict(id=i,rtl_path="Top."+i,model="ChiselAsync"+model+"_v1",
                                     parameters={k:str(v) for k,v in p.items()}))
-    for i,w in (("observation",340),("frame_payload",337),("snapshot_payload",8)):
+    for i,w in (("observation",15),("frame_payload",337),("snapshot_payload",8)):
         cell(i,"EventRegister",w,RESET_VALUE=0)
     for i,d,w in (("request_delay",11000000,1),("data_delay",10000000,width),
                   ("acknowledge_guard",110000000,1),("output_guard",110000000,1),("return_guard",110000000,1)):
@@ -156,6 +156,29 @@ $display("CONTRACT_PROBES_PASS:1"); $finish; end endmodule
                     self.assertIn(("Top."+prefix+suffix+".q","Top."+prefix+"_or."+pin),pairs)
                 self.assertIn(("Top."+prefix+"_or.q","Top."+prefix+".a"),pairs)
             self.assertEqual(len(pairs),29 if click else 35)
+
+    def test_projection_keeps_each_consumed_field_and_rejects_the_old_wide_copy(self):
+        # A separate source-layout oracle; do not import a production packer.
+        expected = "{Top.in_data[682:679],Top.in_data[674],Top.in_data[673]," \
+                   "Top.in_data[672],Top.in_data[659],Top.in_data[658],Top.in_data[352:347]}"
+        for click in (False, True):
+            node = fixture(click)
+            pairs = i2c_path_bindings(node)
+            actual = [right for left, right in pairs if left == "Top.data_delay.a"]
+            self.assertEqual(len(actual), 1)
+            self.assertTrue(actual[0].startswith("{" + expected + ","), actual)
+            self.assertNotIn("[686:347]", actual[0])
+            for endpoint, old_width in (("observed", 340),
+                                        ("register_data", 687 if click else 685),
+                                        ("captured", 687 if click else 685)):
+                bad = copy.deepcopy(node)
+                next(x for x in bad["endpoints"] if x["id"] == endpoint)["width"] = old_width
+                with self.assertRaisesRegex(ValueError, "MCU_I2C_PATH_WIDTH"):
+                    validate_i2c_publication(bad)
+            bad = copy.deepcopy(node)
+            next(x for x in bad["primitives"] if x["id"] == "observation")["parameters"]["WIDTH"] = "340"
+            with self.assertRaisesRegex(ValueError, "MCU_I2C_CELL_POLICY"):
+                validate_i2c_publication(bad)
 
     def test_comparison_mechanism_rejects_each_unequal_observation(self):
         # Treat each side as an independent observation. The real export test

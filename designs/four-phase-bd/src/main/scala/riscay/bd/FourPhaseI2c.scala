@@ -19,7 +19,7 @@ class FourPhaseI2c(address: Int, domain: ResetDomain) extends AsyncModule(domain
   val edges=IO(Input(Vec(8,new I2cEdge))); val tailGray=IO(Input(UInt(4.W)))
   val frame=fourPhaseOutput("frame",new I2cFrame)
   val snapshot=fourPhaseOutput("snapshot",UInt(8.W))
-  val observed=IO(Output(new I2cState)); dontTouch(observed)
+  val observed=IO(Output(new I2cObservation)); dontTouch(observed)
   private val timing=BundledTiming.Simulation
   private val state=asyncChild("state")(d => new FourPhaseFifo(new I2cState,1,timing,
     Seq(I2cState.initial),ModelTime.ps(1000),d))
@@ -40,7 +40,7 @@ class FourPhaseI2c(address: Int, domain: ResetDomain) extends AsyncModule(domain
   observed:=publication.observed
   contract.endpoint("reset",reset); contract.endpoint("tail_gray",tailGray)
   private val edgeSlots=WireDefault(UInt((8*(new I2cEdge).getWidth).W),edges.asUInt); dontTouch(edgeSlots)
-  private val observedBits=WireDefault(UInt((new I2cState).getWidth.W),observed.asUInt); dontTouch(observedBits)
+  private val observedBits=WireDefault(UInt((new I2cObservation).getWidth.W),observed.asUInt); dontTouch(observedBits)
   contract.endpoint("edge_slots",edgeSlots); contract.endpoint("observed",observedBits)
 
   private def transition(w: I2cWork): I2cResult = {
@@ -117,7 +117,7 @@ class I2cPublication(domain: ResetDomain) extends AsyncModule(domain) {
   val in=fourPhaseInput("in",new I2cResult)
   val frame=fourPhaseOutput("frame",new I2cFrame)
   val snapshot=fourPhaseOutput("snapshot",UInt(8.W))
-  val observed=IO(Output(new I2cState)); dontTouch(observed)
+  val observed=IO(Output(new I2cObservation)); dontTouch(observed)
 
   private val resetRef = contract.endpoint("reset", reset)
   private val cell = ModelTime.ps(1000)
@@ -153,7 +153,7 @@ class I2cPublication(domain: ResetDomain) extends AsyncModule(domain) {
       "retain admission/output request until its four-phase common input returns")
     g.q
   }
-  private val observation=register("observation",(new I2cState).getWidth)
+  private val observation=register("observation",(new I2cObservation).getWidth)
   private val frameData=register("frame_payload",(new I2cFrame).getWidth)
   private val snapshotData=register("snapshot_payload",8)
   private val delayedRequest=gate("request_delay",GateOperation.Buffer,in.req.asUInt,
@@ -169,17 +169,27 @@ class I2cPublication(domain: ResetDomain) extends AsyncModule(domain) {
   frame.req:=gate("output_guard",GateOperation.Buffer,framePhase.asUInt,delay=guard).asBool
   snapshot.req:=gate("return_guard",GateOperation.Buffer,snapshotPhase.asUInt,delay=guard).asBool
   observation.trigger:=capture; frameData.trigger:=capture; snapshotData.trigger:=capture
-  private val stateWidth=(new I2cState).getWidth
+  // Capture only the fields consumed by the sampled-wire front. This is an
+  // independent projection in each native implementation, not a new clock edge.
+  private val projected=Wire(new I2cObservation)
+  projected.headGray:=in.bits.state.headGray
+  projected.active:=in.bits.state.active
+  projected.rejected:=in.bits.state.rejected
+  projected.addressByte:=in.bits.state.addressByte
+  projected.drive:=in.bits.state.drive
+  projected.ack:=in.bits.state.ack
+  projected.sent:=in.bits.state.sent
+  private val observationWidth=(new I2cObservation).getWidth
   private val frameWidth=(new I2cFrame).getWidth
-  private val dataWidth=stateWidth+frameWidth+8
-  private val dataSources=Cat(in.bits.state.asUInt,
+  private val dataWidth=observationWidth+frameWidth+8
+  private val dataSources=Cat(projected.asUInt,
     Mux(in.bits.frameValid,in.bits.frame.asUInt,frameData.q),
     Mux(in.bits.snapshotValid,in.bits.snapshotTag,snapshotData.q))
   private val data=gate("data_delay",GateOperation.Buffer,dataSources,width=dataWidth,delay=ModelTime.ps(10000))
   snapshotData.d:=data(7,0)
   frameData.d:=data(frameWidth+7,8)
   observation.d:=data(dataWidth-1,frameWidth+8)
-  observed:=observation.q.asTypeOf(new I2cState)
+  observed:=observation.q.asTypeOf(new I2cObservation)
   frame.bits:=frameData.q.asTypeOf(new I2cFrame); snapshot.bits:=snapshotData.q
   private val captureEvent=WireDefault(capture); dontTouch(captureEvent)
   private val registerData=WireDefault(UInt(dataWidth.W),data); dontTouch(registerData)
@@ -187,7 +197,7 @@ class I2cPublication(domain: ResetDomain) extends AsyncModule(domain) {
   private val sources=WireDefault(UInt(((new I2cResult).getWidth+frameWidth+8).W),
     Cat(in.bits.asUInt,frameData.q,snapshotData.q)); dontTouch(sources)
   contract.endpoint("capture",captureEvent); contract.endpoint("register_data",registerData)
-  private val observedBits=WireDefault(UInt((new I2cState).getWidth.W),observed.asUInt); dontTouch(observedBits)
+  private val observedBits=WireDefault(UInt((new I2cObservation).getWidth.W),observed.asUInt); dontTouch(observedBits)
   contract.endpoint("observed",observedBits)
   contract.endpoint("sources",sources); contract.endpoint("captured",capturedData)
   contract.dataPathTiming("projection","sources","register_data",BundledTiming.Simulation,
