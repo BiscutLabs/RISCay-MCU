@@ -1,0 +1,338 @@
+// Exact candidate/macro bindings are generated from emitted metadata, never grant-only proxies.
+module Testbench;
+ timeunit 1fs; timeprecision 1fs;
+ localparam bit CLICK=@CLICK@;
+ reg reset=0, stopRequest=0, rearm=0, sourceQuiescent=1;
+ reg request_req=0, result_ack=0;
+ reg [31:0] request_bits_address=0;
+ reg request_bits_write=0, request_bits_enable=0;
+ reg [7:0] request_bits_data=0;
+ wire request_ack, result_req; wire [7:0] result_bits;
+ reg railValid=0, sourceReset=0;
+ // Only mutant compiled connections refer to these testbench controls.
+ reg faultActive=0; integer faultClockMode=0;
+ @TOP@ dut(.reset(reset),.stopRequest(stopRequest),.rearm(rearm),.sourceQuiescent(sourceQuiescent),
+   .request_req(request_req),.request_bits_address(request_bits_address),
+   .request_bits_write(request_bits_write),.request_bits_data(request_bits_data),
+   .request_bits_enable(request_bits_enable),.request_ack(request_ack),
+   .result_req(result_req),.result_bits(result_bits),.result_ack(result_ack));
+ @ACTUAL_BINDINGS@
+ wire [41:0] sourcePayload={request_bits_address,request_bits_write,request_bits_data,request_bits_enable};
+ wire joined=dut.observe_joinedQuiescent;
+ wire electrical=dut.observe_electricalQuiescent;
+ wire grant=dut.observe_launchGrant;
+ wire stopGrant=dut.observe_stopGrant;
+ wire ready=dut.observe_ready;
+ wire capture=dut.observe_resultCapture;
+
+ // Conservative scalar maxima over all five pinned Liberty tables. These are
+ // model pin requirements, not a mapped five-corner owner-path qualification.
+ PinAperture #(10,3594800,2042150,0,0,"macro.A") ma(railValid,macroCLK,!macroCEN,macroA);
+ PinAperture #(8,1579930,1757470,0,0,"macro.D") md(railValid,macroCLK,!macroCEN,macroD);
+ PinAperture #(1,2162050,3766620,0,0,"macro.CEN") mc(railValid,macroCLK,1'b1,macroCEN);
+ PinAperture #(1,3209250,2296030,0,0,"macro.GWEN") mg(railValid,macroCLK,!macroCEN,macroGWEN);
+ PinAperture #(8,1970980,2297790,0,0,"macro.WEN") mw(railValid,macroCLK,!macroCEN,macroWEN);
+ PinAperture #(42,1000000,2000000,1000000,1000000,"source.capture") pc(railValid,pinTrigger,1'b1,pinD);
+ PinAperture #(8,1000000,2000000,1000000,1000000,"result.capture") rc(railValid,resultTrigger,1'b1,resultD);
+ @PHASE_MONITORS@
+ time clkRise=0, clkFall=0, pinCaptureTime=0; bit hadRise=0, hadFall=0;
+ integer commits=0, effects=0, publications=0, stops=0, rebases=0, offers=0;
+ integer effectsThisCommit=0, publishesThisCommit=0;
+ integer requestPhase0=0, requestPhase1=0, resultPhase0=0, resultPhase1=0;
+ integer delayedInputReturns=0, delayedOutputReturns=0, heldResults=0;
+ integer stopPhases[11]; integer disabledCommits=0, invalidParks=0, legalParks=0, immediateReuse=0;
+ integer readCommits=0, writeCommits=0, enabledEdges=0, reuseChecks=0;
+ integer byteWrites[256], byteReads[256];
+ integer committedEpoch=0, commitsSinceRebase=0;
+ bit stoppedEpoch=0; bit grantWasLow=1; time priorGrantFall=0;
+ // Independent delivery lifetime: Click ends at matching ACK; BD additionally
+ // retains data until both public request and ACK have returned to zero.
+ bit resultOutstanding=0, resultAccepted=0;
+ reg [7:0] publishedExpected=0, publishedPayload=0;
+ integer resultAcceptanceChecks=0, resultRtzChecks=0;
+ reg [7:0] referenceMemory[1024]; reg validMemory[1024];
+ reg [31:0] committedAddress; reg committedWrite,committedEnable;
+ reg [7:0] committedData,expectedResult;
+ reg [41:0] committedPayload;
+ integer k;
+ initial begin
+   for(k=0;k<1024;k=k+1) validMemory[k]=0;
+   for(k=0;k<11;k=k+1) stopPhases[k]=0;
+   for(k=0;k<256;k=k+1) begin byteWrites[k]=0; byteReads[k]=0; end
+ end
+ always @(posedge grant) if(railValid) begin
+   if(stoppedEpoch || stopGrant) $fatal(1,"A4_COMMIT_AFTER_STOP:owner.grant");
+   if(!grantWasLow) $fatal(1,"A4_GRANT_REUSE_WITHOUT_LOW:owner.grant");
+   grantWasLow=0; reuseChecks=reuseChecks+1; committedEpoch=rebases; commitsSinceRebase=commitsSinceRebase+1;
+   if(request_bits_address>=1024) $fatal(1,"A4_ADDRESS_RANGE:owner.commit");
+   if(publications!=commits) $fatal(1,"A4_SLOT_REUSE:owner.commit");
+   commits=commits+1; effectsThisCommit=0; publishesThisCommit=0;
+   committedAddress=request_bits_address; committedWrite=request_bits_write;
+   committedEnable=request_bits_enable; committedData=request_bits_data;
+   committedPayload=sourcePayload;
+   if(!committedEnable) disabledCommits=disabledCommits+1;
+   else if(committedWrite) begin writeCommits=writeCommits+1; byteWrites[committedData]=byteWrites[committedData]+1; end
+   else begin readCommits=readCommits+1; byteReads[referenceMemory[committedAddress]]=byteReads[referenceMemory[committedAddress]]+1; end
+   if(request_req) requestPhase1=requestPhase1+1; else requestPhase0=requestPhase0+1;
+   if(!committedEnable || committedWrite) expectedResult=0;
+   else begin
+     if(!validMemory[committedAddress]) $fatal(1,"A4_ORACLE_UNINITIALIZED_READ:source");
+     expectedResult=referenceMemory[committedAddress];
+   end
+ end
+ always @(negedge grant) begin grantWasLow=1; priorGrantFall=$time; end
+ always @(posedge arbLaunch) if(railValid) begin
+   if(stoppedEpoch || stopGrant) $fatal(1,"A4_CONTENDER_AFTER_STOP:mutex.request0");
+   if(grant) $fatal(1,"A4_CONTENDER_REUSE_BEFORE_GRANT_LOW:mutex.request0");
+ end
+ always @(posedge stopGrant) if(railValid) begin stops=stops+1; stoppedEpoch=1; end
+ always @(posedge macroCLK) if(railValid) begin
+   if(commitsSinceRebase==0 || committedEpoch!=rebases) $fatal(1,"A4_STALE_EVENT_AFTER_REBASE:macro.CLK");
+   if(hadRise && $time-clkRise<18259500) $fatal(1,"A4_MACRO_PERIOD:macro.CLK");
+   if(hadFall && $time-clkFall<5823540) $fatal(1,"A4_MACRO_LOW:macro.CLK");
+   clkRise=$time; hadRise=1;
+   if(macroCEN!==0 || !grant || !committedEnable) $fatal(1,"A4_UNOWNED_EDGE:macro.CLK");
+   if(effectsThisCommit!=0) $fatal(1,"A4_DUPLICATE_EFFECT:macro.CLK");
+   if(macroA!==committedAddress[9:0] || macroD!==committedData || macroGWEN!==!committedWrite || macroWEN!==0)
+     $fatal(1,"A4_PIN_IDENTITY:macro.inputs");
+   effects=effects+1; enabledEdges=enabledEdges+1; effectsThisCommit=effectsThisCommit+1;
+   if(committedWrite) begin referenceMemory[committedAddress]=committedData; validMemory[committedAddress]=1; end
+ end
+ always @(negedge macroCLK) if(railValid) begin
+   if(hadRise && $time-clkRise<5664795) $fatal(1,"A4_MACRO_HIGH:macro.CLK");
+   clkFall=$time; hadFall=1;
+ end
+ always @(posedge resultTrigger) if(railValid) begin
+   if(committedEnable && !committedWrite && $time-clkRise<16871200) $fatal(1,"A4_READ_ACCESS:result.trigger");
+   if(resultD!==expectedResult) $fatal(1,"A4_CAPTURE_VALUE:result.d");
+ end
+ always @(posedge request_ack or negedge request_ack) if(railValid && !reset) begin
+   if((CLICK || request_ack) && ($time-pinCaptureTime<2000000)) $fatal(1,"A4_EARLY_SOURCE_ACK:source.ack");
+ end
+ always @(posedge pinTrigger) if(railValid) pinCaptureTime=$time;
+ always @(result_req) if(railValid && !reset && (CLICK || result_req)) begin
+   if(publishesThisCommit!=0 || commits==publications) $fatal(1,"A4_DUPLICATE_PUBLICATION:result.req");
+   if(effectsThisCommit!=(committedEnable?1:0)) $fatal(1,"A4_EFFECT_COUNT:result.req");
+   if(result_bits!==expectedResult) $fatal(1,"A4_RESULT_VALUE:result.bits");
+   if(macroCLK!==0 || macroCEN!==1) $fatal(1,"A4_PUBLICATION_BEFORE_IDLE:macro.pins");
+   publications=publications+1; publishesThisCommit=publishesThisCommit+1;
+   if(result_req) resultPhase1=resultPhase1+1; else resultPhase0=resultPhase0+1;
+   publishedExpected=expectedResult; publishedPayload=result_bits;
+   resultAccepted=0; resultOutstanding=1;
+ end
+ // These observe the consumer-visible bus, not the retained internal register.
+ always @(result_bits or resultOutstanding or result_req or result_ack) if(railValid && resultOutstanding) begin
+   if(result_bits!==publishedPayload || result_bits!==publishedExpected) begin
+     if(!CLICK && resultAccepted) $fatal(1,"A4_RESULT_RTZ_RETENTION:result.bits");
+     else $fatal(1,"A4_HELD_RESULT:result.bits");
+   end
+   if(!CLICK && resultAccepted && result_req===0 && result_ack===0) begin
+     resultRtzChecks=resultRtzChecks+1; resultOutstanding=0;
+   end
+ end
+ always @(result_ack) if(railValid && !reset && resultOutstanding &&
+     ((CLICK && result_ack===result_req) || (!CLICK && result_ack===1))) begin
+   if(result_bits!==publishedExpected || result_bits!==publishedPayload)
+     $fatal(1,"A4_RESULT_ACCEPTANCE:result.bits");
+   resultAcceptanceChecks=resultAcceptanceChecks+1; resultAccepted=1;
+   if(CLICK) resultOutstanding=0;
+ end
+ // An enabled macro requires the independent committed identity and its grant
+ // throughout the pin interval, including idle and disabled transactions.
+ always @(macroCEN or grant or committedEnable or railValid) if(railValid && macroCEN!==1'b1) begin
+   if(macroCEN!==1'b0 || grant!==1'b1) $fatal(1,"A4_CEN_WITHOUT_GRANT:macro.CEN");
+   if(committedEnable!==1'b1) $fatal(1,"A4_CEN_DISABLED_BYTE:macro.CEN");
+ end
+ always @(posedge reset) if(railValid && !joined) $fatal(1,"A4_RESET_BEFORE_JOIN:bootstrapReset");
+ always @(negedge reset) if(railValid && (request_req!==0 || result_ack!==0 || stopRequest!==0 || rearm!==0))
+   $fatal(1,"A4_REBASE_REQUIRED:external.phases");
+ always @(posedge pinReset) if(railValid && !joined) $fatal(1,"A4_PIN_RESET_BEFORE_JOIN:pin_payload.reset");
+ always @(posedge resultReset) if(railValid && !joined) $fatal(1,"A4_RESULT_RESET_BEFORE_JOIN:result_payload.reset");
+ always @(posedge sourceReset) if(railValid && !joined) $fatal(1,"A4_SOURCE_RESET_BEFORE_JOIN:source.reset");
+ always @(posedge electrical) if(railValid && (macroCLK!==0 || macroCEN!==1 || grant))
+   $fatal(1,"A4_FALSE_QUIESCENCE:macro.pins");
+ always @(macroCLK or macroCEN) if(railValid && electrical && (macroCLK!==0 || macroCEN!==1))
+   $fatal(1,"A4_CLOSED_PIN_ACTIVITY:macro.pins");
+ always @(posedge railValid or macroWEN) if(railValid && macroWEN!==8'h00)
+   $fatal(1,"A4_WEN_CONSTANT:macro.WEN");
+
+ task automatic pause(input integer ns); #(ns*1000000); endtask
+ task automatic bootstrap;
+   begin
+     rearm=0; sourceQuiescent=1; pause(1); sourceReset=1; #1; reset=1; pause(100);
+     request_req=0; result_ack=0; stopRequest=0;
+     request_bits_address=0; request_bits_write=0; request_bits_enable=0; request_bits_data=0;
+     pause(100); sourceReset=0; reset=0; pause(150); railValid=1; rearm=1;
+     wait(ready); pause(20); rebases=rebases+1; committedEpoch=rebases;
+     commitsSinceRebase=0; stoppedEpoch=0;
+   end
+ endtask
+ task automatic offer(input integer address,input bit write,input [7:0] data,input bit enabled);
+   begin
+     offers=offers+1;
+     sourceQuiescent=0;
+     request_bits_address=address; request_bits_write=write;
+     request_bits_data=data; request_bits_enable=enabled;
+     pause(5); if(CLICK) request_req=~request_req; else request_req=1;
+   end
+ endtask
+ task automatic drain(input integer sourceDelay,input integer resultDelay);
+   reg phase;
+   begin
+     phase=request_req;
+     fork
+       begin
+         wait(request_ack===phase); pause(sourceDelay);
+         if(!CLICK) request_req=0;
+       end
+       begin
+         if(CLICK) wait(result_req!==result_ack); else wait(result_req===1);
+         pause(resultDelay);
+         if(resultDelay>80) begin
+           heldResults=heldResults+1;
+           if(macroCLK!==0 || macroCEN!==1) $fatal(1,"A4_BACKPRESSURE_CLOCK:macro.pins");
+         end
+         result_ack=result_req;
+         if(!CLICK) begin wait(result_req===0); pause(17); result_ack=0; end
+       end
+     join
+     if(!CLICK) wait(request_ack===0);
+     sourceQuiescent=1;
+     if(stopRequest) wait(joined); else wait(ready);
+     pause(30);
+   end
+ endtask
+ task automatic transact(input integer address,input bit write,input [7:0] data,input bit enabled);
+   begin offer(address,write,data,enabled); drain(4,13); end
+ endtask
+ task automatic stopAt(input integer phase);
+   begin
+     case(phase)
+       0: wait(dut.observe_launchRequest);
+       1: wait(grant);
+       2: wait(dut.observe_pinsCaptured);
+       3: wait(dut.observe_setupReady);
+       4: wait(macroCLK);
+       5: begin wait(macroCLK); pause(4); end
+       6: wait(capture);
+       7: wait(dut.observe_captureHold);
+       8: begin wait(macroCLK); wait(!macroCLK); end
+       9: wait(dut.observe_cycleComplete);
+       10: if(CLICK) wait(result_req!==result_ack); else wait(result_req);
+     endcase
+     // Keep a nonzero actual-event offset to avoid testbench scheduling races.
+     #100000; stopRequest=1; stopPhases[phase]=stopPhases[phase]+1;
+   end
+ endtask
+ integer i,j; integer beforeEffects,beforeCommits; string scenario;
+ initial begin
+   if(!$value$plusargs("scenario=%s",scenario)) scenario="full";
+   bootstrap();
+   // Every test uses the fixed SRAM and exact owner endpoints.
+   if(scenario=="full") begin
+     for(i=0;i<256;i=i+1) begin transact(i,1,i[7:0],1); transact(i,0,0,1); end
+     for(i=0;i<10;i=i+1) begin transact(1<<i,1,8'h5a,1); transact(0,1,8'ha5,1); transact(1<<i,0,0,1); end
+     for(i=0;i<8;i=i+1) begin transact(1023,1,1<<i,1); transact(512,1,~(1<<i),1); end
+     transact(0,1,8'h55,1); transact(512,1,8'haa,1); transact(1023,1,8'hff,1);
+     repeat(3) begin transact(0,0,0,1); transact(512,0,0,1); transact(1023,0,0,1); end
+     transact(0,1,8'h88,0); transact(512,0,0,0);
+     offer(11,1,8'hca,1); drain(180,5); delayedInputReturns=delayedInputReturns+1;
+     offer(11,0,0,1); drain(0,300); delayedOutputReturns=delayedOutputReturns+1;
+     // Present the next legal token as soon as the prior source handshake permits;
+     // its payload can replace the source while the owner still drains its guards.
+     offer(13,1,8'hc3,1);
+     fork
+       begin
+         if(CLICK) begin wait(request_ack===request_req); #1; offer(14,1,8'h3c,1); end
+         else begin wait(request_ack===1); request_req=0; wait(request_ack===0); #1; offer(14,1,8'h3c,1); end
+       end
+       begin
+         if(CLICK) wait(result_req!==result_ack); else wait(result_req===1);
+         pause(200); result_ack=result_req;
+         if(!CLICK) begin wait(result_req===0); pause(7); result_ack=0; end
+       end
+     join
+     drain(0,190);
+     immediateReuse=immediateReuse+1;
+     transact(13,0,0,1); transact(14,0,0,1);
+     // Each stop phase drains a committed byte, or cancels an unaccepted offer.
+     for(i=1;i<=10;i=i+1) begin
+       fork offer(600+i,1,i[7:0],1); stopAt(i); begin wait(grant); drain(30,220); end join
+       wait(joined); pause(20); bootstrap();
+       transact(600+i,0,0,1); // SRAM retention across valid-rail quiescent rebase.
+     end
+     // Park invalid full-width addresses without effects, then coordinate cancellation.
+     beforeEffects=effects; beforeCommits=commits;
+     offer(32'h80000400,1,8'hb7,1); pause(200);
+     if(effects!=beforeEffects || commits!=beforeCommits) $fatal(1,"A4_RANGE_NARROWING:macro.edge");
+     invalidParks=invalidParks+1;
+     stopRequest=1; wait(electrical); sourceQuiescent=1; wait(joined); bootstrap();
+     // Already closed admission holds an unaccepted legal offer without an ACK.
+     stopRequest=1; wait(electrical); beforeEffects=effects; beforeCommits=commits;
+     offer(50,1,8'hc1,1); pause(200);
+     if(effects!=beforeEffects || commits!=beforeCommits || request_ack!==0)
+       $fatal(1,"A4_PARKED_OFFER_ACCEPTED:source.ack");
+     legalParks=legalParks+1;
+     sourceQuiescent=1; wait(joined); pause(25); bootstrap();
+     transact(512,0,0,1);
+     if(CLICK && (requestPhase0==0 || requestPhase1==0 || resultPhase0==0 || resultPhase1==0))
+       $fatal(1,"A4_PHASE_COVERAGE:channels");
+     if(commits<580 || effects<570 || heldResults<1 || delayedInputReturns<1 || delayedOutputReturns<1)
+       $fatal(1,"A4_EMPTY_CAMPAIGN:counts");
+     for(i=0;i<10;i=i+1) if(ma.rising[i]==0 || ma.falling[i]==0) $fatal(1,"A4_A_POLARITY:%0d",i);
+     for(i=0;i<8;i=i+1) if(md.rising[i]==0 || md.falling[i]==0) $fatal(1,"A4_D_POLARITY:%0d",i);
+     if(mc.rising[0]==0 || mc.falling[0]==0 || mg.rising[0]==0 || mg.falling[0]==0)
+       $fatal(1,"A4_CONTROL_POLARITY:CEN.GWEN");
+     if(disabledCommits!=2 || invalidParks!=1 || legalParks!=1 || immediateReuse!=1)
+       $fatal(1,"A4_SCENARIO_COVERAGE:full");
+     for(i=1;i<=10;i=i+1) if(stopPhases[i]!=1) $fatal(1,"A4_STOP_PHASE_COVERAGE:%0d",i);
+     for(i=0;i<256;i=i+1) if(byteWrites[i]==0 || byteReads[i]==0) $fatal(1,"A4_BYTE_VALUE_COVERAGE:%0d",i);
+     if(enabledEdges!=writeCommits+readCommits || reuseChecks!=commits) $fatal(1,"A4_COHORT_ACCOUNTING:effects");
+   end else if(scenario=="competition") begin
+     fork offer(512,1,8'hd3,1); begin wait(dut.observe_launchRequest); #1; stopRequest=1; end join
+     wait(grant || stopGrant);
+     if(grant) drain(30,50); else begin sourceQuiescent=1; wait(joined); end
+     pause(200);
+   end else if(scenario=="unresolved") begin
+     offer(512,1,8'hd3,1); wait(dut.observe_launchRequest); pause(500);
+     if(grant || macroCLK!==0 || macroCEN!==1 || commits!=0) $fatal(1,"A4_UNRESOLVED_ACTIVITY:macro.pins");
+     drain(5,20);
+   end else if(scenario=="stop-high") begin
+     fork offer(512,1,8'hd3,1); begin wait(macroCLK); #100000; stopRequest=1; end
+       begin wait(grant); drain(30,50); end join
+     wait(joined);
+   end else if(scenario=="early-source-reset") begin
+     fork offer(512,1,8'hd3,1); begin wait(grant); #100000; sourceReset=1; request_bits_data=0; end join
+   end else if(scenario=="old-request-rebase") begin
+     stopRequest=1; wait(electrical); sourceQuiescent=1; wait(joined);
+     reset=1; pause(100); rearm=0; stopRequest=0; request_req=1; pause(100); reset=0;
+   end else if(scenario=="rearm-idle") begin
+     transact(512,1,8'hd3,1); stopRequest=1; wait(electrical); sourceQuiescent=1; wait(joined);
+     bootstrap(); pause(400);
+     if(commitsSinceRebase!=0) $fatal(1,"A4_REPLAYED_COMMIT:rearm");
+   end else if(scenario=="closed-offer") begin
+     stopRequest=1; wait(electrical); offer(512,1,8'hd3,1); pause(300);
+     if(commits!=0 || effects!=0 || publications!=0) $fatal(1,"A4_CLOSED_OFFER_EFFECT:owner");
+   end else if(scenario=="setup-pins") begin transact(512,1,8'hd3,1); end
+   else if(scenario=="read") begin transact(512,1,8'ha5,1); transact(512,0,0,1); end
+   else if(scenario=="two") begin transact(512,1,8'ha5,1); transact(0,1,8'h5a,1); end
+   else $fatal(1,"A4_UNKNOWN_SCENARIO");
+   pause(500);
+   if(commits!=publications) $fatal(1,"A4_FINAL_ACCOUNTING");
+   if(resultOutstanding || resultAcceptanceChecks!=publications || (!CLICK && resultRtzChecks!=publications))
+     $fatal(1,"A4_RESULT_LIFETIME_COVERAGE:result.bits");
+   $display("A4_RESULT_LIFETIME|accepted=%0d|bdRtz=%0d|outstanding=%0d",resultAcceptanceChecks,resultRtzChecks,resultOutstanding);
+   $display("A4_COVERAGE|commits=%0d|effects=%0d|publications=%0d|read=%0d|write=%0d|disabled=%0d|invalidPark=%0d|legalPark=%0d|immediateReuse=%0d|held=%0d|inputReturn=%0d|outputReturn=%0d|requestPhase0=%0d|requestPhase1=%0d|resultPhase0=%0d|resultPhase1=%0d|stops=%0d|rebases=%0d|cenRise=%0d|cenFall=%0d|gwenRise=%0d|gwenFall=%0d|reuseChecks=%0d|offers=%0d",
+     commits,effects,publications,readCommits,writeCommits,disabledCommits,invalidParks,legalParks,immediateReuse,
+     heldResults,delayedInputReturns,delayedOutputReturns,requestPhase0,requestPhase1,resultPhase0,resultPhase1,
+     stops,rebases,mc.rising[0],mc.falling[0],mg.rising[0],mg.falling[0],reuseChecks,offers);
+   for(i=0;i<10;i=i+1) $display("A4_PIN_POLARITY|A|%0d|%0d|%0d",i,ma.rising[i],ma.falling[i]);
+   for(i=0;i<8;i=i+1) $display("A4_PIN_POLARITY|D|%0d|%0d|%0d",i,md.rising[i],md.falling[i]);
+   for(i=0;i<11;i=i+1) $display("A4_STOP_PHASE|%0d|%0d",i,stopPhases[i]);
+   for(i=0;i<256;i=i+1) $display("A4_BYTE_VALUE|%0d|%0d|%0d",i,byteWrites[i],byteReads[i]);
+   $display("A4_BYTE_OWNER_PASS|click=%0d|commits=%0d|effects=%0d|publications=%0d|stops=%0d|rebases=%0d",CLICK,commits,effects,publications,stops,rebases);
+   $finish;
+ end
+ initial begin #1000000000000; $fatal(1,"A4_TIMEOUT"); end
+ @FAULT_INJECTION@
+endmodule

@@ -129,3 +129,15 @@ grant-only probes contain no byte owner, retained payload or SRAM-pin evidence.
 They do not qualify the missing physical arbitration circuit. The corrected
 proposal permits separate native digital byte-owner development while that
 physical work remains open; it does not authorize production replacement.
+
+## Isolated byte-owner digital experiment
+
+The separate experimental BD/Click byte owners now have an independently reviewed
+76-case digital campaign, including actual macro/capture pins, CEN idle/disabled
+checks and consumer-visible result retention through ACK and BD return to zero.
+The maintained test wrapper generates and binds a fresh source/runtime/export
+cohort; see [experimental native SRAM byte owners](experimental-native-sram-byte.md)
+for commands, exact scope and remaining integration gates. No production module
+instantiates these owners, and their Mutex/guard/reset paths remain physically
+unqualified. The existing production interrupted-POR, watchdog and SRAM rules
+remain in force until the separate word/bank/reset integration is reviewed.

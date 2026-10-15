@@ -341,12 +341,16 @@ length/entry/count narrowing is A2b under A6.
   review reproduces seven public-Mutex model probes and two exact wiring faults,
   with two additional witnesses for old-request replay and premature reuse.
   These checks contain no byte owner or actual SRAM-pin coverage.
-- [ ] **A4b: isolated BD/Click native byte owners.** Use the unchanged public
-  Mutex digital model for a clearly unqualified experiment. Test actual macro
-  and receiver pins, source/payload ownership, pulse completion, independent
-  returns, held results and stop/rearm. Observe grant low before contender reuse;
-  clear/rebase old requests before electrical reset release. No periodic pipeline
-  or four-phase Click wrapper is permitted.
+- [x] **A4b: isolated BD/Click native byte owners.** Separate experimental owners
+  use the unchanged public Mutex digital model, with no production instantiation.
+  The maintained test freshly emits both variants and passes 76 cases: 20 positive,
+  54 exact-fatal controls and two deliberate monitor-omission witnesses. Actual
+  macro/receiver pins, source ownership, pulse completion, independent returns,
+  held results and stop/rearm are checked. Grant low precedes contender reuse;
+  old requests clear before reset release. No periodic pipeline or four-phase
+  Click wrapper is added. The 47 source/runtime/graph binding tests pass.
+  See the [experimental byte-owner contract](experimental-native-sram-byte.md).
+  Physical qualification and production word/bank/reset integration remain A4c/d.
 - [ ] **A4c: physical primitive and complete byte-cycle qualification.** Review
   the approved reusable Mutex implementation independently; characterize its technology
   implementation and complete owner/macro pin paths. Unresolved arbitration has

@@ -345,7 +345,13 @@
   user authorizes self-timed macro clocks under A4 in
   `docs/native-area-reduction.md`: qualify all macro pulse/setup/hold/access and
   POR-abort constraints before replacing this boundary. Never substitute a
-  guessed request pulse. Preserve the full-width millisecond/scaled-value ABI;
+  guessed request pulse. Isolated experimental byte owners live under each
+  design's `experimental/` directory. Run AsyncMacroByteOwnerSpec and
+  tools/test_macro_byte_source_binding.py after changes; preserve all 76 cases,
+  actual pin/result oracles, exact-fatal controls and source/runtime/graph binding.
+  Follow docs/experimental-native-sram-byte.md. Their finite Mutex model and
+  schematic candidate do not authorize production use or physical timing claims.
+  Preserve the full-width millisecond/scaled-value ABI;
   narrow LF state only with bounded observation/scaler progress, safe retained
   accumulation and wake ownership, or independent retained overflow logic. A3
   retains 32 bits; follow `docs/lf-counter-width-decision.md`. Waking on each tick

@@ -68,6 +68,8 @@ See the [elapsed](docs/native-elapsed-contract.md) and
 open. Self-timed SRAM access follows a separate
 [candidate contract](docs/native-sram-clock-contract.md) and requires complete
 macro timing qualification; the millisecond and scaled-value ABI remains unchanged.
+The [experimental native byte owners](docs/experimental-native-sram-byte.md)
+have a maintained digital verification campaign and are not instantiated in the SoC.
 Each migration item requires fresh independent review, fixes,
 verification, documentation and a separate commit/push.
 
