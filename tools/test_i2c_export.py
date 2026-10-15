@@ -17,14 +17,21 @@ def fixture(click):
     n = dict(module="I2cPublication", children=[], channels=[dict(id=i,role=r,protocol=protocol)
              for i,r in (("in","input"),("frame","output"),("snapshot","output"))],primitives=[],
              endpoints=[dict(id=i,width=w,rtl_path="Top."+i) for i,w in
-               dict(in_data=687,frame_data=337,snapshot_data=8,observed=15,capture=1,
-                    sources=1034 if click else 1032,register_data=width,captured=width,
+               dict(in_data=174,frame_data=337,snapshot_data=8,observed=15,capture=1,
+                    sources=785 if click else 783,register_data=width,captured=width,
                     in_request=1,in_acknowledge=1,frame_request=1,snapshot_request=1,frame_acknowledge=1,snapshot_acknowledge=1).items()],
              timing=[dict(id="projection",kind="bundled-data-path-v1",logic=I2C_PROJECTION_PATH,
                           delay_owner=[],delay_cell="data_delay",source="sources",sink="register_data"),
                      dict(id="projection_aperture",kind="bundled-setup-hold-v1",launch="in_request",
                           transaction="in_data",data_valid="register_data",capture="capture",captured="captured",
                           setup_fs="100000",hold_fs="100000")])
+    n["endpoints"] += [dict(id=i,width=w,rtl_path="Top."+i) for i,w in
+        dict(byte_sources=280,byte_register_data=264,receive_bytes=264,write_legal=1).items()]
+    n["timing"] += [dict(id="byte_write_transform",kind="bundled-data-path-v1",
+        logic="complete addressed receive-byte transform; digital budget only",delay_owner=[],delay_cell="byte_data_delay",
+        source="byte_sources",sink="byte_register_data"),
+        dict(id="byte_aperture",kind="bundled-setup-hold-v1",launch="in_request",transaction="in_data",
+             data_valid="byte_register_data",capture="capture",captured="receive_bytes",setup_fs="100000",hold_fs="100000")]
     def cell(i,model,width=None,delay=1000000,**p):
         p.update(DELAY_FS=str(delay))
         if width is not None: p["WIDTH"]=str(width)
@@ -35,6 +42,8 @@ def fixture(click):
     for i,d,w in (("request_delay",11000000,1),("data_delay",10000000,width),
                   ("acknowledge_guard",110000000,1),("output_guard",110000000,1),("return_guard",110000000,1)):
         cell(i,"ControlGate",w,d,OP=0,RESET_VALUE=0)
+    cell("receive_all","EventRegister",264,RESET_VALUE=0)
+    cell("byte_data_delay","ControlGate",264,10000000,OP=0,RESET_VALUE=0)
     if click:
         cell("accepted_phase","PhaseRegister",RESET_VALUE=0)
         cell("frame_phase","EventRegister",1,RESET_VALUE=0); cell("snapshot_phase","EventRegister",1,RESET_VALUE=0)
@@ -51,30 +60,37 @@ def fixture(click):
 
 class I2cExportTest(unittest.TestCase):
     def test_decode_background_preserves_checks_and_rejects_bad_mapping(self):
-        fields = {"head": (336,4), "mode": (328,4), "active": (327,1),
-                  "addressByte": (325,1), "selectedWrite": (324,1),
-                  "receive": (316,8), "bit": (313,3), "length": (303,6)}
+        fields = {"head": (72,4), "mode": (64,4), "active": (63,1),
+                  "addressByte": (61,1), "selectedWrite": (60,1),
+                  "receive": (52,8), "bit": (49,3), "length": (39,6)}
         state = dict(primitives=[dict(id="payload", model="ChiselAsyncEventRegister_v1",
                     rtl_path="Top.i2c.native.state.payload",
-                    ports=[dict(name="q",width=340,direction="output")])],
+                    ports=[dict(name="q",width=76,direction="output")])],
                     channels=[dict(id="out",layout=[dict(field="bits."+n,lsb=b,width=w)
                               for n,(b,w) in fields.items()])])
+        update=dict(primitives=[dict(id="payload",model="ChiselAsyncEventRegister_v1",
+            rtl_path="Top.i2c.native.update.payload",ports=[dict(name="q",width=174,direction="output")])],
+            channels=[dict(id="out",layout=[dict(field="bits."+name,lsb=lsb,width=width) for name,lsb,width in
+                (("frameValid",97,1),("byteWrite.valid",14,1),("byteWrite.index",8,6),("byteWrite.data",0,8))])])
         owner = dict(module="I2cTarget",rtl_path="Top.i2c",children=[dict(id="native",contract=dict(
-            module="ClickI2c",children=[dict(id="state",contract=state)]))])
+            module="ClickI2c",children=[dict(id="state",contract=state),dict(id="update",contract=update)]))])
         manifest = dict(top="Top",design=dict(children=[dict(id="i2c",contract=owner)]))
         regs = {"slots_0_"+n:1 for n in ("rise","sda","stop","start","timeout")}
         scopes = {"Top.i2c":dict(registers=regs)}
-        header = "force Top.reset = 1'h0;\nforce Top.i2c.native.state.payload.q = 340'h0;\n"
+        header = "force Top.reset = 1'h0;\nforce Top.i2c.native.state.payload.q = 76'h0;\n"
+        header += "force Top.i2c.native.update.payload.q = 174'h0;\n"
         header += "".join(f"force Top.i2c.{n} = 1'h0;\n" for n in regs)+"#1;\n"
-        rtl = """module Payload; reg [339:0] q; endmodule
+        rtl = """module Payload; reg [75:0] q; endmodule
 module State; Payload payload(); endmodule
-module Native; State state(); endmodule
+module ResultPayload; reg [173:0] q; endmodule
+module Update; ResultPayload payload(); endmodule
+module Native; State state(); Update update(); endmodule
 module I2c; Native native();
 """ + "\n".join("reg "+n+";" for n in regs) + """
-wire [339:0] s = native.state.payload.q;
-wire frame = !slots_0_timeout && (slots_0_start || slots_0_stop) && s[324] && s[308:303]!=0;
-wire snapshot = !slots_0_timeout && s[331:328]==1 && slots_0_rise && s[315:313]==7 &&
-  s[325] && s[322:316]==7'h35 && slots_0_sda;
+wire [75:0] s = native.state.payload.q;
+wire frame = !slots_0_timeout && (slots_0_start || slots_0_stop) && s[60] && s[44:39]!=0;
+wire snapshot = !slots_0_timeout && s[67:64]==1 && slots_0_rise && s[51:49]==7 &&
+  s[61] && s[58:52]==7'h35 && slots_0_sda;
 wire [1:0] expected = {frame,snapshot};
 wire [1:0] observed = expected;
 endmodule
@@ -93,9 +109,13 @@ if (ones_0 !== 2'h3 || zeros_0 !== 2'h3) $fatal(1,"INACTIVE_ENDPOINT:observed");
 $display("CONTRACT_PROBES_PASS:1"); $finish; end endmodule
 """
         extended,count=i2c_background(source,manifest,scopes,1)
-        self.assertEqual(count,131)
+        self.assertEqual(count,197)
         self.assertTrue(extended.startswith(source[:source.index('if (ones_0 !==')]))
         self.assertIn('if (ones_0 !==',extended)
+        for index in range(33):
+            for value in (0,255):
+                intent=(1 << 14) | (index << 8) | value
+                self.assertIn(f"force Top.i2c.native.update.payload.q = 174'h{intent:x};",extended)
         self.assertEqual(set(re.findall(r"force (\S+) =",extended)),set(re.findall(r"force (\S+) =",source)))
         with tempfile.TemporaryDirectory(prefix="riscay-i2c-decode-") as folder:
             path=Path(folder)
@@ -110,8 +130,8 @@ $display("CONTRACT_PROBES_PASS:1"); $finish; end endmodule
                 run=subprocess.run(["vvp","sim.vvp"],cwd=path,capture_output=True,text=True,timeout=30)
                 self.assertEqual(run.returncode==0,expected=="CONTRACT_PROBES_PASS",run.stdout)
                 self.assertIn(expected,run.stdout)
-        for mutate in (lambda: state["primitives"][0]["ports"][0].update(width=339),
-                       lambda: state["channels"][0]["layout"][0].update(lsb=335),
+        for mutate in (lambda: state["primitives"][0]["ports"][0].update(width=75),
+                       lambda: state["channels"][0]["layout"][0].update(lsb=71),
                        lambda: scopes["Top.i2c"]["registers"].update(slots_0_rise=2)):
             saved_state=copy.deepcopy(state); saved_scopes=copy.deepcopy(scopes)
             mutate()
@@ -155,12 +175,12 @@ $display("CONTRACT_PROBES_PASS:1"); $finish; end endmodule
                 for suffix,pin in (("_na","a"),("_nb","b")):
                     self.assertIn(("Top."+prefix+suffix+".q","Top."+prefix+"_or."+pin),pairs)
                 self.assertIn(("Top."+prefix+"_or.q","Top."+prefix+".a"),pairs)
-            self.assertEqual(len(pairs),29 if click else 35)
+            self.assertEqual(len(pairs),36 if click else 42)
 
     def test_projection_keeps_each_consumed_field_and_rejects_the_old_wide_copy(self):
         # A separate source-layout oracle; do not import a production packer.
-        expected = "{Top.in_data[682:679],Top.in_data[674],Top.in_data[673]," \
-                   "Top.in_data[672],Top.in_data[659],Top.in_data[658],Top.in_data[352:347]}"
+        expected = "{Top.in_data[169:166],Top.in_data[161],Top.in_data[160]," \
+                   "Top.in_data[159],Top.in_data[146],Top.in_data[145],Top.in_data[103:98]}"
         for click in (False, True):
             node = fixture(click)
             pairs = i2c_path_bindings(node)

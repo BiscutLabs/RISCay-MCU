@@ -83,7 +83,9 @@ periodic-clock staging. Measure each accepted step against its exact parent.
   A5a is digitally verified: it narrows only the redundant observation from 340
   to 15 native bits; its measured cost and evidence are recorded below. It does not move
   the per-edge byte buffer or remove frame publication storage. A5b's addressed
-  receive store, publication/bank reduction and reset-epoch reduction remain open.
+  receive store is digitally verified and measured, removing 513 native bits
+  per variant. See the [receive-byte contract](native-i2c-byte-store-contract.md).
+  Publication/bank, sampled readWord and reset-epoch reductions remain open.
 - [ ] **A6: widths and duplicate ownership (proposal 7 / C1d–f).** Evaluate the
   fixed SPI player, quiescing request receipt, saved SRAM address, profile-sized
   GPIO/wake fields and bounded statistics. Remove queued/ordered/bridge copies

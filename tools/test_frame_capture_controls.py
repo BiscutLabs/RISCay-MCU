@@ -7,7 +7,7 @@ import unittest
 from pathlib import Path
 
 from check_frame_capture_controls import (LEAVES, PREFIX, assertion_sites,
-    classify, classify_wrap, copy_order_metrics, command_capture_policy, fixture_masks_policy, instrument, monitors, omit_same_edge_busy, packed, qualify, service_period, skew, supplemental)
+    classify, classify_wrap, copy_order_metrics, command_capture_policy, fixture_masks_policy, instrument, monitors, omit_same_edge_busy, packed, qualify, ring_budget_ns, service_period, skew, supplemental)
 
 
 def fake_binding():
@@ -230,7 +230,7 @@ class FrameCaptureControlTests(unittest.TestCase):
         names=['reset','in_req','in_bits_frameValid','in_bits_snapshotValid','frame_ack','snapshot_ack',
                'in_bits_frame_ingress_frame_length','in_bits_frame_ingress_frame_overflow',
                'in_bits_frame_ingress_resetActive','in_bits_frame_ingress_programBusy','in_bits_frame_resetEpoch']
-        names+=['in_bits_frame_ingress_frame_bytes_'+str(i) for i in range(33)]
+        names+=['in_bits_byteWrite_valid','in_bits_byteWrite_index','in_bits_byteWrite_data']
         with tempfile.TemporaryDirectory() as folder:
             Path(folder,'I2cPublication.sv').write_text('module I2cPublication(\n'+''.join('input '+n+',\n' for n in names)+');\nendmodule\n',encoding='utf-8')
             text=supplemental(original,b,folder)
@@ -241,6 +241,15 @@ class FrameCaptureControlTests(unittest.TestCase):
         self.assertEqual(len(forced),len([n for n in names if n.startswith('in_')]))
         self.assertTrue(all('.ca_child_publication.in_' in x for x in forced))
         self.assertFalse(any(x.endswith(('frame_ack','snapshot_ack')) or '.q' in x for x in forced))
+        self.assertIn('task preload_frame_bytes(input [336:0] data);',text)
+        self.assertIn('byte_index<33',text)
+        self.assertEqual(text.count('#300;#0;$fatal(1,"FRAME_INPUT_BYTE_DEADLINE");'),1)
+        self.assertIn('join_any\n      disable bounded_byte;',text)
+        self.assertIn('pub_byte_data=data[66+byte_index*8+:8]',text)
+        self.assertIn('pub_frame_valid=0;',text)
+        self.assertIn('pub_byte_valid=0;pub_frame_valid=1;',text)
+        self.assertEqual(text.count('preload_frame_bytes(pub_data);'),4)
+        self.assertIn('preload_frame_bytes(pub_data);#0.001;',ring)
         self.assertIn('reset=1;scl=1;',text)
         self.assertIn('bit_index<337',text)
         self.assertIn('bit_index<64',text)
@@ -283,10 +292,28 @@ class FrameCaptureControlTests(unittest.TestCase):
 
     def test_period_boundaries_are_exactly_representable_and_independently_checked(self):
         bench='initial begin serviceClock=0; forever begin #25.0; if(clockEnabled) serviceClock=~serviceClock; end end\nlocalparam time RING_EXPECTED_PERIOD_FS=50000000;\ninitial begin #100000000; $fatal(1,"FRAME_INPUT_DEADLINE"); end'
+        bench+='\nfor(byte_index=0;byte_index<33;byte_index=byte_index+1) begin\n'
+        bench+='#300;#0;$fatal(1,"FRAME_INPUT_BYTE_DEADLINE");\njoin_any\n      disable bounded_byte;\nend'
         for period in (50,55.498,55.5,55.502,114,312.5,1000,1000000):
             changed=service_period(bench,period)
             self.assertIn('#'+str(period/2),changed)
             self.assertIn('RING_EXPECTED_PERIOD_FS='+str(round(period*1000000)),changed)
+            self.assertEqual(ring_budget_ns(period),round(period*1152+1000)+32*33*300)
+            self.assertIn(f'initial begin #{ring_budget_ns(period)}; $fatal(1,"FRAME_INPUT_DEADLINE"); end',changed)
+        self.assertEqual(ring_budget_ns(50),375400)
+        for malformed in (bench.replace('#100000000;', '#100000001;'),
+                          bench.replace('"FRAME_INPUT_DEADLINE"', '"OTHER_DEADLINE"'),
+                          bench+'\ninitial begin #100000000; $fatal(1,"FRAME_INPUT_DEADLINE"); end'):
+            with self.subTest(malformed=malformed),self.assertRaisesRegex(ValueError,'RING_DEADLINE_BINDING'):
+                service_period(malformed,50)
+        for malformed in (bench.replace('#300;#0;', '#301;#0;'),
+                          bench.replace('byte_index<33', 'byte_index<32'),
+                          bench.replace('disable bounded_byte;', 'disable wrong_scope;')):
+            with self.subTest(malformed=malformed),self.assertRaisesRegex(ValueError,'RING_BYTE_BOUND_BINDING'):
+                service_period(malformed,50)
+        wire='initial begin serviceClock=0; forever begin #25.0; if(clockEnabled) serviceClock=~serviceClock; end end\ninitial begin #12345; $fatal(1,"ORIGINAL_WIRE_DEADLINE"); end'
+        self.assertEqual(service_period(wire,50),wire)
+        self.assertIn('#12345; $fatal(1,"ORIGINAL_WIRE_DEADLINE");',service_period(wire,312.5))
         for period in (49.998,1000000.002,55.499):
             with self.subTest(period=period),self.assertRaises(ValueError):service_period(bench,period)
 

@@ -9,7 +9,7 @@ import org.scalatest.funsuite.AnyFunSuite
 /** Independent effect/serial oracle; these fixtures have no service clock. */
 class AsyncI2cSpec extends AnyFunSuite {
   private def fresh(name: String): Path = {
-    val root=Paths.get("build/async-i2c-tests"); Files.createDirectories(root)
+    val root=Paths.get("build/async-i2c-addressed-legacy-tests"); Files.createDirectories(root)
     Files.createTempDirectory(root,name)
   }
   private def publication(click: Boolean): AsyncModule = if(click)
@@ -51,13 +51,21 @@ class AsyncI2cSpec extends AnyFunSuite {
       AsyncTest.run(publication(click),1L to 24L,dir) { _ =>
         val transactions=(0 until 24).map { i =>
           val p=if(click) (i+1)%2 else 1
+          // One legal byte write precedes each original frame. Input Click
+          // history toggles twice; frame/snapshot histories toggle once.
+          val inputPhase=if(click) 0 else 1
           s"""
+            in_bits_frameValid=0; in_bits_snapshotValid=0;
+            in_bits_byteWrite_valid=1; in_bits_byteWrite_index=0; in_bits_byteWrite_data=${i+17};
+            #1000000; in_req=1; wait(in_ack==1); #2;
+            ${if(click) "" else "in_req=0; wait(!in_ack); #2;"}
+            in_bits_byteWrite_valid=0;
             in_bits_frameValid=1; in_bits_snapshotValid=1;
             in_bits_state_head=${i%16}; in_bits_frame_ingress_frame_length=1;
-            in_bits_frame_ingress_frame_bytes_0=${i+17}; in_bits_frame_resetEpoch=${i+5}; in_bits_snapshotTag=${i+31};
-            #1000000; in_req=$p;
+            in_bits_frame_resetEpoch=${i+5}; in_bits_snapshotTag=${i+31};
+            #1000000; in_req=$inputPhase;
             fork
-              begin wait(in_ack==$p); #700000000;
+              begin wait(in_ack==$inputPhase); #700000000;
                 ${if(click) "" else "in_req=0; wait(!in_ack);"}
               end
               begin wait(frame_req==$p); #${if(i%2==0) 2 else 900000000};

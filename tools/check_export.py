@@ -407,6 +407,34 @@ def frame_head_background(source: str, manifest: dict, scopes: dict, checks: int
     return result.replace(marker, f"CONTRACT_PROBES_PASS:{count}"), count
 
 
+def i2c_standalone_byte_background(source,manifest,scopes,checks):
+    """Coherent byte intents at validated top input ports; keep generic probes."""
+    node=manifest["design"];validate_i2c_publication(node)
+    top=manifest["top"]
+    ports=scopes.get(top,{}).get("ports",{})
+    expected={"in_bits_frameValid":1,"in_bits_byteWrite_valid":1,
+              "in_bits_byteWrite_index":6,"in_bits_byteWrite_data":8}
+    if any(ports.get(name)!={"name":name,"direction":"input","width":width} for name,width in expected.items()):
+        raise ValueError("I2C_PROBE_DRIVER_MISMATCH")
+    anchor=f"initial begin\nforce {top}.reset = 1'b1; #1;\n"
+    if source.count(anchor)!=1:raise ValueError("I2C_PROBE_SHAPE_CHANGED")
+    start=source.index(anchor)+len(anchor);end=source.index("\n#1;\n",start)+len("\n#1;\n")
+    header=source[start:end]
+    if any(f"force {top}.{name} = {width}'h0;" not in header for name,width in expected.items()):
+        raise ValueError("I2C_PROBE_DRIVER_MISMATCH")
+    coverage=list(re.finditer(r"^if \(ones_\d+ !==.*INACTIVE_ENDPOINT:.*$",source,re.M))
+    completion=f"CONTRACT_PROBES_PASS:{checks}"
+    if not coverage or source.count(completion)!=1:raise ValueError("I2C_PROBE_SHAPE_CHANGED")
+    extra=[header,f"force {top}.in_bits_frameValid = 1'h0;\nforce {top}.in_bits_byteWrite_valid = 1'h1;\n"]
+    for index in range(33):
+        for value in (0,255):
+            extra.append(f"force {top}.in_bits_byteWrite_index = 6'h{index:x};\nforce {top}.in_bits_byteWrite_data = 8'h{value:x};\n#1; check;\n")
+    extra.append(header)
+    count=checks+66*len(coverage);position=coverage[0].start()
+    result=source[:position]+"".join(extra)+source[position:]
+    return result.replace(completion,f"CONTRACT_PROBES_PASS:{count}"),count
+
+
 def i2c_background(source: str, manifest: dict, scopes: dict, checks: int):
     """Exercise native I2C decode conjunctions using only retained sources.
 
@@ -414,6 +442,8 @@ def i2c_background(source: str, manifest: dict, scopes: dict, checks: int):
     or a completed write with STOP. Keep every original campaign and comparison;
     add those contexts at the state payload and immutable edge-slot registers.
     """
+    if manifest["design"].get("module")=="I2cPublication":
+        return i2c_standalone_byte_background(source,manifest,scopes,checks)
     owners = [c["contract"] for c in manifest["design"].get("children", []) if c["id"] == "i2c"]
     if not owners:
         return source, checks
@@ -436,16 +466,29 @@ def i2c_background(source: str, manifest: dict, scopes: dict, checks: int):
     cells = [p for n in nodes(state) for p in n.get("primitives", []) if p["id"] == "payload"]
     if (len(cells) != 1 or cells[0]["model"] not in
             ("ChiselAsyncClosingLatch_v1", "ChiselAsyncEventRegister_v1") or
-            {"name": "q", "width": 340, "direction": "output"} not in cells[0].get("ports", [])):
+            {"name": "q", "width": 76, "direction": "output"} not in cells[0].get("ports", [])):
         raise ValueError("I2C_PROBE_DRIVER_MISMATCH")
     payload = cells[0]["rtl_path"] + ".q"
     layouts = [c["layout"] for c in state.get("channels", []) if c["id"] == "out"]
-    fields = {"head": (336, 4), "mode": (328, 4), "active": (327, 1),
-              "addressByte": (325, 1), "selectedWrite": (324, 1),
-              "receive": (316, 8), "bit": (313, 3), "length": (303, 6)}
+    fields = {"head": (72, 4), "mode": (64, 4), "active": (63, 1),
+              "addressByte": (61, 1), "selectedWrite": (60, 1),
+              "receive": (52, 8), "bit": (49, 3), "length": (39, 6)}
     if len(layouts) != 1 or any(
             sum(f.get("field") == "bits." + name and (f.get("lsb"), f.get("width")) == shape
                 for f in layouts[0]) != 1 for name, shape in fields.items()):
+        raise ValueError("I2C_PROBE_LAYOUT_MISMATCH")
+    update = child(native,"update")
+    update_cells=[p for n in nodes(update) for p in n.get("primitives",[]) if p["id"]=="payload"]
+    if (len(update_cells)!=1 or update_cells[0]["model"] not in
+            ("ChiselAsyncClosingLatch_v1","ChiselAsyncEventRegister_v1") or
+            {"name":"q","width":174,"direction":"output"} not in update_cells[0].get("ports",[])):
+        raise ValueError("I2C_PROBE_DRIVER_MISMATCH")
+    update_payload=update_cells[0]["rtl_path"]+".q"
+    update_layouts=[c["layout"] for c in update.get("channels",[]) if c["id"]=="out"]
+    intent_fields={"frameValid":(97,1),"byteWrite.valid":(14,1),"byteWrite.index":(8,6),"byteWrite.data":(0,8)}
+    if len(update_layouts)!=1 or any(sum(f.get("field")=="bits."+name and
+            (f.get("lsb"),f.get("width"))==shape for f in update_layouts[0])!=1
+            for name,shape in intent_fields.items()):
         raise ValueError("I2C_PROBE_LAYOUT_MISMATCH")
     anchor = f"initial begin\nforce {manifest['top']}.reset = 1'b1; #1;\n"
     if source.count(anchor) != 1:
@@ -460,7 +503,7 @@ def i2c_background(source: str, manifest: dict, scopes: dict, checks: int):
     extra, steps = [header], 0
     def force(path, width, value):
         node, name = path.rsplit(".", 1)
-        if ((path != payload and scopes.get(node, {}).get("registers", {}).get(name) != width) or
+        if ((path not in (payload,update_payload) and scopes.get(node, {}).get("registers", {}).get(name) != width) or
                 f"force {path} = {width}'h0;" not in header):
             raise ValueError("I2C_PROBE_DRIVER_MISMATCH")
         extra.append(f"force {path} = {width}'h{value:x};\n")
@@ -471,12 +514,20 @@ def i2c_background(source: str, manifest: dict, scopes: dict, checks: int):
     force(owner["rtl_path"] + ".slots_0_rise", 1, 1)
     force(owner["rtl_path"] + ".slots_0_sda", 1, 1)
     for address in range(128):
-        force(payload, 340, (1 << 328) | (1 << 327) | (1 << 325) | (address << 316) | (7 << 313))
+        force(payload, 76, (1 << 64) | (1 << 63) | (1 << 61) | (address << 52) | (7 << 49))
         check()
     extra.append(header)
-    force(payload, 340, (1 << 328) | (1 << 327) | (1 << 324) | (1 << 303))
+    force(payload, 76, (1 << 64) | (1 << 63) | (1 << 60) | (1 << 39))
     force(owner["rtl_path"] + ".slots_0_stop", 1, 1); check()
     extra.append(header); check()
+    # One/two-bit walks cannot form every valid six-bit byte index. Add all
+    # legal intents at the validated retained update source, keeping every
+    # original generic comparison and polarity requirement.
+    for index in range(33):
+        for value in (0,255):
+            force(update_payload,174,(1 << 14) | (index << 8) | value)
+            check()
+    extra.append(header)
     count = checks + steps * len(coverage)
     position = coverage[0].start()
     result = source[:position] + "".join(extra) + source[position:]
@@ -741,114 +792,177 @@ CLICK_FABRIC_PATH = "complete ROM/static permission decode and service response 
 
 
 I2C_PROJECTION_PATH = "complete I2C projection and retained-effect muxes; digital bound only"
+I2C_BYTE_PATH = "complete addressed receive-byte transform; digital budget only"
 
 
 def validate_i2c_publication(node):
     click = any(c["protocol"] == "two-phase-bundled-v1" for c in node["channels"])
     protocol = "two-phase-bundled-v1" if click else "four-phase-bundled-v1"
-    if (node["children"] or {c["id"]: (c["protocol"], c["role"]) for c in node["channels"]} != {
-            "in": (protocol, "input"), "frame": (protocol, "output"), "snapshot": (protocol, "output")}):
+    if (node["children"] or len(node["channels"]) != 3 or
+            {c["id"]:(c["protocol"],c["role"]) for c in node["channels"]} != {
+                "in":(protocol,"input"),"frame":(protocol,"output"),"snapshot":(protocol,"output")}):
         raise ValueError("MCU_I2C_PROTOCOL")
-    timing = {t["id"]: t for t in node["timing"]}
-    if len(node["timing"]) != 2 or set(timing) != {"projection", "projection_aperture"}:
+    cells={p["id"]:p for p in node["primitives"] if p["model"]!="ChiselAsyncTimingMarker_v1"}
+    selective="receive_0" in cells
+    if len({p["id"] for p in node["primitives"]})!=len(node["primitives"]):
+        raise ValueError("MCU_I2C_CELL_INVENTORY")
+    timing={t["id"]:t for t in node["timing"]}
+    apertures={f"byte_aperture_{i}" for i in range(33)} if selective else {"byte_aperture"}
+    if len(timing)!=len(node["timing"]) or set(timing)!={"projection","projection_aperture","byte_write_transform"}|apertures:
         raise ValueError("MCU_I2C_TIMING_INVENTORY")
-    expected = dict(kind="bundled-data-path-v1", logic=I2C_PROJECTION_PATH, delay_owner=[],
-                    delay_cell="data_delay", source="sources", sink="register_data")
-    if any(timing["projection"].get(k) != v for k,v in expected.items()):
-        raise ValueError("MCU_I2C_PATH_IDENTITY")
-    expected = dict(kind="bundled-setup-hold-v1",launch="in_request",transaction="in_data",
-                    data_valid="register_data",capture="capture",captured="captured",setup_fs="100000",hold_fs="100000")
-    if any(timing["projection_aperture"].get(k) != v for k,v in expected.items()):
-        raise ValueError("MCU_I2C_APERTURE")
+    for name,logic,cell,source,sink in (
+            ("projection",I2C_PROJECTION_PATH,"data_delay","sources","register_data"),
+            ("byte_write_transform",I2C_BYTE_PATH,"byte_data_delay","byte_sources","byte_register_data")):
+        expected=dict(kind="bundled-data-path-v1",logic=logic,delay_owner=[],delay_cell=cell,source=source,sink=sink)
+        if any(timing[name].get(k)!=v for k,v in expected.items()):raise ValueError("MCU_I2C_PATH_IDENTITY")
+    aperture_specs=[("projection_aperture","register_data","capture","captured")]
+    aperture_specs += [(f"byte_aperture_{i}","byte_value",f"byte_trigger_{i}",f"byte_q_{i}") for i in range(33)] if selective else [
+        ("byte_aperture","byte_register_data","capture","receive_bytes")]
+    for name,data,capture,captured in aperture_specs:
+        expected=dict(kind="bundled-setup-hold-v1",launch="in_request",transaction="in_data",data_valid=data,
+                      capture=capture,captured=captured,setup_fs="100000",hold_fs="100000")
+        if any(timing[name].get(k)!=v for k,v in expected.items()):raise ValueError("MCU_I2C_APERTURE")
     width=362 if click else 360
-    endpoints={e["id"]: e["width"] for e in node["endpoints"]}
-    for name,w in dict(in_data=687,frame_data=337,snapshot_data=8,observed=15,capture=1,
-                       sources=1034 if click else 1032,register_data=width,captured=width).items():
-        if endpoints.get(name) != w: raise ValueError("MCU_I2C_PATH_WIDTH")
-    cells={p["id"]: p for p in node["primitives"] if p["model"] != "ChiselAsyncTimingMarker_v1"}
-    expected={"observation": ("EventRegister",15),"frame_payload": ("EventRegister",337),
-              "snapshot_payload": ("EventRegister",8),"data_delay": ("ControlGate",width)}
+    endpoints={e["id"]:e["width"] for e in node["endpoints"]}
+    if len(endpoints)!=len(node["endpoints"]):raise ValueError("MCU_I2C_PATH_WIDTH")
+    widths=dict(in_data=174,frame_data=337,snapshot_data=8,observed=15,capture=1,
+        sources=785 if click else 783,register_data=width,captured=width,
+        byte_sources=16 if selective else 280,byte_register_data=41 if selective else 264,
+        receive_bytes=264,write_legal=1)
+    if selective:
+        widths.update(byte_value=8,byte_triggers=33,byte_idle=1,byte_complete=1)
+        widths.update({f"byte_trigger_{i}":1 for i in range(33)})
+        widths.update({f"byte_q_{i}":8 for i in range(33)})
+    for name,w in widths.items():
+        if endpoints.get(name)!=w:raise ValueError("MCU_I2C_PATH_WIDTH")
+    expected={"observation":("EventRegister",15),"frame_payload":("EventRegister",337),
+        "snapshot_payload":("EventRegister",8),"data_delay":("ControlGate",width),
+        "byte_data_delay":("ControlGate",41 if selective else 264)}
     expected.update({n:("ControlGate",1) for n in ("request_delay","acknowledge_guard","output_guard","return_guard")})
+    if selective:
+        expected.update({f"receive_{i}":("EventRegister",8) for i in range(33)})
+        expected.update({f"byte_capture_{i}":("AsymmetricC",None) for i in range(33)})
+        expected.update(byte_completion=("AsymmetricC",None),byte_idle_gate=("ControlGate",1))
+        size,level=33,0
+        while size>1:
+            expected.update({f"byte_any_{level}_{i}":("ControlGate",1) for i in range(size//2)})
+            size=(size+1)//2;level+=1
+    else:expected["receive_all"]=("EventRegister",264)
     if click:
         expected.update(accepted_phase=("PhaseRegister",None),frame_phase=("EventRegister",1),
                         snapshot_phase=("EventRegister",1),pending=("Xor",None))
-        prefixes=("capture_gate",)
+        prefixes=() if selective else ("capture_gate",)
+        if selective:expected["capture_gate"]=("AsymmetricC",None)
     else:
         expected.update({n:("AsymmetricC",None) for n in ("admission","frame_pending","snapshot_pending")})
         prefixes=("frame_publish","snapshot_publish")
-    expected.update({prefix+suffix:("ControlGate",1) for prefix in prefixes for suffix in ("_na","_nb","_or","")})
-    if set(cells) != set(expected): raise ValueError("MCU_I2C_CELL_INVENTORY")
+    expected.update({p+s:("ControlGate",1) for p in prefixes for s in ("_na","_nb","_or","")})
+    if set(cells)!=set(expected):raise ValueError("MCU_I2C_CELL_INVENTORY")
     for name,(model,w) in expected.items():
-        c=cells[name]; p=c["parameters"]
-        if c["model"] != "ChiselAsync"+model+"_v1" or (w is not None and p.get("WIDTH") != str(w)):
+        c=cells[name];p=c["parameters"]
+        if c["model"]!="ChiselAsync"+model+"_v1" or (w is not None and p.get("WIDTH")!=str(w)):
             raise ValueError("MCU_I2C_CELL_POLICY")
         delay=110000000 if name in ("acknowledge_guard","output_guard","return_guard") else (
-            11000000 if name == "request_delay" else 10000000 if name == "data_delay" else 1000000)
-        if p.get("DELAY_FS") != str(delay): raise ValueError("MCU_I2C_GUARD_POLICY")
-        if model not in ("Xor", "ControlGate", "AsymmetricC") and p.get("RESET_VALUE") != "0":
+            11000000 if name=="request_delay" else 10000000 if name in ("data_delay","byte_data_delay") else 1000000)
+        if p.get("DELAY_FS")!=str(delay):raise ValueError("MCU_I2C_GUARD_POLICY")
+        if model not in ("Xor","ControlGate","AsymmetricC") and p.get("RESET_VALUE")!="0":
             raise ValueError("MCU_I2C_RESET_POLICY")
-        if model == "ControlGate":
-            op=1 if name.endswith(("_na","_nb")) or name in prefixes else 2 if name.endswith("_or") else 0
-            reset=1 if name.endswith(("_na","_nb","_or")) else 0
-            if p.get("OP") != str(op) or p.get("RESET_VALUE") != str(reset): raise ValueError("MCU_I2C_GATE_POLICY")
-        if model == "AsymmetricC" and any(p.get(k) != str(v) for k,v in dict(COMMON=1,RISING=1,FALLING=0,
-                    COMMON_INVERT=0,RISING_INVERT=0,FALLING_INVERT=0,RESET_VALUE=0).items()):
+        if model=="ControlGate":
+            op=1 if name.endswith(("_na","_nb")) or name in prefixes or name=="byte_idle_gate" else (
+                2 if name.endswith("_or") or name.startswith("byte_any_") else 0)
+            reset=1 if name.endswith(("_na","_nb","_or")) or name=="byte_idle_gate" else 0
+            if p.get("OP")!=str(op) or p.get("RESET_VALUE")!=str(reset):raise ValueError("MCU_I2C_GATE_POLICY")
+        if model=="AsymmetricC" and any(p.get(k)!=str(v) for k,v in dict(COMMON=1,RISING=1,FALLING=0,
+                COMMON_INVERT=0,RISING_INVERT=0,FALLING_INVERT=0,RESET_VALUE=0).items()):
             raise ValueError("MCU_I2C_RETENTION_POLICY")
     return click
 
 
-def i2c_path_bindings(node):
+def i2c_path_bindings(node, section=None):
     click=validate_i2c_publication(node)
     e={x["id"]:x["rtl_path"] for x in node["endpoints"]}
     c={x["id"]:x["rtl_path"] for x in node["primitives"]}
-    ids=["observation","frame_payload","snapshot_payload"]+(["frame_phase","snapshot_phase"] if click else [])
+    selective="receive_0" in c
     cat=lambda xs:"{"+",".join(xs)+"}"
+    ids=["observation","frame_payload","snapshot_payload"]+(["frame_phase","snapshot_phase"] if click else [])
+    receive=cat([c[f"receive_{i}"]+".q" for i in reversed(range(33))]) if selective else c["receive_all"]+".q"
+    d=e["in_data"]; legal=f"(!{d}[14] || (!{d}[97] && {d}[13:8] < 6'd33))"
     pairs=[(e["register_data"],c["data_delay"]+".q"),
-           (e["register_data"],cat([c[n]+".d" for n in ids])),
-           (e["captured"],cat([c[n]+".q" for n in ids])),
-           (e["sources"],cat([e["in_data"]]+[c[n]+".q" for n in ids[1:]])),
-           (e["observed"],c["observation"]+".q"),(e["frame_data"],c["frame_payload"]+".q"),
-           (e["snapshot_data"],c["snapshot_payload"]+".q")]
-    pairs += [(e["capture"],c[n]+".trigger") for n in ids+(["accepted_phase"] if click else [])]
+        (e["register_data"],cat([c[n]+".d" for n in ids])),
+        (e["captured"],cat([c[n]+".q" for n in ids])),
+        (e["sources"],cat([d,receive]+[c[n]+".q" for n in ids[1:]])),
+        (e["observed"],c["observation"]+".q"),(e["frame_data"],c["frame_payload"]+".q"),
+        (e["snapshot_data"],c["snapshot_payload"]+".q"),(e["receive_bytes"],receive),
+        (e["write_legal"],legal),(e["byte_register_data"],c["byte_data_delay"]+".q")]
+    pairs += [(e["capture"],c[n]+".trigger") for n in ids]
+    if click:pairs.append((e["byte_complete"] if selective else e["capture"],c["accepted_phase"]+".trigger"))
     pairs += [(e[port],c[guard]+".q") for port,guard in (("in_acknowledge","acknowledge_guard"),
-              ("frame_request","output_guard"),("snapshot_request","return_guard"))]
-    pairs += [(c[n]+".q",c[g]+".a") for n,g in (
-        ("accepted_phase" if click else "admission","acknowledge_guard"),
+        ("frame_request","output_guard"),("snapshot_request","return_guard"))]
+    ack_source="accepted_phase" if click else "byte_completion" if selective else "admission"
+    pairs += [(c[n]+".q",c[g]+".a") for n,g in ((ack_source,"acknowledge_guard"),
         ("frame_phase" if click else "frame_pending","output_guard"),
         ("snapshot_phase" if click else "snapshot_pending","return_guard"))]
-    # Check the complete mux and phase feedback before the declared data delay.
-    d=e["in_data"]; frame=c["frame_payload"]+".q"; snap=c["snapshot_payload"]+".q"
-    # Independently packed observation: headGray, active, rejected, addressByte,
-    # drive, ack and sent. The input retains the full 340-bit protocol state.
-    projection=cat([d+"[682:679]",d+"[674]",d+"[673]",d+"[672]",
-                    d+"[659]",d+"[658]",d+"[352:347]"])
-    parts=[projection,f"({d}[346] ? {d}[345:9] : {frame})",f"({d}[8] ? {d}[7:0] : {snap})"]
-    if click: parts += [f"({c['frame_phase']}.q ^ {d}[346])",f"({c['snapshot_phase']}.q ^ {d}[8])"]
+    projection=cat([d+"[169:166]",d+"[161]",d+"[160]",d+"[159]",d+"[146]",d+"[145]",d+"[103:98]"])
+    frame=cat([d+"[96:90]",receive,d+"[89:24]"])
+    parts=[projection,f"({d}[97] ? {frame} : {c['frame_payload']}.q)",
+        f"({d}[23] ? {d}[22:15] : {c['snapshot_payload']}.q)"]
+    if click:parts += [f"({c['frame_phase']}.q ^ {d}[97])",f"({c['snapshot_phase']}.q ^ {d}[23])"]
     pairs.append((c["data_delay"]+".a",cat(parts)))
     pairs += [(e["in_request"],c["request_delay"]+".a"),
-              (e["capture"],c["capture_gate" if click else "admission"]+".q")]
-    available = f"((!{d}[346] || " + (f"({e['frame_request']} == {e['frame_acknowledge']})" if click else
-        f"(!{e['frame_request']} && !{e['frame_acknowledge']})") + ") && (!" + d + "[8] || " + (
+        (e["capture"],c["capture_gate" if click else "admission"]+".q")]
+    available=f"((!{d}[97] || "+(f"({e['frame_request']} == {e['frame_acknowledge']})" if click else
+        f"(!{e['frame_request']} && !{e['frame_acknowledge']})")+") && (!"+d+"[23] || "+(
         f"({e['snapshot_request']} == {e['snapshot_acknowledge']})" if click else
-        f"(!{e['snapshot_request']} && !{e['snapshot_acknowledge']})") + "))"
+        f"(!{e['snapshot_request']} && !{e['snapshot_acknowledge']})")+f") && {legal}"
+    if selective:available+=f" && {e['byte_idle']}"
+    available+=")"
     if click:
-        pairs += [(c["request_delay"]+".q",c["pending"]+".a"),
-                  (c["accepted_phase"]+".q",c["pending"]+".b"),
-                  (c["pending"]+".q",c["capture_gate_na"]+".a"),
-                  (available,c["capture_gate_nb"]+".a")]
+        pairs += [(c["request_delay"]+".q",c["pending"]+".a"),(c["accepted_phase"]+".q",c["pending"]+".b")]
+        if selective:pairs += [(c["pending"]+".q",c["capture_gate"]+".common"),(available,c["capture_gate"]+".rising")]
+        else:pairs += [(c["pending"]+".q",c["capture_gate_na"]+".a"),(available,c["capture_gate_nb"]+".a")]
     else:
-        pairs += [(c["request_delay"]+".q",c["admission"]+".common"),
-                  (available,c["admission"]+".rising")]
-        for effect,valid in (("frame",346),("snapshot",8)):
+        pairs += [(c["request_delay"]+".q",c["admission"]+".common"),(available,c["admission"]+".rising")]
+        for effect,valid in (("frame",97),("snapshot",23)):
             pairs += [(f"(!{e[effect+'_acknowledge']} || {e['capture']})",c[effect+"_pending"]+".common"),
-                      (c[effect+"_publish"]+".q",c[effect+"_pending"]+".rising"),
-                      (e["capture"],c[effect+"_publish_na"]+".a"),
-                      (d+f"[{valid}]",c[effect+"_publish_nb"]+".a")]
-    for prefix in (("capture_gate",) if click else ("frame_publish", "snapshot_publish")):
-        pairs += [(c[prefix+"_na"]+".q", c[prefix+"_or"]+".a"),
-                  (c[prefix+"_nb"]+".q", c[prefix+"_or"]+".b"),
-                  (c[prefix+"_or"]+".q", c[prefix]+".a")]
-    return pairs
+                (c[effect+"_publish"]+".q",c[effect+"_pending"]+".rising"),
+                (e["capture"],c[effect+"_publish_na"]+".a"),(d+f"[{valid}]",c[effect+"_publish_nb"]+".a")]
+    for prefix in (("capture_gate",) if click and not selective else () if click else ("frame_publish","snapshot_publish")):
+        pairs += [(c[prefix+"_na"]+".q",c[prefix+"_or"]+".a"),(c[prefix+"_nb"]+".q",c[prefix+"_or"]+".b"),
+            (c[prefix+"_or"]+".q",c[prefix]+".a")]
+    byte_boundary=len(pairs)
+    if selective:
+        byte_data=c["byte_data_delay"]+".q"
+        selects=[f"({d}[14] && {legal} && {d}[13:8] == 6'd{i})" for i in reversed(range(33))]
+        pairs += [(e["byte_sources"],cat([d+"[97]",d+"[14:0]"])),
+            (c["byte_data_delay"]+".a",cat(selects+[d+"[7:0]"])),(e["byte_value"],byte_data+"[7:0]")]
+        triggers=[]
+        for i in range(33):
+            reg=c[f"receive_{i}"];capture=c[f"byte_capture_{i}"];triggers.append(capture+".q")
+            pairs += [(capture+".common",e["capture"]),(capture+".rising",byte_data+f"[{i+8}]"),
+                (reg+".trigger",capture+".q"),(reg+".d",byte_data+"[7:0]"),
+                (e[f"byte_trigger_{i}"],reg+".trigger"),(e[f"byte_q_{i}"],reg+".q")]
+        pairs.append((e["byte_triggers"],cat(list(reversed(triggers)))))
+        level=0
+        while len(triggers)>1:
+            next_level=[]
+            for i in range(0,len(triggers),2):
+                if i+1==len(triggers):next_level.append(triggers[i]);continue
+                gate=c[f"byte_any_{level}_{i//2}"]
+                pairs += [(gate+".a",triggers[i]),(gate+".b",triggers[i+1])];next_level.append(gate+".q")
+            triggers=next_level;level+=1
+        pairs += [(c["byte_idle_gate"]+".a",triggers[0]),(e["byte_idle"],c["byte_idle_gate"]+".q"),
+            (c["byte_completion"]+".common",e["capture"]),
+            (c["byte_completion"]+".rising",f"(!{d}[14] || {triggers[0]})"),
+            (e["byte_complete"],c["byte_completion"]+".q")]
+    else:
+        parts=[f"({d}[14] && {legal} && {d}[13:8] == 6'd{i} ? {d}[7:0] : {receive}[{i*8+7}:{i*8}])" for i in reversed(range(33))]
+        pairs += [(e["byte_sources"],cat([d+"[97]",d+"[14:0]",receive])),
+            (c["byte_data_delay"]+".a",cat(parts)),(c["receive_all"]+".d",e["byte_register_data"]),
+            (c["receive_all"]+".trigger",e["capture"])]
+    if section is None:return pairs
+    if section=="projection":return pairs[:byte_boundary]
+    if section=="byte":return pairs[byte_boundary:]
+    raise ValueError("MCU_I2C_BINDING_SECTION")
 
 
 def validate_fabric_inventory(manifest):
@@ -958,7 +1072,7 @@ def validate_fabric_path(node, timing):
     if logic in (BD_COMPLETION_PATH, CLICK_COMPLETION_PATH):
         validate_completion(node)
         return
-    if logic == I2C_PROJECTION_PATH:
+    if logic in (I2C_PROJECTION_PATH,I2C_BYTE_PATH):
         validate_i2c_publication(node)
         return
     if logic not in (BD_FABRIC_PATH, CLICK_FABRIC_PATH):
@@ -1109,8 +1223,8 @@ def fabric_path_bindings(node, timing):
         return ram_source_bindings(node)
     if timing.get("logic") in (BD_COMPLETION_PATH, CLICK_COMPLETION_PATH):
         return completion_bindings(node)
-    if timing.get("logic") == I2C_PROJECTION_PATH:
-        return i2c_path_bindings(node)
+    if timing.get("logic") in (I2C_PROJECTION_PATH,I2C_BYTE_PATH):
+        return i2c_path_bindings(node,"byte" if timing["logic"]==I2C_BYTE_PATH else "projection")
     endpoints = {e["id"]: e["rtl_path"] for e in node["endpoints"]}
     if timing.get("logic") == BD_FABRIC_PATH:
         owner = next(c["contract"] for c in node["children"] if c["id"] == "reply")
@@ -1148,6 +1262,7 @@ def fabric_checker_source(source):
     extra = (anchor[:-1] + f', {BD_FABRIC_PATH!r}: (["reply"], "data_delay", "mux_sources", "mux_result"),'
              + f' {CLICK_FABRIC_PATH!r}: ([], "data_delay", "reply_sources", "register_data"),'
              + f' {I2C_PROJECTION_PATH!r}: ([], "data_delay", "sources", "register_data"),'
+             + f' {I2C_BYTE_PATH!r}: ([], "byte_data_delay", "byte_sources", "byte_register_data"),'
              + ','.join(f'{t["logic"]!r}: ([], "data_delay", {t["source"]!r}, {t["sink"]!r})'
                         for t in (frame_store_timing(False)[0],frame_store_timing(True)[0]))+','
              + f' {BD_COMPLETION_PATH!r}: (["reply"], "data_delay", "result_sources", "result"),'
@@ -1168,7 +1283,7 @@ def fabric_checker_source(source):
     if source.count(anchor) != 1:
         raise ValueError("MCU_FABRIC_CHECKER_SHAPE_CHANGED")
     source = source.replace(anchor,
-        f'if timing["logic"] in ({BD_FABRIC_PATH!r}, {CLICK_FABRIC_PATH!r}, {I2C_PROJECTION_PATH!r}, {BD_COMPLETION_PATH!r}, {CLICK_COMPLETION_PATH!r}, {ARM_PATH!r}, {RETIRE_PATH!r}, {PROGRAM_PATHS[0]!r}, {PROGRAM_PATHS[1]!r}, {PROGRAM_PATHS[2]!r},'+','.join(map(repr,PUBLICATION_PATHS+RECOVERY_RETURN_PATHS+RAM_RETURN_PATHS+PROGRAM_RETURN_PATHS+FRAME_STORE_PATHS))+'):\n'
+        f'if timing["logic"] in ({BD_FABRIC_PATH!r}, {CLICK_FABRIC_PATH!r}, {I2C_PROJECTION_PATH!r}, {I2C_BYTE_PATH!r}, {BD_COMPLETION_PATH!r}, {CLICK_COMPLETION_PATH!r}, {ARM_PATH!r}, {RETIRE_PATH!r}, {PROGRAM_PATHS[0]!r}, {PROGRAM_PATHS[1]!r}, {PROGRAM_PATHS[2]!r},'+','.join(map(repr,PUBLICATION_PATHS+RECOVERY_RETURN_PATHS+RAM_RETURN_PATHS+PROGRAM_RETURN_PATHS+FRAME_STORE_PATHS))+'):\n'
         '                    pairs = fabric_path_bindings(node, timing)\n'
         '                el' + anchor)
     # A mixed-reset raw response is not a same-reset library channel. Its

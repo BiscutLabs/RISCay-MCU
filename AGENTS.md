@@ -32,8 +32,15 @@
   drive, ack and sent (15 bits). Preserve the complete publication input and
   source/capture aperture, independent frame/snapshot retention and Click phase
   feedback. Run AsyncI2cObservationSpec, AsyncI2cSpec and actual-pin wiring
-  controls for projection changes. The 340-bit protocol state, per-edge byte
-  buffer, frame publication and four banks remain separate A5 reductions.
+  controls for projection changes. A5b moves received bytes into one native
+  addressed 33-byte scratch bank: protocol state is 76 bits and update result
+  174 bits. Follow docs/native-i2c-byte-store-contract.md; run
+  AsyncI2cByteStoreSpec and AsyncI2cPublicationOrderingSpec, including full-index
+  rejection, stalled state/publication ordering and immediate source reuse.
+  Preserve scratch self-feedback and scratch-to-frame timing paths, the actual
+  native capture pins, independent BD returns and Click phase histories.
+  Frame publication, four banks, sampled readWord and reset epochs remain
+  separate A5 reductions. No periodic clock belongs inside the scratch owner.
   Keep raw-reset diagnostic mirrors in verification fixtures only; production
   cancellation/debt remains POR-owned. Preserve diagnostic fault controls.
   Physical requalification is item 17; the corrective gates below take priority

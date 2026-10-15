@@ -28,6 +28,10 @@ from check_frame_receipt import actual_receipt_rtl
 from check_frame_store import validate_frame_store
 
 PREFIX = 'FRAME_CAPTURE'
+# These synthetic feeder bounds do not alter any real-wire fixture deadline.
+BYTE_PRELOAD_BOUND_NS = 300
+RING_FRAME_COUNT = 32
+FRAME_BYTE_COUNT = 33
 PROFILES = ('original', 'minimum', 'data-slow-control-fast', 'data-fast-control-slow',
             'publisher-fast-banks-slow', 'publisher-slow-banks-fast')
 ROUTE_PROFILES = ('route-slow-accepted-fast','route-fast-accepted-slow')
@@ -556,7 +560,7 @@ def skew(test, b, profile):
     for owner,p in [(owner,p) for owner,n in family for p in n['primitives']]:
         if p['parameters'].get('DELAY_FS') != '1000000':
             continue
-        is_data=p['id'] in ('frame_payload','frame_phase','payload') or bool(re.fullmatch(r'(payload|phase)\d',p['id']))
+        is_data=p['id'] in ('frame_payload','frame_phase','payload','receive_all') or bool(re.fullmatch(r'(payload|phase)\d|receive_\d+',p['id']))
         if profile in ROUTE_PROFILES: slow=owner=='bank' and p['id']==('route' if profile=='route-slow-accepted-fast' else 'accepted_phase')
         elif profile=='publisher-fast-banks-slow': slow=owner=='bank'
         elif profile=='publisher-slow-banks-fast': slow=owner=='publisher'
@@ -600,13 +604,15 @@ def supplemental(original, b, source, wrap=False, continuous=False, boundary=Fal
               'in_bits_frame_ingress_resetActive': 'pub_data[65]',
               'in_bits_frame_ingress_programBusy': 'pub_data[64]',
               'in_bits_frame_resetEpoch': 'pub_data[63:0]'}
-    slices.update({'in_bits_frame_ingress_frame_bytes_' + str(i): f'pub_data[{66 + i * 8}+:8]' for i in range(33)})
+    require({'in_bits_byteWrite_valid','in_bits_byteWrite_index','in_bits_byteWrite_data'} <= set(inputs), 'PUBLICATION_BYTE_WRITE_PORTS')
     require(set(slices) <= set(inputs), 'PUBLICATION_FRAME_PORTS')
     pub = b['publisher_path'].replace('Testbench.', '')
     for name in inputs:
         if not name.startswith('in_'):
             continue
-        value = 'pub_phase' if name == 'in_req' else "1'b1" if name == 'in_bits_frameValid' else slices.get(name, "'0")
+        byte_drivers={'in_bits_byteWrite_valid':'pub_byte_valid','in_bits_byteWrite_index':'pub_byte_index',
+                      'in_bits_byteWrite_data':'pub_byte_data'}
+        value = 'pub_phase' if name == 'in_req' else 'pub_frame_valid' if name == 'in_bits_frameValid' else byte_drivers.get(name,slices.get(name, "'0"))
         if name in slices:
             width = 64 if name.endswith('resetEpoch') else 6 if name.endswith('length') else 8 if 'bytes_' in name else 1
             driver_wires.append(f'wire [{width-1}:0] drive_{name}={value};')
@@ -619,7 +625,8 @@ def supplemental(original, b, source, wrap=False, continuous=False, boundary=Fal
     result=header + '\nreg clockEnabled=1;reg referenceEnabled=1;\n' + '\n'.join(clocks) + f'''
 reg [336:0] pub_data=0,expectedSourcePayload=0,pattern,queued_second_data;
 {' '.join(driver_wires)}
-reg pub_phase=0,queued_second_pending=0;
+reg pub_phase=0,queued_second_pending=0,pub_frame_valid=0,pub_byte_valid=0;
+reg [5:0] pub_byte_index=0;reg [7:0] pub_byte_data=0;
 integer bit_index,old_accepts,epoch_checks=0;
 initial begin #100000000; $fatal(1,"FRAME_INPUT_DEADLINE"); end
 always @(posedge observedWorkClock) if(!reset && injectedAccepted) begin
@@ -628,7 +635,7 @@ always @(posedge observedWorkClock) if(!reset && injectedAccepted) begin
 end
 task new_pair;
 begin
-  @(negedge serviceClock);#2;reset=1;pub_phase=0;pub_data=0;
+  @(negedge serviceClock);#2;reset=1;pub_phase=0;pub_data=0;pub_frame_valid=0;pub_byte_valid=0;
   holdFrame=0;holdHostCommands=0;stopWorkClock=0;applicationReset=0;
   repeat(8) @(negedge serviceClock);
   #2;reset=0;
@@ -638,11 +645,36 @@ begin
   if(dut.fabric_hostFrames_count!=0 || currentReset || currentBusy || {b['target_path'].replace('Testbench.','')}.host_resetActive) $fatal(1,"FRAME_INPUT_PAIR_PRECONDITION");
 end
 endtask
+// Byte writes use the same native input handshake, without adding a clock
+// observer or forcing retained scratch/frame storage. Frame history is separate.
+task preload_frame_bytes(input [336:0] data);
+integer byte_index;
+begin
+  pub_frame_valid=0;
+  for(byte_index=0;byte_index<33;byte_index=byte_index+1) begin
+    pub_byte_valid=1;pub_byte_index=byte_index;pub_byte_data=data[66+byte_index*8+:8];
+    // Include source setup, native ACK and BD's full return in this bound.
+    // The zero-time scheduling step permits completion exactly at the bound.
+    begin : bounded_byte
+      fork
+        begin
+          #30;{request}wait({pub}.in_ack==pub_phase);#0.002;{input_return}
+        end
+        begin
+          #{BYTE_PRELOAD_BOUND_NS};#0;$fatal(1,"FRAME_INPUT_BYTE_DEADLINE");
+        end
+      join_any
+      disable bounded_byte;
+    end
+  end
+  pub_byte_valid=0;pub_frame_valid=1;
+end
+endtask
 task offer_frame(input [336:0] data);
 begin
   @(negedge serviceClock);#2;expectedSourcePayload=data;pub_data=data;
   old_accepts=frame_capture_checks.accepts;
-  #30;{request}
+  preload_frame_bytes(pub_data);#30;{request}
   wait({pub}.in_ack==pub_phase);
   {input_return}
   wait(frame_capture_checks.accepts==old_accepts+1);
@@ -659,10 +691,10 @@ initial begin
   // is held. Releasing only frame acceptance measures earliest source reuse.
   new_pair();holdFrame=1;pattern=0;pattern[63:0]=currentEpoch;
   expectedSourcePayload=pattern;pub_data=pattern;old_accepts=frame_capture_checks.accepts;
-  #30;{request}wait({pub}.in_ack==pub_phase);{input_return}
+  preload_frame_bytes(pub_data);#30;{request}wait({pub}.in_ack==pub_phase);{input_return}
   wait(receiptValid);
   @(negedge serviceClock);#2;queued_second_data=~pattern;pub_data=queued_second_data;
-  queued_second_pending=1;#30;{request}
+  preload_frame_bytes(pub_data);queued_second_pending=1;#30;{request}
   repeat(8) @(negedge serviceClock);
   if(observedNativeFrame !== pattern || frame_capture_checks.accepts!=old_accepts) $fatal(1,"FRAME_INPUT_QUEUED_RETENTION");
   #2;holdFrame=0;
@@ -681,7 +713,7 @@ initial begin
   new_pair();pattern=0;pattern[63:0]=currentEpoch;pattern[336:331]=1;pattern[73:66]=3;
   offer_frame(pattern);holdFrame=1;pattern[73:66]=5;
   expectedSourcePayload=pattern;pub_data=pattern;old_accepts=frame_capture_checks.accepts;
-  #30;{request}wait({pub}.in_ack==pub_phase);{input_return}wait(receiptValid);
+  preload_frame_bytes(pub_data);#30;{request}wait({pub}.in_ack==pub_phase);{input_return}wait(receiptValid);
   @(negedge serviceClock);#2;
   if(currentBusy || currentReset || dut.fabric_loaderPending || dut.fabric_loaderControlPending ||
      observedNativeFrame[65:64]!=0 || observedNativeFrame[63:0]!=currentEpoch)
@@ -792,7 +824,7 @@ endmodule
       wait({b['command_path'].replace('Testbench.','')}.in_ready && !dut.fabric_controlOutstanding);
     end
     pattern=0;pattern[81:74]=bit_index;pub_data=pattern;
-    #0.001;{request}
+    preload_frame_bytes(pub_data);#0.001;{request}
     wait({pub}.in_ack==pub_phase);expectedSourcePayload=pattern;
     {input_return}
   end
@@ -974,10 +1006,11 @@ def mutate(case, b, fault):
         return 'FRAME_ADMISSION_STOPPED_WORK_ACK'
     if fault=='publication-overwrite':
         publication=case/'I2cPublication.sv';text=publication.read_text(encoding='utf-8')
-        identifier='capture_gate_nb' if b['variant']=='click' else 'admission'
+        selective=any(p['id']=='receive_0' for p in b['publisher']['primitives'])
+        identifier=('capture_gate' if selective else 'capture_gate_nb') if b['variant']=='click' else 'admission'
         cells=[p for p in b['publisher']['primitives'] if p['id']==identifier]
         require(len(cells)==1,'MUTATION_PUBLISHER_PRIMITIVE')
-        text=replace_pin(text,cells[0]['rtl_path'].rsplit('.',1)[1],'a' if b['variant']=='click' else 'rising',"1'b1")
+        text=replace_pin(text,cells[0]['rtl_path'].rsplit('.',1)[1],'a' if b['variant']=='click' and not selective else 'rising',"1'b1")
         publication.write_text(text,encoding='utf-8')
         return PREFIX+'_SOURCE_OVERWRITE'
     if fault in ('source-reset','source-busy'):
@@ -1024,6 +1057,18 @@ def omit_same_edge_busy(text, context_busy):
     return changed
 
 
+def ring_budget_ns(period_ns):
+    # 128 startup/drain service cycles plus 32 command/publication cycles per
+    # frame. A5b additionally feeds all 33 bytes through native handshakes.
+    # With fixed 11 ns request / 110 ns ACK guards and 1..10 ns cells:
+    # BD <= 30 + 2*(11+10+110) + 2 + .002 = 294.002 ns;
+    # Click <= 30 + 11 + 10 + 3*10 + 10 + 110 + .002 = 201.002 ns.
+    # Each byte has its own 300 ns watchdog, including an indefinitely stuck
+    # handshake, so this additional scenario budget cannot conceal a slow byte.
+    return (round(period_ns*(128+RING_FRAME_COUNT*32)+1000) +
+            RING_FRAME_COUNT*FRAME_BYTE_COUNT*BYTE_PRELOAD_BOUND_NS)
+
+
 def service_period(test, period_ns):
     """Set an exactly representable service period and its independent observer."""
     require(50<=period_ns<=1000000 and (float(period_ns)*500).is_integer(),'PERIOD_SUPPORTED_PRECISION')
@@ -1034,11 +1079,14 @@ def service_period(test, period_ns):
     test,count=re.subn(r'RING_EXPECTED_PERIOD_FS=\d+', 'RING_EXPECTED_PERIOD_FS='+str(round(period_ns*1000000)),test)
     require(count in (0,1),'PERIOD_OBSERVER_BINDING')
     if count:
-        # This newly generated synthetic scenario has 128 startup/drain cycles
-        # and 32 frames at a conservative 32-edge command/publication bound.
-        # Original real-wire testbench deadlines never enter this helper.
-        budget=round(period_ns*(128+32*32)+1000)
-        test,deadlines=re.subn(r'initial begin #\d+; \$fatal\(1,"FRAME_INPUT_DEADLINE"\); end',
+        # Only this freshly generated synthetic ring gets the feeder allowance.
+        # Refuse a missing/changed byte watchdog or a changed global deadline.
+        require(test.count('for(byte_index=0;byte_index<33;byte_index=byte_index+1)')==1 and
+                test.count(f'#{BYTE_PRELOAD_BOUND_NS};#0;$fatal(1,"FRAME_INPUT_BYTE_DEADLINE");')==1 and
+                test.count('join_any\n      disable bounded_byte;')==1,'RING_BYTE_BOUND_BINDING')
+        budget=ring_budget_ns(period_ns)
+        require(test.count('"FRAME_INPUT_DEADLINE"')==1,'RING_DEADLINE_BINDING')
+        test,deadlines=re.subn(r'initial begin #100000000; \$fatal\(1,"FRAME_INPUT_DEADLINE"\); end',
                               f'initial begin #{budget}; $fatal(1,"FRAME_INPUT_DEADLINE"); end',test)
         require(deadlines==1,'RING_DEADLINE_BINDING')
     return test
@@ -1121,7 +1169,7 @@ def main():
                      original_oracle_sha256=sha(fixture['path'] / 'testbench.sv'), oracle_sha256=sha(case / 'testbench.sv'),
                      original_assertions_preserved=not (walk or wrap or continuous or ring), supplemental_input_campaign=walk or continuous or ring,
                      continuous_native_banks=continuous,ring_last_legal_D=ring,period_ns=period_ns,
-                     synthetic_ring_budget_ns=round(period_ns*1152+1000) if ring and period_ns is not None else None,
+                     synthetic_ring_budget_ns=ring_budget_ns(period_ns) if ring and period_ns is not None else None,
                      forced_epoch_source=(b['target_path']+'.resetEpoch_epoch') if continuous and period_ns is None else None,
                      forced_return_receipt=(b['banks'][0]['receipt_path']+'.acknowledge') if fault in ('bank-return-stuck','bank-unavailable-at-o') else None,
                      actual_epoch_wrap_control=wrap, expected=expected,

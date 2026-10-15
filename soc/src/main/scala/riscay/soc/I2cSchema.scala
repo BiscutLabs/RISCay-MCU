@@ -29,7 +29,7 @@ class I2cState extends Bundle {
   val addressByte = Bool(); val selectedWrite = Bool()
   val receive = UInt(8.W); val bit = UInt(3.W)
   val drive = Bool(); val ack = Bool(); val reading = Bool(); val masterAck = Bool()
-  val length = UInt(6.W); val overflow = Bool(); val bytes = Vec(33, UInt(8.W))
+  val length = UInt(6.W); val overflow = Bool()
   val send = UInt(32.W); val sent = UInt(6.W)
 }
 object I2cState {
@@ -37,15 +37,29 @@ object I2cState {
     _.head -> 0.U, _.headGray -> 0.U, _.mode -> 0.U, _.active -> false.B, _.rejected -> false.B,
     _.addressByte -> false.B, _.selectedWrite -> false.B, _.receive -> 0.U, _.bit -> 0.U,
     _.drive -> false.B, _.ack -> false.B, _.reading -> false.B, _.masterAck -> false.B,
-    _.length -> 0.U, _.overflow -> false.B, _.bytes -> Vec.Lit(Seq.fill(33)(0.U(8.W)): _*),
+    _.length -> 0.U, _.overflow -> false.B,
     _.send -> 0.U, _.sent -> 0.U)
 }
 class I2cWork extends Bundle { val state = new I2cState; val edge = new I2cEdge }
 class I2cFrame extends Bundle { val ingress = new ControlIngress; val resetEpoch = UInt(64.W) }
+/** Completion metadata excludes bytes: the native publication scratch owner
+  * supplies them only when a completed frame is copied into the held publisher.
+  */
+class I2cFrameShape extends Bundle { val length=UInt(6.W); val overflow=Bool() }
+class I2cFrameIngressMetadata extends Bundle {
+  val frame=new I2cFrameShape; val resetActive=Bool(); val programBusy=Bool()
+}
+class I2cFrameMetadata extends Bundle {
+  val ingress=new I2cFrameIngressMetadata; val resetEpoch=UInt(64.W)
+}
+class I2cByteWrite extends Bundle {
+  val valid=Bool(); val index=UInt(log2Ceil((new HostFrame).bytes.length).W); val data=UInt(8.W)
+}
 class I2cResult extends Bundle {
   val state = new I2cState
-  val frameValid = Bool(); val frame = new I2cFrame
+  val frameValid = Bool(); val frame = new I2cFrameMetadata
   val snapshotValid = Bool(); val snapshotTag = UInt(8.W)
+  val byteWrite = new I2cByteWrite
 }
 /** Target-facing service boundary. The front clock owns publication only. */
 class I2cHostPort extends Bundle {

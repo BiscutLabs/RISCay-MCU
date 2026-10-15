@@ -17,14 +17,16 @@ below; neither qualifies the current change or complete physical implementation.
 
 The sampled-wire front observes a 15-bit native projection: headGray (4),
 active, rejected, addressByte, drive, ack and sent (6). Each variant explicitly
-selects these fields from the unchanged 340-bit protocol state. The observation
-register no longer retains the other 325 bits, including the byte buffer. This
-does not move byte storage out of the per-edge state, remove the publisher's
-337-bit retained frame, or change any bank or admission owner.
+selects these fields from its protocol state. A5a removed 325 redundant
+observation bits. A5b moves the receive bytes into a native addressed scratch
+bank, narrowing protocol state to 76 bits and publication input to 174 bits;
+see the [receive-byte contract](native-i2c-byte-store-contract.md). The publisher's
+337-bit retained frame and all bank/admission owners remain unchanged.
 
-The complete 687-bit publication input and 1,032/1,034-bit BD/Click timing source
-remain visible to the capture contract. Only the retained projection and its
-data-delay lanes narrow: register_data/captured are 360 bits BD and 362 Click.
+The complete publication input, 264-bit scratch bank and held frame/snapshot
+feedback form the 783/785-bit BD/Click timing source. The separate scratch
+transform has a 264-bit data/capture aperture. The existing projection's
+register_data/captured remain 360 bits BD and 362 Click.
 Click's two phase-feedback bits remain inside the same capture aperture. Guards,
 capture trigger, independent effect backpressure, source hold and POR ownership
 are unchanged. Actual-pin wiring checks independently reconstruct all retained

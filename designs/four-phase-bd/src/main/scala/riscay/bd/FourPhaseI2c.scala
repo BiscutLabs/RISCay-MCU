@@ -53,7 +53,6 @@ class FourPhaseI2c(address: Int, domain: ResetDomain) extends AsyncModule(domain
     r.frameValid := !e.timeout && (e.start || e.stop) && s.selectedWrite && s.length =/= 0.U
     r.frame.ingress.frame.length := s.length
     r.frame.ingress.frame.overflow := s.overflow || s.bit > 1.U || s.mode =/= 1.U
-    r.frame.ingress.frame.bytes := s.bytes
     r.frame.resetEpoch := e.resetEpoch
     r.frame.ingress.resetActive := e.resetActive; r.frame.ingress.programBusy := e.programBusy
     r.snapshotValid := !e.timeout && s.mode === 1.U && e.rise && s.bit === 7.U &&
@@ -78,7 +77,10 @@ class FourPhaseI2c(address: Int, domain: ResetDomain) extends AsyncModule(domain
               when(assembled(7,1) === address.U && assembled(0)) { n.sent := 0.U }
             }.otherwise {
               n.ack := s.length < 33.U
-              when(s.length < 33.U) { n.bytes(s.length) := assembled; n.length := s.length + 1.U }
+              when(s.length < 33.U) {
+                r.byteWrite.valid:=true.B; r.byteWrite.index:=s.length; r.byteWrite.data:=assembled
+                n.length:=s.length+1.U
+              }
                 .otherwise { n.overflow := true.B }
             }
           }
@@ -110,7 +112,7 @@ class FourPhaseI2c(address: Int, domain: ResetDomain) extends AsyncModule(domain
 }
 
 /** Native sink/projection and independently held frame/snapshot effects.
-  * All event registers share one capture pulse. A held effect never changes
+  * Received bytes have separate native scratch ownership. A held effect never changes
   * payload; a second effect backpressures publication until the old one drains.
   */
 class I2cPublication(domain: ResetDomain) extends AsyncModule(domain) {
@@ -141,7 +143,7 @@ class I2cPublication(domain: ResetDomain) extends AsyncModule(domain) {
   private def register(id: String, width: Int): EventRegister = {
     val g=Module(new EventRegister(width,cell)); g.reset:=reset
     contract.primitive(id,g,Map("WIDTH"->BigInt(width),"DELAY_FS"->BigInt(cell.fs),
-      "RESET_VALUE"->BigInt(0)),resetRef,"common local capture pulse; hold through native output acknowledgement")
+      "RESET_VALUE"->BigInt(0)),resetRef,"native event storage; scratch ownership and held-effect capture are distinct")
     g
   }
   private def c(id: String, common: Bool, rising: Bool): Bool = {
@@ -158,9 +160,23 @@ class I2cPublication(domain: ResetDomain) extends AsyncModule(domain) {
   private val snapshotData=register("snapshot_payload",8)
   private val delayedRequest=gate("request_delay",GateOperation.Buffer,in.req.asUInt,
     delay=ModelTime.ps(11000)).asBool
+  private val byteCount=(new HostFrame).bytes.length
+  private val capture=Wire(Bool())
+  // Invalid writes are fail-closed. The native transform makes frameValid and
+  // byteWrite.valid mutually exclusive and validates the full six-bit index.
+  private val writeLegal= !in.bits.byteWrite.valid ||
+    (!in.bits.frameValid && in.bits.byteWrite.index < byteCount.U)
+  private val receive=register("receive_all",byteCount*8)
+  private val receiveBytes=receive.q.asTypeOf(Vec(byteCount,UInt(8.W)))
+  private val nextReceive=VecInit((0 until byteCount).map(i =>
+    Mux(in.bits.byteWrite.valid && writeLegal && in.bits.byteWrite.index===i.U,
+      in.bits.byteWrite.data,receiveBytes(i))))
+  private val byteData=gate("byte_data_delay",GateOperation.Buffer,nextReceive.asUInt,
+    width=byteCount*8,delay=ModelTime.ps(10000))
+  receive.d:=byteData; receive.trigger:=capture
   private val available=(!in.bits.frameValid || (!frame.req && !frame.ack)) &&
-    (!in.bits.snapshotValid || (!snapshot.req && !snapshot.ack))
-  private val capture=c("admission",delayedRequest,available)
+    (!in.bits.snapshotValid || (!snapshot.req && !snapshot.ack)) && writeLegal
+  capture:=c("admission",delayedRequest,available)
   // Retain the offer through input RTZ as well as output ACK. Otherwise an
   // early consumer ACK/RTZ could rearm the same still-high input request.
   private val framePhase=c("frame_pending",!frame.ack || capture,and("frame_publish",capture,in.bits.frameValid))
@@ -182,8 +198,15 @@ class I2cPublication(domain: ResetDomain) extends AsyncModule(domain) {
   private val observationWidth=(new I2cObservation).getWidth
   private val frameWidth=(new I2cFrame).getWidth
   private val dataWidth=observationWidth+frameWidth+8
+  private val completedFrame=Wire(new I2cFrame)
+  completedFrame.ingress.frame.length:=in.bits.frame.ingress.frame.length
+  completedFrame.ingress.frame.overflow:=in.bits.frame.ingress.frame.overflow
+  completedFrame.ingress.frame.bytes:=receiveBytes
+  completedFrame.ingress.resetActive:=in.bits.frame.ingress.resetActive
+  completedFrame.ingress.programBusy:=in.bits.frame.ingress.programBusy
+  completedFrame.resetEpoch:=in.bits.frame.resetEpoch
   private val dataSources=Cat(projected.asUInt,
-    Mux(in.bits.frameValid,in.bits.frame.asUInt,frameData.q),
+    Mux(in.bits.frameValid,completedFrame.asUInt,frameData.q),
     Mux(in.bits.snapshotValid,in.bits.snapshotTag,snapshotData.q))
   private val data=gate("data_delay",GateOperation.Buffer,dataSources,width=dataWidth,delay=ModelTime.ps(10000))
   snapshotData.d:=data(7,0)
@@ -194,8 +217,8 @@ class I2cPublication(domain: ResetDomain) extends AsyncModule(domain) {
   private val captureEvent=WireDefault(capture); dontTouch(captureEvent)
   private val registerData=WireDefault(UInt(dataWidth.W),data); dontTouch(registerData)
   private val capturedData=WireDefault(UInt(dataWidth.W),Cat(observation.q,frameData.q,snapshotData.q)); dontTouch(capturedData)
-  private val sources=WireDefault(UInt(((new I2cResult).getWidth+frameWidth+8).W),
-    Cat(in.bits.asUInt,frameData.q,snapshotData.q)); dontTouch(sources)
+  private val sources=WireDefault(UInt(((new I2cResult).getWidth+frameWidth+8+byteCount*8).W),
+    Cat(in.bits.asUInt,receiveBytes.asUInt,frameData.q,snapshotData.q)); dontTouch(sources)
   contract.endpoint("capture",captureEvent); contract.endpoint("register_data",registerData)
   private val observedBits=WireDefault(UInt((new I2cObservation).getWidth.W),observed.asUInt); dontTouch(observedBits)
   contract.endpoint("observed",observedBits)
@@ -203,6 +226,17 @@ class I2cPublication(domain: ResetDomain) extends AsyncModule(domain) {
   contract.dataPathTiming("projection","sources","register_data",BundledTiming.Simulation,
     "complete I2C projection and retained-effect muxes; digital bound only")
   contract.setupHold("projection_aperture","in_request","in_data","register_data","capture","captured",
+    ModelTime.ps(100),ModelTime.ps(100))
+  private val byteSources=WireDefault(UInt((16+byteCount*8).W),Cat(in.bits.frameValid,in.bits.byteWrite.asUInt,receiveBytes.asUInt))
+  private val byteRegisterData=WireDefault(UInt((byteCount*8).W),byteData)
+  private val receiveProbe=WireDefault(UInt((byteCount*8).W),receiveBytes.asUInt)
+  Seq(byteSources,byteRegisterData,receiveProbe).foreach(dontTouch(_))
+  contract.endpoint("byte_sources",byteSources); contract.endpoint("byte_register_data",byteRegisterData)
+  private val writeLegalProbe=WireDefault(writeLegal); dontTouch(writeLegalProbe)
+  contract.endpoint("receive_bytes",receiveProbe); contract.endpoint("write_legal",writeLegalProbe)
+  contract.dataPathTiming("byte_write_transform","byte_sources","byte_register_data",BundledTiming.Simulation,
+    "complete addressed receive-byte transform; digital budget only",delayCell="byte_data_delay")
+  contract.setupHold("byte_aperture","in_request","in_data","byte_register_data","capture","receive_bytes",
     ModelTime.ps(100),ModelTime.ps(100))
   contract.capacity(1)
 }

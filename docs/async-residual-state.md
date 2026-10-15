@@ -26,6 +26,14 @@ their surrounding storage and bookkeeping still need individual justification.
 
 ## Verified cleanup history
 
+A5b's addressed native receive store removes **513 native payload bits per
+variant**. Native payload totals become **11,454 BD / 11,607 Click**; periodic
+storage remains **5,910 / 5,911** portable and **5,920 / 5,921** in enabled-policy
+physical exports. All periodic register bindings, public ports and SRAMs are
+unchanged. The [receive-byte contract](native-i2c-byte-store-contract.md) records
+the digital verification, measured cost and open physical gates. Frame publication, banks,
+sampled readWord and reset epochs remain separate work.
+
 C1d's compiled and matched measurement removes another **90 periodic bits per
 variant**, giving **5,910 BD / 5,911 Click** portable bits and **5,920 / 5,921**
 enabled-policy physical bits. Native primitives, SRAMs and public schemas are

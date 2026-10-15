@@ -502,7 +502,8 @@
       "snapshot_publish": "matched-control-delay",
       "snapshot_publish_na": "matched-control-delay",
       "snapshot_publish_nb": "matched-control-delay",
-      "snapshot_publish_or": "matched-control-delay"
+      "snapshot_publish_or": "matched-control-delay",
+      "byte_data_delay": "whole-transform-allowance"
     },
     "InitialTokens": {
       "data": "whole-transform-allowance",

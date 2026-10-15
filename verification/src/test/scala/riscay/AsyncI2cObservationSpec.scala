@@ -13,11 +13,10 @@ class AsyncI2cObservationSpec extends AnyFunSuite {
   private val fields=Seq("headGray"->4,"active"->1,"rejected"->1,"addressByte"->1,
     "drive"->1,"ack"->1,"sent"->6)
   private val omitted=Seq("head"->4,"mode"->4,"selectedWrite"->1,"receive"->8,
-    "bit"->3,"reading"->1,"masterAck"->1,"length"->6,"overflow"->1,"send"->32) ++
-    (0 until 33).map(i => s"bytes_$i"->8)
-  require(fields.map(_._2).sum==15 && omitted.map(_._2).sum==325)
+    "bit"->3,"reading"->1,"masterAck"->1,"length"->6,"overflow"->1,"send"->32)
+  require(fields.map(_._2).sum==15 && omitted.map(_._2).sum==61)
   private def fresh(name: String): Path = {
-    val root=Paths.get("build/async-i2c-observation-tests"); Files.createDirectories(root)
+    val root=Paths.get("build/async-i2c-addressed-observation-tests"); Files.createDirectories(root)
     Files.createTempDirectory(root,name)
   }
   private def top(click: Boolean): AsyncModule = if(click)
@@ -53,18 +52,31 @@ class AsyncI2cObservationSpec extends AnyFunSuite {
     s"in_bits_state_$n=$w'h${value.toString(16)};"
   }.mkString("\n")
   private def sourceFrame(index: Int): String = {
-    val bytes=(0 until 33).map { i =>
-      val value=if(index==0) (i*53+7)&255 else (i*29+index*17)&255
-      s"in_bits_frame_ingress_frame_bytes_$i=8'd$value;"
-    }.mkString("\n")
     s"""in_bits_frame_ingress_frame_length=${if(index==0) 33 else index%64};
       in_bits_frame_ingress_frame_overflow=${if(index==0) 1 else index%2};
       in_bits_frame_ingress_resetActive=${if(index==0) 1 else index%2};
       in_bits_frame_ingress_programBusy=${if(index==0) 0 else (index+1)%2};
       in_bits_frame_resetEpoch=64'h${if(index==0) "fedcba9876543210" else (BigInt(index)*0x102030405L).toString(16)};
       in_bits_snapshotTag=${if(index==0) 165 else index};
-      $bytes
+      in_bits_byteWrite_valid=0;
+      in_bits_byteWrite_index=${(index*7)%64}; in_bits_byteWrite_data=${(index*91)&255};
     """
+  }
+  private def preloadFrame(index: Int,click: Boolean,initialPhase: Int,
+      projection: Map[String,BigInt],countBase: Option[Int]=None): String = {
+    val transactions=(0 until 33).map { i =>
+      val value=if(index==0) (i*53+7)&255 else (i*29+index*17)&255
+      val phase=if(click) (initialPhase+i+1)%2 else 1
+      s"""
+        in_bits_frameValid=0; in_bits_snapshotValid=0;
+        in_bits_byteWrite_valid=1; in_bits_byteWrite_index=$i; in_bits_byteWrite_data=$value;
+        #20000000; in_req=$phase; wait(in_ack==$phase); #2;
+        ${expect(projection,"PRELOAD")}
+        ${countBase.map(n => s"if(captures!=${n+i+1}) $$fatal(1,\"I2C_OBSERVATION_PRELOAD_CAPTURE_COUNT\");").getOrElse("")}
+        ${if(click) "" else "in_req=0; wait(!in_ack); #2;"}
+      """
+    }.mkString
+    assign(projection)+transactions+"in_bits_byteWrite_valid=0;\n"
   }
   private val retainedFrame="""if(frame_bits_ingress_frame_length !== 33 || !frame_bits_ingress_frame_overflow ||
       !frame_bits_ingress_resetActive || frame_bits_ingress_programBusy ||
@@ -99,17 +111,17 @@ class AsyncI2cObservationSpec extends AnyFunSuite {
       AsyncTest.run(top(click),Seq(1L,2L,19L),dir) { _ =>
         val p=cell(dir,"observation")
         val transactions=patterns.zipWithIndex.map { case(values,i) =>
-          val phase=if(click) (i+1)%2 else 1
+          val phase=if(click) (i+34)%2 else 1
           val previous=if(i==0) zero else patterns(i-1)
           s"""
             ${assign(values)} ${noise(i)} ${sourceFrame(i)}
             in_bits_frameValid=${if(i==0) 1 else 0}; in_bits_snapshotValid=${if(i==0) 1 else 0};
             #20000000;
             ${expect(previous,"IDLE")}
-            if(captures!=$i) $$fatal(1,"I2C_OBSERVATION_SPURIOUS_CAPTURE");
+            if(captures!=${33+i}) $$fatal(1,"I2C_OBSERVATION_SPURIOUS_CAPTURE");
             in_req=$phase; wait(in_ack==$phase); #2;
             ${expect(values,"CAPTURE")}
-            if(captures!=${i+1}) $$fatal(1,"I2C_OBSERVATION_CAPTURE_COUNT");
+            if(captures!=${33+i+1}) $$fatal(1,"I2C_OBSERVATION_CAPTURE_COUNT");
             ${if(click) "" else "in_req=0; wait(!in_ack); #2;"}
             wait(frame_req==1 && snapshot_req==1);
             $retainedFrame
@@ -121,17 +133,18 @@ class AsyncI2cObservationSpec extends AnyFunSuite {
             ${monitor(dir)}
             begin forever begin @(posedge $p.trigger); if(!reset) captures=captures+1; end end
           join_none
+          ${preloadFrame(0,click,0,zero,Some(0))}
           $transactions
           frame_ack=1; snapshot_ack=1;
           ${if(click) "" else "wait(!frame_req && !snapshot_req); #2; frame_ack=0; snapshot_ack=0;"}
           #200000000;
           if(delivered_frame!=1 || delivered_snapshot!=1) $$fatal(1,"I2C_OBSERVATION_EFFECT_COUNT");
           ${assign(zero)} ${noise(39)} in_bits_frameValid=0; in_bits_snapshotValid=0;
-          #20000000; in_req=1; wait(in_ack==1); #2;
+          #20000000; in_req=${if(click) 0 else 1}; wait(in_ack==${if(click) 0 else 1}); #2;
           ${expect(zero,"AFTER_DRAIN")}
           ${if(click) "" else "in_req=0; wait(!in_ack);"}
           #200000000;
-          if(captures!=${patterns.size+1} || delivered_frame!=1 || delivered_snapshot!=1)
+          if(captures!=${33+patterns.size+1} || delivered_frame!=1 || delivered_snapshot!=1)
             $$fatal(1,"I2C_OBSERVATION_FINAL_COUNT");
         end"""
       }
@@ -151,9 +164,10 @@ class AsyncI2cObservationSpec extends AnyFunSuite {
             in_bits_frameValid=0; in_bits_snapshotValid=0;
             #1000000000; reset=0; #1000000000;
             ${expect(zero,"POR_INITIAL")}
+            ${preloadFrame(0,click,0,zero)}
             ${assign(ones)} ${noise(point)} ${sourceFrame(0)}
             in_bits_frameValid=1; in_bits_snapshotValid=1;
-            #20000000; in_req=1; $abort
+            #20000000; in_req=${if(click) 0 else 1}; $abort
             reset=1; in_req=0; frame_ack=0; snapshot_ack=0;
             in_bits_frameValid=0; in_bits_snapshotValid=0;
             #1000000000; reset=0; #1000000000;
@@ -167,8 +181,9 @@ class AsyncI2cObservationSpec extends AnyFunSuite {
             if(frame_req || snapshot_req) $$fatal(1,"I2C_OBSERVATION_POR_FRESH_EFFECT");
           """
         }.mkString
-        val inputPhase=if(click) 0 else 1 // last recovery accepted phase one
+        val inputPhase=1 // last recovery phase one, then33 byte writes, then this frame
         val completion=s"""
+          ${preloadFrame(1,click,1,patterns(3))}
           ${assign(ones)} ${noise(47)} ${sourceFrame(1)}
           in_bits_frameValid=1; in_bits_snapshotValid=1;
           #20000000; in_req=$inputPhase; wait(in_ack==$inputPhase); #2;

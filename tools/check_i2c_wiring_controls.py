@@ -76,6 +76,43 @@ def mutate_projection_lane(source, instance, width, lane):
     return source[:opening+1]+changed+source[closing-1:]
 
 
+
+def mutate_byte_lane(source, instance, lane):
+    """Flip one actual common scratch input lane; keep the strict probe intact."""
+    assert 0 <= lane < 264, ('BYTE_CAPTURE_LANE', lane)
+    blocks = list(re.finditer(r'\b'+re.escape(instance)+r'\s*\(', source))
+    assert len(blocks) == 1, ('BYTE_CAPTURE_INSTANCE', instance, len(blocks))
+    start = blocks[0].end()
+    end = source.find('\n  );', start)
+    if end < 0:
+        end = source.find(');', start)
+    assert end > start, 'BYTE_CAPTURE_INSTANCE_END'
+    pins = list(re.finditer(r'\.a\s*\(', source[start:end]))
+    assert len(pins) == 1, 'BYTE_CAPTURE_INPUT_PIN'
+    opening = start + pins[0].end() - 1
+    depth, closing = 1, opening + 1
+    while depth:
+        assert closing < end, 'BYTE_CAPTURE_INPUT_BALANCE'
+        depth += (source[closing] == '(') - (source[closing] == ')')
+        closing += 1
+    value = source[opening+1:closing-1]
+    changed = '(' + value + ") ^ 264'h" + format(1 << lane, 'x')
+    return source[:opening+1]+changed+source[closing-1:]
+
+
+def common_byte_cases(primitives):
+    """Each address plus all byte-data bits; full matrix remains in positive probes."""
+    assert 'receive_all' in primitives and not any(name.startswith('receive_') and name != 'receive_all' for name in primitives), 'COMMON_SCRATCH_REQUIRED'
+    assert primitives['receive_all']['model'] == 'ChiselAsyncEventRegister_v1', 'COMMON_STORAGE_MODEL'
+    assert int(primitives['receive_all']['parameters']['WIDTH']) == 264, 'COMMON_STORAGE_WIDTH'
+    assert int(primitives['byte_data_delay']['parameters']['WIDTH']) == 264, 'COMMON_DATA_WIDTH'
+    cases = [('scratch-data-disconnected', 'receive_all', 'd', None),
+             ('scratch-capture-disconnected', 'receive_all', 'trigger', None)]
+    cases += [('scratch-byte-'+str(index), 'byte_data_delay', 'a', index*8) for index in range(33)]
+    cases += [('scratch-bit-'+str(bit), 'byte_data_delay', 'a', bit) for bit in range(1,8)]
+    return cases
+
+
 def fault_site(probe, pin_path, bindings):
     """Resolve the exact independent comparison for the actual changed pin."""
     pairs = [(a, b) for a, b in bindings if pin_path in (a, b)]
@@ -246,6 +283,7 @@ def main():
                               for primitive, pin in ((prefix+'_or', 'a'), (prefix+'_or', 'b'), (prefix, 'a'))]
                 cases = [(label, primitive, pin, None) for label, primitive, pin in cases]
                 cases += [('observation-lane-'+str(lane), 'data_delay', 'a', lane) for lane in range(15)]
+                cases += common_byte_cases(primitives)
                 width = int(primitives['data_delay']['parameters']['WIDTH'])
                 assert width == (362 if name == 'click' else 360), 'OBSERVATION_DATA_WIDTH'
                 baseline_hashes = hashes(baseline)
@@ -256,7 +294,8 @@ def main():
                     expected = None
                     if primitive:
                         instance = primitives[primitive]['rtl_path'].split('.')[-1]
-                        changed = (mutate_projection_lane(rtl.read_text(), instance, width, lane) if lane is not None
+                        changed = (mutate_byte_lane(rtl.read_text(), instance, lane) if primitive == 'byte_data_delay' and lane is not None
+                                   else mutate_projection_lane(rtl.read_text(), instance, width, lane) if lane is not None
                                    else mutate_pin(rtl.read_text(), instance, pin))
                         rtl.write_text(changed, encoding='utf-8')
                         expected = fault_site(case/'contract_probe.sv', primitives[primitive]['rtl_path']+'.'+pin, bindings)
@@ -264,7 +303,9 @@ def main():
                     difference = {p for p in baseline_hashes.keys() | copied_hashes.keys()
                                   if baseline_hashes.get(p) != copied_hashes.get(p)}
                     assert difference == ({'I2cPublication.sv'} if primitive else set()), ('I2C_MUTATION_SCOPE', difference)
-                    record = dict(projection_lane=lane, mutated_pin=None if expected is None else expected['mutated_pin'],
+                    record = dict(projection_lane=lane if primitive == 'data_delay' else None,
+                                  scratch_lane=lane if primitive == 'byte_data_delay' else None,
+                                  mutated_pin=None if expected is None else expected['mutated_pin'],
                                   mutation_files=sorted(difference))
                     results[name]['cases'][label] = record
                     execute_case(case, checks, expected, probe_hash, commands, record)

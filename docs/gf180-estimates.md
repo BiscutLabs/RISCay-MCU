@@ -6,7 +6,19 @@ are independently audited. The subsequent corrective work targets redundant
 storage and clocked coordination while preserving native BD/Click; see the
 [migration checklist](async-soc-migration.md). Physical timing remains unqualified.
 
-The latest [C1d SPI comparison](spi-player-contract.md#matched-cost)
+The latest [A5b addressed-byte measurement](native-i2c-byte-store-contract.md#matched-cost)
+uses the same mapper and five-corner accounting as C1d. Logic area falls
+**1.9160% BD / 1.5153% Click**, to **2.874882 / 3.643422 mm²** excluding SRAM.
+TT listed-state leakage including SRAM becomes **7.607764–9.867172 /
+9.079021–12.144499 µW**. Native payload storage loses 513 bits per variant;
+periodic state, periodic clock-pin loads and all 27 matched wake windows remain unchanged.
+Functional, frame-control and strict export checks pass. The byte-write
+transform exceeds its 10 ns allowance at slow corners, and the changed upstream
+transform fails at TT and both SS corners. Relative setup/hold screens remain
+conditional. These are pre-layout estimates, not measured deep-sleep power
+or wake energy.
+
+The prior [C1d SPI comparison](spi-player-contract.md#matched-cost)
 uses the same mapper and five-corner accounting against `a8c0300`. Logic area
 falls **0.2730% BD / 0.3012% Click**, to **2.931040 / 3.699481 mm²** excluding
 SRAM. TT listed-state leakage including SRAM becomes **7.752528–10.033946 /

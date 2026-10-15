@@ -60,9 +60,11 @@ with measured cost gates. The bounded native elapsed loop preserves the time ABI
 compact native CRC feedback removes redundant command storage. The I2C
 observation projection removes 325 native storage bits per variant. The compact
 [SPI player](docs/spi-player-contract.md) removes 90 clocked bits per variant;
-current mapped logic area is **2.931040 / 3.699481 mm²** excluding SRAM, with
-unchanged measured wake activity. Functional, actual-wiring and strict export
-checks pass. Complete physical timing remains open.
+the addressed [I2C receive store](docs/native-i2c-byte-store-contract.md) removes
+another 513 native payload bits. Current mapped logic area is **2.874882 /
+3.643422 mm²** excluding SRAM, with unchanged measured wake activity. Its
+functional, frame-control and strict export checks pass. Complete physical
+timing remains open.
 See the [elapsed](docs/native-elapsed-contract.md) and
 [CRC](docs/native-crc-contract.md) contracts. Wider payload reductions remain
 open. Self-timed SRAM access follows a separate

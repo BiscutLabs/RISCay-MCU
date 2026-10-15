@@ -38,6 +38,14 @@ is unchanged; each matched wake loses one fast/work edge. Whole-transform
 physical timing still fails its existing allowance. See the plan for exact
 evidence and qualification limits.
 
+A5b now retains received I2C bytes in one native addressed scratch bank instead
+of carrying them through every protocol-state/update token. It removes 513
+native payload bits per variant without changing periodic storage or measured
+wake activity. The [receive-byte contract](native-i2c-byte-store-contract.md)
+records its passing digital checks, exact mapped cost and open physical
+gates. Publication/bank copies, sampled readWord, reset epochs and clocked
+dispatch are separate unfinished items.
+
 The subsequent user instruction on 2026-10-13 authorizes correcting the
 clocked coordination around native services and adapting timing analysis to
 their actual protocols. This supersedes the R4 migration freeze as a work
