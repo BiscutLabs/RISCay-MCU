@@ -7,6 +7,7 @@ metastability, bundled-data aperture, or physical reset qualification.
 """
 from __future__ import annotations
 from collections import defaultdict, deque
+from itertools import product
 import argparse
 import hashlib
 import json
@@ -15,7 +16,9 @@ import subprocess
 
 from gf180_estimate import ROOT, linux, sha, verify_hash
 from reset_bridge_proof import Cone, prove_receiver, prove_phase_pair, prove_completion_idle, prove_sram_capture, sram_capacities
-from reset_coordinator_proof import prove_coordinator
+from reset_coordinator_proof import prove_coordinator, work_clock
+from quiescing_receipt_proof import prove_masked_request
+from quiescing_request_hold_proof import prove_request_hold
 
 NATIVE_STATE = frozenset({
     "ChiselAsyncAsymmetricC_v1", "ChiselAsyncClosingLatch_v1",
@@ -43,6 +46,134 @@ COMB = frozenset("$mux $pmux $and $or $not $xor $xnor $add $sub $mul $div $mod "
 SRAM = "gf180mcu_ocd_ip_sram__sram1024x8m8wm1"
 STATUS = ("recoveryDebt", "eligible", "ownerRecovery", "recoveryReturning",
           "ownerLoader", "cpuPresentationPermit")
+FIXTURE_TOPS = ('BdResetBoundarySocFixture', 'ClickResetBoundarySocFixture')
+SOC_TOPS = ('FourPhaseSoc', 'ClickSoc') + FIXTURE_TOPS
+CLICK_TOPS = ('ClickSoc', 'ClickResetBoundarySocFixture')
+
+
+def propagation_graph(cells, model, held_data_inputs=()):
+    """Rebuild by cell/input arc, preserving parallel unapproved paths.
+
+Only the caller's successfully proved request-mask B ports may be handed off.
+No native cell, output net, select pin or periodic destination is exempted.
+"""
+    omitted = set()
+    for item in held_data_inputs:
+        name=item['cell'];cell=cells.get(name,{});pins=cell.get('connections',{})
+        if (item.get('input_pin')!='B' or item.get('output_pin')!='Y' or
+            cell.get('type')!='$mux' or set(pins)!={'A','B','S','Y'} or
+            pins['A']!=['0']*len(item['input_bits']) or pins['B']!=item['input_bits'] or
+            pins['Y']!=item['output_bits'] or pins['S']!=item['select_bits'] or
+            len(pins['B'])!=len(pins['Y']) or len(pins['S'])!=1 or name in omitted):
+            raise ValueError('RDC_HELD_DATA_HANDOFF_SHAPE')
+        omitted.add(name)
+    graph=defaultdict(set)
+    for name,cell in cells.items():
+        if cell['type'] in ('$adff','$dff') or model(cell)==SRAM: continue
+        outputs={b for p,v in cell['connections'].items()
+                 if cell['port_directions'][p]=='output' for b in v if isinstance(b,int)}
+        for pin,vector in cell['connections'].items():
+            if cell['port_directions'][pin]!='input' or (name in omitted and pin=='B'): continue
+            for bit in vector:
+                if isinstance(bit,int): graph[bit].update(outputs)
+    return graph
+
+
+def reachable(graph, start):
+    found=set(start);queue=deque(start)
+    while queue:
+        bit=queue.popleft()
+        for target in graph.get(bit,set())-found:
+            found.add(target);queue.append(target)
+    return found
+
+
+def prove_handoff_destinations(cells, model, held_data_inputs, clocks=(), por_reset=None):
+    """A held combinational bus may end only at periodic data inputs.
+
+The source/receipt proofs do not establish a downstream native owner's hold
+contract, a clock/reset waveform, or a macro access contract. Reject such
+routes before applying any B-port handoff, even if their outputs later reach D.
+"""
+    users=defaultdict(set)
+    for name,cell in cells.items():
+        for pin,vector in cell['connections'].items():
+            if cell['port_directions'][pin]=='input':
+                for bit in vector:
+                    if isinstance(bit,int): users[bit].add((name,pin))
+    queue=deque(b for item in held_data_inputs for b in item['output_bits'])
+    seen=set(queue);sinks=set()
+    while queue:
+        bit=queue.popleft()
+        for name,pin in sorted(users[bit]):
+            cell=cells[name];kind=model(cell)
+            if cell['type'] in ('$adff','$dff'):
+                if pin!='D': raise ValueError('RDC_HELD_DATA_DESTINATION_'+name+'_'+pin)
+                sinks.add((name,pin));continue
+            if cell['type'] not in COMB and kind not in NATIVE_COMB:
+                raise ValueError('RDC_HELD_DATA_DESTINATION_'+name+'_'+pin)
+            for output,vector in cell['connections'].items():
+                if cell['port_directions'][output]=='output':
+                    for target in vector:
+                        if isinstance(target,int) and target not in seen:
+                            seen.add(target);queue.append(target)
+    resetless=[]
+    for name,_ in sorted(sinks):
+        cell=cells[name];pins=cell['connections'];parameters=cell.get('parameters',{})
+        if pins.get('CLK') not in clocks or parameters.get('CLK_POLARITY')!='1':
+            raise ValueError('RDC_HELD_DATA_CLOCK_'+name)
+        if cell['type']=='$dff' and set(pins)=={'D','Q','CLK'}:
+            # Existing payload storage can intentionally have no reset. Its
+            # data handoff does not waive a reset/control pin: none exists.
+            resetless.append(name)
+        elif (cell['type']!='$adff' or set(pins)!={'D','Q','CLK','ARST'} or
+              parameters.get('ARST_POLARITY')!='1' or por_reset is None or
+              not por_reset(pins.get('ARST',[]),pins['CLK'])):
+            raise ValueError('RDC_HELD_DATA_RESET_'+name)
+    return dict(status='pass',periodic_data_sinks=[list(s) for s in sorted(sinks)],
+                traversed_bits=len(seen),positive_clocks=list(clocks),resetless_data_sinks=resetless,
+                contract='combinational paths to service/work positive-edge D; POR or explicit resetless data storage')
+
+
+def destination_cone(pin, uncut, handed_off, fixed_macro=False):
+    """No held-data discharge at clocks, resets, controls or any macro pin."""
+    return handed_off if pin=='D' and not fixed_macro else uncut
+
+
+def fixture_ports(module, top):
+    """Only the exact existing reset-boundary fixture ABI gets full SoC proof."""
+    if top not in FIXTURE_TOPS:
+        raise ValueError('RDC_FIXTURE_IDENTITY')
+    inputs = {n: 1 for n in ('reset','serviceClock','watchdogClock','scl','sda','adcMiso',
+                             'applicationReset','stopWorkClock','holdRamDecision')}
+    inputs['gpioIn'] = 32
+    outputs = {n: 1 for n in ('sdaLow','adcCsN','adcSclk','programmed','locked','systemReset',
+        'resetReason','sleeping','serviceClockEnable','traceEvent','commit_valid','receivingClock',
+        'boundaryClosed','boundaryRebased','boundaryRebaseIdle','ingressRebased','rebasing','coreResetHeld',
+        'wakeDemand','cutoff','islandReset','ingressClosed','serviceClosed','rawRequest','rawAck','offered',
+        'accepted','wordAccepted','ramBusy','ramGrantWaiting','nativeTraceEvent')}
+    outputs.update(gpioOut=32,gpioOe=32,sleepEntries=32,mode=3,workClosedAcks=4,workRebaseAcks=4)
+    for prefix in ('trace_', 'nativeTrace_'):
+        outputs.update({prefix+n:w for n,w in dict(valid=1,pc=32,instruction=32,rd=4,data=32,
+                                                   writeRegister=1,trap=1,cause=4).items()})
+    for prefix in ('commit_bits_', 'rawPayload_', 'captured_'):
+        outputs.update({prefix+n:w for n,w in dict(operation=2,address=32,data=32,mask=4).items()})
+    expected={n:('input',w) for n,w in inputs.items()} | {n:('output',w) for n,w in outputs.items()}
+    actual={n:(p['direction'],len(p['bits'])) for n,p in module['ports'].items()}
+    if actual != expected:
+        raise ValueError('RDC_FIXTURE_EXACT_PORTS')
+    for name,port in module['ports'].items():
+        if module['netnames'].get(name,{}).get('bits') != port['bits']:
+            raise ValueError('RDC_FIXTURE_PORT_ALIAS_'+name)
+
+
+def prove_reset_origin(cone, origin, fixture=False):
+    """Preserve production POR|watchdog; add only the fixture's actual input."""
+    for por, expired, requested in product(range(2), range(2), range(2) if fixture else (0,)):
+        env={};cone.bind(env,cone.bits('reset'),por);cone.bind(env,cone.bits('watchdog_'),expired)
+        if fixture: cone.bind(env,cone.bits('applicationReset'),requested)
+        if cone.evaluate(origin,env) != bool(por or expired or requested):
+            raise ValueError('RDC_RAW_RESET_ORIGIN')
 
 
 def prepare_graph(export: Path, output: Path, manifest: dict) -> dict:
@@ -101,6 +232,7 @@ def prepare_graph(export: Path, output: Path, manifest: dict) -> dict:
 def audit_graph(database: dict, top: str, capacities: dict | None = None) -> dict:
     modules = database["modules"]
     module = modules[top]
+    if top in FIXTURE_TOPS: fixture_ports(module, top)
     cells, nets = module["cells"], module["netnames"]
     def model(cell):
         kind = cell["type"]
@@ -110,7 +242,7 @@ def audit_graph(database: dict, top: str, capacities: dict | None = None) -> dic
             raise ValueError("RDC_MISSING_NET_" + name)
         return nets[name]["bits"]
     sequential = {n: c for n, c in cells.items() if c["type"] in ("$adff", "$dff")}
-    fanout, graph = defaultdict(set), defaultdict(set)
+    fanout = defaultdict(set)
     for name, port in module.get("ports", {}).items():
         if port["direction"] == "output":
             for bit in port["bits"]:
@@ -134,19 +266,9 @@ def audit_graph(database: dict, top: str, capacities: dict | None = None) -> dic
             continue
         if cell["type"] not in COMB and kind not in NATIVE_COMB | NATIVE_STATE:
             raise ValueError("RDC_UNCLASSIFIED_CELL_" + kind)
-        inputs = {b for p, v in cell["connections"].items() if cell["port_directions"][p] == "input" for b in v if isinstance(b, int)}
-        outputs = {b for p, v in cell["connections"].items() if cell["port_directions"][p] == "output" for b in v if isinstance(b, int)}
-        for bit in inputs:
-            graph[bit].update(outputs)
+    graph=propagation_graph(cells,model)
     def reach(start):
-        found = set(start)
-        queue = deque(start)
-        while queue:
-            bit = queue.popleft()
-            for target in graph[bit] - found:
-                found.add(target)
-                queue.append(target)
-        return found
+        return reachable(graph,start)
     por = set(bits("reset"))
     q_drivers = defaultdict(list)
     for name, cell in sequential.items():
@@ -169,7 +291,7 @@ def audit_graph(database: dict, top: str, capacities: dict | None = None) -> dic
                 return False
             vector = pins["D"]
         return vector == ["0"]
-    if top in ('FourPhaseSoc','ClickSoc'):
+    if top in SOC_TOPS:
         cone=Cone(module)
         _,hold=cone.flop('release_0');pins=hold['connections']
         if (pins['CLK'] != bits('serviceClock') or len(pins['Q']) != 8 or
@@ -177,17 +299,14 @@ def audit_graph(database: dict, top: str, capacities: dict | None = None) -> dic
             hold['parameters']['CLK_POLARITY'] != '1' or hold['parameters']['ARST_POLARITY'] != '1' or
             int(hold['parameters']['ARST_VALUE'],2) != 255):
             raise ValueError('RDC_RAW_RESET_HOLD')
-        for por_value in (0,1):
-            for expired in (0,1):
-                env={};cone.bind(env,bits('reset'),por_value);cone.bind(env,bits('watchdog_'),expired)
-                if cone.evaluate(pins['ARST'],env) != (por_value or expired):
-                    raise ValueError('RDC_RAW_RESET_ORIGIN')
+        prove_reset_origin(cone, pins['ARST'], top in FIXTURE_TOPS)
         for requested in (0,1):
             for held in range(256):
                 env={};cone.bind(env,pins['ARST'],requested);cone.bind(env,pins['Q'],held)
                 if cone.evaluate(bits('systemReset'),env) != bool(requested or held):
                     raise ValueError('RDC_RAW_RESET_QUALIFICATION')
-        raw=reach(pins['ARST']+bits('systemReset'))
+        raw_origins=pins['ARST']+bits('systemReset')
+        raw=reach(raw_origins)
         # Retained producers are POR-owned down to their actual primitive pins.
         # The two presentation islands have distinct coordinated lifetimes.
         reset_checks=set()
@@ -221,24 +340,27 @@ def audit_graph(database: dict, top: str, capacities: dict | None = None) -> dic
                     raise ValueError('RDC_NATIVE_RESET_OWNER_'+name)
             reset_checks.add(key)
     else:
-        raw = reach(bits("applicationResetRequest") + bits("systemReset"))
-    seeds = {"raw-reset": raw}
+        raw_origins=bits("applicationResetRequest") + bits("systemReset")
+        raw = reach(raw_origins)
+    # Keep the uncut closure for reset ownership. Final crossing traversal must
+    # start from the original roots, not resume beyond a proved data handoff.
+    seeds = {"raw-reset": set(raw_origins)}
     reset_owner_violations=[]
     for name, cell in sequential.items():
         if raw.intersection(cell["connections"].get("ARST", [])):
             seeds["raw-Q:" + name] = set(cell["connections"]["Q"])
-            if top in ('FourPhaseSoc','ClickSoc') and cell['connections']['Q'] != bits('release_0'):
+            if top in SOC_TOPS and cell['connections']['Q'] != bits('release_0'):
                 reset_owner_violations.append(dict(source='raw-reset',sink=name,pin='ARST',kind='unexpected raw-reset register'))
     for name, cell in cells.items():
         if model(cell) in NATIVE_STATE and raw.intersection(cell["connections"].get("reset", [])):
             seeds["raw-native-Q:" + name] = {b for p, v in cell["connections"].items() if cell["port_directions"][p] == "output" for b in v}
             allowed={'ca_child_'+owner+'_source.ca_primitive_debt_storage' for owner in ('telemetry','housekeeping')}
-            if top in ('FourPhaseSoc','ClickSoc') and name not in allowed:
+            if top in SOC_TOPS and name not in allowed:
                 reset_owner_violations.append(dict(source='raw-reset',sink=name,pin='reset',kind='unexpected raw-reset native storage'))
     for name, net in nets.items():
         if not name.startswith("$") and name.endswith(tuple("." + s for s in STATUS)):
             seeds["native:" + name] = set(net["bits"])
-    if top in ('FourPhaseSoc','ClickSoc'):
+    if top in SOC_TOPS:
         # Required production aliases. ownerRecovery is optimized into the
         # reservation/grant payload; a suffix-only search silently missed it.
         for owner in ('telemetry','housekeeping'):
@@ -277,7 +399,8 @@ def audit_graph(database: dict, top: str, capacities: dict | None = None) -> dic
             synchronizers[name] = second
     receiver_proofs=[]
     payload_exemptions={}
-    if top in ('FourPhaseSoc','ClickSoc'):
+    held_data_inputs=[]
+    if top in SOC_TOPS:
         receiver_proofs.append(prove_coordinator(module,por_reset))
         # These are the documented native held-bus boundaries reached by the
         # raw/status cones. No control, reset, clock or other register is waived.
@@ -287,8 +410,14 @@ def audit_graph(database: dict, top: str, capacities: dict | None = None) -> dic
         quiescing=['ca_child_request_bridge','ca_child_admission_grant_bridge']
         receivers += quiescing
         for prefix in receivers:
-            proof=prove_receiver(module,prefix,top=='ClickSoc',prefix in quiescing,por_reset,fanout)
-            if prefix == 'ca_child_request_bridge': producer='ca_child_transactions.serviceRequest'
+            proof=prove_receiver(module,prefix,top in CLICK_TOPS,prefix in quiescing,por_reset,fanout)
+            if prefix == 'ca_child_request_bridge':
+                receiver_proofs.append(prove_request_hold(database,top,capacities))
+                masked=prove_masked_request(database,top,proof)
+                receiver_proofs.append(masked)
+                held_data_inputs.extend(masked['held_data_inputs'])
+                proof['payload_fields']=masked['payload_fields']
+                producer='ca_child_transactions.serviceRequest'
             elif prefix == 'ca_child_admission_grant_bridge': producer='ca_child_admission.grant'
             elif '.ca_child_byte_request_' in prefix:
                 access,index=prefix.split('.ca_child_byte_request_')
@@ -312,16 +441,26 @@ def audit_graph(database: dict, top: str, capacities: dict | None = None) -> dic
             proof=prove_phase_pair(module,'ca_child_completion_'+part+'_bridge',por_reset,fanout)
             receiver_proofs.append(proof)
             synchronizers[proof['first']]=proof['second']
-        proof=prove_completion_idle(module,top=='ClickSoc',por_reset,fanout)
+        proof=prove_completion_idle(module,top in CLICK_TOPS,por_reset,fanout)
         receiver_proofs.append(proof)
         synchronizers[proof['first']]=proof['second']
-    crossings, violations, exemptions = [], reset_owner_violations, []
+    crossing_graph=propagation_graph(cells,model,held_data_inputs)
+    handoff_clocks=[bits('serviceClock'),work_clock(Cone(module))] if held_data_inputs else []
+    handoff_destinations=prove_handoff_destinations(cells,model,held_data_inputs,handoff_clocks,por_reset)
+    crossings, violations, exemptions, discharged = [], reset_owner_violations, [], []
     for source, start in seeds.items():
-        cone = reach(start)
+        uncut=reach(start)
+        cone = reachable(crossing_graph,start)
         for name, cell in sequential.items():
             pins = cell["connections"]
             for pin, vector in pins.items():
-                if pin == "Q" or not cone.intersection(vector):
+                pin_cone=destination_cone(pin,uncut,cone)
+                if (pin=='D' and uncut.intersection(vector) and not pin_cone.intersection(vector)
+                    and name not in synchronizers and name not in payload_exemptions
+                    and not raw.intersection(pins.get('ARST',[]))):
+                    discharged.append(dict(source=source,sink=name,pin=pin,
+                        contract='proved retained CPU request mask data handoff'))
+                if pin == "Q" or not pin_cone.intersection(vector):
                     continue
                 if pin == "D" and name in synchronizers:
                     crossings.append(dict(source=source, first=name, second=synchronizers[name]))
@@ -339,11 +478,14 @@ def audit_graph(database: dict, top: str, capacities: dict | None = None) -> dic
         for name,cell in cells.items():
             if model(cell)!=SRAM: continue
             for pin,vector in cell['connections'].items():
-                if cell['port_directions'][pin]=='input' and cone.intersection(vector):
+                if (cell['port_directions'][pin]=='input' and
+                    destination_cone(pin,uncut,cone,fixed_macro=True).intersection(vector)):
                     violations.append(dict(source=source,sink=name,pin=pin,kind='fixed SRAM macro input'))
     report = dict(status="fail" if violations else "pass", scope="structural containment only",
         seeds=sorted(seeds), synchronizers=synchronizers, crossings=crossings,
-        exemptions=exemptions, receiver_proofs=receiver_proofs, violations=violations)
+        exemptions=exemptions, receiver_proofs=receiver_proofs, violations=violations,
+        held_data_handoffs=held_data_inputs, held_data_discharged=discharged,
+        held_data_destinations=handoff_destinations)
     return report
 
 

@@ -34,6 +34,7 @@ from check_reset_crossings import check_reset_crossings
 from check_service_reply_receipt import native_reply_source, pack_reply, service_reply_probe, validate_service_reply_rtl
 from check_held_receipts import validate_held_receipts, held_receipt_probe
 from check_native_clock_inventory import native_clock_inventory
+from check_quiescing_receipt import native_request_source, pack_request, request_receipt_probe
 from check_ram_source_export import ARM_PATH, RETIRE_PATH, validate_ram_source, ram_source_bindings, ram_source_probe
 from check_program_source_export import PROGRAM_PATHS, validate_program_source, program_source_bindings, program_source_probe, validate_program_receipts
 from check_frame_receipt import validate_frame_receipts
@@ -251,9 +252,9 @@ def control_background(source: str, manifest: dict, scopes: dict, checks: int):
         return cell["rtl_path"] + ".q"
     state = payload("left_storage" if click else "left", 337)
     command = payload("right_storage" if click else "right", 379)
-    request = top + ".ca_child_request_bridge.data_address"
+    request = top + ".ca_child_request_bridge.state"
     now = top + ".fabric_housekeepingState_now"
-    for path, width in ((request, 32), (now, 32)):
+    for path, width in ((request, 2), (now, 32)):
         node, name = path.rsplit(".", 1)
         if scopes.get(node, {}).get("registers", {}).get(name) != width:
             raise ValueError("CONTROL_PROBE_DRIVER_MISMATCH")
@@ -279,7 +280,9 @@ def control_background(source: str, manifest: dict, scopes: dict, checks: int):
         return [0, (1 << width)-1] + [v for bit in range(width)
             for v in (1 << bit, ((1 << width)-1) ^ (1 << bit))]
     # Full-width peripheral snapshot data through a real selected MMIO address.
-    force(request, 32, 4)
+    native = native_request_source(manifest, scopes, header)
+    force(request, 2, 2)
+    extra.append(f"force {native['path']} = 70'h{pack_request(address=4):x};\n")
     for value in walk(32):
         force(now, 32, value); check()
     extra.append(header)
@@ -613,15 +616,20 @@ def sram_background(source: str, manifest: dict, scopes: dict, checks: int):
     idle()
     request = top + ".ca_child_request_bridge"
     force(request + ".state", 2, 2)
-    force(request + ".data_address", 32, 0x20000000)
+    native = native_request_source(manifest, scopes, header)
+    request_values = dict(address=0x20000000)
+    def held_request(**fields):
+        request_values.update(fields)
+        extra.append(f"force {native['path']} = 70'h{pack_request(**request_values):x};\n")
+    held_request()
     for operation in (1, 2):
-        force(request + ".data_operation", 2, operation); check()
+        held_request(operation=operation); check()
     for field, width in (("data", 32), ("mask", 4)):
         for value in walk(width):
-            force(request + ".data_" + field, width, value); check()
+            held_request(**{field:value}); check()
     # Invalid addresses exercise the offered payload, never admitted effects.
     for value in walk(32):
-        force(request + ".data_address", 32, (0x20000000 + value) & 0xffffffff); check()
+        held_request(address=(0x20000000 + value) & 0xffffffff); check()
     # The retained native word drives publication directly. Walk the actual
     # storage output; the obsolete clocked word reply must not survive this item.
     idle()
@@ -1496,6 +1504,7 @@ def main() -> None:
         validate_return_receipts(manifest,args.directory,scopes)
         source, count = original_probe(manifest, scopes, paired)
         source = service_reply_probe(source, manifest, scopes)
+        source = request_receipt_probe(source, manifest, scopes)
         source = held_receipt_probe(source, held_bindings)
         source = spi_program_probe(source, manifest, scopes)
         source, count = register_file_background(source, manifest, count)

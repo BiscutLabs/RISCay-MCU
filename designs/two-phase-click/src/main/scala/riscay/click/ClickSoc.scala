@@ -19,7 +19,7 @@ class ClickSoc(p: SocParameters, board: SocParameters => BoardProfile = p => new
     "custom execute timing exceeds supported digital timing-policy limit")
   val core = asyncChild("core")(d => new ClickCore(d, timing=timing, executeData=executeData))
   val transactions = asyncChild("transactions")(d => new ClickFabric(p.config, timing, d))
-  val requestBridge = asyncChild("request_bridge")(d => new ClickQuiescingToDecoupled(new MemoryRequest,d))
+  val requestBridge = asyncChild("request_bridge")(d => new ClickQuiescingReceipt(new MemoryRequest,d))
   transactions.reset:=nativeApplicationReset.asAsyncReset
   core.reset:=nativeCoreReset.asAsyncReset
   closeBridge(requestBridge)

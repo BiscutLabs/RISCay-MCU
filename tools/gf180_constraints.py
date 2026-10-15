@@ -100,7 +100,8 @@ def prepare(mapping):
         'FourPhaseToDecoupled':'request_stages_0','ClickToDecoupled':'request_stages_0',
         'FourPhaseServiceReplyReceipt':'request_stages_0','ClickServiceReplyReceipt':'request_stages_0',
         'DecoupledToFourPhaseQuiescing':'acknowledge_first','DecoupledToClickQuiescing':'acknowledge_first',
-        'FourPhaseQuiescingToDecoupled':'request_first','ClickQuiescingToDecoupled':'request_first'}
+        'FourPhaseQuiescingToDecoupled':'request_first','ClickQuiescingToDecoupled':'request_first',
+        'FourPhaseQuiescingReceipt':'request_first','ClickQuiescingReceipt':'request_first'}
     for prefix in ('FourPhase','Click'):
         for suffix in ('FrameReceipt','ProgramCaptureReceipt','RamCaptureReceipt','StoredReceipt','ReturnReceipt'):
             bridge_aliases[prefix+suffix]='requestMeta'

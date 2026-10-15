@@ -1,3 +1,4 @@
+from test_quiescing_receipt_probe import add_native_request_fixture, request_fixture_rtl
 # SPDX-License-Identifier: Apache-2.0
 """Independent constant-boundary and source-campaign negative controls."""
 import copy
@@ -111,7 +112,8 @@ class CompletionIntegrationTest(unittest.TestCase):
                 regs[top].update(second=1,resetBoundary_stopped=1,cpuResetActive=1)
                 for owner in ('telemetry','housekeeping'):
                     regs[top].update({owner+'Boundary_'+field:1 for field in ('active','revoked','role','pending')})
-            regs[top+".ca_child_request_bridge"] = dict(state=2,data_mask=4,data_operation=2,data_address=32)
+            regs[top+".ca_child_request_bridge"] = dict(state=2)
+            add_native_request_fixture(manifest,scopes,regs)
             if top == "ClickSoc":
                 regs[top]["ca_child_admission_start_stages"] = 2
             regs[top+".ca_child_admission_grant_bridge"] = dict(state=2)
@@ -228,8 +230,8 @@ class CompletionIntegrationTest(unittest.TestCase):
             for path,width,value in ((top+".fabric_controlState_programmed",1,1),
                                      (top+".fabric_controlState_imageLength",32,4),
                                      (top+".ca_child_program_grant_bridge.state",2,2),
-                                     (top+".ca_child_request_bridge.data_address",32,0x10000000),
-                                     (top+".ca_child_request_bridge.data_address",32,0x20000000)):
+                                     (top+".ca_child_core.ca_child_address.ca_primitive_payload.q",70,(1<<68)|(0x10000000<<36)|15),
+                                     (top+".ca_child_core.ca_child_address.ca_primitive_payload.q",70,(1<<68)|(0x20000000<<36)|15)):
                 self.assertIn(f"force {path} = {width}'h{value:x};",augmented)
             for bank in ('ram','program'):
                 access=top+'.ca_child_'+bank+'_access';receipt=access+'.ca_child_capture_receipt'
@@ -257,7 +259,7 @@ class CompletionIntegrationTest(unittest.TestCase):
                     bad=copy.deepcopy(scopes)
                     if 'ports' in bad[path] and name in bad[path]['ports']: del bad[path]['ports'][name]
                     else: del bad[path]['registers'][name]
-                    with self.assertRaisesRegex(ValueError,"COMPLETION_BACKGROUND_DRIVER|COMPLETION_NATIVE_RETURN_CELL|COMPLETION_PROGRAM_PERMISSION_CELL|SERVICE_REPLY_STORAGE"):
+                    with self.assertRaisesRegex(ValueError,"COMPLETION_BACKGROUND_DRIVER|COMPLETION_NATIVE_RETURN_CELL|COMPLETION_PROGRAM_PERMISSION_CELL|SERVICE_REPLY_STORAGE|QUIESCING_REQUEST_"):
                         completion_background(original,manifest,bad,1)
             for bank in ('ram','program'):
                 root=top+'.ca_child_'+bank+'_return'

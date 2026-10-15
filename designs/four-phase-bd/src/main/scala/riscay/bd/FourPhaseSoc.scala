@@ -20,7 +20,7 @@ class FourPhaseSoc(p: SocParameters, board: SocParameters => BoardProfile = p =>
     "custom stage timing exceeds supported digital timing-policy limit")
   val core = asyncChild("core")(d => new FourPhaseCore(d, timing=timing, executeTiming=executeTiming))
   val transactions = asyncChild("transactions")(d => new FourPhaseFabric(p.config, timing, d))
-  val requestBridge = asyncChild("request_bridge")(d => new FourPhaseQuiescingToDecoupled(new MemoryRequest,d))
+  val requestBridge = asyncChild("request_bridge")(d => new FourPhaseQuiescingReceipt(new MemoryRequest,d))
   transactions.reset:=nativeApplicationReset.asAsyncReset
   core.reset:=nativeCoreReset.asAsyncReset
   closeBridge(requestBridge)

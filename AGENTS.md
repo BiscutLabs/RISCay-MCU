@@ -27,7 +27,16 @@
   need explicit work-clock qualification or a verified wake invariant, just
   like frame/head receipts. C1g is digitally verified with actual snapshot
   capture, stopped-consumer and exact-fault controls. Track C1d–f before claiming
-  minimum boundary state.
+  minimum boundary state. C1e1 changes only the 70-bit CPU request receiver:
+  preserve the actual native address-stage source, valid-zero masking, both
+  request synchronizers, settling/ACK/return cadence and POR close/rebase history.
+  Run QuiescingReceiptSpec, QuiescingBridgeSpec, ResetBoundarySpec and
+  ResetBoundarySocSpec plus affected regressions and actual source/mask/gate/RDC
+  controls. ACK must coincide with the actual gated consumer capture. Include
+  background consumers, native source hold and minimum mask-removal hold in the
+  physical aperture; digital cadence is not timing qualification. Force only
+  the catalogued native payload in strict probes, never derived receipt outputs.
+  C1e2's six smaller grant/drain receivers retain ten payload bits and stay open.
   I2C's native observation contains only headGray, active, rejected, addressByte,
   drive, ack and sent (15 bits). Preserve the complete publication input and
   source/capture aperture, independent frame/snapshot retention and Click phase

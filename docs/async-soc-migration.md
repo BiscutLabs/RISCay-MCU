@@ -278,13 +278,24 @@ digital passes remain evidence of their tested scope, not RDC or physical proof.
   `build/async-spi-recipe-reduction/review-final-r1.json` and `final-evidence-r1.json`.
   The physical pin boundary remains clocked. Selected local setup/hold passes;
   slew, capacitance and complete physical qualification remain open.
-- [ ] **C1e. Remove retained request/grant copies where ownership permits.**
-  Audit the 70-bit CPU request in each quiescing receiver and ten nominal bits
-  across six grant/drain receivers. Preserve R1 close/closed/rebase/withdrawal,
-  unchanged acceptance cadence, source hold through actual capture and
-  valid-qualified bus use. Do not substitute a POR-only receipt for the
-  quiescing receiver. Require stopped-clock/reset tests, compiled inventories,
-  strict wiring/RDC controls and matched total cost.
+- [x] **C1e1. Remove the quiescing CPU request payload copy.** The implemented
+  receiver uses the native 70-bit address-stage payload with zero outside valid.
+  Preserve R1 close/closed/rebase/withdrawal, both synchronizers, settling/ACK
+  cadence, BD return and Click phase history. Actual work-clock capture qualifies
+  service-clock ACK; background consumers must see the invalid zero mask.
+  Regression, exact source/mask/gate/RDC controls and strict exports pass.
+  Both variants lose 70 periodic bits; native state is unchanged. Matched logic
+  area falls 0.2404% BD / 0.2999% Click and all 27 ordinal wake windows are
+  unchanged. Evidence and independent review are in the
+  [request-receipt contract](application-reset-boundary.md#c1e1-retained-cpu-request-receipt).
+  Native source aperture, minimum mask-removal hold and physical reset/clock/RC
+  bounds remain open; this does not complete all C1e or minimum boundary state.
+- [ ] **C1e2. Remove the six smaller grant/drain payload copies.** The accepted
+  C1f maps retain all ten bits: seven have no functional mapped consumer and
+  three carry program/publication roles. No C1e2 implementation is applied.
+  Preserve all POR-owned reservations, real work-clock acceptance, assertion
+  identities, independent grant/drain retirement and BD/Click histories.
+  Require separate stopped-clock/reset, actual-wiring, state and cost evidence.
 - [x] **C1f. Narrow internal SRAM saved addresses.** Both controllers retain only
   configured address bits under the upstream valid-offset contract, with full
   32-bit firing-lane assertions retained for verification. No range-rejection

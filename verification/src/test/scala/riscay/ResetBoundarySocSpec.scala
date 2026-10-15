@@ -192,6 +192,135 @@ task no_work_effects; begin
     $$fatal(1,"SOC_BOUNDARY_WORK_UNEXPECTED_EFFECT accepted=%0d words=%0d bytes=%0d",acceptedWork,wordIssues,byteWrites);
 end endtask
 """
+  // Inject a stall only into the first input synchronizers. The production
+  // drain guard, falling-edge gate register, clock and ready logic still run.
+  // The companion graph control binds every observed predicate below to the
+  // complete RAM-store ready cone; matching this mirror alone is insufficient.
+  private def receiptGateMonitors(click: Boolean): String = s"""
+wire [16:0] gatePredicates = {
+  dut.fabric_completionAvailable, ~dut.applicationCancel, ~dut.fabric_resetRecovery,
+  dut._ca_child_admission_grant_bridge_out_valid, ~dut.fabric_bootWait, ~dut.fabric_eventWait,
+  ~dut.fabric_memoryBusy, ~dut.fabric_loaderWrite, ~dut.fabric_telemetryBarrier,
+  ~dut.fabric_housekeepingBarrierBusy, ~dut.telemetryBoundary_io_debt,
+  ~dut.housekeepingBoundary_io_debt, ~dut.fabric_controlBusy,
+  dut._ca_child_ram_grant_bridge_out_valid, dut.fabric_io_ramSource_decision_ready,
+  ~dut.ramServiceDebt, dut._ca_child_ram_access_io_request_ready};
+wire gateOtherReady = &gatePredicates;
+wire gateWithoutDecision = &{gatePredicates[16:3],gatePredicates[1:0]};
+wire gateStoreBranch = dut.fabric_ramOperation && !dut.fabric_nativeMmio && !dut.fabric_programCpuOperation;
+wire gateEligibleWrite = dut.ca_child_ram_source.eligible && dut.ca_child_ram_grant_bridge.out_bits;
+wire [69:0] gateSource = {rawPayload_operation,rawPayload_address,rawPayload_data,rawPayload_mask};
+wire [69:0] gateCapture = {captured_operation,captured_address,captured_data,captured_mask};
+localparam [69:0] gateExpected = {2'd2,32'h20000000,32'h000005a3,4'hf};
+reg gateArmed=0,gateAwaitAck=0,gateClosedWindow=0,gateRestartWindow=0;
+reg gateSavedRequest,gateSavedAck,gateReturnSeen=0;
+reg [69:0] gateSavedPayload;
+reg [3:0] gateWrittenBytes=0;
+integer gateWorkEdges=0,gateSavedWorkEdges=0,gateServiceEdges=0,gateSavedServiceEdges=0;
+integer gateCaptures=0,gateWords=0,gateWrites=0,gateAcks=0,gateRestartEdges=0,gateFalls=0,gateWait=0;
+time gateLastWorkEdge=0;
+always @(negedge dut.gate_enabled) if(gateArmed) begin
+  if(serviceClock !== 0) $$fatal(1,"SOC_GATE_NONFALLING_CLOSURE");
+  gateFalls=gateFalls+1;
+end
+always @(posedge serviceClock) if(!reset) begin
+  gateServiceEdges=gateServiceEdges+1;
+  // ACK's exact-fatal oracle runs first after the receipt's NBA update.
+  #0.002;
+  if(gateClosedWindow && (gateOtherReady !== 1 || gateStoreBranch !== 1 || gateEligibleWrite !== 1 ||
+      offered !== 1 || gateSource !== gateSavedPayload || rawRequest !== gateSavedRequest ||
+      cutoff || coreResetHeld || islandReset || rebasing || applicationReset))
+    $$fatal(1,"SOC_GATE_CLOSED_COFACTOR_OR_RETENTION");
+end
+always @(gateSource or rawRequest) if(gateArmed && gateAwaitAck && rawAck === gateSavedAck &&
+    (gateSource !== gateSavedPayload || rawRequest !== gateSavedRequest))
+  $$fatal(1,"SOC_GATE_SOURCE_CHANGED_BEFORE_ACK");
+always @(posedge receivingClock) if(!reset && gateArmed) begin
+  gateWorkEdges=gateWorkEdges+1; gateLastWorkEdge=$$time;
+  if(gateRestartWindow) gateRestartEdges=gateRestartEdges+1;
+  if(accepted && captured_operation == 2 && captured_address == 32'h20000000) begin
+    if(!gateRestartWindow || gateRestartEdges !== 1 || gateCaptures || gateCapture !== gateSavedPayload ||
+        gateCapture !== gateExpected || gateOtherReady !== 1 || !wordAccepted || !gateEligibleWrite ||
+        !dut.fabric_io_ramSource_grant_ready || !dut.ca_child_ram_decision_bridge.in_valid ||
+        !dut.fabric_io_ramSource_decision_ready || !dut.ca_child_ram_decision_bridge.in_bits)
+      $$fatal(1,"SOC_GATE_NONATOMIC_REAL_CAPTURE");
+    gateCaptures=gateCaptures+1;
+  end
+  if(wordAccepted) begin
+    if(!accepted || gateCapture !== gateExpected) $$fatal(1,"SOC_GATE_WORD_WITHOUT_MATCHING_CAPTURE");
+    gateWords=gateWords+1;
+  end
+end
+always @(rawAck) if(gateArmed && gateAwaitAck && rawAck !== gateSavedAck) begin
+  #0.001;
+  if(gateCaptures !== 1 || gateLastWorkEdge !== $$time || gateWords !== 1)
+    $$fatal(1,"SOC_GATE_ACK_WITHOUT_REAL_CAPTURE");
+  gateAcks=gateAcks+1; gateAwaitAck=0;
+  // Payload may legally change after this ACK. Retention assertions end here.
+end
+always @(rawRequest or rawAck) if(gateArmed && gateAcks == 1 && !rawRequest && !rawAck)
+  gateReturnSeen=1;
+always @(posedge dut.fabric_ram_macros_0.CLK) if(!reset && gateArmed &&
+    !dut.fabric_ram_macros_0.CEN && !dut.fabric_ram_macros_0.GWEN) begin
+  if(gateCaptures !== 1 || gateWords !== 1 || dut.fabric_ram_macros_0.WEN !== 0 ||
+      dut.fabric_ram_macros_0.A > 3 || gateWrittenBytes[dut.fabric_ram_macros_0.A] ||
+      dut.fabric_ram_macros_0.D !== ((32'h000005a3 >> (8*dut.fabric_ram_macros_0.A)) & 255))
+    $$fatal(1,"SOC_GATE_MACRO_EFFECT_IDENTITY");
+  gateWrittenBytes[dut.fabric_ram_macros_0.A]=1; gateWrites=gateWrites+1;
+end
+"""
+
+  private val receiptGateBody="""
+    // Hold only the existing reservation decision input while the real source
+    // and grant settle. No phase, payload, ready or clock override is used.
+    for(gateWait=0; gateWait<400 && !(offered === 1 && gateSource === gateExpected &&
+        ramGrantWaiting === 1 && gateWithoutDecision === 1 && gateEligibleWrite === 1 &&
+        gateStoreBranch === 1); gateWait=gateWait+1) begin @(negedge serviceClock); #1; end
+    if(gateWait == 400 || rawRequest === rawAck || !dut.gate_enabled ||
+        cutoff || coreResetHeld || islandReset || rebasing || applicationReset ||
+        !serviceClockEnable || stopWorkClock || dut.fabric_io_ramSource_decision_ready)
+      $fatal(1,"SOC_GATE_NO_HELD_ELIGIBLE_STORE");
+    @(negedge serviceClock); #1;
+    gateSavedPayload=gateSource; gateSavedRequest=rawRequest; gateSavedAck=rawAck;
+    gateArmed=1; gateAwaitAck=1;
+    $display("SOC_GATE_REQUEST_PHASE:%0d",rawRequest);
+    force dut.gate_demandFirst=1'b0;
+    force dut.gate_drainFirst=1'b0;
+    repeat(12) @(negedge serviceClock); #1;
+    if(dut.gate_enabled !== 0 || dut.gate_needClock !== 0 || dut.gate_drain !== 0 ||
+        dut.gate_grace !== 0 || receivingClock !== 0 || !sleeping || gateFalls !== 1 ||
+        gateCaptures || gateWords || gateWrites || gateAcks ||
+        gateSource !== gateSavedPayload || rawRequest !== gateSavedRequest || rawAck !== gateSavedAck)
+      $fatal(1,"SOC_GATE_DID_NOT_CLOSE_WITH_HELD_STORE");
+    gateSavedWorkEdges=gateWorkEdges; gateSavedServiceEdges=gateServiceEdges;
+    // Release the decision at a low service phase. Every other real admission
+    // predicate must now be true, while the actual consumer remains stopped.
+    holdRamDecision=0; #1;
+    if(gateOtherReady !== 1 || gateStoreBranch !== 1 || gateEligibleWrite !== 1 || offered !== 1)
+      $fatal(1,"SOC_GATE_NOT_OTHERWISE_READY");
+    gateClosedWindow=1;
+    repeat(4) @(negedge serviceClock); #1;
+    if(gateServiceEdges < gateSavedServiceEdges+4 || gateWorkEdges !== gateSavedWorkEdges ||
+        gateCaptures || gateWords || gateWrites || gateAcks || rawAck !== gateSavedAck ||
+        dut.fabric_io_request_ready !== 0 || receivingClock !== 0 || dut.gate_enabled !== 0)
+      $fatal(1,"SOC_GATE_CLOSED_EFFECT");
+    gateClosedWindow=0; gateRestartWindow=1;
+    release dut.gate_demandFirst;
+    release dut.gate_drainFirst;
+    repeat(8) @(negedge serviceClock); #1;
+    if(gateCaptures !== 1 || gateWords !== 1 || gateAcks !== 1 || gateAwaitAck ||
+        gateWorkEdges <= gateSavedWorkEdges || !dut.gate_enabled)
+      $fatal(1,"SOC_GATE_RESTART_DID_NOT_CAPTURE");
+    gateRestartWindow=0;
+    #100000;
+    if(gateCaptures !== 1 || gateWords !== 1 || gateAcks !== 1 || gateWrites !== 4 ||
+        gateWrittenBytes !== 4'hf || ramBusy || !programmed || !locked || mode !== 4 ||
+        {dut.fabric_ram_macros_0.mem[3],dut.fabric_ram_macros_0.mem[2],
+         dut.fabric_ram_macros_0.mem[1],dut.fabric_ram_macros_0.mem[0]} !== 32'h000005a3)
+      $fatal(1,"SOC_GATE_FINAL_STORE_EFFECT");
+    $display("SOC_GATE_CAPTURE_COUNTS:%0d:%0d:%0d:%0d",gateCaptures,gateWords,gateAcks,gateWrites);
+  """
+
   for(click <- Seq(false,true)) {
     val name=if(click) "click" else "bd"
     def fixture(fault: Boolean=false): SocTop=if(click) new ClickResetBoundarySocFixture(p,fault) else new BdResetBoundarySocFixture(p,fault)
@@ -287,10 +416,13 @@ end endtask
           $fatal(1,"SOC_BOUNDARY_WORK_CLOSE_ADVANCED_WITHOUT_EDGE");
         if(rawRequest !== savedRequest || rawAck !== savedAck || rawRequest === rawAck ||
             rawPayload_address !== savedAddress || rawPayload_data !== savedData ||
-            rawPayload_operation !== savedOperation || rawPayload_mask !== savedMask ||
-            captured_address !== savedCapturedAddress || captured_data !== savedCapturedData ||
-            captured_operation !== savedCapturedOperation || captured_mask !== savedCapturedMask)
+            rawPayload_operation !== savedOperation || rawPayload_mask !== savedMask)
           $fatal(1,"SOC_BOUNDARY_WORK_SOURCE_CHANGED_BEFORE_CLOSURE");
+        // The native source remains retained above. The closed ingress has no
+        // valid payload: its direct-bus receipt must mask unrelated consumers.
+        if(offered || captured_address !== 0 || captured_data !== 0 ||
+            captured_operation !== 0 || captured_mask !== 0)
+          $fatal(1,"SOC_BOUNDARY_CLOSED_INGRESS_OUTPUT_NOT_MASKED");
         no_work_effects;
         // The service-clock ingress has closed, but the work-clock receivers
         // need a genuine edge. That edge cannot also receive rebase, which is
@@ -357,6 +489,22 @@ end endtask
         if(workEdges !== savedWorkEdges || !sleeping || receivingClock)
           $fatal(1,"SOC_BOUNDARY_GATE_DID_NOT_RESLEEP");
       """,workClockMonitors(click),referenceHalfPeriodNs=1000000,serviceHalfPeriodNs=25)
+    }
+    test(s"$name production receipt waits for actual retained-gate capture of an otherwise eligible store") {
+      val gateParameters=p.copy(lowPower=Some(LowPowerParameters(stopServiceClock=false)))
+      val phases=(0 to (if(click) 1 else 0)).map { prefix =>
+        def gated: SocTop=if(click) new ClickResetBoundarySocFixture(gateParameters)
+          else new BdResetBoundarySocFixture(gateParameters)
+        val output=ClockedSimulation.run(gated,name+s"-soc-receipt-real-gate-$prefix",
+          "holdRamDecision=1;"+upload(prefix)+receiptGateBody+
+          (if(click) "" else "if(!gateReturnSeen) $fatal(1,\"SOC_GATE_MISSING_BD_RETURN\");"),
+          receiptGateMonitors(click),referenceHalfPeriodNs=1000000,serviceHalfPeriodNs=25)
+        val log=java.nio.file.Files.readString(output.resolve("simulation.log"))
+        assert(log.linesIterator.count(_ == "SOC_GATE_CAPTURE_COUNTS:1:1:1:4") == 1,
+          "MISSING_REAL_GATE_CAPTURE_ACTIVITY")
+        "SOC_GATE_REQUEST_PHASE:([01])".r.findAllMatchIn(log).map(_.group(1)).toSeq
+      }.flatten.toSet
+      assert(phases == (if(click) Set("0","1") else Set("1")),"MISSING_REAL_GATE_REQUEST_PHASE")
     }
     for(fault <- Seq(false,true)) {
       test(s"$name production stopped-clock reset retains native source until capture closure (raw fault=$fault)") {

@@ -6,7 +6,35 @@ are independently audited. The subsequent corrective work targets redundant
 storage and clocked coordination while preserving native BD/Click; see the
 [migration checklist](async-soc-migration.md). Physical timing remains unqualified.
 
-The latest [C1f saved-address measurement](sram-integration.md#c1f-saved-address-narrowing)
+The latest [C1e1 request-receipt measurement](application-reset-boundary.md#c1e1-retained-cpu-request-receipt)
+compares against the accepted C1f maps using the same mapper, assets, policies
+and five-corner accounting. Logic area falls **0.2404% BD / 0.2999% Click** to
+**2.862584704 / 3.629653440 mm²**, excluding SRAM. The complete mapped hierarchy
+contains **103,349 / 105,247** leaves, including the unchanged three SRAMs and
+**56,276 / 61,661** preserved native cells. The four deleted request payload
+objects total 70 periodic bits per variant; all nine receipt control/reset bits and
+all native storage remain. Service storage clock-pin load falls **0.234220 pF**
+per variant, to **4.193681 / 4.207095 pF**. Work-clock load stays **14.378128 /
+14.549554 pF**. All 27 ordinal wake windows are unchanged, including both
+43-instruction firmware wakes at **3,255 / 3,160 work edges**.
+
+| C1e1 listed-state leakage, including SRAM | BD (µW) | Click (µW) |
+| --- | ---: | ---: |
+| TT / 25°C / 3.3 V | 7.577419–9.818140 | 9.043886–12.090826 |
+| SS / -40°C / 3.0 V | 6.168063–7.787103 | 7.361771–9.587289 |
+| SS / 125°C / 3.0 V | 44.951562–49.193714 | 49.161935–55.008372 |
+| FF / -40°C / 3.6 V | 8.978283–11.266171 | 10.706138–13.690175 |
+| FF / 125°C / 3.6 V | 253.568210–563.763014 | 323.102086–660.434374 |
+
+Both ends decrease at every corner. These independent per-cell listed-state
+envelopes are not reachable deep-sleep measurements or complete silicon bounds.
+Analog, pads, clock/reset distribution and routed implementation overhead are
+not included. The receiving-aperture results and unproved native/mask/clock/RC
+obligations remain explicit in the request contract; no timing or energy
+qualification follows from these cost reductions. Evidence is retained under
+`build/async-quiescing-receipt-measurement-r3/`.
+
+The prior [C1f saved-address measurement](sram-integration.md#c1f-saved-address-narrowing)
 uses A5b `67b282cf` and the same mapper/assets/policies and five-corner accounting.
 Logic area changes **-0.1878% BD / -0.0782% Click**, to
 **2.869484 / 3.640572 mm²** excluding SRAM. TT listed-state

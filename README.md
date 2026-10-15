@@ -64,10 +64,10 @@ compact native CRC feedback removes redundant command storage. The I2C
 observation projection removes 325 native storage bits per variant. The compact
 [SPI player](docs/spi-player-contract.md) removes 90 clocked bits per variant;
 the addressed [I2C receive store](docs/native-i2c-byte-store-contract.md) removes
-another 513 native payload bits. Current mapped logic area is **2.874882 /
-3.643422 mm²** excluding SRAM, with unchanged measured wake activity. Its
-functional, frame-control and strict export checks pass. Complete physical
-timing remains open.
+another 513 native payload bits. CPU request receipts remove 70 duplicate
+clocked bits per variant. The latest mapped logic area is **2.862585 / 3.629653
+mm²** excluding SRAM, with unchanged measured wake activity and passing
+functional and strict export checks. Complete physical timing remains open.
 See the [elapsed](docs/native-elapsed-contract.md) and
 [CRC](docs/native-crc-contract.md) contracts. Wider payload reductions remain
 open. Self-timed SRAM access follows a separate
@@ -79,8 +79,9 @@ Each migration item requires fresh independent review, fixes,
 verification, documentation and a separate commit/push.
 
 The reset-domain and reset-interval corrections pass digital verification and
-independent review. Native assertion and release each wait 64 service edges,
-separately from the short-pulse qualifier. The completed
+independent review. After receiver closure and rebase, native reset remains
+asserted for 64 qualifying service edges; core reset and isolation remain for
+another 64 edges after native release. The short-pulse qualifier is separate. The completed
 [matched comparison](docs/gf180-matched-comparison.md) favors the smaller clocked
 service island: migrated services substantially increase area, leakage estimates
 and wake work. The subsequent correction targets duplicate storage and crossings
@@ -93,6 +94,10 @@ measured wake clock counts and durations are unchanged. See the
 [service capture contract](docs/service-reply-capture-contract.md) and
 [peripheral/SRAM capture contract](docs/held-peripheral-capture-contract.md).
 Complete native service scheduling and physical capture qualification remain open.
+CPU request ingress captures the retained native payload directly, with zero
+outside valid and unchanged gated capture/reset coordination. Its
+[verification and cost results](docs/application-reset-boundary.md#c1e1-retained-cpu-request-receipt)
+cover both protocols; smaller grant/drain payload copies remain a separate item.
 Complete physical reset-tree and core-startup timing remain open; current guard
 measurements exceed some digital assumptions.
 See the [reset-boundary contract](docs/application-reset-boundary.md),

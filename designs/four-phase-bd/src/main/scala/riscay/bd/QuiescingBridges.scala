@@ -57,6 +57,44 @@ class FourPhaseQuiescingToDecoupled[T <: Data](gen: T,domain: ResetDomain)
   contract.clockedChannel("out",out,clock,channel,"output")
 }
 
+/** Retained-bus receipt for the coordinated application boundary.
+  * The two request synchronizers, settling edge, ACK edge and return history
+  * match the stored receiver above. No duplicate payload register is present.
+  * out.bits is zero outside valid and equals the retained native bus while
+  * valid. The caller must retain that bus until actual consumer acceptance,
+  * qualify ready by the consumer clock enable when its clock differs, and
+  * keep the producer intact until every receiver acknowledges close.
+  * After closed, coordinated native reset may change the bus; the zero mask
+  * isolates all periodic consumers. Rebase is still legal only while closed.
+  * Full source-to-consumer setup/hold and mask-release timing remain physical
+  * obligations; preserving the digital cadence does not qualify them.
+  */
+class FourPhaseQuiescingReceipt[T <: Data](gen: T,domain: ResetDomain)
+    extends FourPhaseQuiescingBridge(domain) {
+  val channel=new Channel(gen,resetDomain)
+  val in=IO(Flipped(channel.bundled)); val out=IO(channel.decoupled)
+  private val request=phase(in.req)
+  withClockAndReset(clock,localReset) {
+    val state=RegInit(0.U(2.W)); val acknowledge=RegInit(false.B)
+    in.ack:=acknowledge
+    // The source remains retained through actual consumer acceptance. Mask
+    // invalid cycles: unrelated clocked commands may inspect these bits.
+    out.bits:=Mux(out.valid,in.bits,0.U.asTypeOf(gen))
+    out.valid:=state === 2.U && !close && !localReset.asBool
+    when(rebase) { state:=0.U; acknowledge:=false.B }
+      .elsewhen(!close) {
+        switch(state) {
+          is(0.U) { when(request) { state:=1.U } }
+          is(1.U) { state:=2.U }
+          is(2.U) { when(out.fire) { acknowledge:=true.B; state:=3.U } }
+          is(3.U) { when(!request) { acknowledge:=false.B; state:=0.U } }
+        }
+      }
+  }
+  contract.capacity(1); contract.channel("in",in,"input")
+  contract.clockedChannel("out",out,clock,channel,"output")
+}
+
 class DecoupledToFourPhaseQuiescing[T <: Data](gen: T,domain: ResetDomain)
     extends FourPhaseQuiescingBridge(domain) {
   val channel=new Channel(gen,resetDomain)

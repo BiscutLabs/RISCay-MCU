@@ -267,6 +267,25 @@ def _state_policy(rtl, value_pairs, sensitivity, expected, reset):
     initial_policy(rtl, values, reset)
 
 
+def coordinated_request_assertion_model(directory, model, diagnostic):
+    """Select the exact request assertion layer from its actual unique instance.
+
+    C1e1 replaces the stored request receiver with the retained-bus receipt.
+    This resolves that approved owner change; it does not infer a layer from
+    whichever include happens to exist or relax assertion execution policy.
+    """
+    variant = "Click" if model == "ClickSoc" else "FourPhase"
+    source = Path(directory) / (model + ".sv")
+    require(source.is_file(), diagnostic + "_REQUEST_SOURCE")
+    rtl = source.read_text(encoding="utf-8")
+    owners = re.findall(r"\b(\w+)\s+(?:#\s*\([^;]*?\)\s*)?ca_child_request_bridge\s*\(", clean(rtl))
+    require(len(owners) == 1 and owners[0] in
+            (variant + "QuiescingToDecoupled_1", variant + "QuiescingReceipt"),
+            diagnostic + "_REQUEST_OWNER")
+    pins(rtl, "ca_child_request_bridge", owners[0])
+    return owners[0]
+
+
 def assertion_wrapper_policy(directory, model, raw, label, diagnostic, coordinated=False):
     """Close preprocessing and binding around the actual executable assertion."""
     un = clean(raw)
@@ -297,8 +316,9 @@ def assertion_wrapper_policy(directory, model, raw, label, diagnostic, coordinat
     if coordinated:
         require(model in ("FourPhaseSoc", "ClickSoc"), diagnostic + "_COORDINATED_MODEL")
         variant = "Click" if model == "ClickSoc" else "FourPhase"
+        request_model = coordinated_request_assertion_model(directory, model, diagnostic)
         children = ["DecoupledTo" + variant + "Quiescing", "DecoupledTo" + variant + "Quiescing_1",
-                    variant + "QuiescingToDecoupled", "I2cTarget", variant + "QuiescingToDecoupled_1"]
+                    variant + "QuiescingToDecoupled", "I2cTarget", request_model]
         child_include = "".join(f'`include "layers-{name}-Verification-Assert.sv"\n' for name in children)
     expected = f'`ifndef {guard}\n`define {guard}\n`include "layers-{model}-Verification.sv"\n' + child_include + f'bind {model} {model}_Verification_Assert verification_assert ();\n`endif'
     require(compact(raw_bind) == compact(expected) and directives(raw_bind) == directives(expected), diagnostic + "_BIND")

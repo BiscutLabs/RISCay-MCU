@@ -1,3 +1,4 @@
+from test_quiescing_receipt_probe import add_native_request_fixture, request_fixture_rtl
 # SPDX-License-Identifier: Apache-2.0
 """Prove the generated-reset adapter accepts correct wiring and rejects a missed
 watchdog reset. The fixture uses only ordinary Verilog, independently of Chisel.
@@ -112,7 +113,7 @@ $display("CONTRACT_PROBES_PASS:1"); $finish; end endmodule
                 "bytesReturned_stages_1", "bytesReturned_stages_2", "bytesReturned_stages_3") for stage in (0, 1)}
             sync["active"] = 1
             reply = {"state": 2}
-            request = {"state": 2, "data_operation": 2, "data_address": 32, "data_data": 32, "data_mask": 4}
+            request = {"state": 2}
             inventories = {top: root, top+".ca_child_control_reply_bridge": reply,
                            top+".ca_child_request_bridge": request,
                            top+".ca_child_program_grant_bridge": dict(state=2,data=1)}
@@ -133,17 +134,19 @@ $display("CONTRACT_PROBES_PASS:1"); $finish; end endmodule
             def declarations(regs):
                 return "\n".join(f"reg [{width-1}:0] {name};" for name,width in regs.items())
             add_native_reply_fixture(manifest, scopes, inventories, "control")
+            add_native_request_fixture(manifest, scopes, inventories)
             rtl = "module Payload; reg [31:0] q; endmodule\nmodule Return; Payload ca_primitive_payload(); endmodule\n"
             rtl += "module Access;\n"+declarations(inventories[top+".ca_child_program_access"])+"\nwire idle = !active && " + " && ".join(
                 name for name in inventories[top+".ca_child_program_access"] if name.endswith("_1")) + "; endmodule\n"
             rtl += "module RamNativeAccess;\n"+declarations(inventories[top+".ca_child_ram_access"])+"\nwire idle = !active && "+" && ".join(n for n in inventories[top+".ca_child_ram_access"] if n.endswith("_1"))+"; endmodule\n"
             rtl += "module ControlPayload; reg [375:0] q; endmodule\nmodule Update; ControlPayload ca_primitive_payload(); endmodule\nmodule Control; Update ca_child_update(); endmodule\n"
             rtl += "module Reply;\n"+declarations(reply)+"\nendmodule\n"
-            rtl += "module Request;\n"+declarations(request)+"\nendmodule\n"
+            rtl += request_fixture_rtl()
             rtl += "module Grant; reg [1:0] state; reg data; endmodule\n"
             rtl += f"module {top}; reg reset;\n"+declarations(root)+"""
 Access ca_child_program_access(); RamNativeAccess ca_child_ram_access(); Return ca_child_program_return();
-Reply ca_child_control_reply_bridge(); Control ca_child_control(); Request ca_child_request_bridge();
+Reply ca_child_control_reply_bridge(); Control ca_child_control(); NativeCore ca_child_core();
+Request ca_child_request_bridge(ca_child_core.ca_child_address.ca_primitive_payload.q);
 Grant ca_child_program_grant_bridge();
 wire program_valid = ca_child_program_access.idle && gate_enabled && fabric_controlOutstanding &&
     ca_child_control_reply_bridge.state == 2 && ca_child_control.ca_child_update.ca_primitive_payload.q[67] &&

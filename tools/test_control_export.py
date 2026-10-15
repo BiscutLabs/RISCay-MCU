@@ -1,3 +1,4 @@
+from test_quiescing_receipt_probe import add_native_request_fixture, request_fixture_rtl
 # SPDX-License-Identifier: Apache-2.0
 """Independent mapping-stimulus controls; no production transition logic."""
 import copy
@@ -37,15 +38,19 @@ class ControlBackgroundTest(unittest.TestCase):
             manifest["design"]["children"].append({"id": "i2c", "contract": {
                 "children": [{"id": "frame_store", "contract": store}]}})
             scopes = {top: {"registers": {"fabric_housekeepingState_now": 32}},
-                      top + ".ca_child_request_bridge": {"registers": {"data_address": 32}}}
+                      top + ".ca_child_request_bridge": {"registers": {"state": 2}}}
             registers = [("reset", 1), ("fabric_housekeepingState_now", 32), ("fabric_hostFrames_count", 2),
                          ("fabric_mmioCommitPending", 1), ("fabric_mmioCommit_applicationWritable", 1),
                          ("fabric_hostFrames_first_bank", 2)]
             drivers = [(top + "." + name, width) for name, width in registers] + [
-                (top + ".ca_child_request_bridge.data_address", 32),
+                (top + ".ca_child_request_bridge.state", 2),
                 (prefix + ".ca_child_" + left + ".ca_primitive_payload.q", 337),
                 (prefix + ".ca_child_" + right + ".ca_primitive_payload.q", 379)] + [
                 (bank["rtl_path"] + ".q", 337) for bank in banks]
+            inventory={}
+            add_native_request_fixture(manifest,scopes,inventory)
+            drivers += [(path+'.'+name,width) for path,regs in inventory.items() for name,width in regs.items()
+                        if path != top+'.ca_child_request_bridge']
             prelude = f'''module ContractProbe; timeunit 1ns; timeprecision 1ps;
 reg [98:0] ones_0=0, zeros_0=0;
 task check; integer i; begin
@@ -84,12 +89,13 @@ module Join;
 Storage #(337) ca_child_{left}(); Storage #(379) ca_child_{right}();
 endmodule
 module Control; Join ca_child_join(); endmodule
-module Request; reg [31:0] data_address=0; endmodule
+{request_fixture_rtl()}
 module FrameStore; {bank_declarations} endmodule
 module I2c; FrameStore ca_child_frame_store(); endmodule
 module {top};
 {declarations}
-Control ca_child_control(); Request ca_child_request_bridge();
+Control ca_child_control(); NativeCore ca_child_core();
+Request ca_child_request_bridge(ca_child_core.ca_child_address.ca_primitive_payload.q);
 I2c ca_child_i2c();
 wire [378:0] c=ca_child_control.ca_child_join.ca_child_{right}.ca_primitive_payload.q;
 wire [336:0] s=ca_child_control.ca_child_join.ca_child_{left}.ca_primitive_payload.q;

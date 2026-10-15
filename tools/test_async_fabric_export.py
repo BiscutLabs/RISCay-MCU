@@ -1,3 +1,4 @@
+from test_quiescing_receipt_probe import add_native_request_fixture, request_fixture_rtl
 # SPDX-License-Identifier: Apache-2.0
 """Independent controls for the MCU fabric export extension."""
 import copy
@@ -101,15 +102,17 @@ class NativeFrameControlProbeTests(unittest.TestCase):
         manifest = dict(top=top,design=dict(children=[
             dict(id='control',contract=dict(module=('Click' if click else 'FourPhase')+'Control',children=[dict(id='join',contract=join)])),
             dict(id='i2c',contract=dict(children=[dict(id='frame_store',contract=store)]))]))
-        registers={'ca_child_request_bridge.data_address':32,'fabric_housekeepingState_now':32,
+        registers={'ca_child_request_bridge.state':2,'fabric_housekeepingState_now':32,
             'fabric_hostFrames_count':2,'fabric_hostFrames_first_bank':2,'fabric_mmioCommitPending':1,
             'fabric_mmioCommit_applicationWritable':1}
         drivers={top+'.'+name:width for name,width in registers.items()}
         drivers.update({p['rtl_path']+'.q':337 for p in banks})
         drivers.update({c['contract']['primitives'][0]['rtl_path']+'.q':c['contract']['primitives'][0]['ports'][0]['width'] for c in join['children']})
+        scopes={top:dict(registers={'fabric_housekeepingState_now':32}),top+'.ca_child_request_bridge':dict(registers={'state':2})}
+        inventory={};add_native_request_fixture(manifest,scopes,inventory)
+        drivers.update({path+'.'+name:width for path,regs in inventory.items() for name,width in regs.items()})
         source='initial begin\nforce '+top+".reset = 1'b1; #1;\n"+''.join(f"force {p} = {w}'h0;\n" for p,w in drivers.items())
         source+="\n#1;\nif (ones_0 !== 1'h1) $fatal(1,\"INACTIVE_ENDPOINT:sample\");\n$display(\"CONTRACT_PROBES_PASS:1\");\nend\n"
-        scopes={top:dict(registers={'fabric_housekeepingState_now':32}),top+'.ca_child_request_bridge':dict(registers={'data_address':32})}
         return manifest,scopes,source,banks
 
     def test_every_native_bank_and_all_337_retained_bits_are_exercised(self):

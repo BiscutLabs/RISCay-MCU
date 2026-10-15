@@ -105,7 +105,15 @@ periodic-clock staging. Measure each accepted step against its exact parent.
   five-corner controller timing results are in the
   [SRAM contract](sram-integration.md#c1f-saved-address-narrowing). Preserve every
   physical violation and missing check; Click FF125 high listed-state leakage
-  increases 0.231845076 µW despite lower area; C1e and the other A6 candidates stay open.
+  increases 0.231845076 µW despite lower area. C1e1 removes the 70-bit CPU
+  request copy with a masked retained-bus receipt. Compiled inventories confirm
+  70 fewer periodic bits per variant; matched logic area falls 0.2404% BD /
+  0.2999% Click and every wake window is unchanged. Digital verification and
+  independent review are recorded in the
+  [request contract](application-reset-boundary.md#c1e1-retained-cpu-request-receipt).
+  C1e2 keeps the six smaller receivers and their ten mapped payload bits open.
+  Native source, mask-removal hold and physical clock/reset/RC qualification
+  remain separate gates; C1e and the other A6 candidates are not complete.
 - [ ] **A7: replace guards with proved completion (proposal 3 / R5).** Record each
   guard's ordering/hold/reset obligation. Replace it only with completion that
   proves that obligation under skew, backpressure, phase return and reset. Keep

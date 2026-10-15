@@ -11,14 +11,21 @@ claim that the clocked shell is minimal.
 | Remaining candidate, per variant | Finding and required proof | Checklist |
 | --- | --- | --- |
 | SPI player: copied recipe/occupancy registers | Digitally verified removal: a five-bit slot and one active bit index the POR-immutable native recipe. Registered pins, all 32 samples, divider cadence and return drainage are preserved; see the [player contract](spi-player-contract.md). | C1d |
-| Quiescing CPU request receiver: 70-bit payload copy | Evaluate direct retained-bus capture while preserving close/rebase, source hold, acceptance cadence and invalid-bus isolation. A POR-only receipt is not a drop-in replacement. | C1e |
+| Quiescing CPU request receiver: 70-bit payload copy | C1e1 uses the native retained bus with a valid-zero mask and unchanged quiescing control; compiled inventories confirm 70 fewer periodic bits, with passing regression/controls and unchanged wake activity. Matched logic area falls 0.2404% BD / 0.2999% Click; final review is recorded in the contract. Native source and mask-removal aperture remain open; see the [request contract](application-reset-boundary.md#c1e1-retained-cpu-request-receipt). | C1e1 |
 | SRAM saved byte address | C1f retains 11/10 program/RAM bits under the upstream valid-offset contract with full-width firing-lane assertions: 43 fewer periodic RTL bits per variant. Small/non-power-of-two bounds, falling launch and capture are preserved; measured area, activity and remaining timing failures are in the [SRAM contract](sram-integration.md#c1f-saved-address-narrowing). | C1f |
 | I2C snapshot receipt | Runs on service clock; Services captures on gated work clock. C1g digitally verifies an explicit work-clock qualifier with no storage, actual capture and stopped-consumer controls; see the capture contract. Native coherent snapshot ownership remains a separate migration. | C1g, 13c |
-| Six smaller grant/drain receivers | Ten nominal copied payload bits; constants may optimize away. Preserve POR ownership, phase/return and actual consumer capture before replacing them. | C1e |
+| Six smaller grant/drain receivers | All ten copied bits survive in each accepted C1f map; seven lack functional mapped consumers, three retain program/publication roles. C1e2 remains unchanged and open. Preserve POR reservations, assertion identities, grant/drain retirement and actual work-clock capture. | C1e2 |
 | I2C reset history | Eight sampled-edge slots carry 512 clocked epoch bits, plus the 64-bit current epoch and native copies. A stale-history redesign must preserve every queued descriptor's reset history; truncating the epoch is insufficient. | R5, 11a2b |
 | Services queues, histories and coherent snapshots | Still clocked. Removing the crossing requires moving the corresponding scheduler and acceptance/order/freshness ownership together. | C3, 11–14 |
 
-These are candidates, not measured savings. The native frame store's private
+C1e2's source/map audit is retained in
+`build/async-quiescing-small-receivers-audit-r1/REPORT.md`; it is an inventory,
+not an executed removal. C1e1 removes 70 periodic bits in both portable and
+physical exports; native state stays at 11,454 BD / 11,607 Click bits. Matched
+service clock-pin load falls 0.234220 pF per variant. These results do not
+establish minimum boundary state.
+
+Uncompleted rows remain candidates, not measured savings. The native frame store's private
 AND binding in BD is a separate R6 maintenance issue, not a clock intrusion.
 Independent time/watchdog progress, physical wire sampling, macro access,
 clock-gate synchronization and coordinated reset closure remain required;

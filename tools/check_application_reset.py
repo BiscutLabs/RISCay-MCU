@@ -134,7 +134,7 @@ def persistent_reset_children(manifest):
     persistent.update({"elapsed_scaler": "ElapsedTicks", "sample_scaler": "SampleScaler", "spi_adc": "SpiAdc"})
     if coordinated_reset(manifest):
         prefix='Click' if top=='ClickSoc' else 'FourPhase'
-        receivers={'request_bridge':prefix+'QuiescingToDecoupled','admission_grant_bridge':prefix+'QuiescingToDecoupled'}
+        receivers={'request_bridge':prefix+'QuiescingReceipt','admission_grant_bridge':prefix+'QuiescingToDecoupled'}
         receivers.update({'completion_'+name+'_bridge':'DecoupledTo'+prefix+'Quiescing' for name in ('plan','telemetry','housekeeping')})
         if not receivers.keys() <= {c['id'] for c in root['children']}:
             raise ValueError('SOC_QUIESCING_RESET_INVENTORY')
