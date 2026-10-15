@@ -25,7 +25,7 @@ private class ControlMailbox extends Module with InlineInstance {
 }
 
 /** Clocked endpoints behind this variant's native asynchronous fabric. */
-class ClickServices(p: SocParameters, boardFactory: SocParameters => BoardProfile) extends ServiceEndpoint {
+class ClickServices(p: SocParameters, boardFactory: SocParameters => BoardProfile) extends ServiceEndpoint(p.config.programBytes) {
   val config = p.config
   val board = boardFactory(p)
   require(board.ownedRegisters.subsetOf(config.application.registers.map(_.word).toSet))
@@ -47,7 +47,7 @@ class ClickServices(p: SocParameters, boardFactory: SocParameters => BoardProfil
     request.bits := 0.U.asTypeOf(new SramWordRequest)
   }
   // Native state owns decisions; this is a coherent clock-domain snapshot.
-  val controlState = RegInit(ControlState.initial)
+  val controlState = RegInit(ControlState.initial(p.config.programBytes))
   val controlOutstanding = RegInit(false.B)
   val loaderControlPending = RegInit(false.B)
   private val applicationResets=scala.collection.mutable.ArrayBuffer.empty[() => Unit]

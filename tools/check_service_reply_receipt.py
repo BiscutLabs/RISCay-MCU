@@ -37,15 +37,44 @@ def _fields(items):
 
 SAMPLE = [('fault', 1), ('never', 1), ('sequence', 32), ('age', 32),
           ('calibrated', 1), ('valid', 1), ('value', 32)]
-CONTROL = _fields([
+def control_widths(program_bytes):
+    # Explicit emitter/fixture capacity, never inferred from the observed bus.
+    require(type(program_bytes) is int and 0 < program_bytes <= 0x7ffffffc and
+            program_bytes % 4 == 0, 'CONTROL_CAPACITY')
+    return program_bytes.bit_length(), max(1, (program_bytes - 1).bit_length())
+
+
+def control_layout(program_bytes):
+    count, entry = control_widths(program_bytes)
+    return _fields([
     ('memory.error', 1), ('memory.data', 32), ('hostWake', 1), ('period', 32),
     ('periodUpdate', 1), ('programWrite', 1), ('state.appIndex', 6),
     ('state.sampleValue', 32), ('state.sampleIndex', 4), ('state.selector', 24),
     ('state.loaderWord', 32), ('state.loaderPending', 1), ('state.crc', 32),
-    ('state.expectedCrc', 32), ('state.imageId', 32), ('state.received', 32),
-    ('state.entry', 32), ('state.imageLength', 32), ('state.lastError', 8),
+    ('state.expectedCrc', 32), ('state.imageId', 32), ('state.received', count),
+    ('state.entry', entry), ('state.imageLength', count), ('state.lastError', 8),
     ('state.started', 1), ('state.locked', 1), ('state.programmed', 1),
     ('state.mode', 3), ('kind', 3)])
+def control_token_layout(program_bytes):
+    # Reply has 68 low bits outside state; token has pendingCrc instead.
+    return [('pendingCrc', 0, 32)] + [(name, offset - 36, width)
+        for name, offset, width in control_layout(program_bytes) if name.startswith('state.')]
+
+
+def validate_control_token(node, program_bytes):
+    expected = control_token_layout(program_bytes)
+    for identity in ('in', 'out'):
+        channels = [c for c in node.get('channels', []) if c.get('id') == identity]
+        require(len(channels) == 1, 'CONTROL_TOKEN_CHANNEL')
+        fields = channels[0].get('layout', [])
+        require([(f.get('field'), f.get('lsb'), f.get('width'), f.get('signed'), f.get('source')) for f in fields] ==
+            [('bits.' + name, offset, width, False, f"~|{node.get('module')}>{identity}.bits.{name}")
+             for name, offset, width in expected], 'CONTROL_TOKEN_SCHEMA')
+        require(all(type(f.get('lsb')) is int and type(f.get('width')) is int and f.get('signed') is False
+                    for f in fields), 'CONTROL_TOKEN_TYPES')
+    return sum(width for _, _, width in expected)
+
+
 HOUSEKEEPING = _fields([
     ('cpuCompletion', 1), ('resetApplication', 1), ('kick', 1), ('startAdc', 1),
     ('leaseExpired', 1), ('due', 1), *[(f'elapsed[{i}]', 32) for i in range(3)],
@@ -63,7 +92,7 @@ SUPERVISOR = _fields([
     ('mode', 2), ('sensingFault', 1)])
 
 
-def layout(owner, declared):
+def layout(owner, declared, program_bytes=None):
     require(owner in OWNERS, 'OWNER')
     if owner == 'telemetry':
         names = [f.get('field', '') for f in declared]
@@ -78,8 +107,10 @@ def layout(owner, declared):
             *[(f'state.application[{i}]', 32) for i in range(words)],
             ('state.pending', 6), ('state.enable', 32), ('state.output', 32),
             ('kind', 2), ('recovery', 1)])
+    elif owner == 'control':
+        expected = control_layout(program_bytes)
     else:
-        expected = dict(control=CONTROL, housekeeping=HOUSEKEEPING, supervisor=SUPERVISOR)[owner]
+        expected = dict(housekeeping=HOUSEKEEPING, supervisor=SUPERVISOR)[owner]
     require([(f.get('field'), f.get('lsb'), f.get('width'), f.get('signed')) for f in declared] ==
             [('bits.' + name, offset, width, False) for name, offset, width in expected], 'SCHEMA_' + owner)
     require(all(type(f.get('lsb')) is int and type(f.get('width')) is int and f.get('signed') is False
@@ -97,7 +128,7 @@ def _child(node, identity):
     return found[0]
 
 
-def native_reply_source(manifest, scopes, header, owner):
+def native_reply_source(manifest, scopes, header, owner, program_bytes=None):
     """Return only the registered transform output and independently packed fields."""
     top = manifest['top']
     require(top in ('FourPhaseSoc', 'ClickSoc') and owner in OWNERS, 'OWNER')
@@ -111,7 +142,7 @@ def native_reply_source(manifest, scopes, header, owner):
     require(len(replies) == 1 and replies[0].get('role') == 'output' and
             replies[0].get('protocol') == ('two-phase-bundled-v1' if click else 'four-phase-bundled-v1'),
             'CHANNEL_' + owner)
-    fields = layout(owner, replies[0].get('layout', []))
+    fields = layout(owner, replies[0].get('layout', []), program_bytes)
     require(all(f.get('source') == f"~|{node['module']}>reply.{f['field']}" for f in replies[0]['layout']),
             'FIELD_SOURCE_' + owner)
     width = sum(f[2] for f in fields)
@@ -147,7 +178,7 @@ def pack_reply(source, values):
     return packed
 
 
-def receipt_bindings(manifest, scopes):
+def receipt_bindings(manifest, scopes, program_bytes=None):
     """Validate exact storage-free receivers and produce independent alias checks."""
     if manifest.get('top') not in ('FourPhaseSoc', 'ClickSoc'):
         return []
@@ -165,14 +196,14 @@ def receipt_bindings(manifest, scopes):
                 node.get('rtl_path') == path and node.get('reset_domain') == 'root' and
                 node.get('capacity') == 1 and all(node.get(k) == [] for k in ('children', 'primitives', 'timing')),
                 'RECEIPT_OWNER_' + owner)
-        source = native_reply_source(manifest, scopes, None, owner)
+        source = native_reply_source(manifest, scopes, None, owner, program_bytes)
         channels = node.get('channels', [])
         require([c.get('id') for c in channels] == ['in', 'out'], 'RECEIPT_CHANNELS_' + owner)
         for channel in channels:
             expected = 'decoupled-v1' if channel['id'] == 'out' else ('two-phase-bundled-v1' if click else 'four-phase-bundled-v1')
             require(channel.get('protocol') == expected and channel.get('role') == ('input' if channel['id'] == 'in' else 'output'),
                     'RECEIPT_PROTOCOL_' + owner)
-            fields = layout(owner, channel.get('layout', []))
+            fields = layout(owner, channel.get('layout', []), program_bytes)
             require({name: (offset, width) for name, offset, width in fields} == source['fields'], 'RECEIPT_LAYOUT_' + owner)
         ack = 'ack' if click else 'acknowledge'
         expected_regs = dict(localReset_release_0=1, localReset_release_1=1,
@@ -234,7 +265,7 @@ def receipt_control_fingerprint(text, fields):
     return hashlib.sha256(re.sub(r'\s+', '', body).encode()).hexdigest()
 
 
-def validate_service_reply_rtl(manifest, directory):
+def validate_service_reply_rtl(manifest, directory, program_bytes=None):
     if manifest.get('top') not in ('FourPhaseSoc', 'ClickSoc'):
         return
     click = manifest['top'] == 'ClickSoc'
@@ -245,14 +276,14 @@ def validate_service_reply_rtl(manifest, directory):
         node = _child(manifest['design'], owner + '_reply_bridge')
         channels = [c for c in node.get('channels', []) if c.get('id') == 'in']
         require(len(channels) == 1, 'RTL_CHANNEL_' + owner)
-        fields = layout(owner, channels[0].get('layout', []))
+        fields = layout(owner, channels[0].get('layout', []), program_bytes)
         source = (Path(directory) / (node['module'] + '.sv')).read_text()
         require(receipt_control_fingerprint(source, fields) == CONTROL_FINGERPRINTS['click' if click else 'bd'],
                 'RTL_CONTROL_' + owner)
 
 
-def service_reply_probe(source, manifest, scopes):
-    bindings = receipt_bindings(manifest, scopes)
+def service_reply_probe(source, manifest, scopes, program_bytes=None):
+    bindings = receipt_bindings(manifest, scopes, program_bytes)
     if not bindings:
         return source
     matches = list(re.finditer(r'\btask(?:\s+automatic)?\s+check\s*;\s*begin', source))

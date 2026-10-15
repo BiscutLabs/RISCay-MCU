@@ -17,19 +17,19 @@ import riscay.soc._
   */
 class ClickControl(p: SocParameters, domain: ResetDomain) extends AsyncModule(domain) {
   val command = twoPhaseInput("command", new ControlCommand)
-  val reply = twoPhaseOutput("reply", new ControlReply)
+  val reply = twoPhaseOutput("reply", new ControlReply(p.config.programBytes))
   val start = IO(Input(Bool()))
   private val timing = ClickTiming.Simulation
-  private val state = asyncChild("state")(d => new PhaseDecoupledClickBuffer(new ControlToken,
-    timing, Some(ControlToken.initial), d))
-  private val join = asyncChild("join")(d => new ClickJoin(new ControlToken, new ControlCommand, timing, d))
-  private val update = asyncChild("update")(d => new ClickStage(new Joined(new ControlToken, new ControlCommand),
-    new ControlReply, (x: Joined[ControlToken, ControlCommand]) => transition(x.left.state, x.right, x.left.pendingCrc), timing, d))
+  private val state = asyncChild("state")(d => new PhaseDecoupledClickBuffer(new ControlToken(p.config.programBytes),
+    timing, Some(ControlToken.initial(p.config.programBytes)), d))
+  private val join = asyncChild("join")(d => new ClickJoin(new ControlToken(p.config.programBytes), new ControlCommand, timing, d))
+  private val update = asyncChild("update")(d => new ClickStage(new Joined(new ControlToken(p.config.programBytes), new ControlCommand),
+    new ControlReply(p.config.programBytes), (x: Joined[ControlToken, ControlCommand]) => transition(x.left.state, x.right, x.left.pendingCrc), timing, d))
   // Compute only the candidate CRC here; update retains the entire context.
   // Every feedback starts from architectural crc, even while loaderPending
   // survives other commands. Only Stored commits the candidate to that state.
   private val crc = asyncChild("crc")(ClickCrc32.stage)
-  private val fork = asyncChild("fork")(d => new ClickFork(new ControlReply, d))
+  private val fork = asyncChild("fork")(d => new ClickFork(new ControlReply(p.config.programBytes), d))
   // The unbuffered fork contract describes its complete payload on both branches.
   // Retain the fields that the state feedback branch does not consume.
   dontTouch(fork.left)
@@ -59,7 +59,7 @@ class ClickControl(p: SocParameters, domain: ResetDomain) extends AsyncModule(do
   contract.endpoint("start", start)
 
   private def transition(s: ControlState, c: ControlCommand, pendingCrc: UInt): ControlReply = {
-    val r = WireDefault(0.U.asTypeOf(new ControlReply)); r.kind := c.kind; r.state := s
+    val r = WireDefault(0.U.asTypeOf(new ControlReply(p.config.programBytes))); r.kind := c.kind; r.state := s
     val n = r.state
     val config = p.config
     val gpioMask = ((BigInt(1) << config.gpioCount) - 1).U(32.W)
@@ -141,7 +141,7 @@ class ClickControl(p: SocParameters, domain: ResetDomain) extends AsyncModule(do
           when(q.operation === Operation.Read.U) {
             r.memory.error := false.B; r.memory.data := c.peripheralData
             switch(offset) {
-              is(0.U) { r.memory.data := s.entry + MemoryMap.program.U; r.memory.error := !s.started }
+              is(0.U) { r.memory.data := s.entry.pad(32) + MemoryMap.program.U(32.W); r.memory.error := !s.started }
               is(36.U) { r.memory.data := s.sampleIndex }
               is(40.U) { r.memory.data := s.sampleValue }
               is(48.U) { r.memory.data := s.appIndex }

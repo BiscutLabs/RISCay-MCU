@@ -31,7 +31,8 @@ from check_program_return_integration import program_return_probe
 from check_application_reset import (validate_application_reset, persistent_reset_children,
     coordinated_reset, reset_endpoint, presentation_reset)
 from check_reset_crossings import check_reset_crossings
-from check_service_reply_receipt import native_reply_source, pack_reply, service_reply_probe, validate_service_reply_rtl
+from check_service_reply_receipt import (native_reply_source, pack_reply, service_reply_probe,
+    validate_service_reply_rtl, control_widths, validate_control_token)
 from check_held_receipts import validate_held_receipts, held_receipt_probe
 from check_native_clock_inventory import native_clock_inventory
 from check_quiescing_receipt import native_request_source, pack_request, request_receipt_probe
@@ -224,7 +225,22 @@ def register_file_background(source: str, manifest: dict, checks: int):
     return result.replace(completion, f"CONTRACT_PROBES_PASS:{count}"), count
 
 
-def control_background(source: str, manifest: dict, scopes: dict, checks: int):
+def control_program_bytes(directory, manifest, scopes):
+    """Use the emitter inventory only after its actual SRAM instances validate."""
+    if not any(c.get('id') == 'control' for c in manifest.get('design', {}).get('children', [])):
+        return None
+    if manifest.get('top') not in ('FourPhaseSoc', 'ClickSoc'):
+        raise ValueError('CONTROL_PROBE_CAPACITY_OWNER')
+    sram_scopes(Path(directory), manifest['design'], scopes)
+    inventory = Path(directory) / 'sram.json'
+    if not inventory.is_file():
+        raise ValueError('CONTROL_PROBE_CAPACITY_MISSING')
+    capacity = json.loads(inventory.read_text())['program_bytes']
+    control_widths(capacity)
+    return capacity
+
+
+def control_background(source: str, manifest: dict, scopes: dict, checks: int, program_bytes=None):
     """Exercise native command decodes using only catalogued storage outputs.
 
     Single-bit and all-ones paired backgrounds do not form valid frame lengths,
@@ -250,7 +266,13 @@ def control_background(source: str, manifest: dict, scopes: dict, checks: int):
                    for p in cell.get("ports", [])):
             raise ValueError("CONTROL_PROBE_DRIVER_MISMATCH")
         return cell["rtl_path"] + ".q"
-    state = payload("left_storage" if click else "left", 337)
+    count_width, entry_width = control_widths(program_bytes)
+    state_id = "left_storage" if click else "left"
+    state_nodes = [c['contract'] for c in join['children'] if c['id'] == state_id]
+    if len(state_nodes) != 1:
+        raise ValueError('CONTROL_PROBE_DRIVER_MISMATCH')
+    token_width = validate_control_token(state_nodes[0], program_bytes)
+    state = payload(state_id, token_width)
     command = payload("right_storage" if click else "right", 379)
     request = top + ".ca_child_request_bridge.state"
     now = top + ".fabric_housekeepingState_now"
@@ -328,11 +350,11 @@ def control_background(source: str, manifest: dict, scopes: dict, checks: int):
     def frame(op, *words):
         return [op] + [(w >> (8*i)) & 255 for w in words for i in range(4)]
     # All state fields start cold except LOADING/imageLength for WRITE admission.
-    state_widths = [3, 1, 1, 1, 8, 32, 32, 32, 32, 32, 32, 1, 32, 24, 4, 32, 6]
-    loading = [1, 0, 0, 0, 0, 12] + [0]*11
-    force(state, 337, pack(zip(state_widths, loading)) << 32)
+    state_widths = [3, 1, 1, 1, 8, count_width, entry_width, count_width, 32, 32, 32, 1, 32, 24, 4, 32, 6]
+    loading = [1, 0, 0, 0, 0, min(12, program_bytes)] + [0]*11
+    force(state, token_width, pack(zip(state_widths, loading)) << 32)
     force(command, 379, command_value(frame=frame(2, 0, 0xffffffff))); check()
-    force(state, 337, 0)
+    force(state, token_width, 0)
     force(command, 379, command_value(frame=frame(8))); check()
     for value in walk(32) + [1000]:
         force(command, 379, command_value(frame=frame(7, value))); check()
@@ -537,7 +559,7 @@ def i2c_background(source: str, manifest: dict, scopes: dict, checks: int):
     return result.replace(completion, f"CONTRACT_PROBES_PASS:{count}"), count
 
 
-def sram_background(source: str, manifest: dict, scopes: dict, checks: int):
+def sram_background(source: str, manifest: dict, scopes: dict, checks: int, program_bytes=None):
     """Add coherent idle/admission and each byte-return tag to mapping stimulus.
 
     Five return synchronizers must agree before word admission. All-low,
@@ -596,7 +618,7 @@ def sram_background(source: str, manifest: dict, scopes: dict, checks: int):
 
     idle()
     reply = top + ".ca_child_control_reply_bridge"
-    retained = native_reply_source(manifest, scopes, header, "control")
+    retained = native_reply_source(manifest, scopes, header, "control", program_bytes)
     values = {}
     def held(field, value):
         values[field] = value
@@ -610,8 +632,8 @@ def sram_background(source: str, manifest: dict, scopes: dict, checks: int):
     force(top + ".ca_child_program_grant_bridge.state", 2, 2)
     force(top + ".ca_child_program_grant_bridge.data", 1, 1)
     check()
-    for field in ("received", "loaderWord"):
-        for value in walk(32):
+    for field, width in (("received", control_widths(program_bytes)[0]), ("loaderWord", 32)):
+        for value in walk(width):
             held("state." + field, value); check()
     idle()
     request = top + ".ca_child_request_bridge"
@@ -1492,7 +1514,8 @@ def main() -> None:
     def probe(manifest, scopes, paired=False):
         top_rtl=(args.directory / (manifest["top"]+".sv")).read_text(encoding="utf-8")
         validate_application_reset(manifest,scopes,top_rtl)
-        validate_service_reply_rtl(manifest,args.directory)
+        program_bytes = control_program_bytes(args.directory, manifest, scopes)
+        validate_service_reply_rtl(manifest,args.directory,program_bytes)
         native_clock_inventory(manifest,scopes)
         held_bindings = validate_held_receipts(manifest,args.directory,scopes)
         if args.soc:
@@ -1503,17 +1526,17 @@ def main() -> None:
         validate_frame_stores(manifest,args.directory,resolved=True)
         validate_return_receipts(manifest,args.directory,scopes)
         source, count = original_probe(manifest, scopes, paired)
-        source = service_reply_probe(source, manifest, scopes)
+        source = service_reply_probe(source, manifest, scopes, program_bytes)
         source = request_receipt_probe(source, manifest, scopes)
         source = held_receipt_probe(source, held_bindings)
         source = spi_program_probe(source, manifest, scopes)
         source, count = register_file_background(source, manifest, count)
-        source, count = control_background(source, manifest, scopes, count)
+        source, count = control_background(source, manifest, scopes, count, program_bytes)
         source, count = frame_head_background(source, manifest, scopes, count)
         source, count = i2c_background(source, manifest, scopes, count)
-        source, count = sram_background(source, manifest, scopes, count)
+        source, count = sram_background(source, manifest, scopes, count, program_bytes)
         source, count = service_background(source, manifest, scopes, count)
-        source, count = completion_background(source, manifest, scopes, count)
+        source, count = completion_background(source, manifest, scopes, count, program_bytes)
         source, count = publication_recovery_background(source, manifest, scopes, count)
         if args.sleep_clock:
             source, count = sleep_clock_background(source, manifest, scopes, count)

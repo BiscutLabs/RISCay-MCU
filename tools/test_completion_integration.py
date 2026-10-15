@@ -98,12 +98,13 @@ class CompletionIntegrationTest(unittest.TestCase):
                 completion_constants_probe(p.replace("zeros_1 !== 1'h1","zeros_1 !== 1'h0"),m,s,rtl)
 
     def test_background_only_catalogued_registers_original_campaign_preserved(self):
-        for top,coordinated in product(("FourPhaseSoc", "ClickSoc"), (False, True)):
+        for top,coordinated,(capacity,count_width) in product(("FourPhaseSoc", "ClickSoc"), (False, True),
+                ((4,3),(12,4),(1024,11),(1028,11),(2048,12),(3072,12))):
             manifest,scopes,_,_=fixture(top)
             regs={top:{n:1 for n in ("gate_enabled","fabric_io_completionIdle_REG","fabric_controlOutstanding",
                                     "fabric_mmioCurrent","fabric_telemetryOutstanding",
                                     "fabric_housekeepingOutstanding","fabric_controlState_programmed")}}
-            regs[top]["fabric_controlState_imageLength"]=32
+            regs[top]["fabric_controlState_imageLength"]=count_width
             if coordinated:
                 manifest['design']['endpoints']=[dict(id='native_application_reset')]
                 for child in manifest['design']['children']:
@@ -172,18 +173,18 @@ class CompletionIntegrationTest(unittest.TestCase):
             regs[top+".ca_child_telemetry_reply_bridge"]=dict(state=2)
             regs[top+".ca_child_housekeeping_reply_bridge"]=dict(state=2)
             for name in ("control", "telemetry", "housekeeping"):
-                add_native_reply_fixture(manifest, scopes, regs, name)
+                add_native_reply_fixture(manifest, scopes, regs, name,capacity)
             for path,rs in regs.items():scopes.setdefault(path,{})['registers']=rs
             header="".join(f"force {path}.{name} = {width}'h0;\n" for path,rs in regs.items() for name,width in rs.items())+"#1;\n"
             coverage='if (ones_0 !== 1\'h1 || zeros_0 !== 1\'h1) $fatal(1, "INACTIVE_ENDPOINT:test");\n'
             generic="// Original generic campaign sentinel\n#1; check;\n"
             original=f"initial begin\nforce {top}.reset = 1'b1; #1;\n"+header+generic+coverage+'$display("CONTRACT_PROBES_PASS:1");'
-            augmented,count=completion_background(original,manifest,scopes,1)
+            augmented,count=completion_background(original,manifest,scopes,1,capacity)
             self.assertGreater(count,130)
             self.assertEqual(count,len(re.findall(r"#\d+; check;",augmented)))
             second_coverage=coverage.replace('ones_0','ones_1').replace('zeros_0','zeros_1').replace(':test',':second')
             doubled=original.replace(coverage,coverage+second_coverage).replace('CONTRACT_PROBES_PASS:1','CONTRACT_PROBES_PASS:2')
-            twice,twice_count=completion_background(doubled,manifest,scopes,2)
+            twice,twice_count=completion_background(doubled,manifest,scopes,2,capacity)
             self.assertEqual(twice_count,2*count)
             self.assertEqual(twice_count,2*len(re.findall(r"#\d+; check;",twice)))
             first_end=original.index(generic)
@@ -228,7 +229,7 @@ class CompletionIntegrationTest(unittest.TestCase):
             # Both memory selections must be reached from the real source
             # state. The old RAM-only scenario can no longer cover program.
             for path,width,value in ((top+".fabric_controlState_programmed",1,1),
-                                     (top+".fabric_controlState_imageLength",32,4),
+                                     (top+".fabric_controlState_imageLength",count_width,4),
                                      (top+".ca_child_program_grant_bridge.state",2,2),
                                      (top+".ca_child_core.ca_child_address.ca_primitive_payload.q",70,(1<<68)|(0x10000000<<36)|15),
                                      (top+".ca_child_core.ca_child_address.ca_primitive_payload.q",70,(1<<68)|(0x20000000<<36)|15)):
@@ -260,7 +261,7 @@ class CompletionIntegrationTest(unittest.TestCase):
                     if 'ports' in bad[path] and name in bad[path]['ports']: del bad[path]['ports'][name]
                     else: del bad[path]['registers'][name]
                     with self.assertRaisesRegex(ValueError,"COMPLETION_BACKGROUND_DRIVER|COMPLETION_NATIVE_RETURN_CELL|COMPLETION_PROGRAM_PERMISSION_CELL|SERVICE_REPLY_STORAGE|QUIESCING_REQUEST_"):
-                        completion_background(original,manifest,bad,1)
+                        completion_background(original,manifest,bad,1,capacity)
             for bank in ('ram','program'):
                 root=top+'.ca_child_'+bank+'_return'
                 owner_index=next(i for i,c in enumerate(manifest["design"]["children"]) if c["id"]==bank+"_return")
@@ -268,7 +269,7 @@ class CompletionIntegrationTest(unittest.TestCase):
                 for key,value in (("module","WrongOwner"),("rtl_path",root+"_alias")):
                     bad=copy.deepcopy(manifest);bad["design"]["children"][owner_index]["contract"][key]=value
                     with self.assertRaisesRegex(ValueError,"COMPLETION_NATIVE_RETURN_OWNER"):
-                        completion_background(original,bad,scopes,1)
+                        completion_background(original,bad,scopes,1,capacity)
                 for index,cell in enumerate(owner["primitives"]):
                     for key,value in (("id","alias"),("rtl_path",cell["rtl_path"]+"_alias"),
                                       ("model","WrongPrimitive"),("reset","application_reset"),
@@ -277,15 +278,15 @@ class CompletionIntegrationTest(unittest.TestCase):
                                       ("ports",[dict(name="q",width=1,direction="input")])):
                         bad=copy.deepcopy(manifest);bad["design"]["children"][owner_index]["contract"]["primitives"][index][key]=value
                         with self.assertRaisesRegex(ValueError,"COMPLETION_NATIVE_RETURN_CELL"):
-                            completion_background(original,bad,scopes,1)
+                            completion_background(original,bad,scopes,1,capacity)
                     for key,value in (("model","WrongPrimitive"),("parameters",{}),
                                       ("ports",dict(q=dict(name="q",width=2,direction="output")))):
                         bad=copy.deepcopy(scopes);bad[cell["rtl_path"]][key]=value
                         with self.assertRaisesRegex(ValueError,"COMPLETION_NATIVE_RETURN_CELL"):
-                            completion_background(original,manifest,bad,1)
+                            completion_background(original,manifest,bad,1,capacity)
                     bad=copy.deepcopy(manifest);bad["design"]["children"][owner_index]["contract"]["primitives"].append(copy.deepcopy(cell))
                     with self.assertRaisesRegex(ValueError,"COMPLETION_NATIVE_RETURN_CELL"):
-                        completion_background(original,bad,scopes,1)
+                        completion_background(original,bad,scopes,1,capacity)
 
             source_index=next(i for i,c in enumerate(manifest['design']['children']) if c['id']=='program_source')
             owner=manifest['design']['children'][source_index]['contract']
@@ -298,7 +299,7 @@ class CompletionIntegrationTest(unittest.TestCase):
                         for part in parent_path:target=target[part]
                         target['primitives'][index][key]=value
                         with self.assertRaisesRegex(ValueError,'COMPLETION_PROGRAM_PERMISSION_CELL'):
-                            completion_background(original,bad,scopes,1)
+                            completion_background(original,bad,scopes,1,capacity)
 
 
 

@@ -73,7 +73,7 @@ class AsyncCrcControlSpec extends AnyFunSuite {
     val storage=if(click) state else child(child(state,"stage0"),"storage")
     val model=if(click) "ChiselAsyncEventRegister_v1" else "ChiselAsyncClosingLatch_v1"
     val cp=path(primitive(crc,"payload",model,32)("rtl_path").str)
-    val sp=path(primitive(storage,"payload",model,337)("rtl_path").str)
+    val sp=path(primitive(storage,"payload",model,255)("rtl_path").str)
     val up=primitive(update,"payload",model); val uq=path(up("rtl_path").str)
     for(id <- Seq("crc_context_request","crc_context_return")) {
       val gate=primitive(n,id,"ChiselAsyncAsymmetricC_v1")
@@ -89,7 +89,7 @@ class AsyncCrcControlSpec extends AnyFunSuite {
       slice(storage,"out","bits.state.loaderPending",sp+".d",1),
       slice(storage,"out","bits.state.loaderWord",sp+".d",32),
       slice(storage,"out","bits.state.crc",sp+".d",32),
-      slice(storage,"out","bits.state.received",sp+".d",32),
+      slice(storage,"out","bits.state.received",sp+".d",5),
       slice(storage,"out","bits.pendingCrc",sp+".d",32),
       uq+capture,uq+".q",up("parameters")("WIDTH").str.toInt,
       port(abi,crc,"in.req"),port(abi,crc,"in.ack"),port(abi,crc,"out.req"),
@@ -251,7 +251,7 @@ class AsyncCrcControlSpec extends AnyFunSuite {
             integer crc_captures=0, state_captures=0, update_captures=0, before_reset_replies=0;
             reg tracking=0, request_blocked=0, state_blocked=0, return_blocked=0, hold_context=0;
             reg [${b.contextWidth-1}:0] held_context;
-            reg [336:0] saved_state;
+            reg [254:0] saved_state; // Fixed 16-byte fixture: independently checked 255-bit token.
             ${observers(b,phase,click)}
             ${if(click) "start=1;" else ""}
             $begin $pad

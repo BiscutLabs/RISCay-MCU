@@ -87,14 +87,18 @@ class FrameHeadBackgroundTests(unittest.TestCase):
                     frame_head_background(source,manifest,scopes,1)
 
 
+from test_service_reply_receipt import add_control_token_fixture, CAPACITIES
+
+
 class NativeFrameControlProbeTests(unittest.TestCase):
-    def candidate(self, click):
+    def candidate(self, click, program_bytes=2048):
         top = 'ClickSoc' if click else 'FourPhaseSoc'
         def cell(identity, path, width, model='ChiselAsyncEventRegister_v1'):
             return dict(id=identity, rtl_path=path, model=model,
                         ports=[dict(name='q', width=width, direction='output')])
         join = dict(children=[dict(id=name, contract=dict(primitives=[cell('payload', top+'.'+name, width)]))
-            for name,width in [('left_storage' if click else 'left',337),('right_storage' if click else 'right',379)]])
+            for name,width in [('left_storage' if click else 'left',CAPACITIES[program_bytes][3]),('right_storage' if click else 'right',379)]])
+        add_control_token_fixture(join['children'][0]['contract'],program_bytes)
         banks = [cell('payload'+str(i) if click else 'payload', top+'.bank'+str(i),337,
                       'ChiselAsyncEventRegister_v1' if click else 'ChiselAsyncClosingLatch_v1') for i in range(4)]
         store = dict(module=('Click' if click else 'FourPhase')+'FrameStore',primitives=banks if click else [],
@@ -115,10 +119,39 @@ class NativeFrameControlProbeTests(unittest.TestCase):
         source+="\n#1;\nif (ones_0 !== 1'h1) $fatal(1,\"INACTIVE_ENDPOINT:sample\");\n$display(\"CONTRACT_PROBES_PASS:1\");\nend\n"
         return manifest,scopes,source,banks
 
+    def test_six_capacities_narrow_control_without_changing_frames_or_c1e_request(self):
+        # Token imageLength offsets are independent of the generated layout.
+        cases=((4,249,232),(12,253,235),(1024,273,248),(1028,274,249),
+               (2048,276,250),(3072,277,251))
+        for click in (False,True):
+            for capacity,width,length_lo in cases:
+                manifest,scopes,source,banks=self.candidate(click,capacity)
+                result,count=control_background(source,manifest,scopes,1,capacity)
+                top=manifest['top'];left='left_storage' if click else 'left'
+                state=top+'.'+left+'.q'
+                loading=(1<<(width-3)) | (min(12,capacity)<<length_lo)
+                self.assertIn(f"force {state} = {width}'h{loading:x};",result)
+                self.assertIn(f"force {top}.ca_child_core.ca_child_address.ca_primitive_payload.q = 70'h",result)
+                self.assertGreater(count,4*337*2)
+                for bank in banks:
+                    values={int(v,16) for v in re.findall(r'force '+re.escape(bank['rtl_path'])+r"\.q = 337'h([0-9a-f]+);",result)}
+                    self.assertEqual(len(values),676)
+                with self.assertRaisesRegex(ValueError,'SERVICE_REPLY_CONTROL_CAPACITY'):
+                    control_background(source,manifest,scopes,1)
+                wrong=2048 if capacity!=2048 else 1024
+                with self.assertRaisesRegex(ValueError,'SERVICE_REPLY_CONTROL_TOKEN_SCHEMA'):
+                    control_background(source,manifest,scopes,1,wrong)
+                for field in ('bits.state.received','bits.state.entry','bits.state.imageLength'):
+                    bad=copy.deepcopy(manifest)
+                    node=bad['design']['children'][0]['contract']['children'][0]['contract']['children'][0]['contract']
+                    next(f for f in node['channels'][1]['layout'] if f['field']==field)['lsb']+=1
+                    with self.assertRaisesRegex(ValueError,'SERVICE_REPLY_CONTROL_TOKEN_SCHEMA'):
+                        control_background(source,bad,scopes,1,capacity)
+
     def test_every_native_bank_and_all_337_retained_bits_are_exercised(self):
         for click in (False,True):
             manifest,scopes,source,banks=self.candidate(click)
-            result,count=control_background(source,manifest,scopes,1)
+            result,count=control_background(source,manifest,scopes,1,2048)
             self.assertGreater(count,4*337*2)
             self.assertNotIn('fabric_hostFrames_first_frame_',result)
             for i,p in enumerate(banks):
@@ -137,7 +170,7 @@ class NativeFrameControlProbeTests(unittest.TestCase):
                 elif fault=='width':banks[2]['ports'][0]['width']=336
                 else:source=source.replace(f"force {banks[2]['rtl_path']}.q = 337'h0;\n",'')
                 with self.assertRaisesRegex(ValueError,'CONTROL_PROBE_'):
-                    control_background(source,manifest,scopes,1)
+                    control_background(source,manifest,scopes,1,2048)
 
 
 def fixture(click):

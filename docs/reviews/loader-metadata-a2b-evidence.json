@@ -1,0 +1,85 @@
+{
+  "status": "PAUSED_FOR_REVIEW_INCOMPLETE",
+  "base_commit": "64e621160c5efefdc18f78964fb44e7f6a065927",
+  "implementation_files_sha256": {
+    "designs/four-phase-bd/src/main/scala/riscay/bd/FourPhaseControl.scala": "36cc08b0ad01a37eb183e10db18e184252881fe3454e978ff59f443f61d1fdf4",
+    "designs/four-phase-bd/src/main/scala/riscay/bd/FourPhasePlatform.scala": "fc2c6b8f6f3a12ad62f385e380f763d3f100e0148a0e64771b9cb019adccd1e2",
+    "designs/four-phase-bd/src/main/scala/riscay/bd/FourPhaseServices.scala": "25900da0eacbb8bf7356cade8d7663cd6bbd772b51d6689dbecf3d06d7c895a9",
+    "designs/two-phase-click/src/main/scala/riscay/click/ClickControl.scala": "1c46d1ce0b0dae147308d7c415cbc99f87d5c001fd494700be8a61b35c6b1b4c",
+    "designs/two-phase-click/src/main/scala/riscay/click/ClickPlatform.scala": "6fdb3be24a2bac3a6a984f15a8d0c57a302a531a7e01ff92e4df5d738d671cde",
+    "designs/two-phase-click/src/main/scala/riscay/click/ClickServices.scala": "3d72d051070551fa1d68a79d9004c4dc94c970dbc5d12096cb3f81ddc204db13",
+    "soc/src/main/scala/riscay/soc/ControlSchema.scala": "acfb009290b089efec446f1465379e339ae93bf8d0c2b6b223420516ab24326d",
+    "soc/src/main/scala/riscay/soc/SocFabric.scala": "463dadf9658eabe9be56f1dd73e815e0f5f900bf6bc9e9a341633f7eaefce004",
+    "tools/check_completion_integration.py": "41c44b850c401280bdecefc66ed427ae20fec7b35c8e986ed710b9ff06505dbd",
+    "tools/check_export.py": "f29182a4b145c24e6e5e0f7327207316a5cc54b7752a15f61101ba50abfacc0d",
+    "tools/check_service_reply_receipt.py": "8901017b4a2adfa67cbccb8970719fdc4b8581f9dfde117190d0c357adb298fd",
+    "tools/test_async_fabric_export.py": "aa80cfeaa667528b6fbf4fba60edc2121f7614b179710292bc656fb7c38a81e0",
+    "tools/test_check_export.py": "dc786c59db1287fa3e52535143ab45a7404ee5c3cf38786fc9560c46e1254b2d",
+    "tools/test_completion_integration.py": "fb6e96e88d24e2be8da43a89d51f17d6ee374e3c1282c323c8451c3a377308f7",
+    "tools/test_control_export.py": "673bcf49de1f101a03c88477bc1699619158ecfe5530c0d3b124576a4350c087",
+    "tools/test_service_reply_receipt.py": "ae4a261844249c021e76b9aa720d99c68efc5f197af35c9c2c3a243f17a83601",
+    "verification/src/test/scala/riscay/AsyncControlSpec.scala": "22f89de579faa6611d99345b27fec93875d3dc2f5c2c0d34691b4ac9c5f589ba",
+    "verification/src/test/scala/riscay/AsyncCrcControlSpec.scala": "aa924ae3caa7abc294f875aa621dbd8b75754951906265b969b96a145d504e37"
+  },
+  "patch_sha256": "21d6982acf0feac8881df782da9346f29cf5493e204f720beb685363c82400b5",
+  "tests": {
+    "scala": 536,
+    "scala_suites": 36,
+    "python": 709,
+    "crc_originals": 27,
+    "crc_exact_fatal_mutants": 27
+  },
+  "strict_status": "INTERRUPTED_AT_USER_PAUSE",
+  "mapping_started": false,
+  "physical_qualification": false,
+  "artifacts": [
+    {
+      "path": "build/async-loader-width-production-r1/execution.json",
+      "sha256": "20eacc0275cda50ae36f0c2a8c873c0654518f379c78bd1456e3c2244531ec86"
+    },
+    {
+      "path": "build/async-loader-width-production-r1/regression.log",
+      "sha256": "845f6318e7f69d805f76b26392c0ad42af722692d8de20f5f8fba401bae9d76c"
+    },
+    {
+      "path": "build/async-loader-width-production-r1/integration.json",
+      "sha256": "287a3f2bb3446532b5a753233e7c4d7f8fc5f677ce3f415faca391e42efea33d"
+    },
+    {
+      "path": "build/async-loader-width-python-r1/python-controls-receipt.json",
+      "sha256": "b072916aa5d1407fae9d10fe94145f9271a2a1982426ef86cd753544838d7100"
+    },
+    {
+      "path": "build/async-loader-width-fresh-review-r1/execution-review.json",
+      "sha256": "007186d91dfb38244b8424a7de0fbb05f88be4fe25f60fe986383ada39047365"
+    },
+    {
+      "path": "build/async-loader-width-fresh-review-r1/completed-production-review.json",
+      "sha256": "b5bd5333db7aa178f3f42f222fc0bc0c5649c233980a43699fa1a322d8471acb"
+    },
+    {
+      "path": "build/async-loader-width-verification-r1/crc-controls/execution-r1/results.json",
+      "sha256": "e00448e18e668dbcdb8a4cba43ea02830174990fb85f210f0613c62227e704b9"
+    },
+    {
+      "path": "build/async-loader-width-verification-r1/strict-r1/receipt.json",
+      "sha256": "8b009db632bed940a6e7ad20708ce18be47d44a901225d66a287c9ee2e917627"
+    },
+    {
+      "path": "build/review-pause-2026-10-15/interruption.json",
+      "sha256": "80de505fbb7826b20f7d2d14aec95cac79513a30f951244e2152639c05c41249"
+    },
+    {
+      "path": "build/async-loader-width-fresh-review-r1/boundary-wrapper-controls-r2.json",
+      "sha256": "f907a3560bf85caf4a602502d98bce9bd2477a2a79f10f2d88962ed77aae1b1f"
+    },
+    {
+      "path": "build/async-small-receivers-a2b-review-r1/REPORT.md",
+      "sha256": "bcced3cefcc2d986fa5f0466636026bb9b73160771b9a943e2feb87ed1ed7074"
+    },
+    {
+      "path": "build/async-a6-field-width-feasibility-r1/REVIEW.md",
+      "sha256": "6585976ea0a21dd8394d92300e41e21a77881304a1db35856150525c761a1d0f"
+    }
+  ]
+}

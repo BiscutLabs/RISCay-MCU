@@ -3,7 +3,7 @@ package riscay
 
 import chiselasync.core.{AsyncModule, ResetDomain}
 import chiselasync.testing.AsyncTest
-import java.nio.file.{Files, Paths}
+import java.nio.file.{Files, Path, Paths}
 import java.util.zip.CRC32
 import org.scalatest.funsuite.AnyFunSuite
 import riscay.soc._
@@ -94,6 +94,77 @@ class AsyncControlSpec extends AnyFunSuite {
       } ++ Seq(Step(0,frame(3),changes=Map("programmed"->1L,"mode"->2L)))
     }
   }
+  /** Independent full-image oracle for inclusive loader counts and host validation. */
+  private def capacityCampaign(capacity: Int, countBits: Int, entryBits: Int): Seq[Step] = {
+    val words = (0 until capacity/4).map(i => (0x89abcdefL ^ (i.toLong * 0x10203041L)) & 0xffffffffL)
+    val oracle = new CRC32
+    val partial = words.map { word =>
+      (0 until 4).foreach(i => oracle.update(((word >>> (8*i)) & 255).toInt))
+      oracle.getValue ^ 0xffffffffL
+    }
+    val checksum = oracle.getValue
+    def begin(length: Long, entry: Long, changes: Map[String,Long]) =
+      Step(0,frame(1,length,entry,checksum,0x10000L,0,0,0,capacity),changes=changes)
+    val rejected = Map("lastError" -> 4L)
+    val badBegins = Seq(begin(0,0,rejected), begin(capacity-1,0,rejected),
+      begin(capacity+4L,0,rejected), begin(capacity,capacity,rejected), begin(capacity,1,rejected)) ++
+      (countBits until 32).map(bit => begin(capacity.toLong | (1L << bit),0,rejected)) ++
+      (entryBits until 32).map(bit => begin(capacity,1L << bit,rejected))
+    val accepted = begin(capacity,capacity-4L,Map("lastError"->0L,"mode"->1L,
+      "imageLength"->capacity.toLong,"entry"->(capacity-4L),"expectedCrc"->checksum,
+      "imageId"->capacity.toLong))
+    val badOffsets = (countBits until 32).map(bit =>
+      Step(0,frame(2,1L << bit,0xdeadbeefL),changes=rejected))
+    badBegins ++ Seq(accepted) ++ badOffsets ++ words.zipWithIndex.flatMap { case(word,index) =>
+      Seq(Step(0,frame(2,index*4L,word),changes=Map("lastError"->0L,
+          "loaderPending"->1L,"loaderWord"->word),write=1),
+        Step(2), // Reset between accepted word and Stored must retain accounting.
+        Step(1,changes=Map("loaderPending"->0L,"received"->((index+1)*4L),"crc"->partial(index))),
+        Step(1)) // Duplicate Stored cannot wrap or advance the completed count.
+    } ++ Seq(
+      Step(0,frame(2,capacity,0),changes=rejected),
+      Step(0,frame(3),changes=Map("lastError"->0L,"programmed"->1L,"mode"->2L))) ++
+      badBegins ++ Seq( // Invalid BEGIN cannot damage the previously validated image.
+        Step(0,frame(6),changes=Map("lastError"->0L,"locked"->1L,"started"->1L,"mode"->3L)),
+        Step(4,memory=(1,0x30000000L,0,15),data=0x10000000L+capacity-4L),
+        Step(2,changes=Map("started"->0L,"mode"->2L)),
+        begin(capacity,0,Map("lastError"->2L)))
+  }
+  private def capacitySchema(directory: Path, click: Boolean, countBits: Int, entryBits: Int,
+      stateBits: Int, tokenBits: Int, replyBits: Int, entryLo: Int, lengthLo: Int, errorLo: Int): Unit = {
+    val root=ujson.read(Files.readString(directory.resolve("export/contract.json")))("manifest")("design")
+    def child(n: ujson.Value, id: String): ujson.Value = {
+      val xs=n("children").arr.filter(_("id").str==id)
+      require(xs.size==1,s"CAPACITY_CHILD:$id"); xs.head("contract")
+    }
+    // Offsets of the resized fields come from the explicit capacity table below.
+    val state=Seq(("appIndex",0,6),("sampleValue",6,32),("sampleIndex",38,4),
+      ("selector",42,24),("loaderWord",66,32),("loaderPending",98,1),("crc",99,32),
+      ("expectedCrc",131,32),("imageId",163,32),("received",195,countBits),
+      ("entry",entryLo,entryBits),("imageLength",lengthLo,countBits),("lastError",errorLo,8),
+      ("started",errorLo+8,1),("locked",errorLo+9,1),("programmed",errorLo+10,1),("mode",errorLo+11,3))
+    require(state.map(_._3).sum==stateBits && errorLo+14==stateBits,"CAPACITY_ORACLE_STATE")
+    val token=Seq(("pendingCrc",0,32))++state.map { case(n,l,w)=>("state."+n,l+32,w) }
+    val reply=Seq(("memory.error",0,1),("memory.data",1,32),("hostWake",33,1),
+      ("period",34,32),("periodUpdate",66,1),("programWrite",67,1))++
+      state.map { case(n,l,w)=>("state."+n,l+68,w) }++Seq(("kind",replyBits-3,3))
+    def check(n: ujson.Value, id: String, expected: Seq[(String,Int,Int)], width: Int): Unit = {
+      val channels=n("channels").arr.filter(_("id").str==id)
+      require(channels.size==1,s"CAPACITY_CHANNEL:$id")
+      val actual=channels.head("layout").arr.map { f =>
+        require(!f("signed").bool,s"CAPACITY_UNSIGNED:$id")
+        require(f("source").str==s"~|${n("module").str}>$id.${f("field").str}",s"CAPACITY_SOURCE:$id")
+        (f("field").str,f("lsb").num.toInt,f("width").num.toInt)
+      }.toSeq
+      require(actual==expected.map { case(f,l,w)=>("bits."+f,l,w) },s"CAPACITY_LAYOUT:$id")
+      require(actual.map(_._3).sum==width,s"CAPACITY_WIDTH:$id")
+    }
+    check(root,"reply",reply,replyBits)
+    check(child(root,"update"),"out",reply,replyBits)
+    check(child(root,"state"),"out",token,tokenBits)
+    val left=child(child(root,"join"),if(click) "left_storage" else "left")
+    check(left,"in",token,tokenBits); check(left,"out",token,tokenBits)
+  }
   private def source(click: Boolean, steps: Seq[Step]): String = steps.zipWithIndex.map { case(s,i) =>
     val phase=if(click) (i+1)%2 else 1
     val bytes=s.bytes.padTo(33,0).zipWithIndex.map { case(v,j) => s"command_bits_frame_bytes_$j=$v;" }.mkString("\n")
@@ -127,6 +198,24 @@ class AsyncControlSpec extends AnyFunSuite {
   }
   for(click <- Seq(false,true)) {
     val name=if(click) "click" else "bd"
+    for((capacity,countBits,entryBits,stateBits,tokenBits,replyBits,entryLo,lengthLo,errorLo) <- Seq(
+        (4,3,2,217,249,288,198,200,203), (12,4,4,221,253,292,199,203,207),
+        (1024,11,10,241,273,312,206,216,227), (1028,11,11,242,274,313,206,217,228),
+        (2048,12,11,244,276,315,207,218,230), (3072,12,12,245,277,316,207,219,231))) {
+      test(s"$name native loader retains full-capacity $capacity-byte accounting without host truncation") {
+        val steps=capacityCampaign(capacity,countBits,entryBits)
+        val directory=fresh(name+s"-capacity-$capacity")
+        AsyncTest.run(top(click,p.copy(config=config.copy(programBytes=capacity))),
+          Seq(1L,19L),directory) { _ =>
+          capacitySchema(directory,click,countBits,entryBits,stateBits,tokenBits,replyBits,entryLo,lengthLo,errorLo)
+          s"""
+          ${if(click) "start=1;" else ""}
+          fork begin ${source(click,steps)} end begin ${sink(click,steps)} end join
+          #1000000000;
+          if(delivered_reply != ${steps.size}) $$fatal(1,"CAPACITY_EXACTLY_ONCE");
+        """ }
+      }
+    }
     test(s"$name native MMIO/loader: full-width validation, retained accounting, lock, reset commands and stalls") {
       val steps=campaign
       AsyncTest.run(top(click),1L to 16L,fresh(name)) { _ => s"""

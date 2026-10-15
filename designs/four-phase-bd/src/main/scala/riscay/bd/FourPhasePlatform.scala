@@ -214,7 +214,7 @@ abstract class FourPhasePlatform(p: SocParameters, board: SocParameters => Board
   val controlCommandBridge = asyncChild("control_command_bridge")(d =>
     new chiselasync.clocked.DecoupledToFourPhase(new ControlCommand, 2, d))
   val controlReplyBridge = asyncChild("control_reply_bridge")(d =>
-    new FourPhaseServiceReplyReceipt(new ControlReply, d))
+    new FourPhaseServiceReplyReceipt(new ControlReply(p.config.programBytes), d))
   controlCommandBridge.clock := workClock; controlReplyBridge.clock := workClock
   chiselasync.protocol.FourPhase.connect(control.command, controlCommandBridge.out)
   chiselasync.protocol.FourPhase.connect(controlReplyBridge.in, control.reply)
