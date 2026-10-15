@@ -1,5 +1,10 @@
 # A2b loader metadata: paused review checkpoint
 
+Historical checkpoint preserved below. The user subsequently authorized
+finishing this WIP PR; see [the separate completion report](loader-metadata-a2b-completion.md)
+for successor validation and measured scope. The interrupted run and this
+checkpoint's incomplete status are not relabeled as passes.
+
 Paused at the user's request on 2026-10-15. **This is an incomplete review
 checkpoint, not an accepted migration item or physical qualification.**
 The accepted MCU baseline is `64e6211`; this checkpoint adds the loader-width

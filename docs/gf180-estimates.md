@@ -6,7 +6,27 @@ are independently audited. The subsequent corrective work targets redundant
 storage and clocked coordination while preserving native BD/Click; see the
 [migration checklist](async-soc-migration.md). Physical timing remains unqualified.
 
-The latest [C1e1 request-receipt measurement](application-reset-boundary.md#c1e1-retained-cpu-request-receipt)
+The A2b retained-loader-metadata comparison against accepted C1e1 `64e6211`
+uses the same pinned mapper, macros, native bindings and five-corner cost
+method. Acceptance: **digitally verified; matched cost recorded; physical timing open**. Logic area excluding SRAM is
+**2.8309672384 / 3.5965234816 mm²** (BD / Click); the measured area
+changes are **-1.1045% / -0.9128%**.
+The mapped work-clock inventory falls from 4,068 to 4,009 storage-cell inputs in BD and from 4,119 to 4,060 in Click. Pin-only clock capacitance falls from 14.378128 to 14.183811 pF and from 14.549554 to 14.355237 pF, respectively. The complete fanout inventory reports 43 to 43 BD and 46 to 42 Click nets exceeding a listed pin-capacitance limit; wire RC, slew and the full capture/hold aperture remain unqualified. All 27 ordinal wake windows per variant remain unchanged; the 43-instruction firmware wakes still use 3,255 BD / 3,160 Click work-clock edges.
+
+| A2b listed-state leakage, including SRAM | BD (µW) | Click (µW) |
+| --- | ---: | ---: |
+| TT / 25°C / 3.3 V | 7.496075–9.710117 | 8.961381–11.964312 |
+| SS / -40°C / 3.0 V | 6.102031–7.702081 | 7.294739–9.488268 |
+| SS / 125°C / 3.0 V | 44.400154–48.592716 | 48.659267–54.434697 |
+| FF / -40°C / 3.6 V | 8.881997–11.142658 | 10.608502–13.548919 |
+| FF / 125°C / 3.6 V | 250.992944–557.391048 | 320.157194–653.981167 |
+
+These per-cell listed-state envelopes are not reachable deep-sleep
+measurements or complete silicon power bounds. Analog, pads, clock/reset
+distribution and routed overhead remain excluded. All observed increases
+and timing failures are retained; see [the A2b report](reviews/loader-metadata-a2b-completion.md).
+
+The prior [C1e1 request-receipt measurement](application-reset-boundary.md#c1e1-retained-cpu-request-receipt)
 compares against the accepted C1f maps using the same mapper, assets, policies
 and five-corner accounting. Logic area falls **0.2404% BD / 0.2999% Click** to
 **2.862584704 / 3.629653440 mm²**, excluding SRAM. The complete mapped hierarchy

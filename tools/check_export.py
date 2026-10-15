@@ -36,6 +36,8 @@ from check_service_reply_receipt import (native_reply_source, pack_reply, servic
 from check_held_receipts import validate_held_receipts, held_receipt_probe
 from check_native_clock_inventory import native_clock_inventory
 from check_quiescing_receipt import native_request_source, pack_request, request_receipt_probe
+from check_probe_budget import require_paired_probe_budget
+from check_program_address import prove_program_address, program_address_probe
 from check_ram_source_export import ARM_PATH, RETIRE_PATH, validate_ram_source, ram_source_bindings, ram_source_probe
 from check_program_source_export import PROGRAM_PATHS, validate_program_source, program_source_bindings, program_source_probe, validate_program_receipts
 from check_frame_receipt import validate_frame_receipts
@@ -1491,7 +1493,8 @@ def main() -> None:
     module = importlib.util.module_from_spec(spec)
     module.validate_fabric_path = validate_fabric_path
     module.fabric_path_bindings = fabric_path_bindings
-    exec(compile(fabric_checker_source(source.read_text()), str(source), "exec"), module.__dict__)
+    library_source = source.read_text()
+    exec(compile(fabric_checker_source(library_source), str(source), "exec"), module.__dict__)
     original_run = subprocess.run
     original_manifest = module.validate_manifest
     def manifest(document):
@@ -1512,15 +1515,21 @@ def main() -> None:
     module.validate_memories = memories
 
     def probe(manifest, scopes, paired=False):
+        # A failed first attempt must remain a failure when its fallback cannot
+        # fit the reviewed resource budget; never allocate the full pair list.
+        if paired:
+            require_paired_probe_budget(manifest, scopes, library_source)
         top_rtl=(args.directory / (manifest["top"]+".sv")).read_text(encoding="utf-8")
         validate_application_reset(manifest,scopes,top_rtl)
         program_bytes = control_program_bytes(args.directory, manifest, scopes)
         validate_service_reply_rtl(manifest,args.directory,program_bytes)
         native_clock_inventory(manifest,scopes)
         held_bindings = validate_held_receipts(manifest,args.directory,scopes)
-        if args.soc:
+        if args.soc or program_bytes is not None:
             if not coordinated_reset(manifest): raise ValueError('SOC_COORDINATED_RESET_REQUIRED')
             check_reset_crossings(args.directory,manifest)
+        program_address_proof = (prove_program_address(args.directory, manifest, program_bytes)
+                                 if program_bytes is not None else None)
         validate_program_receipts(manifest,args.directory)
         validate_frame_receipts(manifest,args.directory)
         validate_frame_stores(manifest,args.directory,resolved=True)
@@ -1555,6 +1564,8 @@ def main() -> None:
         source = program_source_probe(source, manifest, scopes)
         source = publication_source_probe(source, manifest, scopes)
         source = frame_receipt_probe(source, manifest, scopes, args.directory)
+        if program_address_proof is not None:
+            source = program_address_probe(source, program_address_proof)
         if args.vector_coverage:
             source = activity_diagnostics(source)
         return source, count

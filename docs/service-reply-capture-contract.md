@@ -47,6 +47,29 @@ Payload outside valid is unspecified and may change. Every architectural effect,
 publication and accepted effect must remain qualified by the appropriate valid
 or fire condition. Payload-dependent ready logic alone does not authorize work.
 
+## A2b Control reply layout
+
+The Control reply is parameterized by program capacity. At 2 KiB its
+payload narrows from 376 to 315 bits: length and received become 12 bits
+each, and entry becomes 11 bits. Other reply fields retain their widths.
+The receipt still owns no payload bank; its synchronizers, valid/fire/ACK
+cadence, POR history and actual work-clock capture remain unchanged. The
+two consumed Services mirrors narrow by 40 periodic bits; the unused entry
+mirror was already absent from compiled state.
+
+Strict probes derive expected Control state/token/reply layouts from the
+program capacity in the independently validated SRAM inventory, then match
+every declared field and actual native storage. They must not infer the
+specification from an observed width. Frame-bank payloads remain 337 bits
+and the retained CPU request source remains 70 bits. Narrowing does not
+remove any mandatory generic campaign or dynamic-polarity obligation.
+
+A2b functional and strict export checks pass; physical timing remains unqualified. Its
+[successor evidence](reviews/loader-metadata-a2b-completion.md) binds the
+complete native source/fork/receipt/consumer inventory. Isolated data-path
+screens do not establish native source reuse, earliest ACK release, hold,
+capture pulses or reset/clock distribution; those obligations remain open.
+
 ## Verification and physical obligations
 
 `ServiceReplyReceiptSpec` uses independent data/effect expectations, exercises

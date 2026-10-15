@@ -22,8 +22,12 @@ from the architectural CRC, including when other commands execute while a
 loader word is pending. Only an accepted `Stored` transition commits that
 candidate and advances `received`; duplicate completions remain inert.
 Host/MMIO validation, programming lock, image state and watchdog reset semantics
-are unchanged. Full-width host fields remain validated before use. Retained
-length/entry/count narrowing is a separate change requiring capacity tests.
+are unchanged. Full-width host fields remain validated before use. A2b
+separately narrows retained length/received counts and entry offsets to configured
+program capacity. At 2 KiB, state/token/reply widths are 244/276/315 bits; the
+CRC input remains 65 bits and its candidate store remains 32 bits. The native
+state, join and update payloads shrink without changing their rendezvous. See
+[the loader contract](loader-status-and-lock.md#retained-loader-metadata-a2b).
 
 ## Native rendezvous
 
@@ -51,6 +55,20 @@ ordered Control command, not a local reset of an in-flight loader operation.
 POR discards the in-flight feedback and reinstalls cold state. Tests identify
 actual payload capture pins from exported metadata, rather than using a stage
 request as a proxy for storage.
+
+## A2b metadata-width validation
+
+A2b functional and strict export checks pass; physical timing remains unqualified. The new capacity cases cover both
+native implementations at 4, 12, 1024, 1028, 2048 and 3072 bytes. Independent
+literal field layouts and Java CRC32 expectations check full-capacity count,
+every discarded host bit, last/duplicate Stored, reset, lock and padded entry
+readback. The retained regression contains 536 Scala tests in 36 suites;
+the checker-only successor passes 751 Python controls. Its historical
+709-test Python run remains separately preserved. The rendezvous campaign has 27 passing originals
+and 27 exact first-fatal mutations with unchanged oracles. Successor strict,
+cost and bounded timing evidence is recorded in
+[the A2b report](reviews/loader-metadata-a2b-completion.md). The A2a figures
+below remain historical measurements of that earlier change.
 
 ## Verification and physical limits
 
