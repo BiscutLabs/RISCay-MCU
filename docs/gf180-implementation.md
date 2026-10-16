@@ -203,3 +203,10 @@ uncut transistor-level controllers and complete payload capture trees. Its
 storage-D boundary, chosen output loads and explicit numerical-resolution checks
 keep local observations separate from full transform/source, reset and routed
 timing qualification.
+
+The [conditional relative-timing pilot](reviews/control-relative-timing.md)
+uses reviewed native state assumptions and analysis-only event clocks to resolve
+Control capture/ACK paths. It retains actual request propagation and Click
+phase CLK-to-Q, and compares hold from a common capture event. The complete
+Join source envelope, BD returns, Click pulse checks, electrical limits and
+extracted RC remain open. This is an opt-in analysis, not a default mapping change.

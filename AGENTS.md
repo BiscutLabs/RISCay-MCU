@@ -451,6 +451,14 @@
   BD returns and Click phases, and require resolved crossing brackets plus
   timestep convergence. Numerical mesh nodes must be electrically disjoint.
   Local ACK/capture observations do not qualify upstream source hold or reset.
+  Follow docs/reviews/control-relative-timing.md for conditional Control STA.
+  Keep actual request paths, same-instance D/capture pairing, native phase
+  CLK-to-Q and common-event hold accounting. Analysis-clock periods must not
+  affect results; report actual propagated event slew and verify cross-context
+  coverage. Preserve positive-baseline, actual-arc negative controls and source
+  custody. Local boundary skew is not measured Join launch alignment. BD pending
+  admission/returns, Click pulse/self-hold and electrical/routed envelopes stay
+  open. Never shorten guards from this pilot alone or relax digital tests.
   Preserve exact async cells and connections, native delay chains and three SRAMs.
   Keep clocked STA separate from internal async path measurements. Recharacterize
   changed cells/whole transforms across all five pinned corners, and rerun

@@ -1122,9 +1122,16 @@ physical reset qualification (R2b) remains mandatory under item 17a3.
         uncut controllers and all 315 payload cells; reject unresolved sampling
         and verify actual capture-branch fault controls in both variants.
         Independent review and 806 Python tests pass. Refined timing remains open.
-      - [ ] **Complete paired Control capture/hold analysis.** All data lanes
-        and request-guard endpoints are measured, but direct actual E/CLK/ACK
-        paths remain unresolved. Bound legal native control segments and full
+      - [x] **Conditional Control relative-timing pilot.** Resolve all 315
+        actual captures, both Click phases, release-triggered Click capture and
+        native ACK paths under explicit event states. Keep common-event hold,
+        actual phase CLK-to-Q and per-corner physical cell apertures; verify
+        period invariance and actual-arc fault controls. See
+        [the scoped evidence](reviews/control-relative-timing.md). No hardware,
+        guard length or simulation policy changes.
+      - [ ] **Complete paired Control capture/hold analysis.** The conditional
+        pilot resolves local E/CLK/ACK paths; complete source launch, BD pending
+        admission/returns and Click pulse/feedback remain open. Bound full
         source reuse without blind cuts or periodic staging, repair residual
         electrical violations, then include routed min/max RC. The default
         physical flow remains unchanged until its acceptance gates pass.
