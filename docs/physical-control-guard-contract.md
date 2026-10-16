@@ -110,3 +110,10 @@ then stale clock/reset hierarchy bindings. 17a3 must inventory and measure every
 custom complete transform, feedback, trigger, return and aperture obligation.
 Historical canonical-stage totals and missing `data_max_ns` enforcement cannot
 qualify the migrated SoCs. Original export/mapping failures remain evidence.
+
+The subsequent [Control electrical experiment](reviews/control-electrical-repair.md)
+preserves every guard and native cell while buffering two ordinary overloaded
+update nets. Every payload data lane is measured; actual capture/ACK queries
+remain unresolved. The request-guard endpoint is measured only in a separate
+linked-design context so that it cannot truncate capture searches. An earlier
+guard margin, even when positive, is not a completed capture/hold envelope.

@@ -1112,6 +1112,18 @@ physical reset qualification (R2b) remains mandatory under item 17a3.
       1548.816406 ns before wiring. Their reset paths also exceed the current
       250 ns settlement assumption. Long guards currently lack a finite local
       maximum check; local minimum passes cannot authorize controller use.
+      - [x] **Bounded Control electrical repair — opt-in measurement only.**
+        Buffer the identified 125-sink BD and 33-sink Click ordinary update
+        nets, preserve the complete original graph after buffer contraction,
+        and compare all five corners at fast/slow input transitions. Selected
+        capacitance/slew limits pass; no native cell, guard or clock changes.
+        See [the reviewed evidence](reviews/control-electrical-repair.md).
+      - [ ] **Complete paired Control capture/hold analysis.** All data lanes
+        and request-guard endpoints are measured, but direct actual E/CLK/ACK
+        paths remain unresolved. Bound legal native control segments and full
+        source reuse without blind cuts or periodic staging, repair residual
+        electrical violations, then include routed min/max RC. The default
+        physical flow remains unchanged until its acceptance gates pass.
   - [ ] Characterize complete new data/control transforms, selection guards,
     feedback, arbitration and reset paths at all required pinned corners.
   - [ ] Bind mapped cells and constraints to the final emitted ownership graph;

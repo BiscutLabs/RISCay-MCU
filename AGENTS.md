@@ -439,6 +439,12 @@
 - Keep shared production logic separate from independently written test oracles.
   Test reset, stalls and exactly-once effects, not only instruction arithmetic.
 - Physical integration lives in `physical/`; follow `docs/gf180-implementation.md`.
+  The opt-in Control load repair in `tools/repair_gf180_control.py` is bound to
+  exact ordinary sink sets. Preserve its whole-graph contraction, unused-net
+  alias controls, Verilog round-trip and source custody checks. Follow
+  `docs/reviews/control-electrical-repair.md`: numerical data/guard comparisons
+  do not replace the unresolved actual capture/ACK, hold or routed envelopes.
+  Do not silently add the experimental repair to the default mapper/P&R flow.
   Preserve exact async cells and connections, native delay chains and three SRAMs.
   Keep clocked STA separate from internal async path measurements. Recharacterize
   changed cells/whole transforms across all five pinned corners, and rerun
