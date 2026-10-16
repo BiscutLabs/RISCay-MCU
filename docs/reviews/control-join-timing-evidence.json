@@ -1,0 +1,1032 @@
+{
+  "schema": 1,
+  "date": "2026-10-16",
+  "scope": "Conditional initial Control Join launch/setup composition",
+  "physical_qualification": false,
+  "rtl_changed": false,
+  "guards_changed": false,
+  "rtl_baseline": "6aa8033f5978dfde0a00432f82952f7999d93178",
+  "runtime_configuration": {
+    "schema": 1,
+    "tools": {
+      "yosys": {
+        "executable": "/nix/store/f1q0w7rd0a4ny4hqvfxlhs4cmariidcy-yosys-0.62/bin/yosys",
+        "timeout_executable": "/nix/store/2lwxwsaixnaq561hbq02v5236935ass8-coreutils-full-9.8/bin/coreutils",
+        "timeout_arguments": [
+          "--coreutils-prog=timeout"
+        ],
+        "distribution": "nixos-librelane"
+      },
+      "sta": {
+        "executable": "/nix/store/kklj5jbmmhf3cvh4jymwn485ahyzg1mw-opensta/bin/sta",
+        "timeout_executable": "/nix/store/2lwxwsaixnaq561hbq02v5236935ass8-coreutils-full-9.8/bin/coreutils",
+        "timeout_arguments": [
+          "--coreutils-prog=timeout"
+        ],
+        "distribution": "nixos-librelane"
+      },
+      "openroad": {
+        "executable": "/nix/store/c4zxmi7w55jnz305yqc4407n4426zj7s-openroad-2026-02-17/bin/openroad",
+        "timeout_executable": "/nix/store/2lwxwsaixnaq561hbq02v5236935ass8-coreutils-full-9.8/bin/coreutils",
+        "timeout_arguments": [
+          "--coreutils-prog=timeout"
+        ],
+        "distribution": "nixos-librelane"
+      }
+    }
+  },
+  "variants": {
+    "bd": {
+      "campaign": {
+        "path": "build/control-join-corners-r1/bd/results.json",
+        "sha256": "13de0a6f2e23cc4f72e18efd3c1e70db62ee0d5d048095f78116f3ab7e1c4de2"
+      },
+      "controls": {
+        "path": "build/control-join-controls-r3/bd/controls.json",
+        "sha256": "ee730967cb6b32e82d91c13714ca4b2e6c5eae0b53ac462e16a1824c2ef396c5"
+      },
+      "cases": [
+        {
+          "key": "tt_025C_3v30-s0.02",
+          "corner": "tt_025C_3v30",
+          "slew_ns": 0.02,
+          "status": "CONDITIONAL_SETUP_MEASUREMENTS",
+          "negative_metrics": [],
+          "failure": null,
+          "summary": [
+            {
+              "side": "left",
+              "phase": 0,
+              "maximum_input_data_lag_ns": 37.05123107227896,
+              "minimum_conditional_setup_margin_ns": 105.97399940458736,
+              "source_q_bound_ns": 41.92201549005412,
+              "return_after_source_close_ns": 134.59371598207167,
+              "checked_data_transitions": 624,
+              "physical_qualification": false
+            },
+            {
+              "side": "right",
+              "phase": 0,
+              "maximum_input_data_lag_ns": 37.2378444689631,
+              "minimum_conditional_setup_margin_ns": 102.69928903125155,
+              "source_q_bound_ns": 41.999947819516365,
+              "return_after_source_close_ns": 134.50914718326973,
+              "checked_data_transitions": 630,
+              "physical_qualification": false
+            }
+          ]
+        },
+        {
+          "key": "tt_025C_3v30-s2.0",
+          "corner": "tt_025C_3v30",
+          "slew_ns": 2.0,
+          "status": "CONDITIONAL_SETUP_MEASUREMENTS",
+          "negative_metrics": [],
+          "failure": null,
+          "summary": [
+            {
+              "side": "left",
+              "phase": 0,
+              "maximum_input_data_lag_ns": 36.729682497633284,
+              "minimum_conditional_setup_margin_ns": 105.97400295730115,
+              "source_q_bound_ns": 42.117766466578566,
+              "return_after_source_close_ns": 134.59371953478546,
+              "checked_data_transitions": 624,
+              "physical_qualification": false
+            },
+            {
+              "side": "right",
+              "phase": 0,
+              "maximum_input_data_lag_ns": 36.91629589431742,
+              "minimum_conditional_setup_margin_ns": 102.69929258396535,
+              "source_q_bound_ns": 42.19569879604081,
+              "return_after_source_close_ns": 134.50915073598352,
+              "checked_data_transitions": 630,
+              "physical_qualification": false
+            }
+          ]
+        },
+        {
+          "key": "ss_125C_3v00-s0.02",
+          "corner": "ss_125C_3v00",
+          "slew_ns": 0.02,
+          "status": "CONDITIONAL_SETUP_MEASUREMENTS",
+          "negative_metrics": [],
+          "failure": null,
+          "summary": [
+            {
+              "side": "left",
+              "phase": 0,
+              "maximum_input_data_lag_ns": 77.59702855105122,
+              "minimum_conditional_setup_margin_ns": 223.8333116619273,
+              "source_q_bound_ns": 86.72949537364501,
+              "return_after_source_close_ns": 280.9993739452187,
+              "checked_data_transitions": 624,
+              "physical_qualification": false
+            },
+            {
+              "side": "right",
+              "phase": 0,
+              "maximum_input_data_lag_ns": 77.93771959162888,
+              "minimum_conditional_setup_margin_ns": 217.28104163880465,
+              "source_q_bound_ns": 86.87279763664597,
+              "return_after_source_close_ns": 280.84041131987874,
+              "checked_data_transitions": 630,
+              "physical_qualification": false
+            }
+          ]
+        },
+        {
+          "key": "ss_125C_3v00-s2.0",
+          "corner": "ss_125C_3v00",
+          "slew_ns": 2.0,
+          "status": "CONDITIONAL_SETUP_MEASUREMENTS",
+          "negative_metrics": [],
+          "failure": null,
+          "summary": [
+            {
+              "side": "left",
+              "phase": 0,
+              "maximum_input_data_lag_ns": 77.2755663517593,
+              "minimum_conditional_setup_margin_ns": 223.83329745107218,
+              "source_q_bound_ns": 87.04121048063888,
+              "return_after_source_close_ns": 280.99935973436357,
+              "checked_data_transitions": 624,
+              "physical_qualification": false
+            },
+            {
+              "side": "right",
+              "phase": 0,
+              "maximum_input_data_lag_ns": 77.61625739233695,
+              "minimum_conditional_setup_margin_ns": 217.28102742794954,
+              "source_q_bound_ns": 87.18451274363984,
+              "return_after_source_close_ns": 280.84039710902357,
+              "checked_data_transitions": 630,
+              "physical_qualification": false
+            }
+          ]
+        },
+        {
+          "key": "ss_n40C_3v00-s0.02",
+          "corner": "ss_n40C_3v00",
+          "slew_ns": 0.02,
+          "status": "CONDITIONAL_SETUP_MEASUREMENTS",
+          "negative_metrics": [],
+          "failure": null,
+          "summary": [
+            {
+              "side": "left",
+              "phase": 0,
+              "maximum_input_data_lag_ns": 53.17961592332977,
+              "minimum_conditional_setup_margin_ns": 153.44028264114073,
+              "source_q_bound_ns": 59.68090901511113,
+              "return_after_source_close_ns": 192.27925751390637,
+              "checked_data_transitions": 624,
+              "physical_qualification": false
+            },
+            {
+              "side": "right",
+              "phase": 0,
+              "maximum_input_data_lag_ns": 53.426764010099035,
+              "minimum_conditional_setup_margin_ns": 149.01338810933342,
+              "source_q_bound_ns": 59.78593433985415,
+              "return_after_source_close_ns": 192.16550672412146,
+              "checked_data_transitions": 630,
+              "physical_qualification": false
+            }
+          ]
+        },
+        {
+          "key": "ss_n40C_3v00-s2.0",
+          "corner": "ss_n40C_3v00",
+          "slew_ns": 2.0,
+          "status": "CONDITIONAL_SETUP_MEASUREMENTS",
+          "negative_metrics": [],
+          "failure": null,
+          "summary": [
+            {
+              "side": "left",
+              "phase": 0,
+              "maximum_input_data_lag_ns": 52.86031999126476,
+              "minimum_conditional_setup_margin_ns": 153.44026132485803,
+              "source_q_bound_ns": 59.97847721583591,
+              "return_after_source_close_ns": 192.2792361976237,
+              "checked_data_transitions": 624,
+              "physical_qualification": false
+            },
+            {
+              "side": "right",
+              "phase": 0,
+              "maximum_input_data_lag_ns": 53.107468078034024,
+              "minimum_conditional_setup_margin_ns": 149.01336679305075,
+              "source_q_bound_ns": 60.083502540578934,
+              "return_after_source_close_ns": 192.16548540783876,
+              "checked_data_transitions": 630,
+              "physical_qualification": false
+            }
+          ]
+        },
+        {
+          "key": "ff_125C_3v60-s0.02",
+          "corner": "ff_125C_3v60",
+          "slew_ns": 0.02,
+          "status": "CONDITIONAL_SETUP_MEASUREMENTS",
+          "negative_metrics": [],
+          "failure": null,
+          "summary": [
+            {
+              "side": "left",
+              "phase": 0,
+              "maximum_input_data_lag_ns": 29.708519741597804,
+              "minimum_conditional_setup_margin_ns": 84.22788847098859,
+              "source_q_bound_ns": 33.79594655341799,
+              "return_after_source_close_ns": 107.82321118918324,
+              "checked_data_transitions": 624,
+              "physical_qualification": false
+            },
+            {
+              "side": "right",
+              "phase": 0,
+              "maximum_input_data_lag_ns": 29.873831066461392,
+              "minimum_conditional_setup_margin_ns": 81.42757729767045,
+              "source_q_bound_ns": 33.8652955263895,
+              "return_after_source_close_ns": 107.74792207877277,
+              "checked_data_transitions": 630,
+              "physical_qualification": false
+            }
+          ]
+        },
+        {
+          "key": "ff_125C_3v60-s2.0",
+          "corner": "ff_125C_3v60",
+          "slew_ns": 2.0,
+          "status": "CONDITIONAL_SETUP_MEASUREMENTS",
+          "negative_metrics": [],
+          "failure": null,
+          "summary": [
+            {
+              "side": "left",
+              "phase": 0,
+              "maximum_input_data_lag_ns": 29.435515614565638,
+              "minimum_conditional_setup_margin_ns": 84.22789557641615,
+              "source_q_bound_ns": 33.95885269105301,
+              "return_after_source_close_ns": 107.8232182946108,
+              "checked_data_transitions": 624,
+              "physical_qualification": false
+            },
+            {
+              "side": "right",
+              "phase": 0,
+              "maximum_input_data_lag_ns": 29.600826939429226,
+              "minimum_conditional_setup_margin_ns": 81.4275701922429,
+              "source_q_bound_ns": 34.02820166402452,
+              "return_after_source_close_ns": 107.74791497334522,
+              "checked_data_transitions": 630,
+              "physical_qualification": false
+            }
+          ]
+        },
+        {
+          "key": "ff_n40C_3v60-s0.02",
+          "corner": "ff_n40C_3v60",
+          "slew_ns": 0.02,
+          "status": "CONDITIONAL_SETUP_MEASUREMENTS",
+          "negative_metrics": [],
+          "failure": null,
+          "summary": [
+            {
+              "side": "left",
+              "phase": 0,
+              "maximum_input_data_lag_ns": 20.117814495827172,
+              "minimum_conditional_setup_margin_ns": 56.57649893257605,
+              "source_q_bound_ns": 23.007237655124527,
+              "return_after_source_close_ns": 72.97183330800175,
+              "checked_data_transitions": 624,
+              "physical_qualification": false
+            },
+            {
+              "side": "right",
+              "phase": 0,
+              "maximum_input_data_lag_ns": 20.235121552105156,
+              "minimum_conditional_setup_margin_ns": 54.68519754132223,
+              "source_q_bound_ns": 23.056327277769704,
+              "return_after_source_close_ns": 72.91899201960564,
+              "checked_data_transitions": 630,
+              "physical_qualification": false
+            }
+          ]
+        },
+        {
+          "key": "ff_n40C_3v60-s2.0",
+          "corner": "ff_n40C_3v60",
+          "slew_ns": 2.0,
+          "status": "CONDITIONAL_SETUP_MEASUREMENTS",
+          "negative_metrics": [],
+          "failure": null,
+          "summary": [
+            {
+              "side": "left",
+              "phase": 0,
+              "maximum_input_data_lag_ns": 19.80944560112417,
+              "minimum_conditional_setup_margin_ns": 56.57649537986227,
+              "source_q_bound_ns": 23.132502790268095,
+              "return_after_source_close_ns": 72.97182975528797,
+              "checked_data_transitions": 624,
+              "physical_qualification": false
+            },
+            {
+              "side": "right",
+              "phase": 0,
+              "maximum_input_data_lag_ns": 19.926752657402155,
+              "minimum_conditional_setup_margin_ns": 54.68519398860844,
+              "source_q_bound_ns": 23.18159241291327,
+              "return_after_source_close_ns": 72.91898846689186,
+              "checked_data_transitions": 630,
+              "physical_qualification": false
+            }
+          ]
+        }
+      ],
+      "path_rows": 51380,
+      "minima": {
+        "maximum_input_data_lag_ns": 19.80944560112417,
+        "minimum_conditional_setup_margin_ns": 54.68519398860844,
+        "return_after_source_close_ns": 72.91898846689186
+      },
+      "electrical_violation_rows_per_context": {
+        "minimum": 521,
+        "maximum": 1505
+      },
+      "control_verdicts": [
+        {
+          "fault": "period",
+          "status": "EXPECTED"
+        },
+        {
+          "fault": "late_input",
+          "status": "EXPECTED"
+        },
+        {
+          "fault": "late_source_capture",
+          "status": "EXPECTED"
+        },
+        {
+          "fault": "late_offer",
+          "status": "EXPECTED"
+        },
+        {
+          "fault": "late_rendezvous",
+          "status": "EXPECTED"
+        },
+        {
+          "fault": "early_control",
+          "status": "EXPECTED"
+        },
+        {
+          "fault": "deduplicated_parent",
+          "status": "EXPECTED"
+        },
+        {
+          "fault": "identity_permutation",
+          "status": "EXPECTED"
+        },
+        {
+          "fault": "external_load",
+          "status": "EXPECTED"
+        },
+        {
+          "fault": "unmodeled_lane",
+          "status": "EXPECTED"
+        },
+        {
+          "fault": "operand_wiring",
+          "status": "EXPECTED"
+        }
+      ]
+    },
+    "click": {
+      "campaign": {
+        "path": "build/control-join-corners-r1/click/results.json",
+        "sha256": "0db00a84d1c862496b29592f577320d8818efde65c03c024f1b5f0a4550ba0c7"
+      },
+      "controls": {
+        "path": "build/control-join-controls-r3/click/controls.json",
+        "sha256": "55dc781b266f2488e44efcb1423bed762470cb6166826824cf349e3e9666595d"
+      },
+      "cases": [
+        {
+          "key": "tt_025C_3v30-s0.02",
+          "corner": "tt_025C_3v30",
+          "slew_ns": 0.02,
+          "status": "CONDITIONAL_SETUP_MEASUREMENTS",
+          "negative_metrics": [],
+          "failure": null,
+          "summary": [
+            {
+              "side": "left",
+              "phase": 0,
+              "maximum_input_data_lag_ns": 39.43592479437836,
+              "minimum_conditional_setup_margin_ns": 124.12987915244238,
+              "source_q_bound_ns": 0,
+              "return_after_source_close_ns": null,
+              "checked_data_transitions": 624,
+              "physical_qualification": false
+            },
+            {
+              "side": "left",
+              "phase": 1,
+              "maximum_input_data_lag_ns": 41.067838999893304,
+              "minimum_conditional_setup_margin_ns": 132.0579873245834,
+              "source_q_bound_ns": 0,
+              "return_after_source_close_ns": null,
+              "checked_data_transitions": 624,
+              "physical_qualification": false
+            },
+            {
+              "side": "right",
+              "phase": 0,
+              "maximum_input_data_lag_ns": 39.623785193599026,
+              "minimum_conditional_setup_margin_ns": 122.42450903682708,
+              "source_q_bound_ns": 0,
+              "return_after_source_close_ns": null,
+              "checked_data_transitions": 630,
+              "physical_qualification": false
+            },
+            {
+              "side": "right",
+              "phase": 1,
+              "maximum_input_data_lag_ns": 41.25569939911397,
+              "minimum_conditional_setup_margin_ns": 130.37984520737245,
+              "source_q_bound_ns": 0,
+              "return_after_source_close_ns": null,
+              "checked_data_transitions": 630,
+              "physical_qualification": false
+            }
+          ]
+        },
+        {
+          "key": "tt_025C_3v30-s2.0",
+          "corner": "tt_025C_3v30",
+          "slew_ns": 2.0,
+          "status": "CONDITIONAL_SETUP_MEASUREMENTS",
+          "negative_metrics": [],
+          "failure": null,
+          "summary": [
+            {
+              "side": "left",
+              "phase": 0,
+              "maximum_input_data_lag_ns": 39.114375442576545,
+              "minimum_conditional_setup_margin_ns": 124.12987915244238,
+              "source_q_bound_ns": 0,
+              "return_after_source_close_ns": null,
+              "checked_data_transitions": 624,
+              "physical_qualification": false
+            },
+            {
+              "side": "left",
+              "phase": 1,
+              "maximum_input_data_lag_ns": 41.06709614964652,
+              "minimum_conditional_setup_margin_ns": 132.0579873245834,
+              "source_q_bound_ns": 0,
+              "return_after_source_close_ns": null,
+              "checked_data_transitions": 624,
+              "physical_qualification": false
+            },
+            {
+              "side": "right",
+              "phase": 0,
+              "maximum_input_data_lag_ns": 39.30223584179721,
+              "minimum_conditional_setup_margin_ns": 122.42450903682708,
+              "source_q_bound_ns": 0,
+              "return_after_source_close_ns": null,
+              "checked_data_transitions": 630,
+              "physical_qualification": false
+            },
+            {
+              "side": "right",
+              "phase": 1,
+              "maximum_input_data_lag_ns": 41.254956548867185,
+              "minimum_conditional_setup_margin_ns": 130.37984520737245,
+              "source_q_bound_ns": 0,
+              "return_after_source_close_ns": null,
+              "checked_data_transitions": 630,
+              "physical_qualification": false
+            }
+          ]
+        },
+        {
+          "key": "ss_125C_3v00-s0.02",
+          "corner": "ss_125C_3v00",
+          "slew_ns": 0.02,
+          "status": "CONDITIONAL_SETUP_MEASUREMENTS",
+          "negative_metrics": [],
+          "failure": null,
+          "summary": [
+            {
+              "side": "left",
+              "phase": 0,
+              "maximum_input_data_lag_ns": 81.9354738903848,
+              "minimum_conditional_setup_margin_ns": 259.85973702701585,
+              "source_q_bound_ns": 0,
+              "return_after_source_close_ns": null,
+              "checked_data_transitions": 624,
+              "physical_qualification": false
+            },
+            {
+              "side": "left",
+              "phase": 1,
+              "maximum_input_data_lag_ns": 85.48112487466969,
+              "minimum_conditional_setup_margin_ns": 276.93936588833,
+              "source_q_bound_ns": 0,
+              "return_after_source_close_ns": null,
+              "checked_data_transitions": 624,
+              "physical_qualification": false
+            },
+            {
+              "side": "right",
+              "phase": 0,
+              "maximum_input_data_lag_ns": 82.29190345300465,
+              "minimum_conditional_setup_margin_ns": 255.8676804509371,
+              "source_q_bound_ns": 0,
+              "return_after_source_close_ns": null,
+              "checked_data_transitions": 630,
+              "physical_qualification": false
+            },
+            {
+              "side": "right",
+              "phase": 1,
+              "maximum_input_data_lag_ns": 85.83755443728955,
+              "minimum_conditional_setup_margin_ns": 273.0087570497776,
+              "source_q_bound_ns": 0,
+              "return_after_source_close_ns": null,
+              "checked_data_transitions": 630,
+              "physical_qualification": false
+            }
+          ]
+        },
+        {
+          "key": "ss_125C_3v00-s2.0",
+          "corner": "ss_125C_3v00",
+          "slew_ns": 2.0,
+          "status": "CONDITIONAL_SETUP_MEASUREMENTS",
+          "negative_metrics": [],
+          "failure": null,
+          "summary": [
+            {
+              "side": "left",
+              "phase": 0,
+              "maximum_input_data_lag_ns": 81.61401180211519,
+              "minimum_conditional_setup_margin_ns": 259.85973702701585,
+              "source_q_bound_ns": 0,
+              "return_after_source_close_ns": null,
+              "checked_data_transitions": 624,
+              "physical_qualification": false
+            },
+            {
+              "side": "left",
+              "phase": 1,
+              "maximum_input_data_lag_ns": 85.48062916007518,
+              "minimum_conditional_setup_margin_ns": 276.93936588833,
+              "source_q_bound_ns": 0,
+              "return_after_source_close_ns": null,
+              "checked_data_transitions": 624,
+              "physical_qualification": false
+            },
+            {
+              "side": "right",
+              "phase": 0,
+              "maximum_input_data_lag_ns": 81.97044136473504,
+              "minimum_conditional_setup_margin_ns": 255.8676804509371,
+              "source_q_bound_ns": 0,
+              "return_after_source_close_ns": null,
+              "checked_data_transitions": 630,
+              "physical_qualification": false
+            },
+            {
+              "side": "right",
+              "phase": 1,
+              "maximum_input_data_lag_ns": 85.83705872269505,
+              "minimum_conditional_setup_margin_ns": 273.0087570497776,
+              "source_q_bound_ns": 0,
+              "return_after_source_close_ns": null,
+              "checked_data_transitions": 630,
+              "physical_qualification": false
+            }
+          ]
+        },
+        {
+          "key": "ss_n40C_3v00-s0.02",
+          "corner": "ss_n40C_3v00",
+          "slew_ns": 0.02,
+          "status": "CONDITIONAL_SETUP_MEASUREMENTS",
+          "negative_metrics": [],
+          "failure": null,
+          "summary": [
+            {
+              "side": "left",
+              "phase": 0,
+              "maximum_input_data_lag_ns": 56.245684329168256,
+              "minimum_conditional_setup_margin_ns": 178.5593720804881,
+              "source_q_bound_ns": 0,
+              "return_after_source_close_ns": null,
+              "checked_data_transitions": 624,
+              "physical_qualification": false
+            },
+            {
+              "side": "left",
+              "phase": 1,
+              "maximum_input_data_lag_ns": 58.91206352207828,
+              "minimum_conditional_setup_margin_ns": 191.2720904294443,
+              "source_q_bound_ns": 0,
+              "return_after_source_close_ns": null,
+              "checked_data_transitions": 624,
+              "physical_qualification": false
+            },
+            {
+              "side": "right",
+              "phase": 0,
+              "maximum_input_data_lag_ns": 56.503046468052936,
+              "minimum_conditional_setup_margin_ns": 176.09054331363168,
+              "source_q_bound_ns": 0,
+              "return_after_source_close_ns": null,
+              "checked_data_transitions": 630,
+              "physical_qualification": false
+            },
+            {
+              "side": "right",
+              "phase": 1,
+              "maximum_input_data_lag_ns": 59.16942210824919,
+              "minimum_conditional_setup_margin_ns": 188.84431682302124,
+              "source_q_bound_ns": 0,
+              "return_after_source_close_ns": null,
+              "checked_data_transitions": 630,
+              "physical_qualification": false
+            }
+          ]
+        },
+        {
+          "key": "ss_n40C_3v00-s2.0",
+          "corner": "ss_n40C_3v00",
+          "slew_ns": 2.0,
+          "status": "CONDITIONAL_SETUP_MEASUREMENTS",
+          "negative_metrics": [],
+          "failure": null,
+          "summary": [
+            {
+              "side": "left",
+              "phase": 0,
+              "maximum_input_data_lag_ns": 55.92639017346014,
+              "minimum_conditional_setup_margin_ns": 178.5593720804881,
+              "source_q_bound_ns": 0,
+              "return_after_source_close_ns": null,
+              "checked_data_transitions": 624,
+              "physical_qualification": false
+            },
+            {
+              "side": "left",
+              "phase": 1,
+              "maximum_input_data_lag_ns": 58.91119554969308,
+              "minimum_conditional_setup_margin_ns": 191.2720904294443,
+              "source_q_bound_ns": 0,
+              "return_after_source_close_ns": null,
+              "checked_data_transitions": 624,
+              "physical_qualification": false
+            },
+            {
+              "side": "right",
+              "phase": 0,
+              "maximum_input_data_lag_ns": 56.183748759631044,
+              "minimum_conditional_setup_margin_ns": 176.09054331363168,
+              "source_q_bound_ns": 0,
+              "return_after_source_close_ns": null,
+              "checked_data_transitions": 630,
+              "physical_qualification": false
+            },
+            {
+              "side": "right",
+              "phase": 1,
+              "maximum_input_data_lag_ns": 59.16855413586399,
+              "minimum_conditional_setup_margin_ns": 188.84431682302124,
+              "source_q_bound_ns": 0,
+              "return_after_source_close_ns": null,
+              "checked_data_transitions": 630,
+              "physical_qualification": false
+            }
+          ]
+        },
+        {
+          "key": "ff_125C_3v60-s0.02",
+          "corner": "ff_125C_3v60",
+          "slew_ns": 0.02,
+          "status": "CONDITIONAL_SETUP_MEASUREMENTS",
+          "negative_metrics": [],
+          "failure": null,
+          "summary": [
+            {
+              "side": "left",
+              "phase": 0,
+              "maximum_input_data_lag_ns": 31.65129411696134,
+              "minimum_conditional_setup_margin_ns": 98.83033523729186,
+              "source_q_bound_ns": 0,
+              "return_after_source_close_ns": null,
+              "checked_data_transitions": 624,
+              "physical_qualification": false
+            },
+            {
+              "side": "left",
+              "phase": 1,
+              "maximum_input_data_lag_ns": 32.696118817736796,
+              "minimum_conditional_setup_margin_ns": 104.03393116095248,
+              "source_q_bound_ns": 0,
+              "return_after_source_close_ns": null,
+              "checked_data_transitions": 624,
+              "physical_qualification": false
+            },
+            {
+              "side": "right",
+              "phase": 0,
+              "maximum_input_data_lag_ns": 31.802671698382596,
+              "minimum_conditional_setup_margin_ns": 97.50948243943539,
+              "source_q_bound_ns": 0,
+              "return_after_source_close_ns": null,
+              "checked_data_transitions": 630,
+              "physical_qualification": false
+            },
+            {
+              "side": "right",
+              "phase": 1,
+              "maximum_input_data_lag_ns": 32.847496399158054,
+              "minimum_conditional_setup_margin_ns": 102.7299821752578,
+              "source_q_bound_ns": 0,
+              "return_after_source_close_ns": null,
+              "checked_data_transitions": 630,
+              "physical_qualification": false
+            }
+          ]
+        },
+        {
+          "key": "ff_125C_3v60-s2.0",
+          "corner": "ff_125C_3v60",
+          "slew_ns": 2.0,
+          "status": "CONDITIONAL_SETUP_MEASUREMENTS",
+          "negative_metrics": [],
+          "failure": null,
+          "summary": [
+            {
+              "side": "left",
+              "phase": 0,
+              "maximum_input_data_lag_ns": 31.378262067819307,
+              "minimum_conditional_setup_margin_ns": 98.83033523729186,
+              "source_q_bound_ns": 0,
+              "return_after_source_close_ns": null,
+              "checked_data_transitions": 624,
+              "physical_qualification": false
+            },
+            {
+              "side": "left",
+              "phase": 1,
+              "maximum_input_data_lag_ns": 32.71742555249418,
+              "minimum_conditional_setup_margin_ns": 104.03393116095248,
+              "source_q_bound_ns": 0,
+              "return_after_source_close_ns": null,
+              "checked_data_transitions": 624,
+              "physical_qualification": false
+            },
+            {
+              "side": "right",
+              "phase": 0,
+              "maximum_input_data_lag_ns": 31.529639649240565,
+              "minimum_conditional_setup_margin_ns": 97.50948243943539,
+              "source_q_bound_ns": 0,
+              "return_after_source_close_ns": null,
+              "checked_data_transitions": 630,
+              "physical_qualification": false
+            },
+            {
+              "side": "right",
+              "phase": 1,
+              "maximum_input_data_lag_ns": 32.868803133915435,
+              "minimum_conditional_setup_margin_ns": 102.7299821752578,
+              "source_q_bound_ns": 0,
+              "return_after_source_close_ns": null,
+              "checked_data_transitions": 630,
+              "physical_qualification": false
+            }
+          ]
+        },
+        {
+          "key": "ff_n40C_3v60-s0.02",
+          "corner": "ff_n40C_3v60",
+          "slew_ns": 0.02,
+          "status": "CONDITIONAL_SETUP_MEASUREMENTS",
+          "negative_metrics": [],
+          "failure": null,
+          "summary": [
+            {
+              "side": "left",
+              "phase": 0,
+              "maximum_input_data_lag_ns": 21.551631768877318,
+              "minimum_conditional_setup_margin_ns": 67.10105090572551,
+              "source_q_bound_ns": 0,
+              "return_after_source_close_ns": null,
+              "checked_data_transitions": 624,
+              "physical_qualification": false
+            },
+            {
+              "side": "left",
+              "phase": 1,
+              "maximum_input_data_lag_ns": 22.430272953556372,
+              "minimum_conditional_setup_margin_ns": 71.38419553259565,
+              "source_q_bound_ns": 0,
+              "return_after_source_close_ns": null,
+              "checked_data_transitions": 624,
+              "physical_qualification": false
+            },
+            {
+              "side": "right",
+              "phase": 0,
+              "maximum_input_data_lag_ns": 21.666027376213183,
+              "minimum_conditional_setup_margin_ns": 66.29212995260792,
+              "source_q_bound_ns": 0,
+              "return_after_source_close_ns": null,
+              "checked_data_transitions": 630,
+              "physical_qualification": false
+            },
+            {
+              "side": "right",
+              "phase": 1,
+              "maximum_input_data_lag_ns": 22.544668560892237,
+              "minimum_conditional_setup_margin_ns": 70.58916569035503,
+              "source_q_bound_ns": 0,
+              "return_after_source_close_ns": null,
+              "checked_data_transitions": 630,
+              "physical_qualification": false
+            }
+          ]
+        },
+        {
+          "key": "ff_n40C_3v60-s2.0",
+          "corner": "ff_n40C_3v60",
+          "slew_ns": 2.0,
+          "status": "CONDITIONAL_SETUP_MEASUREMENTS",
+          "negative_metrics": [],
+          "failure": null,
+          "summary": [
+            {
+              "side": "left",
+              "phase": 0,
+              "maximum_input_data_lag_ns": 21.243264150930827,
+              "minimum_conditional_setup_margin_ns": 67.10105090572551,
+              "source_q_bound_ns": 0,
+              "return_after_source_close_ns": null,
+              "checked_data_transitions": 624,
+              "physical_qualification": false
+            },
+            {
+              "side": "left",
+              "phase": 1,
+              "maximum_input_data_lag_ns": 22.42989897491995,
+              "minimum_conditional_setup_margin_ns": 71.38419553259565,
+              "source_q_bound_ns": 0,
+              "return_after_source_close_ns": null,
+              "checked_data_transitions": 624,
+              "physical_qualification": false
+            },
+            {
+              "side": "right",
+              "phase": 0,
+              "maximum_input_data_lag_ns": 21.357659758266692,
+              "minimum_conditional_setup_margin_ns": 66.29212995260792,
+              "source_q_bound_ns": 0,
+              "return_after_source_close_ns": null,
+              "checked_data_transitions": 630,
+              "physical_qualification": false
+            },
+            {
+              "side": "right",
+              "phase": 1,
+              "maximum_input_data_lag_ns": 22.544294582255816,
+              "minimum_conditional_setup_margin_ns": 70.58916569035503,
+              "source_q_bound_ns": 0,
+              "return_after_source_close_ns": null,
+              "checked_data_transitions": 630,
+              "physical_qualification": false
+            }
+          ]
+        }
+      ],
+      "path_rows": 89580,
+      "minima": {
+        "maximum_input_data_lag_ns": 21.243264150930827,
+        "minimum_conditional_setup_margin_ns": 66.29212995260792
+      },
+      "electrical_violation_rows_per_context": {
+        "minimum": 481,
+        "maximum": 1504
+      },
+      "control_verdicts": [
+        {
+          "fault": "period",
+          "status": "EXPECTED"
+        },
+        {
+          "fault": "late_input",
+          "status": "EXPECTED"
+        },
+        {
+          "fault": "late_source_capture",
+          "status": "EXPECTED"
+        },
+        {
+          "fault": "late_offer",
+          "status": "EXPECTED"
+        },
+        {
+          "fault": "late_rendezvous",
+          "status": "EXPECTED"
+        },
+        {
+          "fault": "early_control",
+          "status": "EXPECTED"
+        },
+        {
+          "fault": "deduplicated_parent",
+          "status": "EXPECTED"
+        },
+        {
+          "fault": "identity_permutation",
+          "status": "EXPECTED"
+        },
+        {
+          "fault": "external_load",
+          "status": "EXPECTED"
+        },
+        {
+          "fault": "unmodeled_lane",
+          "status": "EXPECTED"
+        },
+        {
+          "fault": "operand_wiring",
+          "status": "EXPECTED"
+        }
+      ]
+    }
+  },
+  "verification": [
+    {
+      "path": "build/control-join-python-r2.log",
+      "sha256": "48b25e4dfee0754d2a81ee88af3631f7a1a1fb6386263fbecad6e6ab855c10f7"
+    },
+    {
+      "path": "build/control-join-focused-r2.log",
+      "sha256": "6740fe792e61f8af05f3e7ed149eb34e67ce3d5f782f96e942d0b39b23ef2d0f"
+    },
+    {
+      "path": "build/control-join-review/independent-review.json",
+      "sha256": "1355ff03f2c7432508e71869821af81247bbe87d5b3c46ba80c9d6208cfaa597"
+    }
+  ],
+  "independent_review": {
+    "status": "NO_BLOCKING_FINDINGS_WITHIN_SCOPE",
+    "reviewer": "/root/review_control_join_implementation",
+    "scope": "Conditional initial Control Join setup only; no physical qualification or guard-sizing permission.",
+    "addressed": [
+      "Resolve actual parent/children, including deduplicated modules.",
+      "Require both operand cones to cover every dynamic destination lane.",
+      "Check exact loaded BD D-to-Q slew and min/max rising Click event slew across contexts.",
+      "Reject reversed min/max bounds and retain direct source/Join/update path provenance.",
+      "Condition only ACK receiving leaf pins and measure returning ACK after direct source closure.",
+      "Rerun shared-cell mutations on both operands and verify both capture cohorts.",
+      "Compare complete parsed results and summaries for analysis-period invariance."
+    ],
+    "final_review": "No remaining blocking findings within the documented conditional setup scope. Both sealed campaigns contain 10 resolved cases with no negative reported metrics. Both revised control campaigns report PASS with all 11 verdicts expected; their source and baseline receipt hashes match.",
+    "sources": [
+      {
+        "path": "tools/control_join_timing.py",
+        "sha256": "b76dd45858c97f241052cea67f99b9226dd7f85c4bfec4d576c5ce895555882e"
+      },
+      {
+        "path": "tools/check_control_join_controls.py",
+        "sha256": "f1d4c7667470fbb3ef8bac4b6f2b986f628d5f7b2b5b2afe6236f678a473ccc1"
+      },
+      {
+        "path": "tools/native_stage_timing.py",
+        "sha256": "ed9dfd44ecbc9c79c41b8221fd3db6613583aab6ceacdc79edbfd46ae3705927"
+      },
+      {
+        "path": "tools/test_control_join_timing.py",
+        "sha256": "6de886879265f392d5e4107a6839c1f40d569c041d74a619a6e25f29889fdeaf"
+      }
+    ]
+  },
+  "open": [
+    "Source input retention and next-token reuse",
+    "BD pending admission/reopening and return histories",
+    "Click pulse and phase self-hold",
+    "Simultaneous rendezvous input switching",
+    "Mismatch/statistical variation",
+    "Electrical violations",
+    "Routed min/max RC and reset distribution",
+    "Other stage upstream launch composition"
+  ]
+}
