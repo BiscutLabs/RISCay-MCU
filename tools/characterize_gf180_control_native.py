@@ -48,7 +48,7 @@ def expected_binding(variant,owner):
 def audit_bindings(netlist, record, plan):
     """Independently check each selected adapter against the mapper's cell graph."""
     modules=netlist["modules"]
-    selected={a["path"].split("/")[0] for a in plan["aliases"]}
+    selected=set(plan.get("verify_roots",[a["path"].split("/")[0] for a in plan["aliases"]]))
     stage=modules[plan["module"]]
     bindings={b["module"]:b for b in record["bindings"]}
     require(len(bindings)==len(record["bindings"]),"NATIVE_DUPLICATE_BINDING")
@@ -62,7 +62,9 @@ def audit_bindings(netlist, record, plan):
         require(len(resolved)==1,"NATIVE_BINDING_MULTIPLICITY")
         if "variant" in plan:
             b=bindings[resolved[0]]
-            require((b["model"],b["parameters"])==expected_binding(plan["variant"],root.removeprefix("ca_primitive_")),
+            expected=plan.get("expected_bindings",{}).get(root)
+            if expected is None:expected=expected_binding(plan["variant"],root.removeprefix("ca_primitive_"))
+            require((b["model"],b["parameters"])==tuple(expected),
                     "NATIVE_BINDING_SPECIALIZATION")
     used=set()
     for binding in record["bindings"]:
@@ -89,14 +91,15 @@ def audit_bindings(netlist, record, plan):
     require(all(covered(stage["cells"][r]["type"]) for r in selected),"NATIVE_BINDING_COVERAGE")
 
 
-def extract(netlist, variant):
+def extract(netlist, variant, descriptor=None):
     """Flatten selected *actual netlist* roots, including physical feedback.
 
     No circuit reconstructed from a generic adapter template. Record every cut
     edge and reject any unexplained external connection to a control node.
     """
     modules = netlist["modules"]
-    module = TARGETS[variant][0]
+    module = descriptor["module"] if descriptor else TARGETS[variant][0]
+    width = descriptor["payload_width"] if descriptor else 315
     stage = modules[module]
     roots = {"ca_primitive_"+x for x in OWNERS[variant]}
     require({k for k in stage["cells"] if k.startswith("ca_primitive_")} ==
@@ -169,7 +172,7 @@ def extract(netlist, variant):
     d = [top[b] for b in payload["connections"]["d"]]
     q = [top[b] for b in payload["connections"]["q"]]
     ports = {k:top[stage["ports"][k]["bits"][0]] for k in ("reset","in_req","in_ack","out_req","out_ack")}
-    require(len(d)==len(q)==315 and len(set(d))==len(set(q))==315, "NATIVE_PAYLOAD_WIDTH")
+    require(len(d)==len(q)==width and len(set(d))==len(set(q))==width, "NATIVE_PAYLOAD_WIDTH")
     boundary = set(d+q+list(ports.values()))
     selected = {top[b] for n in roots for bs in stage["cells"][n]["connections"].values() for b in bs}
     cut = []
@@ -184,12 +187,13 @@ def extract(netlist, variant):
     kind = SC+("latrnq_1" if variant=="bd" else "dffrnq_1")
     cap = "E" if variant=="bd" else "CLK"
     storage = [c for c in cells if c["path"].startswith("ca_primitive_payload/") and c["cell"]==kind]
-    require(len(storage)==315, "NATIVE_STORAGE_INVENTORY")
+    require(len(storage)==width, "NATIVE_STORAGE_INVENTORY")
     require({c["pins"]["D"] for c in storage}==set(d), "NATIVE_STORAGE_DATA")
     require({c["pins"]["Q"] for c in storage}==set(q), "NATIVE_STORAGE_OUTPUT")
     captures=defaultdict(list)
     for c in storage: captures[c["pins"][cap]].append(c["path"]+"/"+cap)
-    require(len(captures)==20 and sorted(map(len,captures.values()))==[11]+[16]*19,
+    groups=[16]*(width//16)+([width%16] if width%16 else [])
+    require(len(captures)==len(groups) and sorted(map(len,captures.values()))==sorted(groups),
             "NATIVE_CAPTURE_MEMBERSHIP")
     # Storage inputs must be driven externally only at the explicit D boundary.
     # Every other non-supply input has a retained physical driver or boundary input.
@@ -207,9 +211,12 @@ def extract(netlist, variant):
         flops=[c for c in cells if c["path"].startswith("ca_primitive_input_phase/") and c["cell"]==SC+"dffrnq_1"]
         require(len(flops)==1,"NATIVE_PHASE_REGISTER")
         phase={p:dict(node=flops[0]["pins"][p],pin=flops[0]["path"]+"/"+p) for p in ("D","CLK","Q")}
-    return dict(variant=variant,module=module,cells=cells,aliases=aliases,cuts=cut,ports=ports,
+    result=dict(variant=variant,module=module,cells=cells,aliases=aliases,cuts=cut,ports=ports,
                 d=d,q=q,captures=dict(sorted(captures.items())),signals=signals,phase=phase,limits=LIMITS,
                 physical_qualification=False)
+    if descriptor:
+        result.update(expected_bindings=descriptor["expected_bindings"],verify_roots=list(descriptor["expected_bindings"]))
+    return result
 
 
 def wave(initial, events, voltage, ramp):

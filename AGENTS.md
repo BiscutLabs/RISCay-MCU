@@ -459,6 +459,17 @@
   custody. Local boundary skew is not measured Join launch alignment. BD pending
   admission/returns, Click pulse/self-hold and electrical/routed envelopes stay
   open. Never shorten guards from this pilot alone or relax digital tests.
+  Follow docs/reviews/native-stage-timing.md for canonical-stage reuse. Resolve
+  logical metadata through the actual deduplicated hierarchy; validate endpoint
+  references, adapter tuples and Verilog/JSON connectivity before STA. Pair D/Q
+  and E/CLK by physical storage. Literal lanes keep capture/ACK obligations;
+  aliases are not constants. Share controller templates, never load-dependent
+  timing numbers. Custom I2cPublication is not covered by I2C update. Require
+  actual-arc/period controls for changed widths/guards and static branches;
+  pre-existing negative margins cannot count as detected mutation failures.
+  Freeze runtime configuration/executables, and use the same runtime for fault
+  controls. Configured native/WSL invocation currently covers the stage runner
+  and Control relative pilot/controls; legacy physical tools remain separate.
   Preserve exact async cells and connections, native delay chains and three SRAMs.
   Keep clocked STA separate from internal async path measurements. Recharacterize
   changed cells/whole transforms across all five pinned corners, and rerun

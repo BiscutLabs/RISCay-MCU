@@ -9,7 +9,7 @@ import subprocess
 import control_relative_timing as r
 
 
-def fault_sdf(plan, fault):
+def fault_sdf(plan, fault, capture=None):
     cells=plan["native"]["cells"]
     if fault=="short_request":
         selected=[c for c in cells if c["path"].startswith("ca_primitive_request_delay/") and c["cell"]==r.SC+"dlyd_1"]
@@ -22,7 +22,7 @@ def fault_sdf(plan, fault):
         r.require(fault=="late_capture","RELATIVE_CONTROL_FAULT")
         # Delay the branch that drives lane zero's actual E/CLK, including its
         # other 15 payload pins. No payload or protocol pin is rewired.
-        cap=next(c for c in plan["contexts"] if c["id"]=="common")["queries"][0]["sink"]
+        cap=capture or next(c for c in plan["contexts"] if c["id"]=="common")["queries"][0]["sink"]
         storage,pin=cap.rsplit("/",1)
         node=next(c for c in cells if c["path"]==storage)["pins"][pin]
         selected=[c for c in cells if c["pins"].get("Z")==node]
@@ -46,10 +46,18 @@ def fault_sdf(plan, fault):
     return '(DELAYFILE (SDFVERSION "3.0") (DESIGN "'+plan["module"]+'") (DIVIDER /) (TIMESCALE 1ns)\n'+"\n".join(rows)+')\n',arcs
 
 
+def verify_runtime(sta, inputs):
+    selected={str(p.resolve()):r.sha(p) for p in sta.input_files()}
+    r.require(all(inputs.get(p)==h for p,h in selected.items()),"RELATIVE_CONTROL_RUNTIME_CHANGED")
+    return selected
+
+
 def run(baseline, netlist, output):
     r.require(not output.exists(),"RELATIVE_CONTROL_OUTPUT_EXISTS")
     source_hash=r.sha(Path(__file__))
+    sta=r.tool("sta")
     receipt=json.loads((baseline/"results.json").read_text())
+    runtime=verify_runtime(sta,receipt["inputs_sha256"])
     for f,h in receipt["files_sha256"].items():r.require(r.sha(baseline/f)==h,"RELATIVE_CONTROL_STALE_BASE")
     # A final control run must use the same source implementation as its pilot.
     for f,h in receipt["inputs_sha256"].items():r.require(r.sha(Path(f))==h,"RELATIVE_CONTROL_STALE_SOURCE")
@@ -68,11 +76,11 @@ def run(baseline, netlist, output):
                       ctx["source_kind"]=="clock")
             if not relevant:continue
             tcl=output/(fault+"-"+ctx["id"]+".tcl");log=tcl.with_suffix(".log")
-            text=r.script(netlist,case["corner"],case["slew_ns"],plan,ctx,2000 if fault=="period" else 1000)
-            if fault!="period":text=text.replace('row RELATIVE_BEGIN',f'read_sdf {r.brace(r.linux(output/(fault+".sdf")))}\nrow RELATIVE_BEGIN')
+            text=r.script(netlist,case["corner"],case["slew_ns"],plan,ctx,2000 if fault=="period" else 1000,path=sta.path)
+            if fault!="period":text=text.replace('row RELATIVE_BEGIN',f'read_sdf {r.brace(sta.path(output/(fault+".sdf")))}\nrow RELATIVE_BEGIN')
             tcl.write_text(text,newline="\n")
             with log.open("w") as stream:
-                subprocess.run(["wsl","-d","nixos-librelane","-e",r.TIMEOUT,"--coreutils-prog=timeout","--signal=TERM","--kill-after=5s","55s",r.STA,"-no_init","-exit",r.linux(tcl)],stdout=stream,stderr=subprocess.STDOUT,check=True,timeout=65)
+                subprocess.run(sta.command(["-no_init","-exit",sta.path(tcl)],timeout=55),stdout=stream,stderr=subprocess.STDOUT,check=True,timeout=65)
             results[ctx["id"]]=r.parse(log.read_text(),plan,ctx)
         summary=r.margins(results,plan,saved["aperture"])
         if fault=="period":
@@ -108,6 +116,7 @@ def run(baseline, netlist, output):
     for f,h in receipt["files_sha256"].items():r.require(r.sha(baseline/f)==h,"RELATIVE_CONTROL_BASE_CHANGED")
     r.write_json(output/"controls.json",dict(status="PASS",physical_qualification=False,verdicts=verdicts,
         baseline_sha256=r.sha(baseline/"results.json"),source_sha256=source_hash,
+        runtime_sha256=runtime,
         files_sha256={p.name:r.sha(p) for p in output.iterdir() if p.is_file()}))
     print(json.dumps([dict(fault=v["fault"],affected=len(v["affected"]),status=v["status"]) for v in verdicts]))
 

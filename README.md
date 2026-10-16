@@ -83,6 +83,9 @@ The [relative-timing pilot](docs/reviews/control-relative-timing.md) resolves
 local Control capture/ACK paths under explicit handshake states at five cell
 corners. Source launch, full return/pulse behavior, electrical repair and routed
 timing remain open; no hardware clock or shortened guard is introduced.
+The [reusable stage survey](docs/reviews/native-stage-timing.md) applies those
+local checks to execute, elapsed, SRAM and I²C update. Negative execute/elapsed
+allowances remain visible; custom I²C publication and upstream launch stay open.
 See the [elapsed](docs/native-elapsed-contract.md) and
 [CRC](docs/native-crc-contract.md) contracts. Wider payload reductions remain
 open. Self-timed SRAM access follows a separate

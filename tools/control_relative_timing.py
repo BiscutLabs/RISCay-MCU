@@ -19,6 +19,7 @@ from characterize_gf180_liberty import CORNERS, STA
 from characterize_gf180_control_native import extract, audit_bindings
 from repair_gf180_control import require
 from screen_gf180_control_repair import stage_plan, brace, PROBE, TIMEOUT
+from physical_tools import tool
 
 
 def driver(plan, signal):
@@ -55,14 +56,37 @@ def conditions(plan, phase, common=False):
     return dict(cases=cases, keeper_cuts=cuts)
 
 
-def make_plan(netlist, record, variant):
-    native = extract(netlist, variant)
+def lane_bindings(native, payload, allowance, captures):
+    require(payload["d"]==allowance["q"],"RELATIVE_DATA_ALLOWANCE_BINDING")
+    require(len(allowance["a"])==len(native["q"])==len(captures),"RELATIVE_LOGICAL_WIDTH")
+    cells={c["path"]:c for c in native["cells"]};constants={};lane_map=[]
+    for lane,pin in enumerate(captures):
+        storage=cells[pin.rsplit("/",1)[0]]
+        logical=native["q"].index(storage["pins"]["Q"])
+        require(storage["pins"]["D"]==native["d"][logical],"RELATIVE_LOGICAL_LANE_PAIRING")
+        lane_map.append(dict(lane=lane,logical=logical,D=pin.rsplit("/",1)[0]+"/D",capture=pin,Q=pin.rsplit("/",1)[0]+"/Q"))
+        value=allowance["a"][logical]
+        if isinstance(value,str):
+            require(value in ("0","1"),"RELATIVE_UNKNOWN_DATA_LITERAL")
+            constants[str(lane)]=int(value)
+    require(len({x["logical"] for x in lane_map})==len(captures),"RELATIVE_DUPLICATE_STORAGE")
+    return constants,lane_map
+
+
+def make_plan(netlist, record, variant, descriptor=None):
+    native = extract(netlist, variant, descriptor)
     audit_bindings(netlist, record, native)
-    old = stage_plan(netlist, variant)
+    old = stage_plan(netlist, variant, descriptor)
     data = [q for q in old["queries"] if q["role"] == "data"]
     captures = sorted({q["sink"] for q in old["queries"] if q["role"] == "capture"})
     require(all(q["sink"].rsplit("/",1)[0]==captures[q["lane"]].rsplit("/",1)[0] for q in data),
             "RELATIVE_LANE_PAIRING")
+    constants={}; lane_map=[]
+    if descriptor:
+        payload=netlist["modules"][native["module"]]["cells"]["ca_primitive_payload"]["connections"]
+        allowance=netlist["modules"][native["module"]]["cells"]["ca_primitive_data_delay"]["connections"]
+        constants,lane_map=lane_bindings(native,payload,allowance,captures)
+        data=[q for q in data if str(q["lane"]) not in constants]
     event = driver(native, "long_hold" if variant == "bd" else "fire")
     contexts = [dict(id="data", kind="data", state=conditions(native,0),
                      source_kind="port", sources=old["sources"], queries=data)]
@@ -103,7 +127,8 @@ def make_plan(netlist, record, variant):
         contexts.append(dict(id="ack",kind="sequential_ack",state=conditions(native,0,True),
                              source_kind="clock",sources=[event],queries=qs))
     return dict(variant=variant,module=native["module"],event=event,contexts=contexts,
-                phase=native["phase"],native=native)
+                phase=native["phase"],native=native,payload_width=len(captures),
+                constant_lanes=constants,lane_map=lane_map,descriptor=descriptor)
 
 
 def aperture(lib, variant):
@@ -146,10 +171,10 @@ proc relative_ack {id mode edge phase_q phase_clk} {
 '''
 
 
-def script(netlist, corner, slew, plan, context, period=1000):
-    text = f'read_liberty {brace(linux(ROOT/".tools/physical/pdk"/(SC+corner+".lib")))}\n'
+def script(netlist, corner, slew, plan, context, period=1000, path=linux):
+    text = f'read_liberty {brace(path(ROOT/".tools/physical/pdk"/(SC+corner+".lib")))}\n'
     text += PROBE.read_text()+"\n"+ACK_TCL+"\n"
-    text += f'read_verilog {brace(linux(netlist))}\nlink_design {brace(plan["module"])}\n'
+    text += f'read_verilog {brace(path(netlist))}\nlink_design {brace(plan["module"])}\n'
     text += f'set_input_transition {slew} [all_inputs]\nset_load 0.05 [all_outputs]\nset_max_transition 2 [current_design]\n'
     for kind,pin,value in context["state"]["cases"]:
         text += f'set_case_analysis {value} [exact_object {kind} {brace(pin)}]\n'
@@ -262,7 +287,12 @@ def margins(results, plan, cell):
                 a=acks[f"ack:{mode}:{edge}"]
                 clk=common[f"phase_clock:{mode}"]["delay_ns"]
                 require(abs(a["q_arrival_ns"]-clk-a["clk_q_ns"])<1e-4,"RELATIVE_ACK_CLOCK_ACCOUNTING")
-        for lane in range(315):
+        for lane in range(plan.get("payload_width",315)):
+            if str(lane) in plan.get("constant_lanes",{}):
+                values.append(dict(lane=lane,phase=phase,constant=plan["constant_lanes"][str(lane)],
+                    maximum_input_data_lag_ns=None,zero_reuse_hold_margin_ns=None,
+                    ack_after_capture_ns=ack-common[f"capture:{lane}:max"]["delay_ns"]))
+                continue
             dmax=max(data[f"data:{lane}:max:{e}"]["delay_ns"] for e in ("rise","fall"))
             dmin=min(data[f"data:{lane}:min:{e}"]["delay_ns"] for e in ("rise","fall"))
             capture=request[f"capture:{lane}:min:{edge}"]["delay_ns"]
@@ -271,8 +301,8 @@ def margins(results, plan, cell):
                 maximum_input_data_lag_ns=capture-dmax-cell["setup_ns"],
                 zero_reuse_hold_margin_ns=ack+dmin-close-cell["hold_ns"],
                 ack_after_capture_ns=ack-close))
-    return dict(lanes=values, minimum_input_data_lag_ns=min(v["maximum_input_data_lag_ns"] for v in values),
-                minimum_zero_reuse_hold_ns=min(v["zero_reuse_hold_margin_ns"] for v in values),
+    return dict(lanes=values, minimum_input_data_lag_ns=min((v["maximum_input_data_lag_ns"] for v in values if v["maximum_input_data_lag_ns"] is not None),default=None),
+                minimum_zero_reuse_hold_ns=min((v["zero_reuse_hold_margin_ns"] for v in values if v["zero_reuse_hold_margin_ns"] is not None),default=None),
                 minimum_ack_after_capture_ns=min(v["ack_after_capture_ns"] for v in values),
                 unresolved=["Join storage Q/request launch alignment", "BD pending admission and both returns",
                             "Click feedback pulse and phase self-hold", "local variation/mismatch", "wire RC and reset", "electrical limits"],
@@ -291,7 +321,8 @@ def run(mapping, repaired, output, variant, corners, slews, period=1000):
     files += [ROOT/"tools"/f for f in ("characterize_gf180_control_native.py","screen_gf180_control_repair.py",
         "characterize_gf180_liberty.py","gf180_estimate.py","gf180_physical.py","gf180_implement.py","repair_gf180_control.py")]
     files += [pdk/(SC+c+".lib") for c in CORNERS]
-    files += [Path("//wsl.localhost/nixos-librelane"+p) for p in (STA,TIMEOUT)]
+    sta=tool("sta")
+    files += sta.input_files()
     frozen={str(p.resolve()):sha(p) for p in files}
     output.mkdir(parents=True); write_json(output/"plan.json",dict(plan=plan,inputs_sha256=frozen,period_ns=period))
     cases=[]
@@ -301,9 +332,9 @@ def run(mapping, repaired, output, variant, corners, slews, period=1000):
             key=f"{corner}-s{slew}"; results={}
             for ctx in plan["contexts"]:
                 name=key+"-"+ctx["id"]; tcl=output/(name+".tcl");log=output/(name+".log")
-                tcl.write_text(script(repaired/"netlist.v",corner,slew,plan,ctx,period),newline="\n")
+                tcl.write_text(script(repaired/"netlist.v",corner,slew,plan,ctx,period,path=sta.path),newline="\n")
                 with log.open("w") as stream:
-                    subprocess.run(["wsl","-d","nixos-librelane","-e",TIMEOUT,"--coreutils-prog=timeout","--signal=TERM","--kill-after=5s","55s",STA,"-no_init","-exit",linux(tcl)],stdout=stream,stderr=subprocess.STDOUT,check=True,timeout=65)
+                    subprocess.run(sta.command(["-no_init","-exit",sta.path(tcl)],timeout=55),stdout=stream,stderr=subprocess.STDOUT,check=True,timeout=65)
                 results[ctx["id"]]=parse(log.read_text(),plan,ctx)
             summary=margins(results,plan,cell)
             write_json(output/(key+".json"),dict(results=results,aperture=cell,summary=summary))
