@@ -1129,6 +1129,20 @@ physical reset qualification (R2b) remains mandatory under item 17a3.
         period invariance and actual-arc fault controls. See
         [the scoped evidence](reviews/control-relative-timing.md). No hardware,
         guard length or simulation policy changes.
+      - [x] **Reusable canonical-stage local measurements.** Resolve contract
+        instances through mapped module reuse, verify physical pin pairing and
+        static lanes, and retain same-corner signed allowances. Survey execute,
+        elapsed, RAM prepare/issue/capture and I²C update in both variants. Use
+        [the stage survey](reviews/native-stage-timing.md) for exact evidence and
+        limits. New tools run with configured native Linux or WSL executables.
+      - [ ] **Complete controller templates and custom publication.** Derive
+        the missing BD pending/return and Click pulse/self-hold cases from the
+        controller state graphs; add FIFO/Join and I2cPublication templates.
+        I²C update measurements do not cover publication.
+      - [ ] **Reduced controller SPICE and physical runtime portability.**
+        Validate lumped capture loads against the retained full-payload model,
+        use native crossing measurements and prove timestep convergence. Convert
+        the remaining legacy synthesis/P&R/SPICE launchers to configuration.
       - [ ] **Complete paired Control capture/hold analysis.** The conditional
         pilot resolves local E/CLK/ACK paths; complete source launch, BD pending
         admission/returns and Click pulse/feedback remain open. Bound full

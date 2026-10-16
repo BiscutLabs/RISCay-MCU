@@ -30,19 +30,21 @@ def brace(s):
     return "{"+s+"}"
 
 
-def stage_plan(netlist, variant):
-    module = TARGETS[variant][0]
+def stage_plan(netlist, variant, descriptor=None):
+    module = descriptor["module"] if descriptor else TARGETS[variant][0]
+    width = descriptor["payload_width"] if descriptor else 315
+    input_width = descriptor["input_width"] if descriptor else 655
     body = netlist["modules"][module]
     sources = []
     for name, p in body["ports"].items():
-        if name.startswith("in_bits_"):
+        if name=="in_bits" or name.startswith("in_bits_"):
             require(p["direction"] == "input", "CONTROL_SOURCE_DIRECTION")
             sources += [name] if len(p["bits"]) == 1 else [f"{name}[{i}]" for i in range(len(p["bits"]))]
-    require(len(sources) == 655, "CONTROL_SOURCE_WIDTH")
+    require(len(sources) == input_width, "CONTROL_SOURCE_WIDTH")
     kind = SC+("latrnq_1" if variant == "bd" else "dffrnq_1")
     payload = [(p,c) for p,c in leaves(netlist["modules"],module)
                if p.startswith("ca_primitive_payload/") and c["type"] == kind]
-    require(len(payload) == 315, "CONTROL_PAYLOAD_WIDTH")
+    require(len(payload) == width, "CONTROL_PAYLOAD_WIDTH")
     capture_pin = "E" if variant == "bd" else "CLK"
     capture_edge = "fall" if variant == "bd" else "rise"
     phases = ["rise"] if variant == "bd" else ["rise", "fall"]
@@ -83,8 +85,8 @@ def stage_plan(netlist, variant):
         for phase in phases:
             queries.append(dict(id=f"guard:{mode}:{phase}",role="guard",mode=mode,source_edge=phase,
                 sink_edge=phase,sink_kind="pin",sink=owner+"/"+port))
-    require(len(queries) <= 2600 and len({q["id"] for q in queries}) == len(queries), "CONTROL_QUERY_LIMIT")
-    electrical = [TARGETS[variant][1]+"/ZN"] + [n+"/Z" for n in body["cells"] if n.startswith(PREFIX)]
+    require(len(queries) <= (16384 if descriptor else 2600) and len({q["id"] for q in queries}) == len(queries), "CONTROL_QUERY_LIMIT")
+    electrical = [] if descriptor else [TARGETS[variant][1]+"/ZN"] + [n+"/Z" for n in body["cells"] if n.startswith(PREFIX)]
     return dict(module=module, sources=sources, queries=queries, electrical=sorted(electrical))
 
 

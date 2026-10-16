@@ -1,0 +1,22 @@
+{
+  "schema": 1,
+  "tools": {
+    "yosys": {
+      "executable": "/mnt/p/Personal/RISCay-MCU/.tools/physical/root/usr/bin/yosys",
+      "distribution": "Ubuntu",
+      "timeout_executable": "/usr/bin/timeout"
+    },
+    "sta": {
+      "executable": "/nix/store/kklj5jbmmhf3cvh4jymwn485ahyzg1mw-opensta/bin/sta",
+      "distribution": "nixos-librelane",
+      "timeout_executable": "/nix/store/2lwxwsaixnaq561hbq02v5236935ass8-coreutils-full-9.8/bin/coreutils",
+      "timeout_arguments": ["--coreutils-prog=timeout"]
+    },
+    "openroad": {
+      "executable": "/nix/store/c4zxmi7w55jnz305yqc4407n4426zj7s-openroad-2026-02-17/bin/openroad",
+      "distribution": "nixos-librelane",
+      "timeout_executable": "/nix/store/2lwxwsaixnaq561hbq02v5236935ass8-coreutils-full-9.8/bin/coreutils",
+      "timeout_arguments": ["--coreutils-prog=timeout"]
+    }
+  }
+}

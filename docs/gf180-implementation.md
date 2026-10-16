@@ -210,3 +210,13 @@ Control capture/ACK paths. It retains actual request propagation and Click
 phase CLK-to-Q, and compares hold from a common capture event. The complete
 Join source envelope, BD returns, Click pulse checks, electrical limits and
 extracted RC remain open. This is an opt-in analysis, not a default mapping change.
+
+The [canonical-stage survey](reviews/native-stage-timing.md) reuses these local
+templates across contract-selected execute, elapsed, SRAM and I²C update
+instances. It resolves module deduplication, verifies the Verilog/JSON graph,
+and preserves capture/ACK checks for static lanes. Negative execute/elapsed
+allowances require measured upstream data lead before a complete setup claim;
+custom I²C publication is not covered. The stage runner and Control relative
+pilot/controls read `RISCAY_PHYSICAL_TOOLS` or the platform JSON defaults in
+`physical/gf180/`. Their native Linux path is exercised; the legacy reproduction
+commands above retain their existing runtime assumptions until converted.
