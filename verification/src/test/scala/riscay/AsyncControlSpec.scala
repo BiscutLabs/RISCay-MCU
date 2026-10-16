@@ -196,6 +196,43 @@ class AsyncControlSpec extends AnyFunSuite {
       """
     }.mkString("\n")
   }
+  for(bypass <- Seq("none","both","fall")) {
+    test(s"BD Control actual both-edge ACK guard with immediate source reuse; bypass=$bypass") {
+      val directory=fresh("bd-ack-"+bypass)
+      val steps=campaign
+      def run(): Unit = AsyncTest.run(top(false),if(bypass!="none") Seq(1L) else Seq(1L,2L,19L),directory) { _ =>
+        val root=ujson.read(Files.readString(directory.resolve("export/contract.json")))("manifest")("design")
+        val guards=root("primitives").arr.filter(_("id").str=="acknowledge_guard")
+        require(guards.size==1 && guards.head("parameters")("DELAY_FS").str=="32000000","CONTROL_ACK_BINDING")
+        val guard="dut."+guards.head("rtl_path").str.split('.').drop(1).mkString(".")
+        s"""
+        ${if(bypass=="both") s"force $guard.q=$guard.a;" else ""}
+        fork
+          begin ${source(false,steps)} end
+          begin ${sink(false,steps)} end
+          begin : ack_monitor
+            time changed;
+            integer n;
+            for(n=0;n<${steps.size};n=n+1) begin
+              @(posedge $guard.a); changed=$$time; wait($guard.q);
+              if($$time-changed < 32000000) $$fatal(1,"CONTROL_ACK_RISE_EARLY");
+              @(negedge $guard.a); changed=$$time;
+              ${if(bypass=="fall") s"force $guard.q=$guard.a;" else ""}
+              wait(!$guard.q);
+              if($$time-changed < 32000000) $$fatal(1,"CONTROL_ACK_FALL_EARLY");
+            end
+          end
+        join
+        #1000000000;
+        if(delivered_reply != ${steps.size}) $$fatal(1,"CONTROL_ACK_EXACTLY_ONCE");
+        """
+      }
+      if(bypass!="none") {
+        val error=intercept[IllegalArgumentException](run())
+        assert(error.getMessage.contains(if(bypass=="fall") "CONTROL_ACK_FALL_EARLY" else "CONTROL_ACK_RISE_EARLY"),error.getMessage)
+      } else run()
+    }
+  }
   for(click <- Seq(false,true)) {
     val name=if(click) "click" else "bd"
     for((capacity,countBits,entryBits,stateBits,tokenBits,replyBits,entryLo,lengthLo,errorLo) <- Seq(

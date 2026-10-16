@@ -8,7 +8,8 @@ import riscay._
 import riscay.soc._
 
 /** This variant owns clock, reset, wake and endpoint integration. */
-abstract class FourPhasePlatform(p: SocParameters, board: SocParameters => BoardProfile, clockedCpuResponse: Boolean = true) extends SocTop(p) {
+abstract class FourPhasePlatform(p: SocParameters, board: SocParameters => BoardProfile,
+    clockedCpuResponse: Boolean = true, owners: OwnerTiming = OwnerTiming()) extends SocTop(p) {
   val watchdog = withClockAndReset(watchdogClock, reset) { Module(new Watchdog(p.watchdogCycles, p.watchdogHoldCycles)) }
   // Every pulse restarts the release history on the ungated service clock.
   // Eight edges hold at least 350 ns at the 20 MHz ceiling for observation.
@@ -210,7 +211,7 @@ abstract class FourPhasePlatform(p: SocParameters, board: SocParameters => Board
   fabric.io.programSource.draining:=programServiceDebt || !programSourceEmpty
   // Persistent command/state loop and both crossings are POR-only. Application
   // reset is synchronized service data, never a reset of image/lock state.
-  val control = asyncChild("control")(d => new FourPhaseControl(p, d))
+  val control = asyncChild("control")(d => new FourPhaseControl(p, d, owners))
   val controlCommandBridge = asyncChild("control_command_bridge")(d =>
     new chiselasync.clocked.DecoupledToFourPhase(new ControlCommand, 2, d))
   val controlReplyBridge = asyncChild("control_reply_bridge")(d =>
@@ -439,7 +440,7 @@ abstract class FourPhasePlatform(p: SocParameters, board: SocParameters => Board
   p.lowPower match {
     case Some(lp) =>
       val scaler = asyncChild("elapsed_scaler")(d => new ElapsedTicks(
-        Seq(lp.tickMicros, lp.minimumTickMicros, lp.maximumTickMicros), d))
+        Seq(lp.tickMicros, lp.minimumTickMicros, lp.maximumTickMicros), d, owners.elapsedOwner, owners.elapsedStep))
       scaler.clock := workClock; scaler.io <> fabric.io.elapsedScaling
     case None =>
       fabric.io.elapsedScaling.publicationTarget := 0.U; fabric.io.elapsedScaling.consumed := 0.U; fabric.io.elapsedScaling.valid := false.B

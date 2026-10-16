@@ -142,7 +142,8 @@ def bound_slice(netlist, record, manifest, variant, *, target="control"):
     require(len(selected_bindings)==1 and selected_bindings[0]['parameters']==shape and
             selected_bindings[0]['model']==primitives[0]['model'],"JOIN_RENDEZVOUS_MAPPING")
     audit_bindings(netlist,record,dict(module=selected["ca_child_join"]["type"],variant=variant,aliases=[],
-        verify_roots=[rname],expected_bindings={rname:("ChiselAsyncAsymmetricC_v1",shape)}))
+        verify_roots=[rname],expected_bindings={rname:("ChiselAsyncAsymmetricC_v1",shape)},
+        physical_prefix='soc/'+'/'.join(path.split('.')[1:])+'/ca_child_join/'))
     children={s:plans[s]["prefix"].split("/")[-2] for s in ("left","right")}
     require(set(join["cells"])==set(children.values())|{rname},"JOIN_CHILD_INVENTORY")
     require(selected[sink_name]['type']==plans['update']['module'] and
@@ -508,16 +509,21 @@ def margins(results,plan,aperture):
 
 def run(mapping,output,variant,campaign=False,*,target="control"):
     require(not output.exists(),"JOIN_OUTPUT_EXISTS")
+    from repair_gf180_design import validate_receipt
+    receipt=validate_receipt(mapping)
     record=json.loads((mapping/'mapping.json').read_text());netlist=json.loads((mapping/'netlist.json').read_text())
     audit=json.loads((mapping/'netlist-audit.json').read_text());policy=json.loads((mapping/'physical-policy.json').read_text())
     require(record['variant']==variant and audit['status']=='pass' and audit['netlist_sha256']==sha(mapping/'netlist.v') and
             audit['mapping_sha256']==sha(mapping/'mapping.json'),"JOIN_STALE_AUDIT")
     require(record['physical_policy_sha256']==sha(mapping/'physical-policy.json') and policy['contract_sha256']==sha(mapping/'timing-intent.json'),"JOIN_STALE_CONTRACT")
     manifest=json.loads((mapping/'timing-intent.json').read_text())['manifest']
+    record=stages.repaired_bindings(record,netlist,stages.receipt_original(mapping,receipt),audit,stages.receipt_buffers(mapping,receipt))
     sliced,plan=bound_slice(netlist,record,manifest,variant,target=target);cells=flat_cells(sliced);plan['contexts']=contexts(plan,cells)
     plan['side_input_reachability']=side_reachability(sliced,plan,cells)
     sta=tool('sta');yosys=tool('yosys');pdk=ROOT/'.tools/physical/pdk';pdk_verify(pdk)
     files=[mapping/f for f in ('mapping.json','netlist.json','netlist.v','netlist-audit.json','timing-intent.json','physical-policy.json')]
+    files += [mapping/'electrical-repair/receipt.json',mapping/'electrical-repair/reference/netlist.json',
+              mapping/'electrical-repair/proof.json',ROOT/'tools/repair_gf180_design.py']
     files += [ROOT/'tools'/f for f in ('control_join_timing.py','native_stage_timing.py','control_relative_timing.py',
         'characterize_gf180_control_native.py','screen_gf180_control_repair.py','repair_gf180_control.py',
         'gf180_physical.py','gf180_implement.py','gf180_estimate.py','characterize_gf180_liberty.py')]
@@ -545,6 +551,7 @@ def run(mapping,output,variant,campaign=False,*,target="control"):
             write_json(output/(key+'.json'),dict(case=case,results=results,aperture=aperture))
             cases.append(case);print(json.dumps(case),flush=True)
     require(all(sha(Path(p))==h for p,h in frozen.items()),'JOIN_INPUT_CHANGED')
+    validate_receipt(mapping)
     write_json(output/'results.json',dict(physical_qualification=False,target=target,
         uncomposed_side_input_bits=plan['uncomposed_side_input_bits'],whole_stage_setup_established=False,
         side_input_obligation='Stable throughout each measured Join launch and sink aperture; launch/hold not measured here. Symbolic boundary slew equals the case input slew.',

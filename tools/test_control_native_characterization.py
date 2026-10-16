@@ -7,7 +7,7 @@ import unittest
 from unittest.mock import patch
 import subprocess
 
-from characterize_gf180_control_native import evaluate, read_trace, crossings, audit_bindings, extract, expected_binding, simulate
+from characterize_gf180_control_native import evaluate, read_trace, crossings, audit_bindings, extract, expected_binding, simulate, tied_constants
 from gf180_physical import SC
 from compare_control_native_steps import compare
 
@@ -225,6 +225,74 @@ class NativeCharacterizationTest(unittest.TestCase):
         n,r=synthetic_mapping();p=extract(n,"bd");audit_bindings(n,r,p)
         self.assertEqual(sum(map(len,p["captures"].values())),315)
         self.assertEqual(len(p["captures"]),20)
+
+    def test_live_clone_checked_even_when_original_definition_survives(self):
+        n,r=synthetic_mapping()
+        n['modules']['clone']=deepcopy(n['modules']['adapter_payload'])
+        n['modules']['FourPhaseStage_20']['cells']['ca_primitive_payload']['type']='clone'
+        binding=next(b for b in r['bindings'] if b['module']=='adapter_payload')
+        binding['physical_modules']=['clone']
+        p=extract(n,'bd');audit_bindings(n,r,p)
+        n['modules']['clone']['cells']['latch0']['connections']['D']=[9000]
+        with self.assertRaisesRegex(ValueError,'NATIVE_BINDING_CONNECTION'):audit_bindings(n,r,p)
+
+    def test_only_unique_exact_ties_are_protocol_constants(self):
+        body=dict(ports={},cells={'tie':dict(type=SC+'tiel',connections={'ZN':[5]},port_directions={'ZN':'output'})})
+        self.assertEqual(tied_constants(body),{5:'0'})
+        body['cells']['other']=dict(type=SC+'buf_1',connections={'I':[1],'Z':[5]},port_directions={'I':'input','Z':'output'})
+        with self.assertRaisesRegex(ValueError,'NATIVE_TIE_DRIVER'):tied_constants(body)
+        del body['cells']['other'];body['cells']['tie']['connections']['ZN']=[5,6]
+        with self.assertRaisesRegex(ValueError,'NATIVE_TIE_SHAPE'):tied_constants(body)
+
+    def test_wrapper_buffer_requires_exact_receipt_path_and_buffer_master(self):
+        n,r=synthetic_mapping()
+        p=extract(n,'bd')
+        n['modules']['wrapped_payload']=dict(cells={
+            'native':dict(type='adapter_payload'),
+            'distribution':dict(type=SC+'buf_2')})
+        n['modules']['FourPhaseStage_20']['cells']['ca_primitive_payload']['type']='wrapped_payload'
+        p['physical_prefix']='soc/stage/'
+        with self.assertRaisesRegex(ValueError,'NATIVE_BINDING_WRAPPER'):audit_bindings(n,r,p)
+        r['repair_buffers']=['soc/stage/ca_primitive_payload/distribution']
+        audit_bindings(n,r,p)
+        r['repair_buffers']=['soc/other/ca_primitive_payload/distribution']
+        with self.assertRaisesRegex(ValueError,'NATIVE_BINDING_WRAPPER'):audit_bindings(n,r,p)
+        r['repair_buffers']=['soc/stage/ca_primitive_payload/distribution']
+        n['modules']['wrapped_payload']['cells']['distribution']['type']=SC+'inv_2'
+        with self.assertRaisesRegex(ValueError,'NATIVE_BINDING_WRAPPER'):audit_bindings(n,r,p)
+
+    def test_tied_constant_does_not_change_capture_graph(self):
+        n,r=synthetic_mapping();old=extract(n,'bd');body=n['modules']['FourPhaseStage_20']
+        body['cells']['zero']=dict(type=SC+'tiel',connections={'ZN':[9000]},port_directions={'ZN':'output'})
+        body['cells']['ca_primitive_request_delay']['connections']['b']=[9000]
+        new=extract(n,'bd')
+        self.assertEqual(new['cells'],old['cells'])
+        self.assertEqual(new['captures'],old['captures'])
+
+    def test_unused_specialized_constant_port_is_recorded_without_a_path(self):
+        n,r=synthetic_mapping();body=n['modules']['FourPhaseStage_20']
+        # Model the RISING=0 specialization independently: its declared input
+        # exists, but no physical leaf consumes it. The generic graph fixture
+        # above deliberately consumes every input and must not be exempted.
+        adapter=n['modules']['adapter_b']
+        adapter['ports']['rising']['bits']=[9001]
+        del adapter['cells']['u0']['connections']['rising']
+        adapter['cells']['u0']['port_directions']=dict(adapter['cells']['u0']['port_directions'])
+        del adapter['cells']['u0']['port_directions']['rising']
+        binding=next(b for b in r['bindings'] if b['module']=='adapter_b')
+        del binding['cells'][0]['pins']['rising']
+        body['cells']['ca_primitive_b']['connections']['rising']=[9000]
+        plan=extract(n,'bd');audit_bindings(n,r,plan)
+        self.assertEqual(plan['unused_protocol_inputs'],[dict(owner='b',pin='rising',original_constant=['1'],
+            reason='specialized-input-has-no-physical-consumer')])
+        # A real consumer or output alias defeats the exemption, even before
+        # the independent native recipe audit runs.
+        for output in (False,True):
+            bad=deepcopy(n);adapter=bad['modules']['adapter_b'];bit=adapter['ports']['rising']['bits'][0]
+            if output:adapter['ports']['q']['bits']=[bit]
+            else:adapter['cells']['extra']=dict(type=SC+'inv_1',connections={'I':[bit],'ZN':[9999]},
+                port_directions={'I':'input','ZN':'output'})
+            with self.assertRaisesRegex(ValueError,'NATIVE_PROTOCOL_WIRING'):extract(bad,'bd')
 
     def test_wrong_keeper_inversion(self):
         n,r=synthetic_mapping();p=extract(n,"bd")

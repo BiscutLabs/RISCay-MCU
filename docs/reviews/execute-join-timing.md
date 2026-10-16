@@ -78,36 +78,45 @@ Reproduce with configured tools (`RISCAY_PHYSICAL_TOOLS`):
 
 ```powershell
 python tools/control_join_timing.py `
-  build/async-loader-width-finish-r2/candidate-mapped-bd-r1 `
+  build/current-repaired-bd `
   build/my-execute-join-bd --variant bd --target execute --campaign
 python tools/check_control_join_controls.py `
   build/my-execute-join-bd build/my-execute-join-bd-controls
 ```
 
-Repeat for Click. Fresh output directories are mandatory. Control remains the
+Repeat for Click. New inputs require an accepted electrical-repair receipt;
+the earlier unrepaired results above remain historical. Fresh output
+directories are mandatory. Control remains the
 default caller; its original per-context paths, numerical results and summaries
 are checked for regression. Tools/docs-only work does not claim new Scala or
 firmware simulation results.
 
-## Next gates before an RTL timing change
+## Next gates (electrical-first correction)
 
-1. Compose the RF source: state publication → register-arrival/selected-bank
+1. Run global graph-preserving electrical repair with native cells protected,
+   then rerun the existing same-corner campaigns on the repaired graph. Retain
+   all residual slew/load violations; extrapolated near-zero margins are not
+   qualification evidence.
+2. Compose the RF source: state publication → register-arrival/selected-bank
    trigger → bank CLK-to-Q → execute transform, against state publication →
    31 ns forwarding guard → Fork → Join → execute capture. Cover all 15 selected
    banks and retain obligations for unselected held banks.
-2. Compose elapsed's actual seeded owner and parent admission/data muxes. Its
+3. Compose elapsed's actual seeded owner and parent admission/data muxes. Its
    modeled **output** guard is 31 ns BD / 32 ns Click; 11 ns is the request guard.
    Measure that lead. BD uses a seeded FIFO/merge/long-hold buffer; Click uses a
    seeded phase-decoupled buffer with distinct input/output phases and startup.
    Distinguish owner-last admission, command-last admission and feedback turns.
-3. Repair electrical violations with graph-preservation evidence, then rerun
-   these same-corner envelopes. The previous worst execute allowance was at
+   The previous worst execute allowance was at
    FF/125°C/3.6 V with 2 ns input slew, not a slow corner; its reported data-path
    maximum slew was about 45–47 ns.
-4. Select any required step/execute request-chain change from the complete
-   measured envelope with explicit variation assumptions. Keep elapsed's step
-   policy separate from its owner policy. The standalone experimental
+4. Safe-direction RTL parameterization and guard lengthening can proceed before
+   complete measurements. The current defaults add elapsed/execute request time
+   and BD Control source-retention time; see the
+   [correction record](electrical-first-correction.md). Shortening any guard
+   requires the complete measured envelope and explicit variation assumptions.
+   Keep elapsed's step policy separate from its owner policy. The standalone experimental
    `PhysicalTiming.executeData = 180 ns` is not a supported SoC policy.
+5. Measure full-chip reset and handshake timing with extracted min/max wire RC.
 
 Whole execute/elapsed setup, RF/source hold, pending/return/pulse histories,
 simultaneous rendezvous, reset distribution and routed qualification remain open.

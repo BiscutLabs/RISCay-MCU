@@ -50,15 +50,22 @@ def audit_bindings(netlist, record, plan):
     modules=netlist["modules"]
     selected=set(plan.get("verify_roots",[a["path"].split("/")[0] for a in plan["aliases"]]))
     stage=modules[plan["module"]]
-    bindings={b["module"]:b for b in record["bindings"]}
-    require(len(bindings)==len(record["bindings"]),"NATIVE_DUPLICATE_BINDING")
-    def resolve(kind,seen=()):
+    bindings={}
+    for binding in record["bindings"]:
+        for name in [binding["module"],*binding.get("physical_modules",[])]:
+            require(name not in bindings or bindings[name] is binding,"NATIVE_DUPLICATE_BINDING")
+            bindings[name]=binding
+    def repaired_buffer(kind,path):
+        return (plan.get('physical_prefix','')+path in record.get('repair_buffers',[]) and
+                re.fullmatch(re.escape(SC)+r'buf_\d+',kind) is not None)
+    def resolve(kind,path,seen=()):
         require(kind not in seen and len(seen)<10,"NATIVE_HIERARCHY_CYCLE")
         if kind in bindings:return [kind]
+        if repaired_buffer(kind,path):return []
         require(kind in modules and not kind.startswith(SC) and modules[kind]["cells"],"NATIVE_BINDING_WRAPPER")
-        return [b for c in modules[kind]["cells"].values() for b in resolve(c["type"],seen+(kind,))]
+        return [b for name,c in modules[kind]["cells"].items() for b in resolve(c["type"],path+'/'+name,seen+(kind,))]
     for root in selected:
-        resolved=resolve(stage["cells"][root]["type"])
+        resolved=resolve(stage["cells"][root]["type"],root)
         require(len(resolved)==1,"NATIVE_BINDING_MULTIPLICITY")
         if "variant" in plan:
             b=bindings[resolved[0]]
@@ -67,8 +74,7 @@ def audit_bindings(netlist, record, plan):
             require((b["model"],b["parameters"])==tuple(expected),
                     "NATIVE_BINDING_SPECIALIZATION")
     used=set()
-    for binding in record["bindings"]:
-        name=binding["module"]
+    for name,binding in bindings.items():
         # Resolve by actual wrapper descent rather than a name-suffix assumption.
         def visit(kind):
             if kind==name: return True
@@ -85,10 +91,49 @@ def audit_bindings(netlist, record, plan):
             actual=body["cells"][c["name"]]
             require(actual["type"]==c["cell"] and actual["connections"]=={p:[bit(n)] for p,n in c["pins"].items()},"NATIVE_BINDING_CONNECTION")
     # Every physical leaf must come from one of the verified binding modules.
-    def covered(kind):
+    def covered(kind,path):
         if kind in used: return True
-        return kind in modules and not kind.startswith(SC) and bool(modules[kind]["cells"]) and all(covered(c["type"]) for c in modules[kind]["cells"].values())
-    require(all(covered(stage["cells"][r]["type"]) for r in selected),"NATIVE_BINDING_COVERAGE")
+        if repaired_buffer(kind,path):return True
+        return kind in modules and not kind.startswith(SC) and bool(modules[kind]["cells"]) and all(covered(c["type"],path+'/'+name) for name,c in modules[kind]["cells"].items())
+    require(all(covered(stage["cells"][r]["type"],r) for r in selected),"NATIVE_BINDING_COVERAGE")
+
+
+def tied_constants(body):
+    """Resolve only unique, exact constant-cell drivers in the actual module.
+
+    This classifies static lanes and protocol constants; it does not remove any
+    physical cell or buffer from the Verilog used for timing.
+    """
+    drivers=Counter(bit for c in body['cells'].values() for p,bs in c['connections'].items()
+                    if c['port_directions'][p]=='output' for bit in bs)
+    drivers.update(bit for p in body['ports'].values() if p['direction']=='input' for bit in p['bits'])
+    result={}
+    for c in body['cells'].values():
+        if c['type'] not in (SC+'tieh',SC+'tiel'):continue
+        pin,value=('Z','1') if c['type']==SC+'tieh' else ('ZN','0')
+        require(c['port_directions']=={pin:'output'} and set(c['connections'])=={pin} and
+                len(c['connections'][pin])==1,"NATIVE_TIE_SHAPE")
+        bit=c['connections'][pin][0]
+        require(isinstance(bit,int) and drivers[bit]==1,"NATIVE_TIE_DRIVER")
+        result[bit]=value
+    return result
+
+
+def unused_input(modules, kind, pin):
+    """Prove a specialized input reaches no leaf pin or public output."""
+    def used(kind,bits,stack=()):
+        require(kind not in stack and len(stack)<64,'NATIVE_HIERARCHY_CYCLE')
+        body=modules[kind]
+        if any(bits.intersection(p['bits']) for p in body['ports'].values() if p['direction']!='input'):return True
+        for c in body['cells'].values():
+            for p,bs in c['connections'].items():
+                indices=[i for i,b in enumerate(bs) if b in bits]
+                if not indices or c['port_directions'][p]=='output':continue
+                if c['type'].startswith(SC):return True
+                child=modules[c['type']]['ports'][p]
+                if used(c['type'],{child['bits'][i] for i in indices},stack+(kind,)):return True
+        return False
+    return not used(kind,set(modules[kind]['ports'][pin]['bits']))
 
 
 def extract(netlist, variant, descriptor=None):
@@ -101,12 +146,13 @@ def extract(netlist, variant, descriptor=None):
     module = descriptor["module"] if descriptor else TARGETS[variant][0]
     width = descriptor["payload_width"] if descriptor else 315
     stage = modules[module]
+    constants=tied_constants(stage)
     roots = {"ca_primitive_"+x for x in OWNERS[variant]}
     require({k for k in stage["cells"] if k.startswith("ca_primitive_")} ==
             roots | {"ca_primitive_data_delay"}, "NATIVE_ROOT_INVENTORY")
     def conn(owner,pin="q"):
-        return stage["cells"]["ca_primitive_"+owner]["connections"][pin]
-    def port(pin): return stage["ports"][pin]["bits"]
+        return [constants.get(b,b) for b in stage["cells"]["ca_primitive_"+owner]["connections"][pin]]
+    def port(pin): return [constants.get(b,b) for b in stage["ports"][pin]["bits"]]
     for owner in OWNERS[variant]:
         require(conn(owner,"reset")==port("reset"),"NATIVE_RESET_WIRING")
     expected={ ("request_delay","a"):port("in_req"), ("request_delay","b"):["0"] }
@@ -125,7 +171,14 @@ def extract(netlist, variant, descriptor=None):
             ("payload","trigger"):conn("fire"),("acknowledge_guard","a"):conn("input_phase"),
             ("output_guard","a"):conn("input_phase"),("acknowledge_guard","b"):["0"],("output_guard","b"):["0"]})
         require(conn("acknowledge_guard")==port("in_ack") and conn("output_guard")==port("out_req"),"NATIVE_PUBLIC_WIRING")
-    require(all(conn(o,p)==bs for (o,p),bs in expected.items()),"NATIVE_PROTOCOL_WIRING")
+    unused=[]
+    for (owner,pin),bits in expected.items():
+        if conn(owner,pin)==bits:continue
+        cell=stage['cells']['ca_primitive_'+owner]
+        require(all(b in ('0','1') for b in bits) and unused_input(modules,cell['type'],pin),
+                'NATIVE_PROTOCOL_WIRING')
+        unused.append(dict(owner=owner,pin=pin,original_constant=bits,
+                           reason='specialized-input-has-no-physical-consumer'))
     nodes = {}
 
     def node(key):
@@ -135,7 +188,7 @@ def extract(netlist, variant, descriptor=None):
         if key not in nodes: nodes[key] = "n"+str(len(nodes))
         return nodes[key]
 
-    top = {b: node((module, b)) for c in stage["cells"].values()
+    top = {b: node(constants.get(b,(module, b))) for c in stage["cells"].values()
            for bs in c["connections"].values() for b in bs if isinstance(b, int)}
     top.update({"0": "0", "1": "vdd"})
     cells = []
@@ -213,9 +266,11 @@ def extract(netlist, variant, descriptor=None):
         phase={p:dict(node=flops[0]["pins"][p],pin=flops[0]["path"]+"/"+p) for p in ("D","CLK","Q")}
     result=dict(variant=variant,module=module,cells=cells,aliases=aliases,cuts=cut,ports=ports,
                 d=d,q=q,captures=dict(sorted(captures.items())),signals=signals,phase=phase,limits=LIMITS,
+                unused_protocol_inputs=unused,
                 physical_qualification=False)
     if descriptor:
         result.update(expected_bindings=descriptor["expected_bindings"],verify_roots=list(descriptor["expected_bindings"]))
+        result['physical_prefix']='soc/'+'/'.join(descriptor['instance'].split('.')[1:])+'/'
     return result
 
 

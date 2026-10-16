@@ -1,6 +1,4 @@
 {
-  "schema": "riscay-controlgate-roles-v1",
-  "scope": "Reviewed native SoC and library primitive intent; add new owner/ID pairs only with source and timing-contract review. Numeric FIRRTL module specialization suffixes are ignored. Data entries also require a resolved contract delay-cell reference. No physical timing qualification is implied.",
   "owners": {
     "ClickBuffer": {
       "acknowledge_guard": "matched-control-delay",
@@ -343,6 +341,9 @@
       "telemetry_ack_nb": "matched-control-delay",
       "telemetry_ack_or": "matched-control-delay"
     },
+    "FourPhaseControl": {
+      "acknowledge_guard": "matched-control-delay"
+    },
     "FourPhaseCore": {
       "register_arrival": "matched-control-delay",
       "request_guard": "matched-control-delay"
@@ -487,6 +488,7 @@
     },
     "I2cPublication": {
       "acknowledge_guard": "matched-control-delay",
+      "byte_data_delay": "whole-transform-allowance",
       "capture_gate": "matched-control-delay",
       "capture_gate_na": "matched-control-delay",
       "capture_gate_nb": "matched-control-delay",
@@ -502,8 +504,7 @@
       "snapshot_publish": "matched-control-delay",
       "snapshot_publish_na": "matched-control-delay",
       "snapshot_publish_nb": "matched-control-delay",
-      "snapshot_publish_or": "matched-control-delay",
-      "byte_data_delay": "whole-transform-allowance"
+      "snapshot_publish_or": "matched-control-delay"
     },
     "InitialTokens": {
       "data": "whole-transform-allowance",
@@ -521,5 +522,7 @@
       "output_guard": "matched-control-delay",
       "request_delay": "matched-control-delay"
     }
-  }
+  },
+  "schema": "riscay-controlgate-roles-v1",
+  "scope": "Reviewed native SoC and library primitive intent; add new owner/ID pairs only with source and timing-contract review. Numeric FIRRTL module specialization suffixes are ignored. Data entries also require a resolved contract delay-cell reference. No physical timing qualification is implied."
 }

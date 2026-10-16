@@ -138,9 +138,14 @@ Final local evidence:
 
 Example:
 
+New runs require a fresh mapping with an accepted electrical-repair receipt;
+the original survey directories above remain historical evidence. See the
+[electrical-first correction](electrical-first-correction.md) for repaired-graph
+binding results and the current RTL timing policies.
+
 ```powershell
 python tools/native_stage_timing.py `
-  build/async-loader-width-finish-r2/candidate-mapped-bd-r1 `
+  build/current-repaired-bd `
   build/my-native-stage-survey --variant bd --campaign `
   --stage FourPhaseSoc.ca_child_core.ca_child_execute
 ```
@@ -150,16 +155,20 @@ the campaign uses all five pinned cell corners and 0.02/2 ns input slews.
 
 ## Remaining acceptance gates
 
-1. Compose actual upstream storage/Join launch and source reuse with these
+1. Complete global electrical repair and rerun existing campaigns on the
+   proved graph before composing more sources. Residual violations and rejected
+   bindings remain failures; a repair receipt establishes graph preservation,
+   not electrical closure.
+2. Compose actual upstream storage/Join launch and source reuse with these
    boundary allowances. Preserve the negative execute/elapsed evidence.
-2. Enumerate complete controller transitions, including BD pending admission
+3. Enumerate complete controller transitions, including BD pending admission
    and both returns, and Click pulse/phase self-hold. Add FIFO/Join and custom
    I²C publication templates without reusing load-dependent numeric results.
-3. Build the smaller uncut controller SPICE experiment with validated STA load
+4. Build the smaller uncut controller SPICE experiment with validated STA load
    envelopes, native `.meas` crossings and timestep convergence. Keep the full
    payload harness as a comparison until load reduction is justified.
-4. Establish mismatch/variation margins, then parameterize and size physical
-   timing policies from the measured envelope. No guard shortening is accepted
-   from this local survey alone.
-5. Complete electrical/reset repair, remaining tool-runtime portability and
+5. Establish mismatch/variation margins for physical sizing. Per-owner timing
+   parameters and conservative lengthening are implemented separately; no
+   guard shortening is accepted from this local survey alone.
+6. Complete reset qualification, remaining tool-runtime portability and
    routed min/max-RC checks. The default physical flow remains unqualified.

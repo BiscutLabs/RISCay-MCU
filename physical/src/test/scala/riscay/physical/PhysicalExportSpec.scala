@@ -48,6 +48,13 @@ class PhysicalExportSpec extends AnyFunSuite {
       val fabric=tree.find(n => n("module").str == (if(variant=="bd") "FourPhaseFabric" else "ClickFabric")).get
       val guard=fabric("primitives").arr.find(_("id").str == "request_guard").get
       assert(guard("parameters")("DELAY_FS").str == "11000000")
+      def child(n: ujson.Value,id: String): ujson.Value = n("children").arr.find(_("id").str==id).get("contract")
+      def delay(n: ujson.Value,id: String): String = n("primitives").arr.find(_("id").str==id).get("parameters")("DELAY_FS").str
+      val execute=child(child(manifest("design"),"core"),"execute")
+      assert(delay(execute,"request_delay")=="80000000")
+      val elapsed=tree.find(_("module").str==(if(variant=="bd") "FourPhaseElapsed" else "ClickElapsed")).get
+      assert(delay(child(elapsed,"step"),"request_delay")=="100000000")
+      if(variant=="bd") assert(delay(child(manifest("design"),"control"),"acknowledge_guard")=="32000000")
       if(variant=="click") assert(!tree.exists(_("module").str.startsWith("FourPhase")), "Click must stay native")
     }
     val before=sha(Files.readAllBytes(root.resolve("bd/contract.json")))
@@ -63,5 +70,24 @@ class PhysicalExportSpec extends AnyFunSuite {
         executeData=PhysicalTiming.executeData),root)
     }
     assert(error.getMessage.contains("CLICK_FABRIC_REQUIRES_SIMULATION_POLICY"),error.getMessage)
+  }
+
+  test("owner timing overrides keep elapsed ownership separate from arithmetic") {
+    import chiselasync.metadata.{BundledTiming, ClickTiming, ModelTime}
+    import chiselasync.core.ResetDomain
+    val parent=Paths.get("build/physical-export-tests").toAbsolutePath; Files.createDirectories(parent)
+    for(click <- Seq(false,true)) {
+      val out=Files.createTempDirectory(parent,"owner-policy-")
+      val b=BundledTiming.Simulation.copy(matchedDelay=ModelTime.ps(150000))
+      val c=ClickTiming.Simulation.copy(requestDelay=ModelTime.ps(150000))
+      ExportDesign.emit(if(click) new riscay.click.ClickElapsed(Seq(129355),new ResetDomain("root"),stepTiming=c)
+        else new riscay.bd.FourPhaseElapsed(Seq(129355),new ResetDomain("root"),stepTiming=b),out)
+      val root=ujson.read(Files.readString(out.resolve("contract.json")))("manifest")("design")
+      def child(id: String)=root("children").arr.find(_("id").str==id).get("contract")
+      assert(child("step")("primitives").arr.find(_("id").str=="request_delay").get("parameters")("DELAY_FS").str=="150000000")
+      assert(!child("owner").toString.contains("150000000"),"step override must not change owner storage/guards")
+    }
+    intercept[IllegalArgumentException](riscay.bd.OwnerTiming(elapsedStep=BundledTiming.Simulation.copy(matchedDelay=ModelTime.ps(251000))))
+    intercept[IllegalArgumentException](riscay.click.OwnerTiming(elapsedStep=ClickTiming.Simulation.copy(requestDelay=ModelTime.ps(251000))))
   }
 }

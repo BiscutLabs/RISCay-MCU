@@ -30,6 +30,7 @@ def instances(modules,top,prefix=""):
             yield from instances(modules,cell["type"],path+"/")
 
 def synth(mapping,pdk):
+    if (mapping/'electrical-repair').exists(): raise ValueError('REPAIR_FRESH_MAPPING_REQUIRED')
     pdk_verify(pdk)
     record=json.loads((mapping/"mapping.json").read_text())
     for f,h in record["files_sha256"].items():
@@ -47,32 +48,69 @@ def synth(mapping,pdk):
     (mapping/"synth.ys").write_text(script)
     run(["wsl","-e",linux(ROOT/".tools/physical/root/usr/bin/yosys"),"-s",linux(mapping/"synth.ys")],mapping/"synth.log")
     audit(mapping)
+    # Electrical repair is part of the default mapping flow. Native internals
+    # remain protected; exact graph/Liberty proofs precede output publication.
+    from repair_gf180_design import repair
+    repair(mapping)
 
-def audit(mapping):
+def audit(mapping, *, adapter_instances=None):
+    """Audit native recipes at their actual instantiated modules.
+
+    Fresh synthesis discovers the original module names. A graph-proved repair
+    may supply the validated source audit's exact instance paths because the
+    hierarchical writer clones module names. This never searches for a renamed
+    replacement: every original path must still resolve, and its live module
+    must retain the complete original cell/master/pin recipe. The caller owns
+    source-audit provenance and the separate whole-graph connectivity proof.
+    """
     record=json.loads((mapping/"mapping.json").read_text())
     modules=json.loads((mapping/"netlist.json").read_text())["modules"]
     hierarchy=dict(instances(modules,"RiscayMcuDigital"))
     actual=dict(leaves(modules,"RiscayMcuDigital")); counts=Counter(c["type"] for c in actual.values())
     if counts[SRAM]!=3: raise ValueError("SRAM_COUNT_MUST_BE_THREE")
+    instance_ids=[i for b in record["bindings"] for i in b["instances"]]
+    if len(set(instance_ids))!=len(instance_ids): raise ValueError("DUPLICATE_ADAPTER_INSTANCE")
+    if adapter_instances is not None:
+        if not isinstance(adapter_instances,dict) or set(adapter_instances)!=set(instance_ids):
+            raise ValueError("ADAPTER_INSTANCE_INVENTORY_CHANGED")
+        paths=list(adapter_instances.values())
+        if any(not isinstance(path,str) or not path for path in paths):
+            raise ValueError("INVALID_ADAPTER_INSTANCE_PATH")
+        if len(set(paths))!=len(paths): raise ValueError("DUPLICATE_ADAPTER_INSTANCE_PATH")
     expected={}; bound={}
     for b in record["bindings"]:
-        adapter_module=modules[b["module"]]
-        def bit(net):
-            if net in ("1'b0","1'b1"): return net[-1]
-            match=re.fullmatch(r'(\w+)\[(\d+)\]',net)
-            name,index=(match[1],int(match[2])) if match else (net,0)
-            return adapter_module["netnames"][name]["bits"][index]
-        for c in b["cells"]:
-            actual_cell=adapter_module["cells"][c["name"]]
-            for p,n in c["pins"].items():
-                if actual_cell["connections"][p]!=[bit(n)]:
-                    raise ValueError("PRESERVED_CONNECTION_CHANGED_"+b["module"]+"."+c["name"]+"."+p)
         for instance in b["instances"]:
             prefix="soc/"+"/".join(instance.split('.')[1:])+"/"
-            matches=[path for path,kind in hierarchy.items() if path.startswith(prefix) and kind==b["module"]]
-            if len(matches)!=1: raise ValueError("AMBIGUOUS_OR_MISSING_ADAPTER_"+instance)
-            bound[instance]=matches[0]
-            root=matches[0]+"/"
+            if adapter_instances is None:
+                matches=[path for path,kind in hierarchy.items() if path.startswith(prefix) and kind==b["module"]]
+                if len(matches)!=1: raise ValueError("AMBIGUOUS_OR_MISSING_ADAPTER_"+instance)
+                path=matches[0]
+            else:
+                path=adapter_instances[instance]
+                if not path.startswith(prefix) or path not in hierarchy:
+                    raise ValueError("ORIGINAL_ADAPTER_PATH_CHANGED_"+instance)
+            adapter_module=modules[hierarchy[path]]
+            cells=adapter_module.get("cells",{})
+            if set(cells)!={c["name"] for c in b["cells"]}:
+                raise ValueError("PRESERVED_CELL_INVENTORY_CHANGED_"+path)
+            def bit(net):
+                if net in ("1'b0","1'b1"): return net[-1]
+                match=re.fullmatch(r'(\w+)\[(\d+)\]',net)
+                name,index=(match[1],int(match[2])) if match else (net,0)
+                try: return adapter_module["netnames"][name]["bits"][index]
+                except (KeyError,IndexError):
+                    raise ValueError("PRESERVED_NET_MISSING_"+path+"/"+net) from None
+            for c in b["cells"]:
+                actual_cell=cells[c["name"]]
+                if actual_cell["type"]!=c["cell"]:
+                    raise ValueError("PRESERVED_CELL_MISSING_"+path+"/"+c["name"])
+                if set(actual_cell["connections"])!=set(c["pins"]):
+                    raise ValueError("PRESERVED_PIN_INVENTORY_CHANGED_"+path+"/"+c["name"])
+                for p,n in c["pins"].items():
+                    if actual_cell["connections"][p]!=[bit(n)]:
+                        raise ValueError("PRESERVED_CONNECTION_CHANGED_"+path+"/"+c["name"]+"/"+p)
+            bound[instance]=path
+            root=path+"/"
             for c in b["cells"]: expected[root+c["name"]]=c["cell"]
     # Yosys generates a dot inside each generate-block instance name. Match
     # exact names; no wildcard/count-only audit can detect a shortened chain.

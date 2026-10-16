@@ -23,9 +23,10 @@ ASSETS = {
     "rcx.min": "libs.tech/librelane/rules.openrcx.gf180mcuD.min",
     "rcx.max": "libs.tech/librelane/rules.openrcx.gf180mcuD.max",
 }
-PROVENANCE_SCHEMA = "riscay-pnr-inputs-v1"
+PROVENANCE_SCHEMA = "riscay-pnr-inputs-v2"
 MAPPING_INPUTS = ("mapping.json", "netlist.v", "netlist.json", "base.sdc", "clocked.sdc",
-                  "feedback-cuts.tcl", "async.sdc", "preserve-mapped.tcl", "constraints-bound.json")
+                  "feedback-cuts.tcl", "async.sdc", "preserve-mapped.tcl", "constraints-bound.json",
+                  "electrical-repair/receipt.json")
 FLOW_INPUTS = ("pnr.tcl", "pnr-pdn.tcl", "power.tcl")
 GENERATED_INPUTS = ("config.tcl", "async-pnr.sdc", "protected.tcl")
 RC_CORNERS = ("nom", "min", "max")
@@ -66,6 +67,11 @@ def validate_provenance(mapping,out,stage,flow_sources=None):
     meta=json.loads((out/"run.json").read_text())
     if meta.get("provenance_schema")!=PROVENANCE_SCHEMA:
         raise ValueError("PNR_FRESH_RUN_REQUIRED")
+    # Reading a checkpoint or its extracted RC is an acceptance path too.
+    # Revalidate the complete repair evidence, then bind the exact receipt used
+    # for this P&R run so a newly accepted repair cannot relabel an old ODB.
+    from repair_gf180_design import validate_receipt
+    validate_receipt(mapping)
     if meta.get("mapping_inputs_sha256")!=mapping_hashes(mapping):
         raise ValueError("PNR_MAPPING_INPUT_CHANGED")
     hashes=meta.get("flow_sources",{})
@@ -199,6 +205,8 @@ def bind_flat_interfaces(modules,sdc):
 
 def run(mapping,out,from_stage,to_stage,threads,side=1440):
     mapping=mapping.resolve(); out=out.resolve()
+    from repair_gf180_design import validate_receipt
+    validate_receipt(mapping)
     begin,end=STAGES.index(from_stage),STAGES.index(to_stage)
     g=geometry(side)
     if begin>end: raise ValueError("STAGE_ORDER")

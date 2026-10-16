@@ -29,6 +29,8 @@ FIXTURES = {
 IDENTITY_FILES = (
     'designs/four-phase-bd/src/main/scala/riscay/bd/ConstantScaling.scala',
     'designs/two-phase-click/src/main/scala/riscay/click/ConstantScaling.scala',
+    'designs/four-phase-bd/src/main/scala/riscay/bd/OwnerTiming.scala',
+    'designs/two-phase-click/src/main/scala/riscay/click/OwnerTiming.scala',
     'soc/src/main/scala/riscay/soc/ScalingSchema.scala',
     'verification/src/test/scala/riscay/AsyncElapsedLoopSpec.scala',
     '../chisel-async/src/main/resources/chiselasync/sv/ChiselAsyncEventRegister_v1.sv',

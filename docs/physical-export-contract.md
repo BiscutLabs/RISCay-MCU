@@ -24,6 +24,12 @@ Ordinary reference emitters keep their existing disabled board policy.
 Every controller's exact timing intent resides in `contract.json`. The current v3
 `physical-policy.json` binds that file and `ports.json` by SHA-256, identifies
 the supported digital policy and explicitly labels qualification as absent.
+`owner_targets_fs` identifies the 80 ns execute request, 100 ns elapsed step
+request and 32 ns BD Control source ACK targets. Constructor parameters keep
+elapsed owner/step and Control owner/update timing independent. These guards
+are longer than the previous defaults; arithmetic delay allowances are unchanged.
+The 250 ns cap still applies to each supported SoC policy component and does not
+claim a complete physical reset bound.
 The obsolete global timing numbers from the standalone core experiment are
 removed: they did not describe the migrated service controllers. Service/LF
 limits remain identified. R2's `application_reset` record separates the eight-edge

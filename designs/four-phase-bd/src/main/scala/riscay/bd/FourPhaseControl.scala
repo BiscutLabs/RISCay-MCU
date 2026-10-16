@@ -7,7 +7,7 @@ import chiselasync.bundled._
 import chiselasync.core.{AsyncModule, ResetDomain}
 import chiselasync.metadata.{BundledTiming, ModelTime}
 import chiselasync.protocol.FourPhase
-import chiselasync.primitives.AsymmetricCElement
+import chiselasync.primitives.{AsymmetricCElement, ControlGate, GateOperation}
 import riscay._
 import riscay.soc._
 
@@ -15,16 +15,17 @@ import riscay.soc._
   * accepted SRAM completion is accounted independently of application lifetime.
   * Peripheral commits route through explicit endpoint boundaries.
   */
-class FourPhaseControl(p: SocParameters, domain: ResetDomain) extends AsyncModule(domain) {
+class FourPhaseControl(p: SocParameters, domain: ResetDomain,
+    owners: OwnerTiming = OwnerTiming()) extends AsyncModule(domain) {
   val command = fourPhaseInput("command", new ControlCommand)
   val reply = fourPhaseOutput("reply", new ControlReply(p.config.programBytes))
-  private val timing = BundledTiming.Simulation
+  private val timing = owners.controlOwner
   private val cell = ModelTime.ps(1000)
   private val state = asyncChild("state")(d => new FourPhaseFifo(new ControlToken(p.config.programBytes), 1,
     timing, Seq(ControlToken.initial(p.config.programBytes)), cell, d))
   private val join = asyncChild("join")(d => new FourPhaseJoin(new ControlToken(p.config.programBytes), new ControlCommand, timing, cell, d))
   private val update = asyncChild("update")(d => new FourPhaseStage(new Joined(new ControlToken(p.config.programBytes), new ControlCommand),
-    new ControlReply(p.config.programBytes), (x: Joined[ControlToken, ControlCommand]) => transition(x.left.state, x.right, x.left.pendingCrc), timing, d))
+    new ControlReply(p.config.programBytes), (x: Joined[ControlToken, ControlCommand]) => transition(x.left.state, x.right, x.left.pendingCrc), owners.controlUpdate, d))
   // Compute only the candidate CRC here; update retains the entire context.
   // Every feedback starts from architectural crc, even while loaderPending
   // survives other commands. Only Stored commits the candidate to that state.
@@ -34,7 +35,23 @@ class FourPhaseControl(p: SocParameters, domain: ResetDomain) extends AsyncModul
   // Retain the fields that the state feedback branch does not consume.
   dontTouch(fork.out(0))
   FourPhase.connect(join.left, state.out); FourPhase.connect(join.right, command)
-  FourPhase.connect(update.in, join.out); FourPhase.connect(fork.in, update.out)
+  update.in.req := join.out.req; update.in.bits := join.out.bits
+  // Keep the source held beyond update's distributed latch closure. Both ACK
+  // polarities traverse this native guard; the source cannot start its return
+  // before the guarded rise or reuse its payload before the guarded fall.
+  private val captureAck = Module(new ControlGate(1, GateOperation.Buffer, owners.controlAck))
+  captureAck.reset := reset; captureAck.a := update.in.ack.asUInt; captureAck.b := 0.U
+  join.out.ack := captureAck.q.asBool
+  contract.primitive("acknowledge_guard", captureAck, Map("WIDTH" -> BigInt(1), "OP" -> BigInt(0),
+    "DELAY_FS" -> BigInt(owners.controlAck.fs), "RESET_VALUE" -> BigInt(0)),
+    contract.endpoint("capture_ack_reset", reset),
+    "native both-edge source-retention guard after update capture; full physical envelope remains unqualified")
+  private val captureAckSource = WireDefault(update.in.ack)
+  private val captureAckReturn = WireDefault(join.out.ack)
+  dontTouch(captureAckSource); dontTouch(captureAckReturn)
+  contract.endpoint("capture_ack_source", captureAckSource)
+  contract.endpoint("capture_ack_return", captureAckReturn)
+  FourPhase.connect(fork.in, update.out)
   private def rendezvous(id: String, a: Bool, b: Bool): Bool = {
     val gate = Module(new AsymmetricCElement(2, 0, 0, cell))
     gate.reset := reset; gate.common := Cat(a,b); gate.rising := 1.U; gate.falling := 0.U

@@ -12,8 +12,8 @@ import riscay.profiles._
 
 class FourPhaseSoc(p: SocParameters, board: SocParameters => BoardProfile = p => new GenericBoard(p),
     timing: BundledTiming = BundledTiming.Simulation,
-    executeTiming: BundledTiming = BundledTiming.simulation(dataMax=RegisterTiming.executeData))
-    extends FourPhasePlatform(p, board, clockedCpuResponse=false) {
+    executeTiming: BundledTiming = OwnerTiming.execute, owners: OwnerTiming = OwnerTiming())
+    extends FourPhasePlatform(p, board, clockedCpuResponse=false, owners=owners) {
   require(Seq(timing,executeTiming).forall(t =>
     (Seq(t.matchedDelay.fs,t.outputDelay.fs,t.dataDelay.max.fs,t.latchDelay.max.fs) ++
       t.controls.values.map(_.max.fs)).forall(_ <= ApplicationResetContract.digitalDelayLimitFs)),

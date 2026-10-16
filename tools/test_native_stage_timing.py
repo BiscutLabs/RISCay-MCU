@@ -1,6 +1,9 @@
 # SPDX-License-Identifier: Apache-2.0
 """Adversarial metadata and lane pairing controls independent of a PDK."""
 from copy import deepcopy
+import hashlib
+from pathlib import Path
+from tempfile import TemporaryDirectory
 import unittest
 
 import native_stage_timing as n
@@ -52,6 +55,55 @@ def fixture(variant):
 
 
 class MetadataTests(unittest.TestCase):
+    def test_reference_read_is_bound_to_receipt_bytes(self):
+        with TemporaryDirectory() as directory:
+            mapping=Path(directory);p=mapping/'electrical-repair/reference/netlist.json'
+            p.parent.mkdir(parents=True);p.write_bytes(b'{"modules":{}}')
+            receipt=dict(inputs_sha256={str((mapping/'netlist.json').resolve()):hashlib.sha256(p.read_bytes()).hexdigest()})
+            self.assertEqual(n.receipt_original(mapping,receipt),{'modules':{}})
+            p.write_bytes(b'{"modules":{"other":{}}}')
+            with self.assertRaisesRegex(ValueError,'STAGE_REPAIR_REFERENCE_CHANGED'):
+                n.receipt_original(mapping,receipt)
+
+    def test_buffer_inventory_is_bound_to_receipt_bytes(self):
+        with TemporaryDirectory() as directory:
+            mapping=Path(directory);p=mapping/'electrical-repair/proof.json'
+            p.parent.mkdir();p.write_bytes(b'{"added_buffers":["soc/buf"]}')
+            receipt=dict(evidence_sha256={'proof.json':hashlib.sha256(p.read_bytes()).hexdigest()})
+            self.assertEqual(n.receipt_buffers(mapping,receipt),['soc/buf'])
+            p.write_bytes(b'{"added_buffers":["soc/other"]}')
+            with self.assertRaisesRegex(ValueError,'STAGE_REPAIR_PROOF_CHANGED'):
+                n.receipt_buffers(mapping,receipt)
+
+    def test_repaired_binding_uses_original_instance_custody(self):
+        old=dict(modules={'RiscayMcuDigital':dict(cells={'soc':dict(type='Soc')}),
+            'Soc':dict(cells={'ca_primitive_x':dict(type='Wrapper')}),
+            'Wrapper':dict(cells={'mapped':dict(type='Native')}),
+            'Native':dict(cells={})})
+        live=deepcopy(old);live['modules']['Clone']=deepcopy(live['modules']['Native'])
+        live['modules']['Wrapper']['cells']['mapped']['type']='Clone'
+        record=dict(bindings=[dict(module='Native',instances=['Soc.ca_primitive_x'])])
+        audit=dict(adapter_instances={'Soc.ca_primitive_x':'soc/ca_primitive_x/mapped'})
+        bound=n.repaired_bindings(record,live,old,audit)
+        self.assertEqual(bound['bindings'][0]['physical_modules'],['Clone'])
+        self.assertNotIn('physical_modules',record['bindings'][0])
+        audit['adapter_instances']['Soc.ca_primitive_x']='soc/ca_primitive_x'
+        with self.assertRaisesRegex(ValueError,'STAGE_REPAIRED_ADAPTER_PATH'):
+            n.repaired_bindings(record,live,old,audit)
+        audit['adapter_instances']={}
+        with self.assertRaisesRegex(ValueError,'STAGE_REPAIRED_ADAPTER_INVENTORY'):
+            n.repaired_bindings(record,live,old,audit)
+
+    def test_clone_family_requires_original_instance_family(self):
+        values=list(fixture('bd'));m,l,r,path,_=values
+        l['modules']['ClonedStage']=l['modules'].pop('FourPhaseStage')
+        l['modules']['Soc']['cells']['ca_child_stage']['type']='ClonedStage'
+        with self.assertRaisesRegex(ValueError,'STAGE_MAPPED_FAMILY'):n.descriptor(*values)
+        r['original_modules']={'soc/ca_child_stage':'FourPhaseStage'}
+        self.assertEqual(n.descriptor(*values)['module'],'ClonedStage')
+        r['original_modules']['soc/ca_child_stage']='I2cPublication'
+        with self.assertRaisesRegex(ValueError,'STAGE_MAPPED_FAMILY'):n.descriptor(*values)
+
     def reject(self,mutate,diagnostic,variant="bd"):
         values=fixture(variant);mutate(*values[:3])
         with self.assertRaisesRegex(ValueError,"^"+diagnostic+"$"):n.descriptor(*values)

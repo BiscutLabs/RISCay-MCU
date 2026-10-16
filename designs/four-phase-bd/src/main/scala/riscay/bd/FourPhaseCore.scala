@@ -16,7 +16,7 @@ import riscay._
 class FourPhaseCore(domain: ResetDomain = new ResetDomain("root"),
     registerCell: ModelTime = RegisterTiming.minimum,
     timing: BundledTiming = BundledTiming.Simulation,
-    executeTiming: BundledTiming = BundledTiming.simulation(dataMax=RegisterTiming.executeData)) extends AsyncModule(domain) {
+    executeTiming: BundledTiming = OwnerTiming.execute) extends AsyncModule(domain) {
   RegisterTiming.check(registerCell)
   val request = fourPhaseOutput("request", new MemoryRequest)
   val response = fourPhaseInput("response", new MemoryResponse)

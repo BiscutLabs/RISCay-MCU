@@ -35,6 +35,12 @@ VDD/VSS/VNW/VPW LEF pins. No behavioral SRAM array enters implementation RTL.
 
 ## Technology binding
 
+The default mapper now runs global electrical repair before downstream timing
+or P&R. See [its graph and evidence contract](reviews/electrical-first-correction.md).
+Native cells remain protected and residual electrical violations remain failures.
+The default P&R entry point rejects a mapping without its complete repair receipt.
+Use a fresh mapping directory for every attempt; historical maps are retained.
+
 The local adapter binds each complete primitive parameter tuple, checks the RTL
 inventory and rejects unknown models/parameters. It explicitly admits the pinned
 SRAM source: the current library ASIC exporter rejects that additional source,

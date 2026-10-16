@@ -1,0 +1,384 @@
+{
+  "schema": 1,
+  "status": "implemented-digital-pass-physical-gates-open",
+  "base_commit": "c61a62d9761843c908125f6910bf9525addd3669",
+  "physical_qualification": false,
+  "whole_stage_setup_established": false,
+  "owner_targets_ns": {
+    "elapsed_request": 100,
+    "execute_request": 80,
+    "bd_control_source_ack": 32
+  },
+  "tests": {
+    "python": 968,
+    "integrated_elapsed_soc_firmware_sleep_reset": 84,
+    "control_crc_reset": 45,
+    "accelerated_scaling_sleep": 6,
+    "physical_export": 5,
+    "core_reference": 17,
+    "note": "CoreSpec only from r1; other r1 tests do not qualify the final ACK guard. ScalingSleepSpec only from r4; its later obsolete export-spec failure remains retained."
+  },
+  "strict_exports": {
+    "bd": {
+      "status": "PASS",
+      "semantic_sha256": "ce446a7d6f3003306efec1b63c7d350ba59a176b0e24bd70c9236ff5bbe186bc",
+      "endpoints": 2628,
+      "mapping_checks": 648301320,
+      "sram_instances": [
+        "FourPhaseSoc.fabric_program_macros_0",
+        "FourPhaseSoc.fabric_program_macros_1",
+        "FourPhaseSoc.fabric_ram_macros_0"
+      ],
+      "probe_timeout_seconds": 1800,
+      "probe_compile_timeout_seconds": 600,
+      "sleep_clock_background": true,
+      "coverage": "packed-equivalent",
+      "reset_contract": "generated-system-reset"
+    },
+    "click": {
+      "status": "PASS",
+      "semantic_sha256": "e63faeb8ca918b7a56f45814f939ff53b80ef88938ff53ebc91d3df49a35ac25",
+      "endpoints": 2364,
+      "mapping_checks": 560535132,
+      "sram_instances": [
+        "ClickSoc.fabric_program_macros_0",
+        "ClickSoc.fabric_program_macros_1",
+        "ClickSoc.fabric_ram_macros_0"
+      ],
+      "probe_timeout_seconds": 1800,
+      "probe_compile_timeout_seconds": 600,
+      "sleep_clock_background": true,
+      "coverage": "packed-equivalent",
+      "reset_contract": "generated-system-reset"
+    }
+  },
+  "repairs": {
+    "bd": {
+      "mapping": "build/electrical-first-current-bd-r3",
+      "status": "structurally-accepted-electrically-unqualified",
+      "physical_qualification": false,
+      "added_buffers": 4015,
+      "equivalent_original_master_changes": 10561,
+      "electrical": {
+        "before": {
+          "max slew": {
+            "unique_pins": 68091,
+            "unique_nets": 14343,
+            "max_actual": 626.481262
+          },
+          "max capacitance": {
+            "unique_pins": 130,
+            "unique_nets": 130,
+            "max_actual": 14.370213
+          }
+        },
+        "after": {
+          "max slew": {
+            "unique_pins": 6240,
+            "unique_nets": 1591,
+            "max_actual": 9.973139
+          },
+          "max capacitance": {
+            "unique_pins": 0,
+            "unique_nets": 0,
+            "max_actual": null
+          }
+        }
+      }
+    },
+    "click": {
+      "mapping": "build/electrical-first-current-click-r2",
+      "status": "structurally-accepted-electrically-unqualified",
+      "physical_qualification": false,
+      "added_buffers": 5573,
+      "equivalent_original_master_changes": 9010,
+      "electrical": {
+        "before": {
+          "max slew": {
+            "unique_pins": 65041,
+            "unique_nets": 13353,
+            "max_actual": 634.053467
+          },
+          "max capacitance": {
+            "unique_pins": 109,
+            "unique_nets": 109,
+            "max_actual": 14.543759
+          }
+        },
+        "after": {
+          "max slew": {
+            "unique_pins": 6503,
+            "unique_nets": 1662,
+            "max_actual": 10.073298
+          },
+          "max capacitance": {
+            "unique_pins": 0,
+            "unique_nets": 0,
+            "max_actual": null
+          }
+        }
+      }
+    }
+  },
+  "stage_reruns": {
+    "bd": {
+      "status": "INCOMPLETE",
+      "physical_qualification": false,
+      "measured_corner_slew_cases": 40,
+      "preflight": [
+        {
+          "instance": "FourPhaseSoc.ca_child_control.ca_child_update",
+          "status": "PLAN_BOUND",
+          "physical_qualification": false
+        },
+        {
+          "instance": "FourPhaseSoc.ca_child_core.ca_child_execute",
+          "status": "BINDING_REJECTED",
+          "diagnostic": "ValueError:CONTROL_SOURCE_WIDTH",
+          "physical_qualification": false
+        },
+        {
+          "instance": "FourPhaseSoc.ca_child_elapsed_scaler.ca_child_native.ca_child_step",
+          "status": "BINDING_REJECTED",
+          "diagnostic": "ValueError:STAGE_UNDECLARED_INPUT",
+          "physical_qualification": false
+        },
+        {
+          "instance": "FourPhaseSoc.ca_child_i2c.ca_child_native.ca_child_update",
+          "status": "PLAN_BOUND",
+          "physical_qualification": false
+        },
+        {
+          "instance": "FourPhaseSoc.ca_child_ram_access.ca_child_native.ca_child_prepare",
+          "status": "BINDING_REJECTED",
+          "diagnostic": "ValueError:CONTROL_SOURCE_WIDTH",
+          "physical_qualification": false
+        },
+        {
+          "instance": "FourPhaseSoc.ca_child_ram_access.ca_child_native.ca_child_lane_0_issue",
+          "status": "PLAN_BOUND",
+          "physical_qualification": false
+        },
+        {
+          "instance": "FourPhaseSoc.ca_child_ram_access.ca_child_native.ca_child_lane_0_capture",
+          "status": "PLAN_BOUND",
+          "physical_qualification": false
+        }
+      ],
+      "minimum_local_metrics_ns": {
+        "FourPhaseSoc.ca_child_control.ca_child_update": {
+          "minimum_input_data_lag_ns": 15.148321871094446,
+          "minimum_zero_reuse_hold_ns": 1.870892620891356,
+          "minimum_ack_after_capture_ns": 1.6627928393721512
+        },
+        "FourPhaseSoc.ca_child_i2c.ca_child_native.ca_child_update": {
+          "minimum_input_data_lag_ns": 16.908391788501618,
+          "minimum_zero_reuse_hold_ns": 1.8998994186761058,
+          "minimum_ack_after_capture_ns": 1.737144699478717
+        },
+        "FourPhaseSoc.ca_child_ram_access.ca_child_native.ca_child_lane_0_issue": {
+          "minimum_input_data_lag_ns": 19.579332110792713,
+          "minimum_zero_reuse_hold_ns": 1.9749070320307127,
+          "minimum_ack_after_capture_ns": 1.812152312833324
+        },
+        "FourPhaseSoc.ca_child_ram_access.ca_child_native.ca_child_lane_0_capture": {
+          "minimum_input_data_lag_ns": 19.28639753701456,
+          "minimum_zero_reuse_hold_ns": 1.9366527423231132,
+          "minimum_ack_after_capture_ns": 1.7738980231257244
+        }
+      },
+      "control_actual_arc_and_period_controls": 4
+    },
+    "click": {
+      "status": "INCOMPLETE",
+      "physical_qualification": false,
+      "measured_corner_slew_cases": 40,
+      "preflight": [
+        {
+          "instance": "ClickSoc.ca_child_control.ca_child_update",
+          "status": "PLAN_BOUND",
+          "physical_qualification": false
+        },
+        {
+          "instance": "ClickSoc.ca_child_core.ca_child_execute",
+          "status": "BINDING_REJECTED",
+          "diagnostic": "ValueError:CONTROL_SOURCE_WIDTH",
+          "physical_qualification": false
+        },
+        {
+          "instance": "ClickSoc.ca_child_elapsed_scaler.ca_child_native.ca_child_step",
+          "status": "BINDING_REJECTED",
+          "diagnostic": "ValueError:STAGE_UNDECLARED_INPUT",
+          "physical_qualification": false
+        },
+        {
+          "instance": "ClickSoc.ca_child_i2c.ca_child_native.ca_child_update",
+          "status": "PLAN_BOUND",
+          "physical_qualification": false
+        },
+        {
+          "instance": "ClickSoc.ca_child_ram_access.ca_child_native.ca_child_prepare",
+          "status": "BINDING_REJECTED",
+          "diagnostic": "ValueError:CONTROL_SOURCE_WIDTH",
+          "physical_qualification": false
+        },
+        {
+          "instance": "ClickSoc.ca_child_ram_access.ca_child_native.ca_child_lane_0_issue",
+          "status": "PLAN_BOUND",
+          "physical_qualification": false
+        },
+        {
+          "instance": "ClickSoc.ca_child_ram_access.ca_child_native.ca_child_lane_0_capture",
+          "status": "PLAN_BOUND",
+          "physical_qualification": false
+        }
+      ],
+      "minimum_local_metrics_ns": {
+        "ClickSoc.ca_child_control.ca_child_update": {
+          "minimum_input_data_lag_ns": 16.498448698313428,
+          "minimum_zero_reuse_hold_ns": 53.55147978167242,
+          "minimum_ack_after_capture_ns": 53.397838218074234
+        },
+        "ClickSoc.ca_child_i2c.ca_child_native.ca_child_update": {
+          "minimum_input_data_lag_ns": 18.294565337903606,
+          "minimum_zero_reuse_hold_ns": 53.61477087804988,
+          "minimum_ack_after_capture_ns": 53.49624744607064
+        },
+        "ClickSoc.ca_child_ram_access.ca_child_native.ca_child_lane_0_issue": {
+          "minimum_input_data_lag_ns": 20.944606821388092,
+          "minimum_zero_reuse_hold_ns": 53.71067910656798,
+          "minimum_ack_after_capture_ns": 53.59215567458874
+        },
+        "ClickSoc.ca_child_ram_access.ca_child_native.ca_child_lane_0_capture": {
+          "minimum_input_data_lag_ns": 20.663153175254596,
+          "minimum_zero_reuse_hold_ns": 53.6609720333702,
+          "minimum_ack_after_capture_ns": 53.54244860139096
+        }
+      },
+      "control_actual_arc_and_period_controls": 4
+    }
+  },
+  "join_reruns": {
+    "rows": [
+      {
+        "variant": "bd",
+        "target": "control",
+        "status": "CAMPAIGN_REJECTED",
+        "diagnostic": "ValueError:JOIN_RENDEZVOUS_WIRING",
+        "physical_qualification": false
+      },
+      {
+        "variant": "bd",
+        "target": "execute",
+        "status": "CAMPAIGN_REJECTED",
+        "diagnostic": "ValueError:CONTROL_SOURCE_WIDTH",
+        "physical_qualification": false
+      },
+      {
+        "variant": "click",
+        "target": "control",
+        "status": "CAMPAIGN_REJECTED",
+        "diagnostic": "ValueError:JOIN_RENDEZVOUS_WIRING",
+        "physical_qualification": false
+      },
+      {
+        "variant": "click",
+        "target": "execute",
+        "status": "CAMPAIGN_REJECTED",
+        "diagnostic": "ValueError:CONTROL_SOURCE_WIDTH",
+        "physical_qualification": false
+      }
+    ],
+    "physical_qualification": false
+  },
+  "independent_reviews": [
+    "Separate fresh reviewers checked RTL handshake/parameter safety and global repair proof; findings addressed.",
+    "Final unused-input and feedback-liveness source review found no actionable issue; no tests claimed by that reviewer.",
+    "Click final graph proof independently recomputed identically. BD final receipt validated and graph/proof/report hashes matched independently reviewed r2."
+  ],
+  "open_gates": [
+    "Residual electrical violations including SRAM clock and native boundary distribution",
+    "Repaired stage/Join binding coverage and complete existing-campaign rerun",
+    "RF and elapsed launch/reuse composition",
+    "Mismatch, all pending/return/pulse histories and complete reset distribution",
+    "Extracted min/max RC and full-chip physical qualification"
+  ],
+  "preserved_failures": [
+    "build/default-repair-bd-r1 through -r7",
+    "build/electrical-first-current-bd-r1",
+    "build/electrical-first-current-click-r1",
+    "build/electrical-first-campaign-bd-r1",
+    "Earlier strict endpoint failures and 600-second wall-time limits",
+    "200/120 ns elapsed candidates failed unchanged accelerated maintenance-sleep oracle"
+  ],
+  "evidence_sha256": {
+    "build/electrical-first-python-r8.log": "89846f6daf991b191d964f9660857e13fe2bd04bc9365c79cf35baaf4d3e190c",
+    "build/electrical-first-rtl-r1.log": "e089f610f5b54fe8a700323c5cf1a5709c1a8ad51bfc7a8a4c1ab549bb2053e9",
+    "build/electrical-first-rtl-r2.log": "69c3ecc06b90a1f4bb0b43f7bcd47052a1a4c0000a97a96bc3ee2bf9c6f00d7f",
+    "build/electrical-first-rtl-r3.log": "bc0c0651eb3365fdfdcf01bf9cce577056612f8b98e2db1e300cda6126e3af67",
+    "build/electrical-first-rtl-r4.log": "863b28238f00491df523cf06fde0bd7c6f61f920636d36acdd88f319314e412c",
+    "build/electrical-first-rtl-r5.log": "f5850484f42e90fc426024a755727d98b438d40f2bc4a91b91fe6ae0c9fef6e3",
+    "build/electrical-first-rtl-r6.log": "a46efb5772d7de182eeeb489f98b4f35b5c94440d8857c4c1e8120fb561d7312",
+    "build/electrical-first-elapsed-capture-r1.log": "a7fcedd873eed14b1502de66af3d8e5c06a897a975de00976660886bf9ee2888",
+    "build/electrical-first-strict-bd-r4.log": "a9652912185bf9ec827f6b2cedba1e5bed0dfc28a2c0772deeed4a3031f76da5",
+    "build/electrical-first-strict-click-r3.log": "c87d9a257a8b1da61fd8a484d77578429a02942f42415cd623a0d6368807de9b",
+    "build/electrical-first-campaign-bd-r2.log": "eb1ef899a438e4047cb45850c6b7ff111274e519abe492a4abc30f3a9e7e430f",
+    "build/electrical-first-campaign-click-r2.log": "491c0abb8350d44d23966ffbdb3c99c41bdcffd3689568d1220e532200545f81",
+    "build/electrical-first-join-r1.log": "64c7839c6ae749a2114665fe9adb4c98460482460095c226777707bcd34658b6",
+    "build/electrical-first-control-faults-bd-r1.log": "184c2c936845faead1c0adf52b864144c42c6a63f47cd37e2f5793ef5a0323e7",
+    "build/electrical-first-control-faults-click-r1.log": "6d6a6599e39584c10fe05f3f5b59e3dadbc027220131e7a0f070400b6c11a6c0",
+    "build/electrical-first-join-r1/attempts.json": "a13dd6814a2873573b1168bfefa985cfc535f181b7ae74d81d0c5100041b9780",
+    "build/electrical-first-bd-summary.json": "b97a077717c9d2190b4cafd993306a91e6f0d157ed37a8efaf2429b06081ee88",
+    "build/electrical-first-current-bd-r3/electrical-repair/receipt.json": "b24197aa07442b3b525686efa46d98dbed4d6d77573a51fa95b3f04272bf6976",
+    "build/electrical-first-current-bd-r3/electrical-repair/proof.json": "f6026b0b0ff17c52fc6a89b77b8b49d2e76d0aa49bd7cd4abdc13edaa9b18ecf",
+    "build/electrical-first-current-bd-r3/electrical-repair/preparation.json": "c2a706deb04c3ad1f887268e674e0b934021f1b98e52102766ef8623dd02c22e",
+    "build/electrical-first-current-bd-r3/electrical-repair/before-electrical.rpt": "afd9e5ae77285870e7248b2d90102f88b5a8132929b5f86b0b45b9f1a377dcdf",
+    "build/electrical-first-current-bd-r3/electrical-repair/after-electrical.rpt": "b3de25ce353af0171fe66fac6c944d458670d4a8465ee690166b354913cae100",
+    "build/electrical-first-campaign-bd-r2/preflight.json": "4f0b7face023d0650023bd94f4029b734d2f59ae649099fce0e0fadd44e9898a",
+    "build/electrical-first-campaign-bd-r2/measurements/results.json": "d751fa2f43bc99b6bd88fc89b3e6a57353bbdcaa06f50172cd4aecbccb41679e",
+    "build/electrical-first-control-faults-bd-r1/controls.json": "c8edc2499a5ae842543062cd88a7cbb734ef8b3083e93c143fc756b3abcefef9",
+    "build/electrical-first-control-nominal-bd-r1/results.json": "2c21c9853d8599a7d78c8a86684c591dadad66281b153b41a1e2ac49483caf39",
+    "build/electrical-first-click-summary.json": "c18956f8c74d78d03aca2164592a9573ee0b75d7956198d0c377f3e4cce83c25",
+    "build/electrical-first-current-click-r2/electrical-repair/receipt.json": "118119af5eeb40c5c9d89a7ecba55b77dac9c99505dd3d9cecfd70cb060c64c0",
+    "build/electrical-first-current-click-r2/electrical-repair/proof.json": "8ddbd5e66c1d0607d75174188fdfc8f90c691671776e7cb6c16cb7e0c44bfc93",
+    "build/electrical-first-current-click-r2/electrical-repair/preparation.json": "b9b8f051a49e032c28830b3533259c248f382a14e41ec1d3b48a9b9372270f46",
+    "build/electrical-first-current-click-r2/electrical-repair/before-electrical.rpt": "5e09469396c3f1616dfcd9f04a137b0f925dc6f1942783a7e7824154879fd0cc",
+    "build/electrical-first-current-click-r2/electrical-repair/after-electrical.rpt": "858c1f85e6968c3878d82e41bda044c6e74917dac6e662e0b3b440b946dda17e",
+    "build/electrical-first-campaign-click-r2/preflight.json": "f49ccbb8e462c02dfb25d3fb39f01293593c2ff32dbc544e5e54d277c9e2e28e",
+    "build/electrical-first-campaign-click-r2/measurements/results.json": "7c64ee22c17446af21e249546ff0de9ba5fcba15bf27387f777b813098553113",
+    "build/electrical-first-control-faults-click-r1/controls.json": "a4d27efb839ad4b05cff2f8d3251b184f298f1d68f1c96bdec3acd8afba19b09",
+    "build/electrical-first-control-nominal-click-r1/results.json": "fec6d2ed3135f8c63a41c85b14df205ee74575a774466cadde648a1e6a544d9e"
+  },
+  "changed_source_sha256": {
+    "designs/four-phase-bd/src/main/scala/riscay/bd/ConstantScaling.scala": "6c755b2eb7404cd65065874f39aebedc64a5c1f661777ef6f4d80b8fdd901807",
+    "designs/four-phase-bd/src/main/scala/riscay/bd/FourPhaseControl.scala": "8c21f9771d35751f7cc86c6ca0e56874c0439ee335be682ef8fcd1301fe1fd37",
+    "designs/four-phase-bd/src/main/scala/riscay/bd/FourPhaseCore.scala": "9d39562c44d961a9dc85c02c04ff7955b7f32e3c5df662be0b094d246ec72b8a",
+    "designs/four-phase-bd/src/main/scala/riscay/bd/FourPhasePlatform.scala": "041fafc553456b7d8d364c0702acce83aacbec050b572035f4560d3ab59be620",
+    "designs/four-phase-bd/src/main/scala/riscay/bd/FourPhaseSoc.scala": "ad6e7335ee37d5651f61c3bd1493ee8fd16b563da4bd8e7c4db6704008216cc0",
+    "designs/four-phase-bd/src/main/scala/riscay/bd/OwnerTiming.scala": "676b2cd26e94c6e5cbf1e7a76ab5d1f776bff4a01520a263cc1340ba12bf89be",
+    "designs/two-phase-click/src/main/scala/riscay/click/ClickControl.scala": "afa086b0d2bb86eed2a50e9bdc14023c696f5e19c898195c6a3a43ccc45bd192",
+    "designs/two-phase-click/src/main/scala/riscay/click/ClickCore.scala": "e9fe9ee667548583114670939fae3d637f209eb156d7d32614a343655fde2b51",
+    "designs/two-phase-click/src/main/scala/riscay/click/ClickPlatform.scala": "6cdb76b1c70e52f3890d5f48db91000cf762aad3b9f2e41237be6b35d1d31258",
+    "designs/two-phase-click/src/main/scala/riscay/click/ClickSoc.scala": "2cf810cdb85888041118fabacf63b254e9dbf591428407dfe455f34f85765687",
+    "designs/two-phase-click/src/main/scala/riscay/click/ConstantScaling.scala": "ef45145ac710d0174c6b6bf0b1bcc96cd6b68ee730fb42a2248e24a1e5531c0c",
+    "designs/two-phase-click/src/main/scala/riscay/click/OwnerTiming.scala": "21634312c8ddfaa59a60e730bb616d740fbead6afc4997902aa8c4062b7553cc",
+    "physical/gf180/controlgate-roles.json": "e57e98df52f9e210c1d4a463c82a603fcc125b469b09634ef620dd1153af571a",
+    "physical/gf180/pnr.tcl": "3fa1e9f85ea76a8044cbb43255b20ac9c167445f42fa1983ecfeb5be682d1933",
+    "physical/src/main/scala/riscay/physical/EmitPhysical.scala": "a83e81fdde45d315d8bed1b836ddeba183852152e0a99aab90461b4dac65810c",
+    "physical/src/test/scala/riscay/physical/PhysicalExportSpec.scala": "2aa5065b7799b44309ffc8e8abdf2900105abc503287e47b5a682b19f148d097",
+    "tools/characterize_gf180_control_native.py": "69baa42de912da844a854678345ecd381822d6f0250ca4302e704be6ac8a4c4e",
+    "tools/check_elapsed_capture_controls.py": "ccbb7e894fe8f8a05706215f658a53b0770c52e24f2a1e8bc609990145be15e5",
+    "tools/control_join_timing.py": "2b7f713f8ed8e2d3d0d69ba3a2f9d549ab4c36248e32763e017c8471782deec9",
+    "tools/control_relative_timing.py": "a3fe4cb0037bf1032b681dc55ab1f52f14a6ab99c626767395def0699d8c7882",
+    "tools/gf180_implement.py": "cfb8274ffa3b075529713e8579e9ebde386048295b4dd892538d80cd5b13a12b",
+    "tools/gf180_pnr.py": "bd1a4e95b3ee6106c660d30813348ea454d8cd75b5ebdaf0185cd6ca91491601",
+    "tools/native_stage_timing.py": "f6b0c3d334e14aa7aa9d1b6b1672a40b2bcd7f1e2bb0ac630fd2902d1e416297",
+    "tools/repair_gf180_design.py": "e7fb8690b66e743fa44991f027dcdb71b7b6a463e15982252ab47bdb4999ad51",
+    "tools/test_control_native_characterization.py": "a7a0f1e9b3bb37e3effd3d883e791f6e03279be7cbaeee16c558ee0e9dcc3fbd",
+    "tools/test_gf180_implement.py": "bf730cbcef884a5aa5c29bc2c03fed7ba376c7601983acd057203b9294e5f0eb",
+    "tools/test_gf180_pnr.py": "599b3390f3f37d0aefb2e39e102c4d42c3a8a47eab1f73facef81503f0092e08",
+    "tools/test_global_repair.py": "301954d2636c16a3f3b3881bb5619f6ed0c5139f6a398f10c8686eed57d6f027",
+    "tools/test_native_stage_timing.py": "5e880c3e873926ca94826e3179fdebb92f81edc9145ed6e05d07f63027077b2c",
+    "verification/src/test/scala/riscay/AsyncControlSpec.scala": "98bb76b72bcec271b5801b40ddb8c999b2ecdf2ab03bb893604aaae4c9aded90"
+  }
+}

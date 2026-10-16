@@ -58,11 +58,16 @@ class PnrBindings(unittest.TestCase):
 
 class PnrProvenance(unittest.TestCase):
     def setUp(self):
+        # These fixtures exercise P&R checkpoint custody without a physical
+        # mapper. Receipt contents have separate adversarial unit controls.
+        receipt=patch('repair_gf180_design.validate_receipt',return_value={})
+        self.receipt=receipt.start();self.addCleanup(receipt.stop)
         self.temp=TemporaryDirectory(); self.addCleanup(self.temp.cleanup)
         self.root=Path(self.temp.name); self.mapping=self.root/'mapping'; self.out=self.root/'routed'
         self.mapping.mkdir(); self.out.mkdir()
         self.flow=self.root/'physical/gf180'; self.flow.mkdir(parents=True)
-        for name in pnr.MAPPING_INPUTS: (self.mapping/name).write_text(name)
+        for name in pnr.MAPPING_INPUTS:
+            p=self.mapping/name; p.parent.mkdir(parents=True,exist_ok=True); p.write_text(name)
         for name in pnr.FLOW_INPUTS: (self.flow/name).write_text(name)
         (self.flow/'routing-lock.json').write_text('{}')
         for name in (*pnr.GENERATED_INPUTS,'protected-baseline.tcl','floorplan.odb','extract.odb','routed.spef'):
@@ -127,6 +132,48 @@ class PnrProvenance(unittest.TestCase):
             pnr.validate_provenance(self.mapping,self.out,'extract')
         self.assertEqual((self.out/'run.json').read_bytes(),before)
 
+    def test_pre_repair_schema_requires_a_fresh_run(self):
+        self.meta['provenance_schema']='riscay-pnr-inputs-v1'; self.save()
+        before=(self.out/'run.json').read_bytes()
+        with self.assertRaisesRegex(ValueError,'PNR_FRESH_RUN_REQUIRED'):
+            pnr.validate_provenance(self.mapping,self.out,'extract')
+        self.assertEqual((self.out/'run.json').read_bytes(),before)
+
+    def test_checkpoint_requires_the_exact_repair_receipt_hash(self):
+        receipt='electrical-repair/receipt.json'
+        self.assertIn(receipt,self.meta['mapping_inputs_sha256'])
+        self.meta['mapping_inputs_sha256'].pop(receipt); self.save()
+        with self.assertRaisesRegex(ValueError,'PNR_MAPPING_INPUT_CHANGED'):
+            pnr.validate_provenance(self.mapping,self.out,'extract')
+
+    def test_repair_validation_failure_stops_every_read_entry_point(self):
+        before={p:p.read_bytes() for p in self.out.rglob('*') if p.is_file()}
+        for diagnostic in ('REPAIR_RECEIPT_REQUIRED','REPAIR_EVIDENCE_CHANGED','REPAIR_AUDIT_CHANGED'):
+            with self.subTest(diagnostic=diagnostic):
+                self.receipt.side_effect=ValueError(diagnostic)
+                with patch.object(pnr.subprocess,'run') as launch:
+                    for call in (lambda:pnr.validate_provenance(self.mapping,self.out,'extract'),
+                                 lambda:pnr.rc_inputs(self.mapping,self.out,'min'),
+                                 lambda:report.run(self.mapping,self.out),
+                                 lambda:report.corner_report(self.mapping,self.out,'tt'),
+                                 lambda:probe.run(self.mapping,self.out,'tt')):
+                        with self.assertRaisesRegex(ValueError,diagnostic): call()
+                    launch.assert_not_called()
+        self.assertTrue(all(p.read_bytes()==b for p,b in before.items()))
+        self.assertEqual(set(before),{p for p in self.out.rglob('*') if p.is_file()})
+
+    def test_replaced_valid_receipt_cannot_relabel_a_checkpoint(self):
+        # The replacement may validate independently, but the old routed graph
+        # still belongs to the original receipt, including its source custody.
+        (self.mapping/'electrical-repair/receipt.json').write_text('new accepted receipt')
+        with patch.object(pnr.subprocess,'run') as launch:
+            for call in (lambda:pnr.rc_inputs(self.mapping,self.out,'min'),
+                         lambda:report.run(self.mapping,self.out),
+                         lambda:report.corner_report(self.mapping,self.out,'tt'),
+                         lambda:probe.run(self.mapping,self.out,'tt')):
+                with self.assertRaisesRegex(ValueError,'PNR_MAPPING_INPUT_CHANGED'): call()
+            launch.assert_not_called()
+
     def test_each_flow_source_gets_a_distinct_immutable_snapshot(self):
         for name in pnr.FLOW_INPUTS:
             with self.subTest(name=name):
@@ -153,6 +200,15 @@ class PnrProvenance(unittest.TestCase):
             with self.assertRaisesRegex(ValueError,'PNR_MAPPING_INPUT_CHANGED'):
                 pnr.run(self.mapping,self.out,'place','place',8)
             assets.assert_not_called(); launch.assert_not_called()
+        self.assertTrue(all(p.read_bytes()==b for p,b in before.items()))
+
+    def test_missing_repair_receipt_stops_before_output_or_launch(self):
+        self.receipt.side_effect=ValueError('REPAIR_RECEIPT_REQUIRED')
+        before={p:p.read_bytes() for p in self.out.rglob('*') if p.is_file()}
+        with patch.object(pnr.subprocess,'run') as launch:
+            with self.assertRaisesRegex(ValueError,'REPAIR_RECEIPT_REQUIRED'):
+                pnr.run(self.mapping,self.out,'place','place',8)
+            launch.assert_not_called()
         self.assertTrue(all(p.read_bytes()==b for p,b in before.items()))
 
     def test_both_report_entry_points_reject_changed_constraints_before_output(self):

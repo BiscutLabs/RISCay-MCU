@@ -444,7 +444,13 @@
   alias controls, Verilog round-trip and source custody checks. Follow
   `docs/reviews/control-electrical-repair.md`: numerical data/guard comparisons
   do not replace the unresolved actual capture/ACK, hold or routed envelopes.
-  Do not silently add the experimental repair to the default mapper/P&R flow.
+  The user authorizes global graph-preserving repair in the default mapper.
+  `repair_gf180_design.py` protects native leaves, verifies unchanged native
+  pin/port partitions and proves the complete graph after noninverting buffer
+  contraction, equivalent ordinary-cell resizing and validated constant ties.
+  P&R requires its complete receipt before launch. Keep the old opt-in Control
+  experiment as historical evidence. Residual electrical violations still block
+  qualification; successful repair execution is not electrical closure.
   The native Control SPICE harness preserves uncut controller feedback and all
   315 payload cells. Follow docs/reviews/control-native-characterization.md:
   reject changed adapter specializations and unexplained cut loads, verify both
@@ -488,8 +494,14 @@
   also depend on RF data; union coverage cannot discharge that obligation.
   Preserve the original Control caller's queries and results, and exercise
   graph rejection controls through the actual deduplicated parent. Prioritize
-  RF launch and elapsed's seeded-owner/admission contexts before RTL delay sizing;
-  keep the elapsed step's timing policy separate from its owner policy.
+  global electrical repair, then rerun existing campaigns, then RF launch and
+  elapsed seeded-owner/admission composition. Safe-direction guard lengthening
+  and timing parameterization may proceed concurrently; shortening waits for
+  the measured complete envelope. Keep elapsed step and owner policies separate.
+  Default elapsed requests are 100 ns, execute requests 80 ns and the BD Control
+  source ACK guard 32 ns on both edges. Keep that guard's recognized
+  `acknowledge_guard` ID so AsyncTest does not randomize away its fixed delay.
+  Run actual-edge/bypass controls plus the unchanged accelerated sleep oracle.
   Preserve exact async cells and connections, native delay chains and three SRAMs.
   Keep clocked STA separate from internal async path measurements. Recharacterize
   changed cells/whole transforms across all five pinned corners, and rerun
