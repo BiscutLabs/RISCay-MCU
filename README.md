@@ -73,6 +73,9 @@ The latest mapped logic area is **2.830967 / 3.596523 mm²**, excluding SRAM.
 All 27 ordinal wake windows per variant remain unchanged; the 43-instruction firmware wakes still use 3,255 BD / 3,160 Click work-clock edges. A2b functional and strict export checks pass; physical timing remains unqualified.
 The [A2b evidence](docs/reviews/loader-metadata-a2b-completion.md) records its
 checks and measured costs.
+An [opt-in Control buffer repair](docs/reviews/control-electrical-repair.md)
+reduces the measured data-path maxima and fixes two selected net overloads
+without changing native handshakes. Complete capture/hold timing remains open.
 See the [elapsed](docs/native-elapsed-contract.md) and
 [CRC](docs/native-crc-contract.md) contracts. Wider payload reductions remain
 open. Self-timed SRAM access follows a separate

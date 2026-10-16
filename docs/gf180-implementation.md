@@ -189,3 +189,11 @@ context and check every meaningful source/sink polarity. Their constant and
 reset-only cases are explicit; keeper feedback, complete controller loops and
 capture/reset envelopes remain open. These changes support cost comparison,
 not a claim of physical qualification.
+
+The [bounded Control electrical repair](reviews/control-electrical-repair.md)
+adds opt-in post-map buffer trees on two exact ordinary update nets. It verifies
+complete graph preservation and reparsed Verilog, then measures both variants
+at all five cell corners with fast/slow input transitions. Selected loads and
+slews improve; other electrical failures and unresolved capture/ACK queries stay
+visible. Its netlists are experimental and are not automatically substituted by
+the default mapper or P&R flow.
