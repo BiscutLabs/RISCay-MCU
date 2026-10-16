@@ -51,12 +51,40 @@ loader admission and a new frame. A pre-reset queued START or stale START reply
 cannot substitute for an explicit restart after recovery. The clocked MODE
 projection retains the specified synchronized-reset observation latency.
 
-Each Control feedback path precomputes the pending word's CRC in four native
-byte stages. The internal candidate is distinct from architectural CRC. A Stored
+Each Control feedback path precomputes the pending word's CRC in one native
+whole-word stage with a 32-bit result store. The update owner retains the command
+context through the [native CRC rendezvous](native-crc-contract.md). The internal
+candidate is distinct from architectural CRC. A Stored
 command cannot execute until feedback completes; it commits CRC and received
 bytes and clears the pending word atomically. Host/MMIO replies keep their
 original path and latency. Duplicate completion with no pending word is inert;
 application reset cannot erase accepted accounting or partially apply a CRC.
+
+## Retained loader metadata (A2b)
+
+Host BEGIN length/entry and WRITE offset remain unsigned 32-bit fields.
+Validate their complete values, alignment and admission conditions before
+assigning retained metadata. Invalid upper bits must reject the command,
+not alias a valid short value. An invalid BEGIN preserves the current image.
+
+For positive word-aligned program capacity `N`, `imageLength` and `received`
+use `bitLength(N)` bits so a completely received image remains representable;
+`entry` uses `max(1, bitLength(N - 1))` bits. At 2 KiB these are 12/12/11 bits
+for length/received/entry. Count remains byte-based. Non-power-of-two holes
+are still rejected, and MMIO entry readback zero-extends the offset to
+32 bits before adding the program base. Public commands, image IDs, CRCs,
+loader words, status words and memory addresses retain their existing ABI.
+
+Only Stored for an outstanding word commits CRC and advances `received`
+by four. The last completion reaches full capacity without wrapping; a
+duplicate completion is inert. Watchdog recovery preserves accepted
+accounting, image validity and lock. POR ownership, native BD/Click request
+and return sequences, payload retention and delay budgets are unchanged.
+
+A2b functional and strict export checks pass; physical timing remains unqualified. See
+[the evidence](reviews/loader-metadata-a2b-completion.md) for the capacity
+campaign, unchanged behavioral oracles, strict exports, measured cost and
+open physical capture/return obligations.
 
 ## Generic measurements and application telemetry
 

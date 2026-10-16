@@ -17,19 +17,19 @@ import riscay.soc._
   */
 class FourPhaseControl(p: SocParameters, domain: ResetDomain) extends AsyncModule(domain) {
   val command = fourPhaseInput("command", new ControlCommand)
-  val reply = fourPhaseOutput("reply", new ControlReply)
+  val reply = fourPhaseOutput("reply", new ControlReply(p.config.programBytes))
   private val timing = BundledTiming.Simulation
   private val cell = ModelTime.ps(1000)
-  private val state = asyncChild("state")(d => new FourPhaseFifo(new ControlToken, 1,
-    timing, Seq(ControlToken.initial), cell, d))
-  private val join = asyncChild("join")(d => new FourPhaseJoin(new ControlToken, new ControlCommand, timing, cell, d))
-  private val update = asyncChild("update")(d => new FourPhaseStage(new Joined(new ControlToken, new ControlCommand),
-    new ControlReply, (x: Joined[ControlToken, ControlCommand]) => transition(x.left.state, x.right, x.left.pendingCrc), timing, d))
+  private val state = asyncChild("state")(d => new FourPhaseFifo(new ControlToken(p.config.programBytes), 1,
+    timing, Seq(ControlToken.initial(p.config.programBytes)), cell, d))
+  private val join = asyncChild("join")(d => new FourPhaseJoin(new ControlToken(p.config.programBytes), new ControlCommand, timing, cell, d))
+  private val update = asyncChild("update")(d => new FourPhaseStage(new Joined(new ControlToken(p.config.programBytes), new ControlCommand),
+    new ControlReply(p.config.programBytes), (x: Joined[ControlToken, ControlCommand]) => transition(x.left.state, x.right, x.left.pendingCrc), timing, d))
   // Compute only the candidate CRC here; update retains the entire context.
   // Every feedback starts from architectural crc, even while loaderPending
   // survives other commands. Only Stored commits the candidate to that state.
   private val crc = asyncChild("crc")(FourPhaseCrc32.stage)
-  private val fork = asyncChild("fork")(d => new FourPhaseFork(new ControlReply, 2, cell, d))
+  private val fork = asyncChild("fork")(d => new FourPhaseFork(new ControlReply(p.config.programBytes), 2, cell, d))
   // The unbuffered fork contract describes its complete payload on both branches.
   // Retain the fields that the state feedback branch does not consume.
   dontTouch(fork.out(0))
@@ -57,7 +57,7 @@ class FourPhaseControl(p: SocParameters, domain: ResetDomain) extends AsyncModul
   FourPhase.connect(reply, fork.out(1))
 
   private def transition(s: ControlState, c: ControlCommand, pendingCrc: UInt): ControlReply = {
-    val r = WireDefault(0.U.asTypeOf(new ControlReply)); r.kind := c.kind; r.state := s
+    val r = WireDefault(0.U.asTypeOf(new ControlReply(p.config.programBytes))); r.kind := c.kind; r.state := s
     val n = r.state
     val config = p.config
     val gpioMask = ((BigInt(1) << config.gpioCount) - 1).U(32.W)
@@ -139,7 +139,7 @@ class FourPhaseControl(p: SocParameters, domain: ResetDomain) extends AsyncModul
           when(q.operation === Operation.Read.U) {
             r.memory.error := false.B; r.memory.data := c.peripheralData
             switch(offset) {
-              is(0.U) { r.memory.data := s.entry + MemoryMap.program.U; r.memory.error := !s.started }
+              is(0.U) { r.memory.data := s.entry.pad(32) + MemoryMap.program.U(32.W); r.memory.error := !s.started }
               is(36.U) { r.memory.data := s.sampleIndex }
               is(40.U) { r.memory.data := s.sampleValue }
               is(48.U) { r.memory.data := s.appIndex }

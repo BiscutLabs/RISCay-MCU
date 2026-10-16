@@ -211,7 +211,7 @@ abstract class ClickPlatform(p: SocParameters, board: SocParameters => BoardProf
   fabric.io.programSource.draining:=programServiceDebt || !programSourceEmpty
   val control = asyncChild("control")(d => new ClickControl(p, d))
   val controlCommandBridge = asyncChild("control_command_bridge")(d => new DecoupledToClick(new ControlCommand, d))
-  val controlReplyBridge = asyncChild("control_reply_bridge")(d => new ClickServiceReplyReceipt(new ControlReply, d))
+  val controlReplyBridge = asyncChild("control_reply_bridge")(d => new ClickServiceReplyReceipt(new ControlReply(p.config.programBytes), d))
   controlCommandBridge.clock := workClock; controlReplyBridge.clock := workClock
   val controlStart = withClockAndReset(serviceClock, reset) {
     val stages = RegInit(0.U(2.W)); stages := Cat(stages(0), true.B); stages.andR

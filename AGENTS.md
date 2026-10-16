@@ -70,7 +70,21 @@
   AsyncControlSpec, including exact rendezvous mutations, actual capture/POR,
   immediate legal source reuse, queued Stored and held public replies. CRC
   transform timing remains a separate physical gate; do not replace its native
-  rendezvous with periodic-clock stages.
+  rendezvous with periodic-clock stages. A2b retains loader length/received counts
+  at the width needed for program capacity itself, and entry offsets at the width
+  needed for capacity minus one. Validate full 32-bit BEGIN length/entry and WRITE
+  offset before narrowing; pad entry to 32 bits before adding the program base.
+  Keep full-capacity, small/non-power-of-two, every-discarded-host-bit, duplicate
+  Stored, reset and lock cases in AsyncControlSpec. Strict Control layouts derive
+  from independently validated SRAM capacity, never the observed bus width.
+  Run the unchanged CRC rendezvous and retained-reply/graph controls after layout
+  changes; preserve 337-bit frame banks and the 70-bit native CPU request source.
+  ProgramAccess upper-address zero obligations require proof from the actual
+  emitted combinational cone, with every storage output unconstrained and no
+  reset/valid/admission assumptions. Keep per-check four-state zero assertions,
+  all mapping comparisons and exact loader/CPU counterexample controls. A paired
+  probe exceeding the reviewed resource bounds must fail before allocation;
+  never truncate its stimulus or convert that failure into an export pass.
   ConsumedGray advances on service publication, never internal native completion.
   Keep stale single-tick replies from granting supervisor observation credit;
   scaling work and bridge drainage inhibit sleep. Preserve full-width target/

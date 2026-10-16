@@ -46,6 +46,15 @@ records its passing digital checks, exact mapped cost and open physical
 gates. Publication/bank copies, sampled readWord, reset epochs and clocked
 dispatch are separate unfinished items.
 
+A2b narrows retained native loader metadata while preserving full-width
+host validation and the public ABI. Its acceptance is **digitally verified; matched cost recorded; physical timing open**;
+the [area checklist](native-area-reduction.md#a2b-capacity-sized-loader-metadata)
+records the exact capacity, strict, cost and physical-screen scope. The
+2026-10-15 pause and incomplete strict attempt remain historical evidence.
+The subsequent request authorizes finishing this WIP PR only; broader
+migration remains paused, including C1e2, remaining A4/A5/A6 reductions,
+guard replacement and reset-tree qualification.
+
 The subsequent user instruction on 2026-10-13 authorizes correcting the
 clocked coordination around native services and adapting timing analysis to
 their actual protocols. This supersedes the R4 migration freeze as a work
@@ -1336,9 +1345,12 @@ MODE/start reset projection, GPIO/event/timer/peripheral effects, I2C and SRAM
 byte sequencing. Item 3's separate scope above moves GPIO/event/sample state
 behind another native loop. MMIO accesses still cross clocked endpoints. Two explicit,
 POR-only native/clocked bridges connect each Control loop. The Click loop and
-bridges contain no four-phase adapter. Item 4 replaces the shared combinational
-CRC word function with separate four-byte native pipelines inside each Control
-feedback loop, with separate candidate and architectural accounting state.
+bridges contain no four-phase adapter. Item 4 originally replaced the shared
+combinational CRC word function with four-byte native pipelines. Corrective
+A2a subsequently replaced those stages with one narrow whole-word result
+stage and retained-context rendezvous in each Control feedback loop; see
+[the native CRC contract](native-crc-contract.md). Candidate and architectural
+accounting state remain separate.
 
 One outstanding command preserves order. SRAM completion, accepted MMIO commit,
 reset recovery, HALT and host/CPU commands have explicit arbitration. Host frames
@@ -1418,8 +1430,9 @@ can now count down while tracked native maintenance holds the gate open. BD
 telemetry return uses the bridge's clocked ACK falling edge, which follows its
 synchronized request return; Click reply acceptance already restores bridge idle.
 New commands/outstanding work bridge those handoffs without an idle gap. CRC
-precomputation moved to feedback to keep byte stages out of the immediate host
-reply path. The original sleep and brownout assertions remain intact.
+precomputation remains in feedback, with A2a's single candidate stage outside
+the immediate host reply path. The original sleep and brownout assertions
+remain intact.
 Digital stage budgets describe entire
 transforms, including the quotient/remainder and CRC logic; no mapped timing or
 physical signoff is implied. Old P&R results remain inapplicable.

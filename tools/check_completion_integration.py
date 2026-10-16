@@ -2,7 +2,7 @@
 """Strict mapping obligations at the clocked/native completion boundary."""
 import re
 from check_application_reset import coordinated_reset
-from check_service_reply_receipt import native_reply_source, pack_reply
+from check_service_reply_receipt import native_reply_source, pack_reply, control_widths
 from check_quiescing_receipt import native_request_source, pack_request
 
 
@@ -151,7 +151,7 @@ def completion_constants_probe(source, manifest, scopes, top_rtl):
     return source.replace(anchor, anchor+"\n"+"\n".join(comparisons))
 
 
-def completion_background(source, manifest, scopes, checks):
+def completion_background(source, manifest, scopes, checks, program_bytes=None):
     """Add joint acceptance/publication scenarios using catalogued state.
 
     Each scenario starts at the original all-zero source header. No derived port,
@@ -237,7 +237,7 @@ def completion_background(source, manifest, scopes, checks):
     request = top+".ca_child_request_bridge"
     request_native = native_request_source(manifest, scopes, header)
     control = top+".ca_child_control_reply_bridge"
-    retained = {name: native_reply_source(manifest, scopes, header, name)
+    retained = {name: native_reply_source(manifest, scopes, header, name, program_bytes)
                 for name in ("control", "telemetry", "housekeeping")}
     reply_values = {}
     def held(owner, field, value):
@@ -270,7 +270,7 @@ def completion_background(source, manifest, scopes, checks):
             # remaining program selector through a permitted CPU-read request
             # and a retained program grant, not a forced plan endpoint.
             force(top+".fabric_controlState_programmed", 1, 1)
-            force(top+".fabric_controlState_imageLength", 32, 4)
+            force(top+".fabric_controlState_imageLength", control_widths(program_bytes)[0], 4)
             force(top+".ca_child_program_grant_bridge.state", 2, 2)
         if mmio:
             force(top+".fabric_controlOutstanding", 1, 1)

@@ -35,7 +35,9 @@ validation and the macro controller's firing-lane range assertions.
 The macro controller relies on that valid-offset contract and saves only the configured address width (11 program / 10
 working-RAM bits for Groundlark), then selects a bank and its ten-bit macro
 address; see the [C1f evidence](docs/sram-integration.md#c1f-saved-address-narrowing). Native loader metadata
-keeps full-width byte lengths, offsets and counts. Both
+retains capacity-sized byte counts and entry offsets: 12-bit length/received
+counts and an 11-bit entry offset at 2 KiB. Host fields remain 32 bits and are
+validated before narrowing; see the [loader contract](docs/loader-status-and-lock.md#retained-loader-metadata-a2b). Both
 cores use a 171-bit control token and derive pending load fields from the saved
 instruction, avoiding duplicate storage.
 
@@ -65,9 +67,12 @@ observation projection removes 325 native storage bits per variant. The compact
 [SPI player](docs/spi-player-contract.md) removes 90 clocked bits per variant;
 the addressed [I2C receive store](docs/native-i2c-byte-store-contract.md) removes
 another 513 native payload bits. CPU request receipts remove 70 duplicate
-clocked bits per variant. The latest mapped logic area is **2.862585 / 3.629653
-mm²** excluding SRAM, with unchanged measured wake activity and passing
-functional and strict export checks. Complete physical timing remains open.
+clocked bits per variant. Capacity-sized loader metadata removes
+183 native payload bits and 40 periodic bits per variant.
+The latest mapped logic area is **2.830967 / 3.596523 mm²**, excluding SRAM.
+All 27 ordinal wake windows per variant remain unchanged; the 43-instruction firmware wakes still use 3,255 BD / 3,160 Click work-clock edges. A2b functional and strict export checks pass; physical timing remains unqualified.
+The [A2b evidence](docs/reviews/loader-metadata-a2b-completion.md) records its
+checks and measured costs.
 See the [elapsed](docs/native-elapsed-contract.md) and
 [CRC](docs/native-crc-contract.md) contracts. Wider payload reductions remain
 open. Self-timed SRAM access follows a separate

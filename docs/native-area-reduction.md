@@ -37,12 +37,13 @@ periodic-clock staging. Measure each accepted step against its exact parent.
   Matched comparison selects one narrow whole-word XOR stage over a wide stage
   or byte loop. The existing update owner retains command context through native
   request/return rendezvous. Independent CRC32 oracles, Stored-only accounting
-  and loader/reset/lock semantics pass; physical timing remains open. Existing
-  full-width loader metadata is unchanged. See [the contract](native-crc-contract.md).
-  A2b's retained length/entry/count narrowing is tracked with A6 so its capacity
-  validation and schema changes receive a separate review and measurement.
-  Validate full-width host fields first and derive retained widths from configured
-  capacity, including its representable full-capacity count.
+  and loader/reset/lock semantics pass; physical timing remains open. That
+  change preserved retained metadata widths; see [the contract](native-crc-contract.md).
+- [x] **A2b: capacity-sized retained loader metadata — digitally verified; matched cost recorded; physical timing open.**
+  Separate review covers the capacity-derived state/token/reply layouts, complete
+  host validation and matched measurement. At 2 KiB, length/received/entry retain
+  12/12/11 bits. Full-capacity counts remain representable and external host fields
+  remain 32 bits. See [the evidence below](#a2b-capacity-sized-loader-metadata).
 - [x] **A3: prove LF narrowing, or retain width (proposal 8): retain 32 bits.** Wake on each tick
   does not prove a maximum observation/progress gap. An 8/10-bit count can
   wrap in 256/1024 ms in 1 kHz fixtures, or 21.3/85.3 s at production's fastest
@@ -67,11 +68,12 @@ periodic-clock staging. Measure each accepted step against its exact parent.
   physical constraints and all lane/mask/back-to-back/loader tests are covered.
   The reviewed [macro preflight](native-sram-clock-contract.md) is complete;
   an isolated digital byte-owner experiment can use the public Mutex model now.
-  The approved [library work](mutex-physical-binding-proposal.md) is implemented
-  and independently reviewed in [draft chisel-async PR #4](https://github.com/BiscutLabs/chisel-async/pull/4):
+  The approved [library work](mutex-physical-binding-proposal.md) merged in
+  [chisel-async PR #4](https://github.com/BiscutLabs/chisel-async/pull/4), reaching
+  library main `1e74a5c` after Windows and Linux qualification passed. It adds
   ownership/reset contracts, digital tests and an experimental GF180 schematic
   cell. Layout, extraction, Liberty and reliability qualification remain open.
-  The draft is not merged; the MCU dependency and generic mapper are unchanged.
+  The MCU retains its RC1 dependency and unchanged generic mapper.
   Neither this schematic experiment nor the byte-owner tests qualify SRAM pins.
 - [ ] **A5: addressed native I2C byte storage (proposal 4).** Move frame bytes
   out of the per-edge state/observation token, publish completed bank identity
@@ -111,6 +113,8 @@ periodic-clock staging. Measure each accepted step against its exact parent.
   0.2999% Click and every wake window is unchanged. Digital verification and
   independent review are recorded in the
   [request contract](application-reset-boundary.md#c1e1-retained-cpu-request-receipt).
+  A2b separately narrows retained loader metadata under the capacity and
+  full-host-validation contract above; see its [measured scope](#a2b-capacity-sized-loader-metadata).
   C1e2 keeps the six smaller receivers and their ten mapped payload bits open.
   Native source, mask-removal hold and physical clock/reset/RC qualification
   remain separate gates; C1e and the other A6 candidates are not complete.
@@ -349,6 +353,53 @@ The failed focused r2 compilation remains in its original log: a new test
 constant shadowed ScalaTest's `pending` member. Renaming the constant preserved
 the implementation and expected values; focused r3 passes. Retained loader
 length/entry/count narrowing is A2b under A6.
+
+## A2b: capacity-sized loader metadata
+
+Acceptance: **digitally verified; matched cost recorded; physical timing open**. The matched baseline is accepted C1e1
+`64e6211`; RTL and compiled classes at paused checkpoint `3183a54` are
+unchanged during resumption. The export checker has a separately reviewed
+successor described in the completion report. Separate BD/Click Control implementations validate full
+32-bit host fields before retaining capacity-sized metadata. At 2 KiB,
+state/token/reply widths change 305/337/376 → 244/276/315. CRC arithmetic,
+native handshake topology, public ABI and reset ownership are unchanged.
+
+| Quantity | BD before → after | Click before → after |
+| --- | ---: | ---: |
+| Logic area excluding SRAM (mm²) | 2.862584704 → 2.8309672384 | 3.629653440 → 3.5965234816 |
+| Logic area change | -1.1045% | -0.9128% |
+| Mapped leaves including SRAM | 103,349 → 102,006 | 105,247 → 104,089 |
+| Native payload bits removed | 183 | 183 |
+| Periodic bits removed | 40 | 40 |
+| TT listed-state leakage including SRAM (µW) | 7.577419–9.818140 → 7.496075–9.710117 | 9.043886–12.090826 → 8.961381–11.964312 |
+| Firmware work edges per 43-instruction wake | 3,255 → 3255 | 3,160 → 3160 |
+
+The mapped work-clock inventory falls from 4,068 to 4,009 storage-cell inputs in BD and from 4,119 to 4,060 in Click. Pin-only clock capacitance falls from 14.378128 to 14.183811 pF and from 14.549554 to 14.355237 pF, respectively. The complete fanout inventory reports 43 to 43 BD and 46 to 42 Click nets exceeding a listed pin-capacitance limit; wire RC, slew and the full capture/hold aperture remain unqualified.
+
+All 27 ordinal wake windows per variant remain unchanged; the 43-instruction firmware wakes still use 3,255 BD / 3,160 Click work-clock edges. All 27 ordinal windows per variant retain their
+independent effect and duration checks; any change belongs in the activity
+receipt. Five-corner listed-state leakage is recorded in
+[the estimates](gf180-estimates.md). This is unplaced mapped cost and
+native-model activity, not measured deep-sleep power or wake energy.
+
+The retained generation passes 536 Scala tests across 36 suites. The
+checker successor passes 751 Python controls; the original 709-test
+receipt remains historical evidence. The twelve capacity cases cover both variants at
+4/12/1024/1028/2048/3072 bytes. CRC controls pass 27 originals and reject
+27 mutants at their intended first fatal with unchanged oracles.
+All four portable/physical BD/Click strict exports pass, each retaining all four mandatory sweep campaigns. Held-payload controls pass 520 structural negative cases, four actual-wiring baselines and 48 exact wiring faults.
+
+All four actual export graphs pass their baseline audits and reject all 304 exact negative controls. The process replay uses the identical reviewed worker and complete cohort.
+
+The bounded screen records all 100 selected input-to-payload-D queries across 20 baseline/candidate, BD/Click and five-corner cases. All queries resolve; 28 exceed the unchanged 10 ns budget: every Control update case and both slow-corner CRC cases for each side/variant. The largest reported update propagation changes from 58.590066 to 51.492380 ns in BD and from 33.859032 to 37.777405 ns in Click. Click's selected update path worsens at all five corners; that regression remains explicitly open. CRC results are unchanged, reaching 16.852150 ns BD / 16.849191 ns Click. These are selected worst-slack paths with source arrival subtracted, not a proof of maximum propagation over all paths. No clocks, false paths, case analysis, loop cuts or timing waivers were added. Existing CRC and other transform data-budget
+failures remain failures. Native payload reuse/hold, request alignment,
+capture/reset pulse widths, reset distribution, electrical limits and
+routed min/max RC remain unqualified. No periodic staging, timing waiver
+or relaxed behavioral oracle is introduced. The retained user-interrupted
+strict attempt remains `FAIL_OR_INCOMPLETE`; successor evidence is
+separate under `build/async-loader-width-finish-r2/`. The failed r1
+activity probe and paired-fallback MemoryError remain retained. See
+[the completion report](reviews/loader-metadata-a2b-completion.md).
 
 ## A4 progress and physical gates
 

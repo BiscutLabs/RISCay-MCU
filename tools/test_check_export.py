@@ -139,7 +139,7 @@ $display("CONTRACT_PROBES_PASS:1"); $finish; end endmodule
             rtl += "module Access;\n"+declarations(inventories[top+".ca_child_program_access"])+"\nwire idle = !active && " + " && ".join(
                 name for name in inventories[top+".ca_child_program_access"] if name.endswith("_1")) + "; endmodule\n"
             rtl += "module RamNativeAccess;\n"+declarations(inventories[top+".ca_child_ram_access"])+"\nwire idle = !active && "+" && ".join(n for n in inventories[top+".ca_child_ram_access"] if n.endswith("_1"))+"; endmodule\n"
-            rtl += "module ControlPayload; reg [375:0] q; endmodule\nmodule Update; ControlPayload ca_primitive_payload(); endmodule\nmodule Control; Update ca_child_update(); endmodule\n"
+            rtl += "module ControlPayload; reg [314:0] q; endmodule\nmodule Update; ControlPayload ca_primitive_payload(); endmodule\nmodule Control; Update ca_child_update(); endmodule\n"
             rtl += "module Reply;\n"+declarations(reply)+"\nendmodule\n"
             rtl += request_fixture_rtl()
             rtl += "module Grant; reg [1:0] state; reg data; endmodule\n"
@@ -174,7 +174,7 @@ force {top}.reset = 1'b1; #1;
 if (ones_0 !== 11'h7ff || zeros_0 !== 11'h7ff) $fatal(1,"INACTIVE_ENDPOINT:observed");
 $display("CONTRACT_PROBES_PASS:1"); $finish; end endmodule
 """
-            extended, count = sram_background(source, manifest, scopes, 1)
+            extended, count = sram_background(source, manifest, scopes, 1, 2048)
             self.assertGreater(count, 1)
             self.assertIn('if (ones_0 !==', extended)
             self.assertIn(f'if ({top}.observed !== {top}.expected)', extended)
@@ -206,19 +206,19 @@ $display("CONTRACT_PROBES_PASS:1"); $finish; end endmodule
                 if width is None: del registers["returned_stages_1"]
                 else: registers["returned_stages_1"]=width
                 with self.assertRaisesRegex(ValueError,"SRAM_PROBE_DRIVER_MISMATCH"):
-                    sram_background(source,manifest,bad,1)
+                    sram_background(source,manifest,bad,1,2048)
             for name,diagnostic in (("program_return","COMPLETION_NATIVE_RETURN_OWNER"),
                                     ("program_access","SRAM_PROBE_OWNER_MISMATCH"),
                                     ("ram_access","SRAM_PROBE_OWNER_MISMATCH")):
                 bad=copy.deepcopy(manifest)
                 bad["design"]["children"]=[c for c in bad["design"]["children"] if c["id"]!=name]
                 with self.assertRaisesRegex(ValueError,diagnostic):
-                    sram_background(source,bad,scopes,1)
+                    sram_background(source,bad,scopes,1,2048)
             for name in ("state","data"):
                 bad=copy.deepcopy(scopes)
                 del bad[top+".ca_child_program_grant_bridge"]["registers"][name]
                 with self.assertRaisesRegex(ValueError,"SRAM_PROBE_DRIVER_MISMATCH"):
-                    sram_background(source,manifest,bad,1)
+                    sram_background(source,manifest,bad,1,2048)
 
     def test_register_file_background_adds_activity_without_masking_bad_mapping(self):
         manifest = {"top": "RfTop", "design": {"module": "ArchitecturalRegisters", "primitives": [

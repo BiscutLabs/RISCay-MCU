@@ -12,18 +12,25 @@ class HostFrame extends Bundle {
   val bytes = Vec(33, UInt(8.W))
 }
 
-class ControlState extends Bundle {
+/** Internal loader storage only. Host fields are checked at their full
+  * 32-bit width before assignment. Inclusive counts must represent capacity
+  * itself, including a completed power-of-two-sized image.
+  */
+class ControlState(programBytes: Int) extends Bundle {
+  require(programBytes > 0 && programBytes % 4 == 0)
+  private val countWidth = BigInt(programBytes).bitLength
+  private val entryWidth = (BigInt(programBytes) - 1).bitLength.max(1)
   val mode = UInt(3.W)
   val programmed = Bool(); val locked = Bool(); val started = Bool()
   val lastError = UInt(8.W)
-  val imageLength = UInt(32.W); val entry = UInt(32.W); val received = UInt(32.W)
+  val imageLength = UInt(countWidth.W); val entry = UInt(entryWidth.W); val received = UInt(countWidth.W)
   val imageId = UInt(32.W); val expectedCrc = UInt(32.W); val crc = UInt(32.W)
   val loaderPending = Bool(); val loaderWord = UInt(32.W)
   val selector = UInt(24.W)
   val sampleIndex = UInt(4.W); val sampleValue = UInt(32.W); val appIndex = UInt(6.W)
 }
 object ControlState {
-  def initial: ControlState = (new ControlState).Lit(
+  def initial(programBytes: Int): ControlState = (new ControlState(programBytes)).Lit(
     _.mode -> 0.U, _.programmed -> false.B, _.locked -> false.B, _.started -> false.B,
     _.lastError -> 0.U, _.imageLength -> 0.U, _.entry -> 0.U, _.received -> 0.U,
     _.imageId -> 0.U, _.expectedCrc -> 0.U, _.crc -> "hffffffff".U,
@@ -32,13 +39,13 @@ object ControlState {
 }
 /** Internal feedback token. The speculative CRC never appears in the public
   * loader state until an accepted Stored command commits it. */
-class ControlToken extends Bundle {
-  val state = new ControlState
+class ControlToken(programBytes: Int) extends Bundle {
+  val state = new ControlState(programBytes)
   val pendingCrc = UInt(32.W)
 }
 object ControlToken {
-  def initial: ControlToken = (new ControlToken).Lit(
-    _.state -> ControlState.initial, _.pendingCrc -> "hffffffff".U)
+  def initial(programBytes: Int): ControlToken = (new ControlToken(programBytes)).Lit(
+    _.state -> ControlState.initial(programBytes), _.pendingCrc -> "hffffffff".U)
 }
 /** Internal arithmetic input only; the state owner retains the loader context. */
 class Crc32Command extends Bundle {
@@ -70,9 +77,9 @@ class ControlCommand extends Bundle {
   val peripheralData = UInt(32.W)
   val applicationWritable = Bool()
 }
-class ControlReply extends Bundle {
+class ControlReply(programBytes: Int) extends Bundle {
   val kind = UInt(3.W)
-  val state = new ControlState
+  val state = new ControlState(programBytes)
   val programWrite = Bool()
   // Raw candidate; it has no peripheral effect unless periodUpdate is asserted.
   val periodUpdate = Bool(); val period = UInt(32.W); val hostWake = Bool()

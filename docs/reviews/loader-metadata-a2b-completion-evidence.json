@@ -1,0 +1,1035 @@
+{
+  "schema": "riscay-loader-metadata-completion-v1",
+  "status": "DIGITALLY_VERIFIED_MATCHED_COST_RECORDED_PHYSICAL_OPEN",
+  "base_commit": "64e621160c5efefdc18f78964fb44e7f6a065927",
+  "rtl_checkpoint": "3183a54f5e8fccaea9993f48b13c252828a4ce10",
+  "library_tool_commit": "f6c3a9b034e1398f2c4d52472d224ee8f79d7ee2",
+  "library_dependency": "0.1.0-RC1 (unchanged)",
+  "scope": "Capacity-sized native loader metadata in separate BD and Click implementations; checker crash recovery and validation only.",
+  "implementation_files_sha256": {
+    "designs/four-phase-bd/src/main/scala/riscay/bd/FourPhaseControl.scala": "36cc08b0ad01a37eb183e10db18e184252881fe3454e978ff59f443f61d1fdf4",
+    "designs/four-phase-bd/src/main/scala/riscay/bd/FourPhasePlatform.scala": "fc2c6b8f6f3a12ad62f385e380f763d3f100e0148a0e64771b9cb019adccd1e2",
+    "designs/four-phase-bd/src/main/scala/riscay/bd/FourPhaseServices.scala": "25900da0eacbb8bf7356cade8d7663cd6bbd772b51d6689dbecf3d06d7c895a9",
+    "designs/two-phase-click/src/main/scala/riscay/click/ClickControl.scala": "1c46d1ce0b0dae147308d7c415cbc99f87d5c001fd494700be8a61b35c6b1b4c",
+    "designs/two-phase-click/src/main/scala/riscay/click/ClickPlatform.scala": "6fdb3be24a2bac3a6a984f15a8d0c57a302a531a7e01ff92e4df5d738d671cde",
+    "designs/two-phase-click/src/main/scala/riscay/click/ClickServices.scala": "3d72d051070551fa1d68a79d9004c4dc94c970dbc5d12096cb3f81ddc204db13",
+    "soc/src/main/scala/riscay/soc/ControlSchema.scala": "acfb009290b089efec446f1465379e339ae93bf8d0c2b6b223420516ab24326d",
+    "soc/src/main/scala/riscay/soc/SocFabric.scala": "463dadf9658eabe9be56f1dd73e815e0f5f900bf6bc9e9a341633f7eaefce004",
+    "tools/check_completion_integration.py": "41c44b850c401280bdecefc66ed427ae20fec7b35c8e986ed710b9ff06505dbd",
+    "tools/check_export.py": "c1e7b848b1052eff29f01adb98cc10b2d6683d88ac1723f8f02da1f93dc5e9c6",
+    "tools/check_service_reply_receipt.py": "8901017b4a2adfa67cbccb8970719fdc4b8581f9dfde117190d0c357adb298fd",
+    "tools/test_async_fabric_export.py": "aa80cfeaa667528b6fbf4fba60edc2121f7614b179710292bc656fb7c38a81e0",
+    "tools/test_check_export.py": "dc786c59db1287fa3e52535143ab45a7404ee5c3cf38786fc9560c46e1254b2d",
+    "tools/test_completion_integration.py": "fb6e96e88d24e2be8da43a89d51f17d6ee374e3c1282c323c8451c3a377308f7",
+    "tools/test_control_export.py": "673bcf49de1f101a03c88477bc1699619158ecfe5530c0d3b124576a4350c087",
+    "tools/test_service_reply_receipt.py": "ae4a261844249c021e76b9aa720d99c68efc5f197af35c9c2c3a243f17a83601",
+    "verification/src/test/scala/riscay/AsyncControlSpec.scala": "22f89de579faa6611d99345b27fec93875d3dc2f5c2c0d34691b4ac9c5f589ba",
+    "verification/src/test/scala/riscay/AsyncCrcControlSpec.scala": "aa924ae3caa7abc294f875aa621dbd8b75754951906265b969b96a145d504e37",
+    "tools/check_probe_budget.py": "52a40bdbbb0097d7e83de4f8535e499ea96fed5ac93d0543df40cbb2402e05e9",
+    "tools/check_program_address.py": "fbe2db02c2c593571003a0a852341c6e7b72677cb8253ed8943cb7975b5dd59e",
+    "tools/test_probe_budget.py": "3212e258a9f41917e769250c0e23b927e8b4c1f15580663466334fcebccd8e55",
+    "tools/test_program_address.py": "971b7de6928a685502d080852765db02508f11965c5bcfb91c81ee9ededf06a4"
+  },
+  "tests": {
+    "scala": 536,
+    "scala_suites": 36,
+    "python_original": 709,
+    "python_current": 751,
+    "crc_originals": 27,
+    "crc_exact_fatal_mutants": 27,
+    "strict_exports": 4,
+    "strict_sweeps_per_export": 4,
+    "actual_graph_baselines": 4,
+    "actual_graph_negative_controls": 304,
+    "held_structural_negative_controls": 520,
+    "held_wiring_baselines": 4,
+    "held_exact_fatal_mutants": 48,
+    "program_address_graph_proofs": 4,
+    "program_address_counterexamples": 8
+  },
+  "strict_coverage": {
+    "portable-r1/bd": {
+      "endpoint_count": 2625,
+      "endpoint_bits": 81592,
+      "required_bit_polarities": 163184,
+      "driver_count": 2118,
+      "driver_bits": 30313,
+      "generic_samples": 121252,
+      "generic_mapping_checks": 318286500,
+      "complete_sweep_campaigns": 4,
+      "all_sweep_mapping_checks": 636573000,
+      "total_mapping_checks": 647330250
+    },
+    "portable-r1/click": {
+      "endpoint_count": 2364,
+      "endpoint_bits": 68036,
+      "required_bit_polarities": 136072,
+      "driver_count": 2378,
+      "driver_bits": 29118,
+      "generic_samples": 116472,
+      "generic_mapping_checks": 275339808,
+      "complete_sweep_campaigns": 4,
+      "all_sweep_mapping_checks": 550679616,
+      "total_mapping_checks": 560346012
+    },
+    "physical-r1/bd": {
+      "endpoint_count": 2625,
+      "endpoint_bits": 81592,
+      "required_bit_polarities": 163184,
+      "driver_count": 2122,
+      "driver_bits": 30323,
+      "generic_samples": 121292,
+      "generic_mapping_checks": 318391500,
+      "complete_sweep_campaigns": 4,
+      "all_sweep_mapping_checks": 636783000,
+      "total_mapping_checks": 647540250
+    },
+    "physical-r1/click": {
+      "endpoint_count": 2364,
+      "endpoint_bits": 68036,
+      "required_bit_polarities": 136072,
+      "driver_count": 2382,
+      "driver_bits": 29128,
+      "generic_samples": 116512,
+      "generic_mapping_checks": 275434368,
+      "complete_sweep_campaigns": 4,
+      "all_sweep_mapping_checks": 550868736,
+      "total_mapping_checks": 560535132
+    }
+  },
+  "source_state_reduction_per_variant": {
+    "native_bits": 183,
+    "periodic_bits": 40
+  },
+  "mapping": {
+    "bd": {
+      "before": {
+        "total": {
+          "cells": 103349,
+          "area_um2": "3490785.534400",
+          "leakage_uw": {
+            "tt_025C_3v30": {
+              "low": "7.57741860381",
+              "high": "9.8181398931"
+            },
+            "ss_n40C_3v00": {
+              "low": "6.1680632718",
+              "high": "7.7871031410"
+            },
+            "ss_125C_3v00": {
+              "low": "44.951561760",
+              "high": "49.193714010"
+            },
+            "ff_n40C_3v60": {
+              "low": "8.9782829964",
+              "high": "11.2661714988"
+            },
+            "ff_125C_3v60": {
+              "low": "253.568209896",
+              "high": "563.763014208"
+            }
+          }
+        },
+        "ordinary_logic": {
+          "cells": 47070,
+          "area_um2": "1139725.888000",
+          "leakage_uw": {
+            "tt_025C_3v30": {
+              "low": "2.87113360908",
+              "high": "4.2365686869"
+            },
+            "ss_n40C_3v00": {
+              "low": "2.3338594098",
+              "high": "3.3148499085"
+            },
+            "ss_125C_3v00": {
+              "low": "19.29192852",
+              "high": "21.70910598"
+            },
+            "ff_n40C_3v60": {
+              "low": "3.3985949184",
+              "high": "4.8429510660"
+            },
+            "ff_125C_3v60": {
+              "low": "80.665231248",
+              "high": "256.259829312"
+            }
+          }
+        },
+        "native_guards": {
+          "cells": 10462,
+          "area_um2": "569961.728000",
+          "leakage_uw": {
+            "tt_025C_3v30": {
+              "low": "0.93055237440",
+              "high": "0.9510310425"
+            },
+            "ss_n40C_3v00": {
+              "low": "0.759752577",
+              "high": "0.7687468140"
+            },
+            "ss_125C_3v00": {
+              "low": "5.60975853",
+              "high": "5.82361071"
+            },
+            "ff_n40C_3v60": {
+              "low": "1.1013940188",
+              "high": "1.1171945880"
+            },
+            "ff_125C_3v60": {
+              "low": "32.426784792",
+              "high": "50.621422320"
+            }
+          }
+        },
+        "native_other": {
+          "cells": 45814,
+          "area_um2": "1152897.088000",
+          "leakage_uw": {
+            "tt_025C_3v30": {
+              "low": "2.96075472033",
+              "high": "3.8155622637"
+            },
+            "ss_n40C_3v00": {
+              "low": "2.4062912850",
+              "high": "3.0353464185"
+            },
+            "ss_125C_3v00": {
+              "low": "19.20823971",
+              "high": "20.81936232"
+            },
+            "ff_n40C_3v60": {
+              "low": "3.5107004592",
+              "high": "4.3384322448"
+            },
+            "ff_125C_3v60": {
+              "low": "104.101793856",
+              "high": "220.507362576"
+            }
+          }
+        },
+        "sram": {
+          "cells": 3,
+          "area_um2": "628200.8304",
+          "leakage_uw": {
+            "tt_025C_3v30": {
+              "low": "0.8149779000",
+              "high": "0.8149779000"
+            },
+            "ss_n40C_3v00": {
+              "low": "0.66816000",
+              "high": "0.66816000"
+            },
+            "ss_125C_3v00": {
+              "low": "0.841635000",
+              "high": "0.841635000"
+            },
+            "ff_n40C_3v60": {
+              "low": "0.9675936000",
+              "high": "0.9675936000"
+            },
+            "ff_125C_3v60": {
+              "low": "36.3744000",
+              "high": "36.3744000"
+            }
+          }
+        },
+        "logic_area_um2": "2862584.704000"
+      },
+      "after": {
+        "total": {
+          "cells": 102006,
+          "area_um2": "3459168.068800",
+          "leakage_uw": {
+            "tt_025C_3v30": {
+              "low": "7.49607506439",
+              "high": "9.7101166140"
+            },
+            "ss_n40C_3v00": {
+              "low": "6.1020308010",
+              "high": "7.7020808235"
+            },
+            "ss_125C_3v00": {
+              "low": "44.400154170",
+              "high": "48.592715700"
+            },
+            "ff_n40C_3v60": {
+              "low": "8.8819965648",
+              "high": "11.1426583176"
+            },
+            "ff_125C_3v60": {
+              "low": "250.992943884",
+              "high": "557.391048192"
+            }
+          }
+        },
+        "ordinary_logic": {
+          "cells": 46438,
+          "area_um2": "1125674.412800",
+          "leakage_uw": {
+            "tt_025C_3v30": {
+              "low": "2.83440842916",
+              "high": "4.1854811097"
+            },
+            "ss_n40C_3v00": {
+              "low": "2.3040726090",
+              "high": "3.2751110940"
+            },
+            "ss_125C_3v00": {
+              "low": "19.03660347",
+              "high": "21.42697293"
+            },
+            "ff_n40C_3v60": {
+              "low": "3.3552323028",
+              "high": "4.7844326052"
+            },
+            "ff_125C_3v60": {
+              "low": "79.600103388",
+              "high": "253.164763656"
+            }
+          }
+        },
+        "native_guards": {
+          "cells": 10462,
+          "area_um2": "569961.728000",
+          "leakage_uw": {
+            "tt_025C_3v30": {
+              "low": "0.93055237440",
+              "high": "0.9510310425"
+            },
+            "ss_n40C_3v00": {
+              "low": "0.759752577",
+              "high": "0.7687468140"
+            },
+            "ss_125C_3v00": {
+              "low": "5.60975853",
+              "high": "5.82361071"
+            },
+            "ff_n40C_3v60": {
+              "low": "1.1013940188",
+              "high": "1.1171945880"
+            },
+            "ff_125C_3v60": {
+              "low": "32.426784792",
+              "high": "50.621422320"
+            }
+          }
+        },
+        "native_other": {
+          "cells": 45103,
+          "area_um2": "1135331.097600",
+          "leakage_uw": {
+            "tt_025C_3v30": {
+              "low": "2.91613636083",
+              "high": "3.7586265618"
+            },
+            "ss_n40C_3v00": {
+              "low": "2.3700456150",
+              "high": "2.9900629155"
+            },
+            "ss_125C_3v00": {
+              "low": "18.91215717",
+              "high": "20.50049706"
+            },
+            "ff_n40C_3v60": {
+              "low": "3.4577766432",
+              "high": "4.2734375244"
+            },
+            "ff_125C_3v60": {
+              "low": "102.591655704",
+              "high": "217.230462216"
+            }
+          }
+        },
+        "sram": {
+          "cells": 3,
+          "area_um2": "628200.8304",
+          "leakage_uw": {
+            "tt_025C_3v30": {
+              "low": "0.8149779000",
+              "high": "0.8149779000"
+            },
+            "ss_n40C_3v00": {
+              "low": "0.66816000",
+              "high": "0.66816000"
+            },
+            "ss_125C_3v00": {
+              "low": "0.841635000",
+              "high": "0.841635000"
+            },
+            "ff_n40C_3v60": {
+              "low": "0.9675936000",
+              "high": "0.9675936000"
+            },
+            "ff_125C_3v60": {
+              "low": "36.3744000",
+              "high": "36.3744000"
+            }
+          }
+        },
+        "logic_area_um2": "2830967.238400"
+      },
+      "delta": {
+        "total_cells": -1343,
+        "logic_area_um2": "-31617.465600",
+        "leakage_uw": {
+          "tt_025C_3v30": {
+            "low": "-0.08134353942",
+            "high": "-0.1080232791"
+          },
+          "ss_n40C_3v00": {
+            "low": "-0.0660324708",
+            "high": "-0.0850223175"
+          },
+          "ss_125C_3v00": {
+            "low": "-0.551407590",
+            "high": "-0.600998310"
+          },
+          "ff_n40C_3v60": {
+            "low": "-0.0962864316",
+            "high": "-0.1235131812"
+          },
+          "ff_125C_3v60": {
+            "low": "-2.575266012",
+            "high": "-6.371966016"
+          }
+        }
+      }
+    },
+    "click": {
+      "before": {
+        "total": {
+          "cells": 105247,
+          "area_um2": "4257854.270400",
+          "leakage_uw": {
+            "tt_025C_3v30": {
+              "low": "9.04388590248",
+              "high": "12.0908264565"
+            },
+            "ss_n40C_3v00": {
+              "low": "7.3617707244",
+              "high": "9.5872890090"
+            },
+            "ss_125C_3v00": {
+              "low": "49.161935280",
+              "high": "55.008372150"
+            },
+            "ff_n40C_3v60": {
+              "low": "10.7061378876",
+              "high": "13.6901754828"
+            },
+            "ff_125C_3v60": {
+              "low": "323.102085948",
+              "high": "660.434373864"
+            }
+          }
+        },
+        "ordinary_logic": {
+          "cells": 43583,
+          "area_um2": "1119306.137600",
+          "leakage_uw": {
+            "tt_025C_3v30": {
+              "low": "2.81124266082",
+              "high": "4.1338261569"
+            },
+            "ss_n40C_3v00": {
+              "low": "2.2822386720",
+              "high": "3.2300991270"
+            },
+            "ss_125C_3v00": {
+              "low": "18.20174424",
+              "high": "20.63665071"
+            },
+            "ff_n40C_3v60": {
+              "low": "3.3286297284",
+              "high": "4.7160052884"
+            },
+            "ff_125C_3v60": {
+              "low": "81.203266368",
+              "high": "256.469779152"
+            }
+          }
+        },
+        "native_guards": {
+          "cells": 18769,
+          "area_um2": "1105950.540800",
+          "leakage_uw": {
+            "tt_025C_3v30": {
+              "low": "1.76321593470",
+              "high": "1.7949085506"
+            },
+            "ss_n40C_3v00": {
+              "low": "1.439190474",
+              "high": "1.4514158370"
+            },
+            "ss_125C_3v00": {
+              "low": "10.41482979",
+              "high": "10.79560740"
+            },
+            "ff_n40C_3v60": {
+              "low": "2.0866182948",
+              "high": "2.1085535628"
+            },
+            "ff_125C_3v60": {
+              "low": "60.827034960",
+              "high": "92.991178440"
+            }
+          }
+        },
+        "native_other": {
+          "cells": 42892,
+          "area_um2": "1404396.761600",
+          "leakage_uw": {
+            "tt_025C_3v30": {
+              "low": "3.65444940696",
+              "high": "5.3471138490"
+            },
+            "ss_n40C_3v00": {
+              "low": "2.9721815784",
+              "high": "4.2376140450"
+            },
+            "ss_125C_3v00": {
+              "low": "19.70372625",
+              "high": "22.73447904"
+            },
+            "ff_n40C_3v60": {
+              "low": "4.3232962644",
+              "high": "5.8980230316"
+            },
+            "ff_125C_3v60": {
+              "low": "144.697384620",
+              "high": "274.599016272"
+            }
+          }
+        },
+        "sram": {
+          "cells": 3,
+          "area_um2": "628200.8304",
+          "leakage_uw": {
+            "tt_025C_3v30": {
+              "low": "0.8149779000",
+              "high": "0.8149779000"
+            },
+            "ss_n40C_3v00": {
+              "low": "0.66816000",
+              "high": "0.66816000"
+            },
+            "ss_125C_3v00": {
+              "low": "0.841635000",
+              "high": "0.841635000"
+            },
+            "ff_n40C_3v60": {
+              "low": "0.9675936000",
+              "high": "0.9675936000"
+            },
+            "ff_125C_3v60": {
+              "low": "36.3744000",
+              "high": "36.3744000"
+            }
+          }
+        },
+        "logic_area_um2": "3629653.440000"
+      },
+      "after": {
+        "total": {
+          "cells": 104089,
+          "area_um2": "4224724.312000",
+          "leakage_uw": {
+            "tt_025C_3v30": {
+              "low": "8.96138108019",
+              "high": "11.9643124788"
+            },
+            "ss_n40C_3v00": {
+              "low": "7.2947388753",
+              "high": "9.4882680765"
+            },
+            "ss_125C_3v00": {
+              "low": "48.659266680",
+              "high": "54.434697030"
+            },
+            "ff_n40C_3v60": {
+              "low": "10.6085018160",
+              "high": "13.5489187980"
+            },
+            "ff_125C_3v60": {
+              "low": "320.157194328",
+              "high": "653.981167080"
+            }
+          }
+        },
+        "ordinary_logic": {
+          "cells": 43010,
+          "area_um2": "1106565.196800",
+          "leakage_uw": {
+            "tt_025C_3v30": {
+              "low": "2.78101493703",
+              "high": "4.0860922113"
+            },
+            "ss_n40C_3v00": {
+              "low": "2.2576890639",
+              "high": "3.1934160195"
+            },
+            "ss_125C_3v00": {
+              "low": "17.97359058",
+              "high": "20.38354434"
+            },
+            "ff_n40C_3v60": {
+              "low": "3.2928268428",
+              "high": "4.6612008864"
+            },
+            "ff_125C_3v60": {
+              "low": "80.306165124",
+              "high": "253.883603088"
+            }
+          }
+        },
+        "native_guards": {
+          "cells": 18769,
+          "area_um2": "1105950.540800",
+          "leakage_uw": {
+            "tt_025C_3v30": {
+              "low": "1.76321593470",
+              "high": "1.7949085506"
+            },
+            "ss_n40C_3v00": {
+              "low": "1.439190474",
+              "high": "1.4514158370"
+            },
+            "ss_125C_3v00": {
+              "low": "10.41482979",
+              "high": "10.79560740"
+            },
+            "ff_n40C_3v60": {
+              "low": "2.0866182948",
+              "high": "2.1085535628"
+            },
+            "ff_125C_3v60": {
+              "low": "60.827034960",
+              "high": "92.991178440"
+            }
+          }
+        },
+        "native_other": {
+          "cells": 42307,
+          "area_um2": "1384007.744000",
+          "leakage_uw": {
+            "tt_025C_3v30": {
+              "low": "3.60217230846",
+              "high": "5.2683338169"
+            },
+            "ss_n40C_3v00": {
+              "low": "2.9296993374",
+              "high": "4.1752762200"
+            },
+            "ss_125C_3v00": {
+              "low": "19.42921131",
+              "high": "22.41391029"
+            },
+            "ff_n40C_3v60": {
+              "low": "4.2614630784",
+              "high": "5.8115707488"
+            },
+            "ff_125C_3v60": {
+              "low": "142.649594244",
+              "high": "270.731985552"
+            }
+          }
+        },
+        "sram": {
+          "cells": 3,
+          "area_um2": "628200.8304",
+          "leakage_uw": {
+            "tt_025C_3v30": {
+              "low": "0.8149779000",
+              "high": "0.8149779000"
+            },
+            "ss_n40C_3v00": {
+              "low": "0.66816000",
+              "high": "0.66816000"
+            },
+            "ss_125C_3v00": {
+              "low": "0.841635000",
+              "high": "0.841635000"
+            },
+            "ff_n40C_3v60": {
+              "low": "0.9675936000",
+              "high": "0.9675936000"
+            },
+            "ff_125C_3v60": {
+              "low": "36.3744000",
+              "high": "36.3744000"
+            }
+          }
+        },
+        "logic_area_um2": "3596523.481600"
+      },
+      "delta": {
+        "total_cells": -1158,
+        "logic_area_um2": "-33129.958400",
+        "leakage_uw": {
+          "tt_025C_3v30": {
+            "low": "-0.08250482229",
+            "high": "-0.1265139777"
+          },
+          "ss_n40C_3v00": {
+            "low": "-0.0670318491",
+            "high": "-0.0990209325"
+          },
+          "ss_125C_3v00": {
+            "low": "-0.502668600",
+            "high": "-0.573675120"
+          },
+          "ff_n40C_3v60": {
+            "low": "-0.0976360716",
+            "high": "-0.1412566848"
+          },
+          "ff_125C_3v60": {
+            "low": "-2.944891620",
+            "high": "-6.453206784"
+          }
+        }
+      }
+    }
+  },
+  "activity": {
+    "ordinal_wake_windows_per_variant": 27,
+    "all_windows_unchanged": true,
+    "firmware_instructions": 43,
+    "bd_work_clock_edges": 3255,
+    "click_work_clock_edges": 3160
+  },
+  "transform_screen": {
+    "cases": 20,
+    "queries": 100,
+    "corners": 5,
+    "budget_ns": 10,
+    "status": "SELECTED_PATHS_RECORDED_PHYSICAL_OPEN",
+    "data_budget_failures": 28,
+    "no_path_unqualified": [],
+    "selected_update_and_crc_paths": {
+      "baseline/bd": {
+        "update": {
+          "tt_025C_3v30": {
+            "propagation_ns": "29.80638042969851",
+            "status": "DATA_BUDGET_FAIL"
+          },
+          "ss_n40C_3v00": {
+            "propagation_ns": "38.267861074236286",
+            "status": "DATA_BUDGET_FAIL"
+          },
+          "ss_125C_3v00": {
+            "propagation_ns": "58.590066012752686",
+            "status": "DATA_BUDGET_FAIL"
+          },
+          "ff_n40C_3v60": {
+            "propagation_ns": "17.926949321315096",
+            "status": "DATA_BUDGET_FAIL"
+          },
+          "ff_125C_3v60": {
+            "propagation_ns": "27.443426086178402",
+            "status": "DATA_BUDGET_FAIL"
+          }
+        },
+        "crc": {
+          "tt_025C_3v30": {
+            "propagation_ns": "8.585387754839212",
+            "status": "SELECTED_PATH_BUDGET_MET_ONLY"
+          },
+          "ss_n40C_3v00": {
+            "propagation_ns": "11.88064613649593",
+            "status": "DATA_BUDGET_FAIL"
+          },
+          "ss_125C_3v00": {
+            "propagation_ns": "16.852150374383868",
+            "status": "DATA_BUDGET_FAIL"
+          },
+          "ff_n40C_3v60": {
+            "propagation_ns": "5.178200237387894",
+            "status": "SELECTED_PATH_BUDGET_MET_ONLY"
+          },
+          "ff_125C_3v60": {
+            "propagation_ns": "7.271297103572376",
+            "status": "SELECTED_PATH_BUDGET_MET_ONLY"
+          }
+        }
+      },
+      "baseline/click": {
+        "update": {
+          "tt_025C_3v30": {
+            "propagation_ns": "17.23871405527956",
+            "status": "DATA_BUDGET_FAIL"
+          },
+          "ss_n40C_3v00": {
+            "propagation_ns": "23.44636196002775",
+            "status": "DATA_BUDGET_FAIL"
+          },
+          "ss_125C_3v00": {
+            "propagation_ns": "33.85903209199663",
+            "status": "DATA_BUDGET_FAIL"
+          },
+          "ff_n40C_3v60": {
+            "propagation_ns": "10.596290367293983",
+            "status": "DATA_BUDGET_FAIL"
+          },
+          "ff_125C_3v60": {
+            "propagation_ns": "14.754083705711398",
+            "status": "DATA_BUDGET_FAIL"
+          }
+        },
+        "crc": {
+          "tt_025C_3v30": {
+            "propagation_ns": "8.584483589182387",
+            "status": "SELECTED_PATH_BUDGET_MET_ONLY"
+          },
+          "ss_n40C_3v00": {
+            "propagation_ns": "11.878478092912125",
+            "status": "DATA_BUDGET_FAIL"
+          },
+          "ss_125C_3v00": {
+            "propagation_ns": "16.84919096380573",
+            "status": "DATA_BUDGET_FAIL"
+          },
+          "ff_n40C_3v60": {
+            "propagation_ns": "5.177997732702475",
+            "status": "SELECTED_PATH_BUDGET_MET_ONLY"
+          },
+          "ff_125C_3v60": {
+            "propagation_ns": "7.271029317771263",
+            "status": "SELECTED_PATH_BUDGET_MET_ONLY"
+          }
+        }
+      },
+      "candidate/bd": {
+        "update": {
+          "tt_025C_3v30": {
+            "propagation_ns": "25.81465780871501",
+            "status": "DATA_BUDGET_FAIL"
+          },
+          "ss_n40C_3v00": {
+            "propagation_ns": "34.846896132748924",
+            "status": "DATA_BUDGET_FAIL"
+          },
+          "ss_125C_3v00": {
+            "propagation_ns": "51.49237981752152",
+            "status": "DATA_BUDGET_FAIL"
+          },
+          "ff_n40C_3v60": {
+            "propagation_ns": "15.108657863560026",
+            "status": "DATA_BUDGET_FAIL"
+          },
+          "ff_125C_3v60": {
+            "propagation_ns": "21.545757787742893",
+            "status": "DATA_BUDGET_FAIL"
+          }
+        },
+        "crc": {
+          "tt_025C_3v30": {
+            "propagation_ns": "8.585387754839212",
+            "status": "SELECTED_PATH_BUDGET_MET_ONLY"
+          },
+          "ss_n40C_3v00": {
+            "propagation_ns": "11.88064613649593",
+            "status": "DATA_BUDGET_FAIL"
+          },
+          "ss_125C_3v00": {
+            "propagation_ns": "16.852150374383868",
+            "status": "DATA_BUDGET_FAIL"
+          },
+          "ff_n40C_3v60": {
+            "propagation_ns": "5.178200237387894",
+            "status": "SELECTED_PATH_BUDGET_MET_ONLY"
+          },
+          "ff_125C_3v60": {
+            "propagation_ns": "7.271297103572376",
+            "status": "SELECTED_PATH_BUDGET_MET_ONLY"
+          }
+        }
+      },
+      "candidate/click": {
+        "update": {
+          "tt_025C_3v30": {
+            "propagation_ns": "18.65277585184917",
+            "status": "DATA_BUDGET_FAIL"
+          },
+          "ss_n40C_3v00": {
+            "propagation_ns": "25.219366864216056",
+            "status": "DATA_BUDGET_FAIL"
+          },
+          "ss_125C_3v00": {
+            "propagation_ns": "37.77740538429316",
+            "status": "DATA_BUDGET_FAIL"
+          },
+          "ff_n40C_3v60": {
+            "propagation_ns": "10.708498391120258",
+            "status": "DATA_BUDGET_FAIL"
+          },
+          "ff_125C_3v60": {
+            "propagation_ns": "15.77524111546775",
+            "status": "DATA_BUDGET_FAIL"
+          }
+        },
+        "crc": {
+          "tt_025C_3v30": {
+            "propagation_ns": "8.584483589182387",
+            "status": "SELECTED_PATH_BUDGET_MET_ONLY"
+          },
+          "ss_n40C_3v00": {
+            "propagation_ns": "11.878478092912125",
+            "status": "DATA_BUDGET_FAIL"
+          },
+          "ss_125C_3v00": {
+            "propagation_ns": "16.84919096380573",
+            "status": "DATA_BUDGET_FAIL"
+          },
+          "ff_n40C_3v60": {
+            "propagation_ns": "5.177997732702475",
+            "status": "SELECTED_PATH_BUDGET_MET_ONLY"
+          },
+          "ff_125C_3v60": {
+            "propagation_ns": "7.271029317771263",
+            "status": "SELECTED_PATH_BUDGET_MET_ONLY"
+          }
+        }
+      }
+    },
+    "selected_paths_only": true,
+    "maximum_propagation_proven": false
+  },
+  "historical_checkpoint": {
+    "path": "docs/reviews/loader-metadata-a2b-evidence.json",
+    "sha256": "3fab48a86c63ac924c0aac66996f05bd76390284b80e01070d785a382291550c"
+  },
+  "artifacts": [
+    {
+      "path": "build/async-loader-width-finish-r2/checker-tests.json",
+      "sha256": "9ac013572f0558b9da7a157fa1e45688e4fca5e46d3633a8ec6ad800b826fbe9"
+    },
+    {
+      "path": "build/async-loader-width-finish-r2/strict/receipt.json",
+      "sha256": "7cf652dd7ca932c78d161a83ac8e5a78428b3350fd27339c9b87e477c9d2a5e0"
+    },
+    {
+      "path": "build/async-loader-width-finish-r2/graph-parallel-r1/receipt.json",
+      "sha256": "4ab7becc052ac3fe1f3287dba0d0de393056cccdc63596a8b93e54dfb4d40ecb"
+    },
+    {
+      "path": "build/async-loader-width-finish-r2/held/receipt.json",
+      "sha256": "76d932ba02c4f9bcb1c72158904012c581cfa90bec134fe5b658c76f543bee82"
+    },
+    {
+      "path": "build/async-loader-width-finish-r2/mapping-receipt.json",
+      "sha256": "45a8d3199f826b1b63ed306bb27a35b76d70cb4825fc19348fa04578e148fbec"
+    },
+    {
+      "path": "build/async-loader-width-finish-r2/audit-receipt.json",
+      "sha256": "eb842f0d3dc4a60dcd9bfca18dbf6f5cb4844b78e55e775a9b4dc6ebd7f1d9c7"
+    },
+    {
+      "path": "build/async-loader-width-finish-r2/static-inventory/receipt.json",
+      "sha256": "bde04f74c00031edbfa4563e8f15be2a3f2b26cc92556627bf8c455b6724deb4"
+    },
+    {
+      "path": "build/async-loader-width-finish-r2/transform-results-r3/receipt.json",
+      "sha256": "940da204e6fefb30ad18eec01d045de3d8da0c2b61940fc11a8443bc6cfecabf"
+    },
+    {
+      "path": "build/async-loader-width-finish-r2/binding.json",
+      "sha256": "d0a110a7205384ebd970ac240925b9bdc1542eb17affec48f55b101f09af1ad1"
+    },
+    {
+      "path": "build/async-loader-width-finish-r2/original-checker-archive.json",
+      "sha256": "7bbf14143efa099b2c1d746abec1f4300b7d82f595f857c3accb8677e5056fa1"
+    },
+    {
+      "path": "build/async-loader-width-finish-r2/checker-review.json",
+      "sha256": "bef92bbd007d112956e1e823d581af6501ef179a3e7ddad06feddc643f5792d5"
+    },
+    {
+      "path": "build/async-loader-width-finish-r2/independent-crash-recovery-review.json",
+      "sha256": "8c8051617485aa7bc4793d08e9b8d5a946f50495af7825bb717f890280949400"
+    },
+    {
+      "path": "build/async-loader-width-finish-r2/independent-production-checker-review.json",
+      "sha256": "acada50905fd9813dc2310f012807450289ecadded33446cceae2356df33a7c5"
+    },
+    {
+      "path": "build/async-loader-width-finish-r2/independent-strict-review.json",
+      "sha256": "4b0bcdb6c91d65a57ea5f7152eb3096eef69e7fd793d35bcc0fb17e8de938f23"
+    },
+    {
+      "path": "build/async-loader-width-finish-r2/independent-held-review.json",
+      "sha256": "adfc39595fc8c0bea5a6fbfb8efac84de0995d602dfb82d66676783abaa4b299"
+    },
+    {
+      "path": "build/async-loader-width-finish-r2/independent-transform-parser-review-r3.json",
+      "sha256": "552ebbe0a4fec8f0dbbda886415ff518ae98ce1b6b96fa668f4db95556d2246a"
+    },
+    {
+      "path": "build/async-loader-width-finish-r2/independent-transform-plan-review-r3.json",
+      "sha256": "5d4c38875737a7daef83d28ab82a9a39939015a9c4e890b075d1718b70b0bd8f"
+    },
+    {
+      "path": "build/async-loader-width-finish-r2/independent-graph-parallel-review/receipt.json",
+      "sha256": "e73d958d8be21cfb025544f965e657f8e3abe6aab5cd5ee6352cd0d4f88bff66"
+    },
+    {
+      "path": "build/async-loader-width-finish-r2/independent-measurement-review/receipt.json",
+      "sha256": "dd4be2f12e6977f70877e64288de089a4583ac0ed658141083f9192541ba46f0"
+    },
+    {
+      "path": "build/async-loader-width-finish-r2/transform-plan-r3/plan.json",
+      "sha256": "9b9b6905af73cac6b9f8cac5289dcdff7ab02275e793d16cdbee880aa83b6621"
+    },
+    {
+      "path": "build/async-loader-width-finish-r2/transform-approval-r3.json",
+      "sha256": "3fcec0337dda9d78661821e54350af89c17417fd51cfced3c1b2ecdc431e7d18"
+    },
+    {
+      "path": "build/async-loader-width-finish-r2/retained-r1-failure.json",
+      "sha256": "6e7fbcf3d1dc026cb93713afc4a3244aacfe8e5b0cdf18c16e7dc0a4559fce6d"
+    },
+    {
+      "path": "build/async-loader-width-finish-r2/graph-interruption-receipt.json",
+      "sha256": "23c8c5a251f2473b83414e4e52d11b8891864bd4c41daf56bd0bb2a210fff815"
+    },
+    {
+      "path": "build/async-loader-width-finish-r2/transform-preparation-failure-r1.json",
+      "sha256": "3c0bc9000d140409ac8179dcf2b320b257682dfac715b55fb0fc14a93661eee8"
+    },
+    {
+      "path": "build/async-loader-width-finish-r2/transform-results-r2/receipt.json",
+      "sha256": "d60f293570300b0ff326b3a656cc1075e1551248d9d2dea7448f694c7c09a8ba"
+    },
+    {
+      "path": "build/async-loader-width-finish-r2/independent-measured-results-review.json",
+      "sha256": "9e3959811642b006d1d568d7f780e842d9f2265ad15dd7cf3654a289e4d31eb5"
+    },
+    {
+      "path": "build/async-loader-width-finish-r2/independent-graph-results-review.json",
+      "sha256": "8de15e18e44b4b86cd28b88143ab571c454c65ddccbe7bbdec3ec033c3b750d2"
+    },
+    {
+      "path": "build/async-loader-width-finish-r2/independent-transform-results-review-r3.json",
+      "sha256": "02cd0e142706f6e0c2c846fccc72866528b9d7b51f5666d2c4346287f00cdc04"
+    },
+    {
+      "path": "build/async-loader-width-finish-r2/documentation-predecessors/receipt.json",
+      "sha256": "63cb6eadc1143469ef0be8a9b09f87890af2c953ba2a46153ac5d62bed96b28a"
+    },
+    {
+      "path": "build/async-loader-width-finish-r2/final-custody-before-docs.json",
+      "sha256": "6262a16d85697c9eed42cf49fabc5635aa854051facf78900d9b9f6a90f4cd01"
+    }
+  ],
+  "physical_qualification": false,
+  "measured_deep_sleep_power": false,
+  "wake_energy_measured": false,
+  "broader_migration_resumed": false,
+  "limitations": [
+    "Mapped area and listed-state Liberty leakage are estimates, not silicon power or wake energy.",
+    "Selected worst-slack path reports do not prove every path propagation bound.",
+    "Retained transform data-budget failures and electrical load failures remain open.",
+    "Complete native capture/reuse/hold, ACK release, pulse, reset distribution and routed min/max RC remain unqualified."
+  ],
+  "documentation_custody": "Updated documents have byte-identical predecessors with explicit aliases in documentation-predecessors/receipt.json. Executed source and failed/interrupted receipts are unchanged."
+}

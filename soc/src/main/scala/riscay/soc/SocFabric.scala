@@ -14,7 +14,7 @@ object MemoryMap {
   val boot = Vector(0x300000b7L, 0x0000a103L, 0x00010067L)
 }
 /** Shared port schema only; each variant owns its service implementation. */
-abstract class ServiceEndpoint extends Module with InlineInstance {
+abstract class ServiceEndpoint(programBytes: Int) extends Module with InlineInstance {
   val io = IO(new Bundle {
     val program = new ProgramAccessPort
     val ram = new RamAccessPort
@@ -25,7 +25,7 @@ abstract class ServiceEndpoint extends Module with InlineInstance {
     val elapsedScaling = Flipped(new ElapsedScalingPort(3))
     val adc = Flipped(new SpiAdcPort)
     val controlCommand = Decoupled(new ControlCommand)
-    val controlReply = Flipped(Decoupled(new ControlReply))
+    val controlReply = Flipped(Decoupled(new ControlReply(programBytes)))
     val request = Flipped(Decoupled(new MemoryRequest))
     val response = Decoupled(new MemoryResponse)
     val completionPlan = Decoupled(new CompletionPlan)
