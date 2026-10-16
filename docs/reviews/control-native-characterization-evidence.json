@@ -1,0 +1,382 @@
+{
+  "schema": "riscay-control-native-evidence-v1",
+  "base_commit": "8ca65235c4a2608396892a67df3a237fbabf9f34",
+  "status": "bounded tooling reviewed; physical timing open",
+  "physical_qualification": false,
+  "source_sha256": {
+    "tools/characterize_gf180_control_native.py": "432aaede81e9721d190e9e42c1d44b00b2f0a29bf51949a6c0a44936f2223258",
+    "tools/compare_control_native_steps.py": "ad0a3ed9b7f63f15fd98b69df75c07b1f3856f0e2531c14c2b4bea6918714b15",
+    "tools/test_control_native_characterization.py": "bdfb866c35c73cd3d53e46b5e9c42a980e1e70cde307a27427b42397569fd0d8",
+    "README.md": "e9724fa28cfc9a08e6620da76c50450cbb2a75badc195d6d6cb988ad4a33c269",
+    "AGENTS.md": "3012ebe4647695e5adb127e858d1b219ab9a083e8ab36a96e9680857fe3e635a",
+    "docs/async-soc-migration.md": "1cbec51f16f025e9d963ee8512d3fd70fc923cf79fc89f5970964ca21e29a385",
+    "docs/gf180-implementation.md": "189978b8646ec25e40207f5d4aa0b1baee4c9043bc5a46ded38b2f9bd843d5bd",
+    "docs/reviews/control-native-characterization.md": "0cd851487f042593e7ca573a77679ba86b3c66809da65dad8ec819302c5d97c6"
+  },
+  "input_sha256": {
+    "build/async-loader-width-finish-r2/candidate-mapped-bd-r1/mapping.json": "9958a53a7b527201e2897aae7ba7cb22f9731b903be8040a3f986bb073db1bf5",
+    "build/async-loader-width-finish-r2/candidate-mapped-bd-r1/netlist.json": "9594a064b219593c0fe26a2bfefd42d98481564512db8046e62ae8fbfaafc2cd",
+    "build/async-loader-width-finish-r2/candidate-mapped-click-r1/mapping.json": "2ed3669e05cd820e2f476586a795aa5f901aa2d2fe43c1caf315c56947bc9a11",
+    "build/async-loader-width-finish-r2/candidate-mapped-click-r1/netlist.json": "f70e03310f8dd86cebcd21a5340a8839a192bfddbd507acc31b2a39bfe074953",
+    "physical/gf180/pdk-lock.json": "12472413a192cb5c3885ebd0dca9bcf7dfda0514f976ae5f6540789cd95ee831"
+  },
+  "evidence": {
+    "build/control-native-pilot-r1/bd/ngspice-sha256.log": {
+      "sha256": "3c189f984e11f8d162f1cbacb04dfcd6ec84d42dbec86f0e50bdfc9e1d057dc5",
+      "bytes": 84
+    },
+    "build/control-native-pilot-r1/bd/ngspice-version.log": {
+      "sha256": "2742dfd24954733eb5a2c2b03d2629ec4787001e56d6b66924816443a1b404b4",
+      "bytes": 459
+    },
+    "build/control-native-pilot-r1/bd/plan.json": {
+      "sha256": "15b864d48a6f6eaaf5cfd1d39fd29c686712761d72f7357f685c6b89ca0ffa1a",
+      "bytes": 356672
+    },
+    "build/control-native-pilot-r1/bd/tt-r0.2-input_first.log": {
+      "sha256": "197c86e9711b1698c346779d3a17e73fff14a6d851fdeb12f09f9c765631b3e3",
+      "bytes": 265057
+    },
+    "build/control-native-pilot-r1/bd/tt-r0.2-input_first.spice": {
+      "sha256": "9d595493755df7d6afdc90329e152e52f70384f6cae02952e5dfdbd3bc6be1a1",
+      "bytes": 122584
+    },
+    "build/control-native-pilot-r2/bd/ngspice-sha256.log": {
+      "sha256": "3c189f984e11f8d162f1cbacb04dfcd6ec84d42dbec86f0e50bdfc9e1d057dc5",
+      "bytes": 84
+    },
+    "build/control-native-pilot-r2/bd/ngspice-version.log": {
+      "sha256": "2742dfd24954733eb5a2c2b03d2629ec4787001e56d6b66924816443a1b404b4",
+      "bytes": 459
+    },
+    "build/control-native-pilot-r2/bd/plan.json": {
+      "sha256": "b7c5d9920fa079571f14ff603a1d136f64de89930fd6215635c80733af9760d7",
+      "bytes": 356672
+    },
+    "build/control-native-pilot-r2/bd/tt-r0.2-input_first.log": {
+      "sha256": "8eb71e644544af2a189a4f5d567edf63f9afbf460d44d1a80a5c657f39b94018",
+      "bytes": 253368
+    },
+    "build/control-native-pilot-r2/bd/tt-r0.2-input_first.spice": {
+      "sha256": "d25c4cfc984cf40419c392576e3611cc8b919ee23a37c0296baf28ae63e962be",
+      "bytes": 122612
+    },
+    "build/control-native-pilot-r3/bd/ngspice-sha256.log": {
+      "sha256": "3c189f984e11f8d162f1cbacb04dfcd6ec84d42dbec86f0e50bdfc9e1d057dc5",
+      "bytes": 84
+    },
+    "build/control-native-pilot-r3/bd/ngspice-version.log": {
+      "sha256": "2742dfd24954733eb5a2c2b03d2629ec4787001e56d6b66924816443a1b404b4",
+      "bytes": 459
+    },
+    "build/control-native-pilot-r3/bd/plan.json": {
+      "sha256": "ac70aefe76e2c84f867601f7e5ab11700b2435486648272303b2282f3f169d68",
+      "bytes": 357336
+    },
+    "build/control-native-pilot-r3/bd/tt-r0.2-input_first.log": {
+      "sha256": "af2ae3e2508833db3bfa4a8aa282b4bd10abb350a131d3a4c2d3557862bc62c5",
+      "bytes": 252543
+    },
+    "build/control-native-pilot-r3/bd/tt-r0.2-input_first.spice": {
+      "sha256": "88355a705c261fbe8012ac5b7d39ba46af27faeb5c9780a049f73c667b260095",
+      "bytes": 188950
+    },
+    "build/control-native-pilot-r3/click/ngspice-sha256.log": {
+      "sha256": "3c189f984e11f8d162f1cbacb04dfcd6ec84d42dbec86f0e50bdfc9e1d057dc5",
+      "bytes": 84
+    },
+    "build/control-native-pilot-r3/click/ngspice-version.log": {
+      "sha256": "2742dfd24954733eb5a2c2b03d2629ec4787001e56d6b66924816443a1b404b4",
+      "bytes": 459
+    },
+    "build/control-native-pilot-r3/click/plan.json": {
+      "sha256": "8b4a55bde4db6c8173e5725973cc9ae8cf477c41375d0520ce6caa56b9a50b3f",
+      "bytes": 388213
+    },
+    "build/control-native-pilot-r3/click/tt-r0.2-phase_pair.log": {
+      "sha256": "00e9238b859ff8c04f6bbcf28460301a38d8169644505d06f776cbd6aa5bdf7e",
+      "bytes": 309915
+    },
+    "build/control-native-pilot-r3/click/tt-r0.2-phase_pair.spice": {
+      "sha256": "de75884ba0687f8c760a24d26dcdaffd487e4806661eb66c05a86212c655a432",
+      "bytes": 190700
+    },
+    "build/control-native-pilot-r4/bd/ngspice-sha256.log": {
+      "sha256": "3c189f984e11f8d162f1cbacb04dfcd6ec84d42dbec86f0e50bdfc9e1d057dc5",
+      "bytes": 84
+    },
+    "build/control-native-pilot-r4/bd/ngspice-version.log": {
+      "sha256": "2742dfd24954733eb5a2c2b03d2629ec4787001e56d6b66924816443a1b404b4",
+      "bytes": 459
+    },
+    "build/control-native-pilot-r4/bd/plan.json": {
+      "sha256": "bf1736408136a9c125038acd79042a84435e6a07c9e332f1075bac29bf53410f",
+      "bytes": 357352
+    },
+    "build/control-native-pilot-r4/bd/results.json": {
+      "sha256": "f021e9d988bdcdeb78047956c33a2524aea88901d8b194fc4417399602491f36",
+      "bytes": 59363
+    },
+    "build/control-native-pilot-r4/bd/tt-r0.2-input_first.json": {
+      "sha256": "b44df77758b53c288fc5b5cd02481a196a0e3680c41d3c88cc025cfa4d0d8b6e",
+      "bytes": 23976
+    },
+    "build/control-native-pilot-r4/bd/tt-r0.2-input_first.log": {
+      "sha256": "58e98027ef3b863f88c5afb6921a42feabe25340fc5d3306b2160f536ab651b6",
+      "bytes": 369147
+    },
+    "build/control-native-pilot-r4/bd/tt-r0.2-input_first.spice": {
+      "sha256": "e9b3e2ec6581f74f19c882c854799bc8258b57d529e481ad78eff1c82870c58c",
+      "bytes": 188950
+    },
+    "build/control-native-pilot-r4/bd/tt-r0.2-input_first.trace": {
+      "sha256": "18aff4f4930f5e05a098cab92f69e12b6abeee6e0c37f05b100ee798b6f9cd59",
+      "bytes": 1223664
+    },
+    "build/control-native-pilot-r4/bd/tt-r0.2-output_first.json": {
+      "sha256": "70af7ca636d672222beb54cf3dde7a506bec555dd9a975a9d85166869afaebb0",
+      "bytes": 24007
+    },
+    "build/control-native-pilot-r4/bd/tt-r0.2-output_first.log": {
+      "sha256": "ca93df9825dc498ed7d7112c136b4282b0f5b032468968bdbb7fc7c934907c01",
+      "bytes": 368718
+    },
+    "build/control-native-pilot-r4/bd/tt-r0.2-output_first.spice": {
+      "sha256": "97ec58a72433ab2297198b648b456ff03d6b622aa1ae6eb6e9651ceb26f85c48",
+      "bytes": 188951
+    },
+    "build/control-native-pilot-r4/bd/tt-r0.2-output_first.trace": {
+      "sha256": "49efcd99d5664e10b37bc501ef87e6f2b7699ae11e8a4dc3c7e59c8b26e2427d",
+      "bytes": 1217411
+    },
+    "build/control-native-pilot-r4/click/ngspice-sha256.log": {
+      "sha256": "3c189f984e11f8d162f1cbacb04dfcd6ec84d42dbec86f0e50bdfc9e1d057dc5",
+      "bytes": 84
+    },
+    "build/control-native-pilot-r4/click/ngspice-version.log": {
+      "sha256": "2742dfd24954733eb5a2c2b03d2629ec4787001e56d6b66924816443a1b404b4",
+      "bytes": 459
+    },
+    "build/control-native-pilot-r4/click/plan.json": {
+      "sha256": "e2ba915d5705ac3d2755becc1a49630370ca45fbc2b9757cb66af3936d874727",
+      "bytes": 388557
+    },
+    "build/control-native-pilot-r4/click/results.json": {
+      "sha256": "6b40accfb4b6ea9febe14c39d1668e13048c8faf746b5ccdbe4931c9c59af965",
+      "bytes": 30226
+    },
+    "build/control-native-pilot-r4/click/tt-r0.2-phase_pair.json": {
+      "sha256": "c879d4d3f53a8b5873d128da93c4c8ec10e665654dae66f02dd11677cab0007c",
+      "bytes": 23613
+    },
+    "build/control-native-pilot-r4/click/tt-r0.2-phase_pair.log": {
+      "sha256": "a5bbd1b8fa405a932aa4ba7f61158790407018b4df6dcaf7a28dfb20853d45d3",
+      "bytes": 428169
+    },
+    "build/control-native-pilot-r4/click/tt-r0.2-phase_pair.spice": {
+      "sha256": "b1ec85a6ed0a7a9710a4ce30d2e0d3da9a9e1a8156c7771de620e56082b96a93",
+      "bytes": 190754
+    },
+    "build/control-native-pilot-r4/click/tt-r0.2-phase_pair.trace": {
+      "sha256": "5552ac9d76178b85a18b6a9d0379de4e315fc3848241f19a789fc4fccc443f60",
+      "bytes": 1222980
+    },
+    "build/control-native-pilot-r4/runner-snapshot.py": {
+      "sha256": "467e4c93c445d62badb1c581bf08dedaa44651e3fd8d12c299a6a245b5045c94",
+      "bytes": 26989
+    },
+    "build/control-native-convergence-r1/click/ngspice-sha256.log": {
+      "sha256": "3c189f984e11f8d162f1cbacb04dfcd6ec84d42dbec86f0e50bdfc9e1d057dc5",
+      "bytes": 84
+    },
+    "build/control-native-convergence-r1/click/ngspice-version.log": {
+      "sha256": "2742dfd24954733eb5a2c2b03d2629ec4787001e56d6b66924816443a1b404b4",
+      "bytes": 459
+    },
+    "build/control-native-convergence-r1/click/plan.json": {
+      "sha256": "cd408dfcfbc726a85e9a3afef61136cb5dfa6a0f48d533ea569af614bfa1515b",
+      "bytes": 388557
+    },
+    "build/control-native-convergence-r1/click/results.json": {
+      "sha256": "a541eef26208fd6bd228c056bcd988297372af751b10ef6594191ed6c032a583",
+      "bytes": 30364
+    },
+    "build/control-native-convergence-r1/click/tt-r0.2-phase_pair.json": {
+      "sha256": "5bb37aa256e456a2877cc9a2afb68533b765e97602a0d4a55c8fd7ab2c4498b5",
+      "bytes": 23751
+    },
+    "build/control-native-convergence-r1/click/tt-r0.2-phase_pair.log": {
+      "sha256": "3b6cdadf373023add8650381b84eb8ba476e979751e1dd0915351d52510ded81",
+      "bytes": 432789
+    },
+    "build/control-native-convergence-r1/click/tt-r0.2-phase_pair.spice": {
+      "sha256": "da758d349530cb106179e0551f37964f14c71cda1087dcd31802b9f08230d824",
+      "bytes": 190760
+    },
+    "build/control-native-convergence-r1/click/tt-r0.2-phase_pair.trace": {
+      "sha256": "98901b22dea28de8df5ee86e8f65e7e16ef9c0bf4844e65c4f39a6b103cf0aa5",
+      "bytes": 2208885
+    },
+    "build/control-native-convergence-r1/comparison-derived.json": {
+      "sha256": "9361ed6431ba99916dc1409b7db9287ac03fcdc4c4714f5f7b504126490145f2",
+      "bytes": 2256
+    },
+    "build/control-native-convergence-r1/comparison.json": {
+      "sha256": "f9b96faa1952bd35cbfb9e1cc1a5d3af64a0841cfcd1ab603436d0420f815d47",
+      "bytes": 1386
+    },
+    "build/control-native-negative-r1/bd/ngspice-sha256.log": {
+      "sha256": "3c189f984e11f8d162f1cbacb04dfcd6ec84d42dbec86f0e50bdfc9e1d057dc5",
+      "bytes": 84
+    },
+    "build/control-native-negative-r1/bd/ngspice-version.log": {
+      "sha256": "2742dfd24954733eb5a2c2b03d2629ec4787001e56d6b66924816443a1b404b4",
+      "bytes": 459
+    },
+    "build/control-native-negative-r1/bd/plan.json": {
+      "sha256": "a6d7b3ee0defe671163817a65bf9cf9a11f1a9b5c89be0c274e186c2ab576e34",
+      "bytes": 357352
+    },
+    "build/control-native-negative-r1/bd/results.json": {
+      "sha256": "c8f095e23eaeafe25d6d1f2e46c93ce5a5e0a8aba6de6dd710a8b8c84795449f",
+      "bytes": 81464
+    },
+    "build/control-native-negative-r1/bd/tt-r0.2-input_first.json": {
+      "sha256": "cda42a0a6bf9a0d102323598f849674c4133d890a75c63b67d3416d3dd2f1e02",
+      "bytes": 33367
+    },
+    "build/control-native-negative-r1/bd/tt-r0.2-input_first.log": {
+      "sha256": "ec58aff9ad43c569f654ea8399b9b1c0297ec9282d809d11af10d777e9def9f7",
+      "bytes": 368815
+    },
+    "build/control-native-negative-r1/bd/tt-r0.2-input_first.spice": {
+      "sha256": "d5342eb51ccc2959a6209dcb5f096e0c2117120bcf3dae00fdb874d157837a6e",
+      "bytes": 188921
+    },
+    "build/control-native-negative-r1/bd/tt-r0.2-input_first.trace": {
+      "sha256": "6297fcba949cc67e20e9e3ebfa7be51f0c1d30cf5f8aea720073820e7d37cbef",
+      "bytes": 1227512
+    },
+    "build/control-native-negative-r1/bd/tt-r0.2-output_first.json": {
+      "sha256": "813ac13ca8a23cc82ab03f334b801acb8a2c94505452ef4286f143aa9c27cacd",
+      "bytes": 33381
+    },
+    "build/control-native-negative-r1/bd/tt-r0.2-output_first.log": {
+      "sha256": "a0201b39eaeb11530e9360edc414160b5db4e513ded58270417fde74424d7331",
+      "bytes": 368386
+    },
+    "build/control-native-negative-r1/bd/tt-r0.2-output_first.spice": {
+      "sha256": "31799adc54ac62f70a50634606c6c5904dc99d1b017f9061236b09243f92006c",
+      "bytes": 188922
+    },
+    "build/control-native-negative-r1/bd/tt-r0.2-output_first.trace": {
+      "sha256": "6f4243986052f8aa1b698fe079125054743c6eb7250963e96ac7a4169f939408",
+      "bytes": 1221740
+    },
+    "build/control-native-negative-r2/click/ngspice-sha256.log": {
+      "sha256": "3c189f984e11f8d162f1cbacb04dfcd6ec84d42dbec86f0e50bdfc9e1d057dc5",
+      "bytes": 84
+    },
+    "build/control-native-negative-r2/click/ngspice-version.log": {
+      "sha256": "2742dfd24954733eb5a2c2b03d2629ec4787001e56d6b66924816443a1b404b4",
+      "bytes": 459
+    },
+    "build/control-native-negative-r2/click/plan.json": {
+      "sha256": "78fe8b206dcc0b02e2a1c61f9908144933d44129a2d6e6f230258ac0f53268a4",
+      "bytes": 388557
+    },
+    "build/control-native-negative-r2/click/results.json": {
+      "sha256": "2bc76c881c5596ed83402624fb31db0fd35a448976564b460c47fa1ef69896fa",
+      "bytes": 124638
+    },
+    "build/control-native-negative-r2/click/tt-r0.2-phase_pair.json": {
+      "sha256": "b756e078d8b49038f62c7ca3d3e327bd0279ddff7697d1e28c481f905266c6ae",
+      "bytes": 103221
+    },
+    "build/control-native-negative-r2/click/tt-r0.2-phase_pair.log": {
+      "sha256": "2c7e8b357ffc87f7c609b0716224b53b67bd10f6b588800aea621d5931a26ef3",
+      "bytes": 428385
+    },
+    "build/control-native-negative-r2/click/tt-r0.2-phase_pair.spice": {
+      "sha256": "0990b90450216b2da4e95d75b99d38fe49dfec2fd428eaa507bf2b86aee57cd5",
+      "bytes": 190693
+    },
+    "build/control-native-negative-r2/click/tt-r0.2-phase_pair.trace": {
+      "sha256": "7edbaa06db1eff3fdedec8340cf6e812139d87f40b6ed17e3e3fb0ae3015ef3c",
+      "bytes": 1218075
+    },
+    "build/control-native-mesh-r1/click/ngspice-sha256.log": {
+      "sha256": "3c189f984e11f8d162f1cbacb04dfcd6ec84d42dbec86f0e50bdfc9e1d057dc5",
+      "bytes": 84
+    },
+    "build/control-native-mesh-r1/click/ngspice-version.log": {
+      "sha256": "2742dfd24954733eb5a2c2b03d2629ec4787001e56d6b66924816443a1b404b4",
+      "bytes": 459
+    },
+    "build/control-native-mesh-r1/click/outcome.json": {
+      "sha256": "bded4d73e1e6937c1721c037d69c4bb32c47c360c123807b6c4cc4d74210042e",
+      "bytes": 633
+    },
+    "build/control-native-mesh-r1/click/plan.json": {
+      "sha256": "78fe8b206dcc0b02e2a1c61f9908144933d44129a2d6e6f230258ac0f53268a4",
+      "bytes": 388557
+    },
+    "build/control-native-mesh-r1/click/tt-r0.2-phase_pair.spice": {
+      "sha256": "a7877026a05685eabfba5cba526f9e0d8116619c8baf2495f242aa972ad7fb62",
+      "bytes": 584910
+    },
+    "build/control-native-mesh-r1/click/tt-r0.2-phase_pair.timeout.txt": {
+      "sha256": "8d9d34520523a26c17db71b702e3a8809364a0e3d0f4cd4e6347a6044ed9ada3",
+      "bytes": 277
+    },
+    "build/control-native-mesh-r1/runner-snapshot.py": {
+      "sha256": "f3475e4c2cd359598d777fafc90a1a0b087a27f07018b5a8e5565b79732ce6b0",
+      "bytes": 29528
+    },
+    "build/control-native-review/actual-mutation-controls.json": {
+      "sha256": "a8451939b6f14e9a0134aebe2adbd64e05fcc5d64e2aefed1957304240e82e4a",
+      "bytes": 1945
+    },
+    "build/control-native-review/assemble_evidence.py": {
+      "sha256": "845193151ad3970afdf04bbbd013ec1e3173f9941f3c8b58cc404da272252c84",
+      "bytes": 4300
+    },
+    "build/control-native-review/bd-tt-r0.2-input_first-reassessed.json": {
+      "sha256": "7ae18f45dee1eba90f74c26a41d96a1b1ee81580ea1566cd0ec5ad146fc10a19",
+      "bytes": 95158
+    },
+    "build/control-native-review/bd-tt-r0.2-output_first-reassessed.json": {
+      "sha256": "22659f703c7b2f85f7ccd41fde48558017a57d42bc482cc638624e923eb2dc6a",
+      "bytes": 94983
+    },
+    "build/control-native-review/click-tt-r0.2-phase_pair-reassessed.json": {
+      "sha256": "8b3c435df660c2f0f6af726734e4b872f4efbc311e41ae6be610e60e17f6a5c5",
+      "bytes": 96104
+    },
+    "build/control-native-review/focused-final-tests-r2.log": {
+      "sha256": "9ceb67589cfd6a1b17b9613b8faf757eaa5496d49687daf50f34caf9c0febbd3",
+      "bytes": 130
+    },
+    "build/control-native-review/focused-final-tests.log": {
+      "sha256": "2199b01305b7e14dec1432dcca5fe1ccd98d43273995538dffe5d15bd075cff4",
+      "bytes": 129
+    },
+    "build/control-native-review/independent-review.json": {
+      "sha256": "0e1c941124883701480903b259f3a93c90321d40f17a877a8bfd3a21c937ce70",
+      "bytes": 2288
+    },
+    "build/control-native-review/processes-final.log": {
+      "sha256": "52e94ae4c71741e9e6f749bfbb0f2f1a20db92a5d22ac2c8d4fe85dd54cc250d",
+      "bytes": 39
+    },
+    "build/control-native-review/python-final-tests.log": {
+      "sha256": "c7c395bec4e11aa9ed0a462e8231fe6836539d32efee3029306cd39098f1d120",
+      "bytes": 941
+    },
+    "build/control-native-review/python-tests.log": {
+      "sha256": "32984362c11eac650d670fe4e7f2598df0908d99c32afa26e459ec36ca7f4631",
+      "bytes": 941
+    }
+  },
+  "limits": "No accepted refined timing result; no full PVT campaign, upstream setup/hold, reset or routed qualification. Historical coarse results are superseded by current-checker reassessments."
+}

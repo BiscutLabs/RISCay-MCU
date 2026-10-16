@@ -1118,12 +1118,21 @@ physical reset qualification (R2b) remains mandatory under item 17a3.
         and compare all five corners at fast/slow input transitions. Selected
         capacitance/slew limits pass; no native cell, guard or clock changes.
         See [the reviewed evidence](reviews/control-electrical-repair.md).
+      - [x] **Bounded native Control characterization tooling.** Preserve the
+        uncut controllers and all 315 payload cells; reject unresolved sampling
+        and verify actual capture-branch fault controls in both variants.
+        Independent review and 806 Python tests pass. Refined timing remains open.
       - [ ] **Complete paired Control capture/hold analysis.** All data lanes
         and request-guard endpoints are measured, but direct actual E/CLK/ACK
         paths remain unresolved. Bound legal native control segments and full
         source reuse without blind cuts or periodic staging, repair residual
         electrical violations, then include routed min/max RC. The default
         physical flow remains unchanged until its acceptance gates pass.
+        The [uncut native Control harness](reviews/control-native-characterization.md)
+        now retains every controller feedback cell and all 315 payload cells.
+        Coarse TT pilots expose unresolved sampling, including a possible short
+        second-phase Click pulse. Resolve and converge sampling before a full
+        corner campaign; these pilots do not close capture/hold analysis.
   - [ ] Characterize complete new data/control transforms, selection guards,
     feedback, arbitration and reset paths at all required pinned corners.
   - [ ] Bind mapped cells and constraints to the final emitted ownership graph;

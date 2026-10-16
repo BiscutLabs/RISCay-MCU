@@ -445,6 +445,12 @@
   `docs/reviews/control-electrical-repair.md`: numerical data/guard comparisons
   do not replace the unresolved actual capture/ACK, hold or routed envelopes.
   Do not silently add the experimental repair to the default mapper/P&R flow.
+  The native Control SPICE harness preserves uncut controller feedback and all
+  315 payload cells. Follow docs/reviews/control-native-characterization.md:
+  reject changed adapter specializations and unexplained cut loads, verify both
+  BD returns and Click phases, and require resolved crossing brackets plus
+  timestep convergence. Numerical mesh nodes must be electrically disjoint.
+  Local ACK/capture observations do not qualify upstream source hold or reset.
   Preserve exact async cells and connections, native delay chains and three SRAMs.
   Keep clocked STA separate from internal async path measurements. Recharacterize
   changed cells/whole transforms across all five pinned corners, and rerun

@@ -76,6 +76,9 @@ checks and measured costs.
 An [opt-in Control buffer repair](docs/reviews/control-electrical-repair.md)
 reduces the measured data-path maxima and fixes two selected net overloads
 without changing native handshakes. Complete capture/hold timing remains open.
+The [native Control characterization](docs/reviews/control-native-characterization.md)
+retains physical feedback and all payload storage cells; unresolved simulator
+sampling is an explicit gate before further timing claims.
 See the [elapsed](docs/native-elapsed-contract.md) and
 [CRC](docs/native-crc-contract.md) contracts. Wider payload reductions remain
 open. Self-timed SRAM access follows a separate

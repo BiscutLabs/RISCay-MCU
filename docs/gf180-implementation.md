@@ -197,3 +197,9 @@ at all five cell corners with fast/slow input transitions. Selected loads and
 slews improve; other electrical failures and unresolved capture/ACK queries stay
 visible. Its netlists are experimental and are not automatically substituted by
 the default mapper or P&R flow.
+
+The [native Control harness](reviews/control-native-characterization.md) measures
+uncut transistor-level controllers and complete payload capture trees. Its
+storage-D boundary, chosen output loads and explicit numerical-resolution checks
+keep local observations separate from full transform/source, reset and routed
+timing qualification.
