@@ -168,7 +168,10 @@ Click pulse/self-hold, source reuse and full reset distribution remain open.
 The producers before the Join input boundary still owe the reported input
 aperture and retention contracts.
 
-Next, complete these transition/retention cases and establish a justified
+The follow-up [capture-retention check](control-retention-timing.md) measures
+local zero-contamination hold and the BD fork with B already settled high.
+Full source reuse and overlapping transition histories remain open.
+Next, complete those transition cases and establish a justified
 mismatch allowance before parameterizing or sizing Control's physical policy.
 The negative execute/elapsed allowances in the earlier stage survey remain
 unchanged. No area, power or timing-closure improvement is claimed here.

@@ -89,6 +89,9 @@ allowances remain visible; custom I²C publication and those stages' upstream la
 The [Control Join check](docs/reviews/control-join-timing.md) composes its actual
 operand storage and update capture at all five corners under explicit admission states; full source
 reuse, other transition histories and physical qualification remain open.
+The [capture-retention check](docs/reviews/control-retention-timing.md) measures
+capture-to-ACK hold and BD's settled-B hold fork. Full source lifecycle,
+overlapping transitions and routed timing remain separate qualification gates.
 See the [elapsed](docs/native-elapsed-contract.md) and
 [CRC](docs/native-crc-contract.md) contracts. Wider payload reductions remain
 open. Self-timed SRAM access follows a separate

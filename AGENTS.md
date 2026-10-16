@@ -481,6 +481,15 @@
   phases. Reject missing/reversed bounds and verify exact-arc/period controls.
   This conditional setup envelope does not close reuse, pending/return, pulse,
   simultaneous rendezvous, mismatch, electrical or routed obligations.
+  For conditional capture retention, follow docs/reviews/control-retention-timing.md.
+  Preserve actual common-event capture/ACK and Click phase CLK-to-Q. Grant no
+  source/transform contamination-delay credit in the local hold bound. Bind
+  event/ACK slew to both operand/phase arrival contexts and reject stale setup
+  evidence. BD fork composition requires the exact B=1/keeper=1/reset=0 cofactor,
+  loaded per-arc slew handoff, complete pin/edge/report coverage and strict
+  ordering. Do not use automatic loop-cut path delays; reject unmodeled wire RC.
+  B-before-ACK ordering, overlapping transitions and full source retention stay
+  open. Require period, capture-branch, ACK and exact fork-arc fault controls.
   Preserve exact async cells and connections, native delay chains and three SRAMs.
   Keep clocked STA separate from internal async path measurements. Recharacterize
   changed cells/whole transforms across all five pinned corners, and rerun
