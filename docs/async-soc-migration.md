@@ -1144,6 +1144,20 @@ physical reset qualification (R2b) remains mandatory under item 17a3.
         review has no remaining blocking finding in this scope. See
         [the scoped evidence](reviews/control-join-timing.md). Full source reuse,
         pending/return/pulse, simultaneous rendezvous and mismatch remain open.
+      - [x] **Reusable Join binding and conditional execute composition.**
+        Reuse the Control measurement template with exact operand-field mapping
+        and a separate source-input ledger. Keep all 480 RF bits symbolic and
+        explicitly uncomposed, including their overlap with 274 result lanes.
+        See [execute evidence](reviews/execute-join-timing.md); positive
+        conditional Join margins do not qualify whole execute timing.
+      - [ ] **Execute RF and elapsed seeded-owner composition.** Prioritize
+        these before further Control work. Measure actual register-bank launch,
+        forwarding/Fork/Join ordering and all 15 banks. Preserve elapsed's
+        seeded FIFO/merge or phase-decoupled Click owner, parent admission/data
+        glue, independent side sources and publication loads. Its modeled
+        output guard is 31/32 ns, not the 11 ns request guard. Cover command-last,
+        owner-last and feedback contexts. Repair electrical violations before
+        selecting a physical step/execute policy or trusting small margins.
       - [ ] **Complete controller templates and custom publication.** Derive
         the missing BD pending/return and Click pulse/self-hold cases from the
         controller state graphs; add FIFO/Join and I2cPublication templates.

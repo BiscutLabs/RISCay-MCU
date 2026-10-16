@@ -1,5 +1,9 @@
 # SPDX-License-Identifier: Apache-2.0
-"""Control Join source-to-update timing; conditional measurements, never signoff."""
+"""Reusable canonical Join-to-stage timing; conditional measurements, never signoff.
+
+Control is the default caller. Instance wiring and every independent data source
+are explicit: destination reachability alone cannot prove source coverage.
+"""
 from copy import deepcopy
 from collections import defaultdict
 import argparse
@@ -56,19 +60,70 @@ proc join_batch {mode source_edge sink_edge sources sink_kind members} {
 '''
 
 
-def bound_slice(netlist, record, manifest, variant):
+def selection(variant, target):
+    prefix = "FourPhase" if variant == "bd" else "Click"
+    if target == "control":
+        return dict(parent_path=prefix+"Soc.ca_child_control", parent_family=prefix+"Control",
+                    sink_name="ca_child_update", operand_fields={"left":"left", "right":"right"}, side_inputs={})
+    require(target == "execute", "JOIN_TARGET")
+    return dict(parent_path=prefix+"Soc.ca_child_core", parent_family=prefix+"Core",
+                sink_name="ca_child_execute", operand_fields={"left":"state", "right":"response"},
+                side_inputs={f"in_bits_registers_{i}":dict(cell="ca_child_register_file", port=f"values_{i}", width=32)
+                             for i in range(15)})
+
+
+def bind_inputs(parent, join, sink, operand_fields, side_inputs):
+    """Account for each sink input, including inputs overlapping a Join cone."""
+    jc, uc = join["connections"], sink["connections"]
+    require(set(operand_fields) == {"left", "right"} and len(set(operand_fields.values())) == 2,
+            "JOIN_OPERAND_FIELDS")
+    covered = {"reset"}
+    bindings = []
+    for pin in jc:
+        if not pin.startswith("out_"): continue
+        dest = "in_" + pin[4:]
+        for side, field in operand_fields.items():
+            root = "in_bits_"+side
+            if dest == root or dest.startswith(root+"_"):
+                dest = "in_bits_"+field+dest[len(root):]
+                break
+        require(dest in uc and jc[pin] == uc[dest], "JOIN_UPDATE_WIRING")
+        covered.add(dest)
+        bindings.append(dict(source=pin, destination=dest, width=len(uc[dest]), kind="join"))
+    side_bits=set()
+    for pin, spec in side_inputs.items():
+        require(pin.startswith("in_bits_") and pin not in covered and pin in uc, "JOIN_SIDE_INPUT_PORT")
+        require(set(spec) == {"cell", "port", "width"} and spec["cell"] in parent["cells"], "JOIN_SIDE_INPUT_SPEC")
+        source = parent["cells"][spec["cell"]]
+        require(source["port_directions"].get(spec["port"]) == "output" and
+                source["connections"].get(spec["port"]) == uc[pin] and
+                len(uc[pin]) == spec["width"], "JOIN_SIDE_INPUT_BINDING")
+        require(all(type(b)==int for b in uc[pin]) and len(set(uc[pin]))==len(uc[pin]) and
+                not side_bits.intersection(uc[pin]), "JOIN_SIDE_INPUT_ALIAS")
+        side_bits.update(uc[pin])
+        covered.add(pin)
+        bindings.append(dict(destination=pin, kind="uncomposed-side-source", **spec,
+            lanes=[dict(source_bit=i,destination_bit=i,parent_net=b) for i,b in enumerate(uc[pin])]))
+    required = {p for p, direction in sink["port_directions"].items() if direction == "input" and p != "out_ack"}
+    # in_ack is an output, but is deliberately included in the channel identity check above.
+    require(covered == required | {"in_ack"}, "JOIN_INPUT_COVERAGE")
+    return bindings
+
+
+def bound_slice(netlist, record, manifest, variant, *, target="control"):
     prefix=("FourPhase" if variant=="bd" else "Click")
+    config=selection(variant,target)
+    path=config['parent_path'];sink_name=config['sink_name']
     kind="RiscayMcuDigital"
-    for name in ("soc","ca_child_control"):kind=netlist["modules"][kind]["cells"][name]["type"]
-    require(re.fullmatch(prefix+"Control"+r"(?:_\d+)?",kind) is not None,"JOIN_PARENT_FAMILY")
+    for name in ("soc",*path.split('.')[1:]):kind=netlist["modules"][kind]["cells"][name]["type"]
+    require(re.fullmatch(config['parent_family']+r"(?:_\d+)?",kind) is not None,"JOIN_PARENT_FAMILY")
     parent=netlist["modules"][kind]
-    path=prefix+"Soc.ca_child_control"
-    selected={name:deepcopy(parent["cells"][name]) for name in ("ca_child_join","ca_child_update")}
+    selected={name:deepcopy(parent["cells"][name]) for name in ("ca_child_join",sink_name)}
     join=netlist["modules"][selected["ca_child_join"]["type"]]
-    update=netlist["modules"][selected["ca_child_update"]["type"]]
+    update=netlist["modules"][selected[sink_name]["type"]]
     plans={}
     for name in ("left","right","update"):
-        suffix=("ca_child_update" if name=="update" else
+        suffix=(sink_name if name=="update" else
                 "ca_child_join.ca_child_"+name+("_storage" if variant=="click" else ""))
         desc=stages.descriptor(manifest,netlist,record,path+"."+suffix,variant,storage=name!="update")
         plans[name]=relative.make_plan(netlist,record,variant,desc)
@@ -90,7 +145,7 @@ def bound_slice(netlist, record, manifest, variant):
         verify_roots=[rname],expected_bindings={rname:("ChiselAsyncAsymmetricC_v1",shape)}))
     children={s:plans[s]["prefix"].split("/")[-2] for s in ("left","right")}
     require(set(join["cells"])==set(children.values())|{rname},"JOIN_CHILD_INVENTORY")
-    require(selected['ca_child_update']['type']==plans['update']['module'] and
+    require(selected[sink_name]['type']==plans['update']['module'] and
             all(join['cells'][children[s]]['type']==plans[s]['module'] for s in children),"JOIN_RESOLVED_CHILD_BINDING")
     rc=join["cells"][rname]["connections"]
     require(rc==dict(common=[join["cells"][children[s]]["connections"]["out_req"][0] for s in ("left","right")],
@@ -101,12 +156,9 @@ def bound_slice(netlist, record, manifest, variant):
             outer=(side+pin[2:] if pin.startswith("in_") else "out_bits_"+side+pin[8:] if pin.startswith("out_bits") else
                    "out_ack" if pin=="out_ack" else "reset" if pin=="reset" else None)
             if outer is not None:require(conn[pin]==join["ports"][outer]["bits"],"JOIN_OPERAND_WIRING")
-    jc,uc=[selected[n]["connections"] for n in ("ca_child_join","ca_child_update")]
-    internal=set()
-    for pin in jc:
-        if pin.startswith("out_"):
-            require(jc[pin]==uc["in_"+pin[4:]],"JOIN_UPDATE_WIRING")
-            internal.update(jc[pin])
+    jc,uc=[selected[n]["connections"] for n in ("ca_child_join",sink_name)]
+    input_bindings=bind_inputs(parent,selected['ca_child_join'],selected[sink_name],config['operand_fields'],config['side_inputs'])
+    internal={b for pin in jc if pin.startswith('out_') for b in jc[pin]}
     require(jc["reset"]==uc["reset"],"JOIN_RESET_WIRING")
     # The retained Join output must have exactly the consumers in this slice.
     require(not any(b in internal for name,c in parent["cells"].items() if name not in selected
@@ -115,7 +167,7 @@ def bound_slice(netlist, record, manifest, variant):
     ports={}
     for label,body,conn in (("join",join,jc),("update",update,uc)):
         for pin,p in body["ports"].items():
-            if label=="join" and pin.startswith("out_") or label=="update" and (pin.startswith("in_") or pin=="reset"):continue
+            if label=="join" and pin.startswith("out_") or label=="update" and (pin.startswith("in_") and pin not in config['side_inputs'] or pin=="reset"):continue
             name="reset" if pin=="reset" else label+"_"+pin
             ports[name]=dict(direction=p["direction"],bits=conn[pin])
     body=dict(attributes={},ports=ports,cells=selected,netnames={})
@@ -129,7 +181,9 @@ def bound_slice(netlist, record, manifest, variant):
         for c in modules[kind]["cells"].values():visit(c["type"])
     for c in selected.values():visit(c["type"])
     return dict(modules=modules),dict(variant=variant,module=TOP,stages=plans,join_module=selected["ca_child_join"]["type"],
-        parent_module=kind,rendezvous="ca_child_join/"+rname+"/")
+        parent_module=kind,parent_instance=path,target=target,input_bindings=input_bindings,
+        uncomposed_side_input_bits=sum(b['width'] for b in input_bindings if b['kind']=='uncomposed-side-source'),
+        whole_stage_setup_established=False,rendezvous="ca_child_join/"+rname+"/")
 
 
 def identity_storage(body):
@@ -212,9 +266,9 @@ def state(plan, cells, side, phase, *, transparent=False):
     return dict(cases=cases,keeper_cuts=cuts)
 
 
-def reachable_lanes(cells, source, destination):
+def reachable_from(cells, reached, destination):
     pins={c["path"]+"/"+p:n for c in cells for p,n in c["pins"].items()}
-    reached={pins[source["prefix"]+l["Q"]] for l in source["lane_map"]}
+    reached=set(reached)
     # Independent of STA availability: a missing query is never called static.
     changed=True
     while changed:
@@ -225,6 +279,22 @@ def reachable_lanes(cells, source, destination):
                 reached.update(n for p,n in c["pins"].items() if c["directions"][p]=="output")
         changed=len(reached)!=before
     return [l["lane"] for l in destination["lane_map"] if pins[destination["prefix"]+l["D"]] in reached]
+
+
+def reachable_lanes(cells, source, destination):
+    pins={c["path"]+"/"+p:n for c in cells for p,n in c["pins"].items()}
+    return reachable_from(cells,{pins[source["prefix"]+l["Q"]] for l in source["lane_map"]},destination)
+
+
+def side_reachability(sliced,plan,cells):
+    result=[]
+    for entry in plan['input_bindings']:
+        if entry['kind']!='uncomposed-side-source':continue
+        pin='update_'+entry['destination'];bits=sliced['modules'][TOP]['ports'][pin]['bits']
+        result.append(dict(input=pin,width=len(bits),destination_lanes=reachable_from(
+            cells,{'port:'+str(b) for b in bits},plan['stages']['update']),
+            obligation='Uncomposed launch and hold; symbolic input must already be stable.'))
+    return result
 
 
 def contexts(plan,cells):
@@ -436,7 +506,7 @@ def margins(results,plan,aperture):
     return summaries
 
 
-def run(mapping,output,variant,campaign=False):
+def run(mapping,output,variant,campaign=False,*,target="control"):
     require(not output.exists(),"JOIN_OUTPUT_EXISTS")
     record=json.loads((mapping/'mapping.json').read_text());netlist=json.loads((mapping/'netlist.json').read_text())
     audit=json.loads((mapping/'netlist-audit.json').read_text());policy=json.loads((mapping/'physical-policy.json').read_text())
@@ -444,7 +514,8 @@ def run(mapping,output,variant,campaign=False):
             audit['mapping_sha256']==sha(mapping/'mapping.json'),"JOIN_STALE_AUDIT")
     require(record['physical_policy_sha256']==sha(mapping/'physical-policy.json') and policy['contract_sha256']==sha(mapping/'timing-intent.json'),"JOIN_STALE_CONTRACT")
     manifest=json.loads((mapping/'timing-intent.json').read_text())['manifest']
-    sliced,plan=bound_slice(netlist,record,manifest,variant);cells=flat_cells(sliced);plan['contexts']=contexts(plan,cells)
+    sliced,plan=bound_slice(netlist,record,manifest,variant,target=target);cells=flat_cells(sliced);plan['contexts']=contexts(plan,cells)
+    plan['side_input_reachability']=side_reachability(sliced,plan,cells)
     sta=tool('sta');yosys=tool('yosys');pdk=ROOT/'.tools/physical/pdk';pdk_verify(pdk)
     files=[mapping/f for f in ('mapping.json','netlist.json','netlist.v','netlist-audit.json','timing-intent.json','physical-policy.json')]
     files += [ROOT/'tools'/f for f in ('control_join_timing.py','native_stage_timing.py','control_relative_timing.py',
@@ -474,7 +545,10 @@ def run(mapping,output,variant,campaign=False):
             write_json(output/(key+'.json'),dict(case=case,results=results,aperture=aperture))
             cases.append(case);print(json.dumps(case),flush=True)
     require(all(sha(Path(p))==h for p,h in frozen.items()),'JOIN_INPUT_CHANGED')
-    write_json(output/'results.json',dict(physical_qualification=False,cases=cases,inputs_sha256=frozen,
+    write_json(output/'results.json',dict(physical_qualification=False,target=target,
+        uncomposed_side_input_bits=plan['uncomposed_side_input_bits'],whole_stage_setup_established=False,
+        side_input_obligation='Stable throughout each measured Join launch and sink aperture; launch/hold not measured here. Symbolic boundary slew equals the case input slew.',
+        cases=cases,inputs_sha256=frozen,
         files_sha256={str(p.relative_to(output)).replace('\\','/'):sha(p) for p in sorted(output.rglob('*')) if p.is_file()}))
     require(all(c['status']!='UNRESOLVED' for c in cases),'JOIN_CAMPAIGN_UNRESOLVED')
 
@@ -482,4 +556,5 @@ def run(mapping,output,variant,campaign=False):
 if __name__=='__main__':
     p=argparse.ArgumentParser(description=__doc__)
     p.add_argument('mapping',type=Path);p.add_argument('output',type=Path);p.add_argument('--variant',choices=('bd','click'),required=True)
-    p.add_argument('--campaign',action='store_true');a=p.parse_args();run(a.mapping,a.output,a.variant,a.campaign)
+    p.add_argument('--campaign',action='store_true');p.add_argument('--target',choices=('control','execute'),default='control')
+    a=p.parse_args();run(a.mapping,a.output,a.variant,a.campaign,target=a.target)

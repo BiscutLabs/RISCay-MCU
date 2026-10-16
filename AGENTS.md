@@ -481,6 +481,15 @@
   phases. Reject missing/reversed bounds and verify exact-arc/period controls.
   This conditional setup envelope does not close reuse, pending/return, pulse,
   simultaneous rendezvous, mismatch, electrical or routed obligations.
+  The same Join template supports execute; follow docs/reviews/execute-join-timing.md.
+  Validate both source-input provenance and destination reachability. All 480 RF
+  bits bypassing the Join remain symbolic and explicitly uncomposed until actual
+  bank launch/hold is measured. A destination reached from a Join operand may
+  also depend on RF data; union coverage cannot discharge that obligation.
+  Preserve the original Control caller's queries and results, and exercise
+  graph rejection controls through the actual deduplicated parent. Prioritize
+  RF launch and elapsed's seeded-owner/admission contexts before RTL delay sizing;
+  keep the elapsed step's timing policy separate from its owner policy.
   Preserve exact async cells and connections, native delay chains and three SRAMs.
   Keep clocked STA separate from internal async path measurements. Recharacterize
   changed cells/whole transforms across all five pinned corners, and rerun
