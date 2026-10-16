@@ -1135,6 +1135,15 @@ physical reset qualification (R2b) remains mandatory under item 17a3.
         elapsed, RAM prepare/issue/capture and I²C update in both variants. Use
         [the stage survey](reviews/native-stage-timing.md) for exact evidence and
         limits. New tools run with configured native Linux or WSL executables.
+      - [x] **Conditional Control Join launch/setup composition.** Bind both
+        actual operand stores, rendezvous and update stage; measure source input
+        aperture and loaded source-to-capture paths in both native protocols.
+        Verify BD Q-before-close and ACK-after-direct-close, both Click phases,
+        slew custody, exact graph/arc controls and all five corners. All 20
+        corner/slew cases and both revised control campaigns pass; independent
+        review has no remaining blocking finding in this scope. See
+        [the scoped evidence](reviews/control-join-timing.md). Full source reuse,
+        pending/return/pulse, simultaneous rendezvous and mismatch remain open.
       - [ ] **Complete controller templates and custom publication.** Derive
         the missing BD pending/return and Click pulse/self-hold cases from the
         controller state graphs; add FIFO/Join and I2cPublication templates.
@@ -1144,7 +1153,8 @@ physical reset qualification (R2b) remains mandatory under item 17a3.
         use native crossing measurements and prove timestep convergence. Convert
         the remaining legacy synthesis/P&R/SPICE launchers to configuration.
       - [ ] **Complete paired Control capture/hold analysis.** The conditional
-        pilot resolves local E/CLK/ACK paths; complete source launch, BD pending
+        pilot resolves local E/CLK/ACK paths; Control Join initial setup is now
+        composed, but source retention/reuse, BD pending
         admission/returns and Click pulse/feedback remain open. Bound full
         source reuse without blind cuts or periodic staging, repair residual
         electrical violations, then include routed min/max RC. The default

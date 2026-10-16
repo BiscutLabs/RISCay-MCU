@@ -470,6 +470,17 @@
   Freeze runtime configuration/executables, and use the same runtime for fault
   controls. Configured native/WSL invocation currently covers the stage runner
   and Control relative pilot/controls; legacy physical tools remain separate.
+  For Control Join setup composition, follow docs/reviews/control-join-timing.md.
+  Resolve the actual parent/children, prove source identity and dynamic-lane
+  coverage, and preserve the original loaded cells in the analysis wrapper.
+  BD E-falling retains Q; it is not a CLK-to-Q launch. Require already-open
+  source latches, per-lane D setup and Q-before-close, loaded D-to-Q slew custody,
+  and a measured ACK-after-direct-close ordering check. Condition only physical
+  ACK receivers; leave the actual returning driver observable. Click must retain
+  actual payload/phase CLK-to-Q and both min/max rising launch slews in both
+  phases. Reject missing/reversed bounds and verify exact-arc/period controls.
+  This conditional setup envelope does not close reuse, pending/return, pulse,
+  simultaneous rendezvous, mismatch, electrical or routed obligations.
   Preserve exact async cells and connections, native delay chains and three SRAMs.
   Keep clocked STA separate from internal async path measurements. Recharacterize
   changed cells/whole transforms across all five pinned corners, and rerun

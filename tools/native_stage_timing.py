@@ -18,11 +18,13 @@ from repair_gf180_control import require, connectivity
 from physical_tools import tool
 
 
-def descriptor(manifest, netlist, record, path, variant):
+def descriptor(manifest, netlist, record, path, variant, *, storage=False):
     require(variant in ("bd","click"),"STAGE_VARIANT")
     matches=[n for n in nodes(manifest["design"]) if n["rtl_path"]==path]
     require(len(matches)==1,"STAGE_CONTRACT_PATH")
-    node=matches[0];family="FourPhaseStage" if variant=="bd" else "ClickStage"
+    node=matches[0]
+    family=(("LongHoldBuffer" if variant=="bd" else "ClickBuffer") if storage else
+            ("FourPhaseStage" if variant=="bd" else "ClickStage"))
     require(re.fullmatch(family+r"(?:_\d+)?",node["module"]) is not None,"STAGE_UNSUPPORTED_CONTROLLER")
     require(path.split(".")[0]==manifest["top"],"STAGE_TOP_BINDING")
     kind="RiscayMcuDigital"
@@ -35,6 +37,7 @@ def descriptor(manifest, netlist, record, path, variant):
     require(len(endpoints)==len(node["endpoints"]),"STAGE_DUPLICATE_ENDPOINT")
     iw,ow=[endpoints[k]["width"] for k in ("in_data","out_data")]
     require(type(iw)==type(ow)==int and 0<iw<=4096 and 0<ow<=1024,"STAGE_RESOURCE_BOUND")
+    require(not storage or iw==ow,"STAGE_STORAGE_WIDTH")
     storage_endpoint="latch_data" if variant=="bd" else "register_data"
     require(endpoints[storage_endpoint]["width"]==ow,"STAGE_CAPTURE_WIDTH")
     endpoint_sources=dict(in_request="in.req",in_data="in.bits",in_acknowledge="in.ack",

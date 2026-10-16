@@ -1,0 +1,170 @@
+# SPDX-License-Identifier: Apache-2.0
+"""Independent arithmetic, coverage and evidence-integrity controls (no PDK)."""
+from copy import deepcopy
+import unittest
+from unittest.mock import patch
+
+import control_join_timing as j
+
+
+def fixture(variant='bd'):
+    stages={}
+    owners=('request_delay','a','long_hold','acknowledge','input_compare','fire')
+    for name in ('left','right','update'):
+        stages[name]=dict(prefix=name+'/',lane_map=[dict(lane=0,D='store/D',Q='store/Q',capture='store/E' if variant=='bd' else 'store/CLK')],
+            payload_width=1,constant_lanes={},event='event',phase=dict(Q=dict(pin='phase/Q'),CLK=dict(pin='phase/CLK')),
+            native=dict(signals={k:k for k in owners},cells=[dict(path=k,pins=dict(Z=k)) for k in owners]),contexts=[dict(id='data',sources=['in_bits'])])
+    p=dict(variant=variant,stages=stages,rendezvous='join/')
+    with patch.object(j,'state',return_value={}):
+        with patch.object(j,'reachable_lanes',return_value=[0]):p['contexts']=j.contexts(p,[])
+    r={}
+    for side in ('left','right'):
+        r[side+'-input']=dict(rows={f'input:0:max:{e}':dict(delay_ns=2) for e in ('rise','fall')},
+            dq={'0':{e:dict(delay_ns=3,slew_ns=.5) for e in ('rise','fall')}})
+        for phase in ([0] if variant=='bd' else [0,1]):
+            edge='fall' if variant=='bd' else 'rise'
+            r[f'{side}-request-{phase}']=dict(rows={f'source_capture:0:{m}:{edge}':dict(delay_ns=v) for m,v in [('min',10),('max',12)]},source_slews={'0':[.5,.5]},event_slews=[.3,.5])
+            if variant=='bd':r[f'{side}-request-{phase}']['rows'].update({'return:min':dict(delay_ns=33),'return:max':dict(delay_ns=35)})
+            captures={f'capture:0:{m}:{edge}':dict(delay_ns=v) for m,v in [('min',30),('max',32)]}
+            r[f'{side}-launch-{phase}']=dict(rows={f'data:0:max:{e}':dict(delay_ns=5) for e in ('rise','fall')},source_slews={'0':[.5,.5]},event_slews=[.3,.5])
+            r[f'{side}-'+('request-' if variant=='bd' else 'launch-')+str(phase)]['rows'].update(captures)
+    return p,r
+
+
+class CompositionTests(unittest.TestCase):
+    def test_identity_storage_checks_each_lane_not_just_width(self):
+        b=dict(ports=dict(in_bits=dict(bits=[2,3]),out_bits=dict(bits=[4,5])),
+            cells=dict(ca_primitive_payload=dict(connections=dict(d=[6,7],q=[4,5])),
+                       ca_primitive_data_delay=dict(connections=dict(a=[2,3],q=[6,7]))))
+        j.identity_storage(b)
+        b['cells']['ca_primitive_data_delay']['connections']['a']=[3,2]
+        with self.assertRaisesRegex(ValueError,'^JOIN_IDENTITY_DATA$'):j.identity_storage(b)
+
+    def test_bd_q_before_close_and_conservative_latest_close(self):
+        p,r=fixture();s=j.margins(r,p,dict(setup_ns=1))[0]
+        self.assertEqual(s['maximum_input_data_lag_ns'],5) # min(10-2-1,10-2-3)
+        self.assertEqual(s['minimum_conditional_setup_margin_ns'],12) # 30-12-5-1
+
+    def test_click_uses_clock_q_arrival_without_added_latch_close(self):
+        p,r=fixture('click');s=j.margins(r,p,dict(setup_ns=1))
+        self.assertEqual(len(s),4)
+        self.assertTrue(all(v['maximum_input_data_lag_ns']==7 and v['minimum_conditional_setup_margin_ns']==24 for v in s))
+
+    def test_delayed_capture_exposes_bd_failure(self):
+        p,r=fixture();r['left-request-0']['rows']['source_capture:0:max:fall']['delay_ns']=100
+        self.assertEqual(j.margins(r,p,dict(setup_ns=1))[0]['minimum_conditional_setup_margin_ns'],-76)
+
+    def test_bd_annotation_must_match_arc_slew(self):
+        p,r=fixture();r['left-launch-0']['source_slews']['0'][1]=0
+        with self.assertRaisesRegex(ValueError,'^JOIN_DQ_SLEW_CHANGED$'):j.margins(r,p,dict(setup_ns=1))
+
+    def test_click_launch_slew_must_match_each_request_phase(self):
+        for phase in (0,1):
+            for mode in (0,1):
+                p,r=fixture('click');r[f'left-request-{phase}']['event_slews'][mode]+=.1
+                with self.assertRaisesRegex(ValueError,'^JOIN_EVENT_SLEW_CHANGED$'):j.margins(r,p,dict(setup_ns=1))
+
+    def test_unmodeled_dynamic_lane_is_rejected(self):
+        p,_=fixture()
+        with patch.object(j,'reachable_lanes',return_value=[]):
+            with self.assertRaisesRegex(ValueError,'^JOIN_DYNAMIC_LANE_COVERAGE$'):j.contexts(p,[])
+
+    def test_only_independently_literal_lanes_can_be_absent(self):
+        p,_=fixture();p['stages']['update']['constant_lanes']={'0':0}
+        with patch.object(j,'reachable_lanes',return_value=[]),patch.object(j,'state',return_value={}):
+            cs=j.contexts(p,[])
+        self.assertTrue(all(c['absent_lanes']==[0] for c in cs if c['kind']=='launch'))
+
+    def test_sequential_cell_does_not_fake_combinational_reachability(self):
+        cells=[dict(path='left/store',cell=j.SC+'latrnq_1',pins=dict(D='in',Q='q',E='e'),directions=dict(D='input',Q='output',E='input')),
+               dict(path='hidden',cell=j.SC+'dffrnq_1',pins=dict(D='q',Q='x',CLK='clk'),directions=dict(D='input',Q='output',CLK='input')),
+               dict(path='update/store',cell=j.SC+'latrnq_1',pins=dict(D='x',Q='out',E='e'),directions=dict(D='input',Q='output',E='input'))]
+        p,_=fixture();self.assertEqual(j.reachable_lanes(cells,p['stages']['left'],p['stages']['update']),[])
+        cells[1]=dict(path='wire',cell=j.SC+'buf_1',pins=dict(I='q',Z='x'),directions=dict(I='input',Z='output'))
+        self.assertEqual(j.reachable_lanes(cells,p['stages']['left'],p['stages']['update']),[0])
+
+
+def request_log():
+    p,_=fixture('bd');c=next(c for c in p['contexts'] if c['id']=='left-request-0')
+    c['queries']=[q for q in c['queries'] if q['role']=='source_capture']
+    text='JOIN_BEGIN\n'
+    for q in c['queries']:
+        delay=10 if q['mode']=='min' else 12
+        text+=f"CONTROL_PATH\t{q['id']}\t0\t{delay}\t{delay}\t{delay}\t.5\tjoin_left_req\tleft/store/E\trise\tfall\n"
+        text+=f"CONTROL_POINTS\t{q['id']}\tjoin_left_req\tleft/request_delay/Z\tleft/a/Z\tleft/long_hold/Z\tleft/store/E\n"
+    return p,c,text+'JOIN_ELECTRICAL_BEGIN\nJOIN_ELECTRICAL_END\nJOIN_COMPLETE\n'
+
+
+class ParserTests(unittest.TestCase):
+    def test_period_control_checks_noncritical_lanes_and_slews(self):
+        from check_control_join_controls import check_period
+        baseline=dict(rows={'critical':10,'noncritical':2},source_slew=.5,paths=['source','sink'])
+        check_period(baseline,baseline,{'minimum':10},{'minimum':10})
+        for key,value in [('rows',dict(critical=10,noncritical=3)),('source_slew',.6),('paths',['sibling','sink'])]:
+            changed=deepcopy(baseline);changed[key]=value
+            with self.assertRaisesRegex(ValueError,'^JOIN_CONTROL_PERIOD_DEPENDENCE$'):
+                check_period(changed,baseline,{'minimum':10},{'minimum':10})
+
+    def reject(self,change,diagnostic):
+        p,c,log=request_log()
+        with self.assertRaisesRegex(ValueError,'^'+diagnostic+'$'):j.parse(change(log),p,c)
+
+    def test_request_pair(self):
+        p,c,log=request_log();self.assertEqual(len(j.parse(log,p,c)['rows']),2)
+
+    def test_reversed_bounds(self):
+        self.reject(lambda s:s.replace('\t0\t10\t10\t10\t','\t0\t20\t20\t20\t'),'JOIN_REVERSED_BOUNDS')
+
+    def test_nonfinite_slew(self):
+        self.reject(lambda s:s.replace('\t.5\t','\tINF\t'),'JOIN_NUMERIC')
+
+    def test_wrong_side(self):
+        self.reject(lambda s:s.replace('\tjoin_left_req\t','\tjoin_right_req\t'),'JOIN_COMBINATIONAL_SOURCE')
+
+    def test_wrong_capture_pin(self):
+        self.reject(lambda s:s.replace('left/store/E','right/store/E'),'JOIN_PATH_BINDING')
+
+    def test_wrong_transition(self):
+        self.reject(lambda s:s.replace('\trise\tfall\n','\tfall\tfall\n'),'JOIN_PATH_BINDING')
+
+    def test_missing_path(self):
+        self.reject(lambda s:'\n'.join(l for l in s.split('\n') if 'source_capture:0:max' not in l),'JOIN_QUERY_COVERAGE')
+
+    def test_incomplete(self):
+        self.reject(lambda s:s.replace('JOIN_COMPLETE\n',''),'JOIN_INCOMPLETE')
+
+    def test_tool_error_is_not_missing_coverage(self):
+        self.reject(lambda s:'Warning: invalid\n'+s,'JOIN_TOOL_DIAGNOSTIC')
+
+    def test_no_fake_clock_phase_arrival_at_request_port(self):
+        self.reject(lambda s:s.replace('\t0\t10\t10\t10\t','\t500\t510\t10\t10\t'),'JOIN_INPUT_ARRIVAL')
+
+    def test_direct_source_control_path_required(self):
+        self.reject(lambda s:s.replace('left/a/Z','left/return/Z'),'JOIN_SOURCE_CONTROL_PROVENANCE')
+
+
+class StorageDescriptorTests(unittest.TestCase):
+    def values(self,variant):
+        from test_native_stage_timing import fixture as stage_fixture
+        m,n,r,path,v=stage_fixture(variant)
+        family='LongHoldBuffer' if variant=='bd' else 'ClickBuffer';old=m['design']['module'];module=family+'_99'
+        m['design']['module']=module
+        for e in m['design']['endpoints']:
+            e['source']=e['source'].replace(old,module)
+            if e['id']=='in_data':e['width']=2
+        mapped='FourPhaseStage' if variant=='bd' else 'ClickStage'
+        n['modules'][family]=n['modules'].pop(mapped);n['modules']['Soc']['cells']['ca_child_stage']['type']=family
+        return m,n,r,path,v
+
+    def test_buffers_require_explicit_storage_mode(self):
+        for variant in ('bd','click'):
+            values=self.values(variant)
+            with self.assertRaisesRegex(ValueError,'^STAGE_UNSUPPORTED_CONTROLLER$'):j.stages.descriptor(*values)
+            self.assertEqual(j.stages.descriptor(*values,storage=True)['payload_width'],2)
+
+    def test_nonidentity_width_rejected(self):
+        values=self.values('bd');next(e for e in values[0]['design']['endpoints'] if e['id']=='in_data')['width']=3
+        with self.assertRaisesRegex(ValueError,'^STAGE_STORAGE_WIDTH$'):j.stages.descriptor(*values,storage=True)
+
+
+if __name__=='__main__':unittest.main()
