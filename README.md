@@ -79,6 +79,10 @@ without changing native handshakes. Complete capture/hold timing remains open.
 The [native Control characterization](docs/reviews/control-native-characterization.md)
 retains physical feedback and all payload storage cells; unresolved simulator
 sampling is an explicit gate before further timing claims.
+The [relative-timing pilot](docs/reviews/control-relative-timing.md) resolves
+local Control capture/ACK paths under explicit handshake states at five cell
+corners. Source launch, full return/pulse behavior, electrical repair and routed
+timing remain open; no hardware clock or shortened guard is introduced.
 See the [elapsed](docs/native-elapsed-contract.md) and
 [CRC](docs/native-crc-contract.md) contracts. Wider payload reductions remain
 open. Self-timed SRAM access follows a separate
