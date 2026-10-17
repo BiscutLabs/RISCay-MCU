@@ -24,7 +24,7 @@ from characterize_gf180_liberty import CORNERS
 EVIDENCE=('proof.json','repair.tcl','repair.log','candidate/netlist-audit.json',
           'reference/readback.json','tied.v','tied.json','prepared.v','prepared.json','preparation.json',
           'repaired-raw.v','serializer-corrected.v','serializer-readback.json','serializer-corrections.json',
-          'pruned.json','orphan-ties.json','before-electrical.rpt','after-electrical.rpt')
+          'pruned.json','orphan-ties.json','sram-clock-drivers.json','before-electrical.rpt','after-electrical.rpt')
 
 
 def ident(name):
@@ -338,6 +338,56 @@ def buffer_native_resets(netlist,top,adapter_instances):
     return evidence
 
 
+def buffer_sram_clocks(netlist,top):
+    """One ordinary parent-side driver per physical SRAM clock pin."""
+    locations=instance_locations(netlist,top);edited={};evidence=[]
+    macros=sorted(path for path,(kind,key) in locations.items()
+                  if netlist['modules'][kind]['cells'][key]['type']==SRAM)
+    require(len(macros)==3,'REPAIR_SRAM_COUNT')
+    for path in macros:
+        kind,key=locations[path];body=netlist['modules'][kind];cell=body['cells'][key]
+        require(cell['port_directions'].get('CLK')=='input' and len(cell['connections'].get('CLK',[]))==1,
+                'REPAIR_SRAM_CLOCK_SHAPE')
+        if (kind,key) not in edited:
+            bits=[b for c in body['cells'].values() for bs in c['connections'].values() for b in bs]
+            bits += [b for p in (*body['ports'].values(),*body.get('netnames',{}).values()) for b in p['bits']]
+            fresh=max((b for b in bits if isinstance(b,int)),default=1)+1
+            name='riscay_sram_clock_'+str(len(edited));require(name not in body['cells'],'REPAIR_SRAM_CLOCK_COLLISION')
+            source=cell['connections']['CLK'];cell['connections']['CLK']=[fresh]
+            body['cells'][name]=dict(type=SC+'buf_16',parameters={},attributes={},
+                port_directions=dict(I='input',Z='output'),connections=dict(I=source,Z=[fresh]))
+            edited[(kind,key)]=name
+        parent=path.rsplit('/',1)[0]+'/' if '/' in path else ''
+        evidence.append(dict(owner=path,port='CLK',buffer=parent+edited[(kind,key)],master=SC+'buf_16'))
+    validate_sram_clock_drivers(netlist,top)
+    return evidence
+
+
+def validate_sram_clock_drivers(netlist,top):
+    """Check the final live graph, not merely the preparation's buffer names."""
+    actual=flat(netlist,top);drivers=defaultdict(list);sinks=defaultdict(list)
+    for path,c in actual['cells'].items():
+        for pin,ns in c['connections'].items():
+            for net in ns:
+                (drivers if c['directions'][pin]=='output' else sinks)[net].append((path,pin))
+    for pin,p in actual['ports'].items():
+        for net in p['bits']:
+            (drivers if p['direction']=='input' else sinks)[net].append(('PORT',pin))
+    macros=sorted(p for p,c in actual['cells'].items() if c['type']==SRAM)
+    require(len(macros)==3,'REPAIR_SRAM_COUNT');result=[]
+    for path in macros:
+        c=actual['cells'][path];nets=c['connections'].get('CLK',[])
+        require(len(nets)==1 and c['directions'].get('CLK')=='input','REPAIR_SRAM_CLOCK_SHAPE')
+        ds=drivers[nets[0]]
+        require(len(ds)==1 and ds[0][0] in actual['cells'],'REPAIR_SRAM_CLOCK_DRIVER')
+        driver,pin=ds[0];master=actual['cells'][driver]['type']
+        require(pin=='Z' and re.fullmatch(re.escape(SC)+r'buf_\d+',master),'REPAIR_SRAM_CLOCK_NONINVERTING')
+        require(sinks[nets[0]]==[(path,'CLK')],'REPAIR_SRAM_CLOCK_EXCLUSIVE')
+        result.append(dict(owner=path,port='CLK',buffer=driver,master=master))
+    require(len({r['buffer'] for r in result})==3,'REPAIR_SRAM_CLOCK_DISTINCT')
+    return result
+
+
 def prune_added_orphan_ties(before,after,top,protected,libs):
     """Delete only added constant drivers with no live physical consumer.
 
@@ -514,14 +564,17 @@ def repair(mapping,*,timeout=600):
     require(not tie_proof['added_buffers'] and not tie_proof['resized'],'REPAIR_TIE_PREPARATION_CHANGED_GRAPH')
     reset_preparation=buffer_native_resets(tied,'RiscayMcuDigital',
         json.loads((reference/'netlist-audit.json').read_text())['adapter_instances'])
+    sram_preparation=buffer_sram_clocks(tied,'RiscayMcuDigital')
     skipped_feedback=[]
     preparation=split_output_feedback(tied,'RiscayMcuDigital',skipped=skipped_feedback)
     prepared_proof=graph_proof(before,tied,'RiscayMcuDigital',protected,libs)
     require(not prepared_proof['resized'],'REPAIR_PREPARATION_CHANGED_MASTER')
     write_json(out/'prepared.json',tied)
     write_json(out/'preparation.json',dict(buffers=preparation,skipped_feedback_buffers=skipped_feedback,reset_buffers=reset_preparation,
+        sram_clock_buffers=sram_preparation,
         added_buffer_cells=dict(reset_distribution=len(reset_preparation),
-            hierarchy_output_feedback=len(prepared_proof['added_buffers'])-len(reset_preparation)),proof=prepared_proof))
+            sram_clocks=len(sram_preparation),
+            hierarchy_output_feedback=len(prepared_proof['added_buffers'])-len(reset_preparation)-len(sram_preparation)),proof=prepared_proof))
     q=lambda p:'"'+yosys.path(p)+'"'
     emit=out/'prepared.ys'
     emit.write_text('read_json '+q(out/'prepared.json')+'\nwrite_verilog -norename -noattr -noexpr '+q(out/'prepared.v')+'\n',newline='\n')
@@ -572,6 +625,7 @@ def repair(mapping,*,timeout=600):
         subprocess.run(yosys.command(['-s',yosys.path(emit)],timeout=180),stdout=stream,stderr=subprocess.STDOUT,check=True,timeout=190)
     after=read_verilog_json(out/'repaired.v',out/'repaired.json','RiscayMcuDigital',yosys,pdk,before)
     proof=graph_proof(before,after,'RiscayMcuDigital',protected,libs)
+    write_json(out/'sram-clock-drivers.json',validate_sram_clock_drivers(after,'RiscayMcuDigital'))
     # Run the existing exact adapter audit before publishing either output.
     candidate=out/'candidate';candidate.mkdir()
     shutil.copyfile(mapping/'mapping.json',candidate/'mapping.json')

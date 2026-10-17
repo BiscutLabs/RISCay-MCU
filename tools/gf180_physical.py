@@ -99,6 +99,61 @@ class Circuit:
         body += [ATTR+c["cell"]+" "+c["name"]+" ("+", ".join(f'.{p}({v})' for p,v in c["pins"].items())+");" for c in self.cells]
         return "\n".join(body)+"\nendmodule\n"
 
+
+def distribution_parents(circuit, roots, groups, fanout=16):
+    """Equal-depth, bounded-fanout parents for interleaved final leaf buffers.
+
+    Small trees retain their exact existing recipe and cell numbering. Wider
+    trees add matching trunk levels to every branch; partial groups still need
+    loaded skew, capture/ACK and reset characterization.
+    """
+    if not roots or groups<1 or fanout<2:raise ValueError('INVALID_DISTRIBUTION_TREE')
+    depth=0;capacity=fanout
+    while groups>capacity:depth+=1;capacity*=fanout
+    def descend(parents,count,level):
+        if level==0:return [parents]*count
+        branches=math.ceil(count/(fanout**level))
+        sizes=[count//branches+(i<count%branches) for i in range(branches)]
+        result=[]
+        for size in sizes:
+            child=tuple(circuit.gate('buf_8',dict(I=p)) for p in parents)
+            result.extend(descend(child,size,level-1))
+        return result
+    return descend(tuple(roots),groups,depth),depth+1
+
+
+def distribution_profile(cells, *, capture_root=None, data_reset=False, fanout=16):
+    """Audit every input load and equal-depth capture/reset trees independently."""
+    drivers={};loads=defaultdict(int)
+    for cell in cells:
+        for pin,net in cell['pins'].items():
+            if pin in ('Z','ZN','Q'):
+                if net in drivers:raise ValueError('DISTRIBUTION_MULTIPLE_DRIVERS')
+                drivers[net]=cell
+            else:loads[net]+=1
+    if max(loads.values(),default=0)>fanout:raise ValueError('DISTRIBUTION_FANOUT')
+    def depth(net,root,seen=()):
+        if net==root:return (0,0)
+        if net in seen or net not in drivers:raise ValueError('DISTRIBUTION_ROOT')
+        cell=drivers[net]
+        if not re.fullmatch(re.escape(SC)+r'(?:buf|inv)_\d+',cell['cell']):raise ValueError('DISTRIBUTION_NONBUFFER')
+        levels,parity=depth(cell['pins']['I'],root,(*seen,net))
+        return (1+levels,parity ^ int(cell['cell'].startswith(SC+'inv_')))
+    captures=[c['pins'][p] for c in cells for p in ('CLK','E') if p in c['pins']]
+    resets=([c['pins']['A2'] for c in cells if c['cell']==SC+'and2_1'] if data_reset else
+            [c['pins'][p] for c in cells for p in ('RN','SETN') if p in c['pins']])
+    depths={}
+    for name,nets,root in (('capture',captures,capture_root),('reset',resets,'reset')):
+        if not nets:continue
+        paths={depth(n,root) for n in nets}
+        expected_inversion=int(name=='reset' or capture_root=='closed')
+        if any(parity!=expected_inversion for _,parity in paths):raise ValueError('DISTRIBUTION_POLARITY_'+name.upper())
+        ds={levels for levels,_ in paths}
+        if len(ds)!=1:raise ValueError('DISTRIBUTION_UNBALANCED_'+name.upper())
+        depths[name+'_depth']=ds.pop()
+    return dict(maximum_input_fanout=max(loads.values(),default=0),**depths)
+
+
 def adapter(p, guard_min_ns, *, role=None):
     k=dict(key(p)[1]); model=p["model"].removeprefix("ChiselAsync").removesuffix("_v1")
     c=Circuit(); requirement={"control_max_ns":10}
@@ -144,7 +199,9 @@ def adapter(p, guard_min_ns, *, role=None):
         reset_groups={}
         if data:
             reset_root=c.gate("buf_8",dict(I=nr))
-            reset_groups={g:c.gate("buf_4",dict(I=reset_root)) for g in range(math.ceil(width/16))}
+            parents,levels=distribution_parents(c,(reset_root,),math.ceil(width/16))
+            reset_groups={g:c.gate("buf_4",dict(I=parent[0])) for g,parent in enumerate(parents)}
+            requirement.update(distribution_fanout_limit=16,reset_branch_levels=levels)
         for i in range(width):
             value=f'a[{i}]'
             if op==1: value=c.inv(value)
@@ -162,19 +219,25 @@ def adapter(p, guard_min_ns, *, role=None):
         # driving hundreds of clock/reset pins. Bound every leaf after routing.
         root=c.gate("buf_8",dict(I=enable)); reset_root=c.gate("buf_8",dict(I=nr))
         clocks={}; resets={}
-        for group in range(math.ceil(width/16)):
-            clocks[group]=c.gate("buf_4",dict(I=root))
-            resets[group]=c.gate("buf_4",dict(I=reset_root))
+        parents,levels=distribution_parents(c,(root,reset_root),math.ceil(width/16))
+        for group,(clock_parent,reset_parent) in enumerate(parents):
+            clocks[group]=c.gate("buf_4",dict(I=clock_parent))
+            resets[group]=c.gate("buf_4",dict(I=reset_parent))
         for i in range(width):
             q="state" if model=="PhaseRegister" else f'q[{i}]'
             d=c.inv("state") if model=="PhaseRegister" else f'd[{i}]'
             if model=="ClosingLatch": c.cell("latrnq_1",D=d,E=clocks[i//16],RN=resets[i//16],Q=q)
             elif (k.get("RESET_VALUE",0)>>i)&1: c.cell("dffsnq_1",D=d,CLK=clocks[i//16],SETN=resets[i//16],Q=q)
             else: c.cell("dffrnq_1",D=d,CLK=clocks[i//16],RN=resets[i//16],Q=q)
-        requirement.update(storage_bits=width,clock_distribution_max_ns=4 if model=="ClosingLatch" else 2.5)
+        requirement.update(storage_bits=width,clock_distribution_max_ns=4 if model=="ClosingLatch" else 2.5,
+                           distribution_fanout_limit=16,capture_branch_levels=levels,reset_branch_levels=levels,
+                           capture_leaf_spread='must-measure-both-edges-per-corner; not-qualified-by-fanout')
         if model=="PhaseRegister":
             c.chain("state",9); requirement["control_min_ns"]=1
     else: raise ValueError("UNSUPPORTED_ACTIVE_MODEL_"+model)
+    if 'distribution_fanout_limit' in requirement:
+        requirement['distribution_structure']=distribution_profile(c.cells,
+            capture_root='closed' if model=='ClosingLatch' else 'trigger',data_reset=model=='ControlGate')
     return c,requirement
 
 def pdk_verify(pdk):

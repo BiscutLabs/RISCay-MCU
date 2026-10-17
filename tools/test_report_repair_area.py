@@ -35,7 +35,21 @@ class RepairAreaTest(unittest.TestCase):
         self.assertAlmostEqual(result['new_cell_area_mm2'],32/1e6)
         self.assertAlmostEqual(result['resize_delta_mm2'],10/1e6)
         self.assertEqual((result['original_cells'],result['repaired_cells']),(2,6))
-        self.assertEqual([v['count'] for v in result['buffers'].values()],[1,1,1])
+        self.assertEqual({k:v['count'] for k,v in result['buffers'].items()},
+            dict(native_reset=1,sram_clock=0,writer_feedback=1,openroad_other=1))
+
+    def test_sram_driver_category_and_area(self):
+        self.prep['sram_clock_buffers']=[dict(buffer='island/other')]
+        result=self.result()
+        self.assertEqual(result['buffers']['sram_clock'],dict(count=1,area_mm2=10/1e6))
+        self.assertEqual(result['buffers']['openroad_other'],dict(count=0,area_mm2=0))
+        self.assertAlmostEqual(result['logic_delta_mm2'],42/1e6)
+
+    def test_preparation_categories_cannot_overlap_or_name_absent_cells(self):
+        for name in ('island/reset','island/riscay_output_feedback_0','island/absent'):
+            with self.subTest(name=name):
+                self.prep['sram_clock_buffers']=[dict(buffer=name)]
+                with self.assertRaisesRegex(ValueError,'REPAIR_AREA_PREPARATION_INVENTORY'):self.result()
 
     def test_missing_area_fails(self):
         del self.lef[SRAM]

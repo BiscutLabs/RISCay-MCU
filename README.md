@@ -69,8 +69,8 @@ the addressed [I2C receive store](docs/native-i2c-byte-store-contract.md) remove
 another 513 native payload bits. CPU request receipts remove 70 duplicate
 clocked bits per variant. Capacity-sized loader metadata removes
 183 native payload bits and 40 periodic bits per variant.
-Current repaired logic area is **3.032245 / 3.816860 mm²** (BD / Click), excluding
-SRAM. Global repair adds **0.190388 / 0.209668 mm²** to the same current maps;
+Current repaired logic area is **3.039002 / 3.823217 mm²** (BD / Click), excluding
+SRAM. Global repair adds **0.190638 / 0.209975 mm²** to the same current maps;
 see [area accounting](docs/gf180-estimates.md#electrical-repair-area).
 The earlier A2b measurements were 2.830967 / 3.596523 mm² with 3,255 BD / 3,160
 Click work-clock edges for the 43-instruction firmware wake. Those activity and

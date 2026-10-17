@@ -451,6 +451,13 @@
   P&R requires its complete receipt before launch. Keep the old opt-in Control
   experiment as historical evidence. Residual electrical violations still block
   qualification; successful repair execution is not electrical closure.
+  Native capture distribution follows docs/native-capture-distribution.md:
+  bound every branch to 16 loads, verify equal depth and protocol-specific
+  polarity, and preserve unchanged propagation/spread budgets. Require all
+  actual leaves, both transitions and min/max bounds at all five corners.
+  Retain budget failures, including small excesses; zero-wire equal delays are
+  not routed skew evidence. Each of the three SRAM clocks needs a distinct,
+  exclusive immediate parent driver in the final repaired graph.
   The native Control SPICE harness preserves uncut controller feedback and all
   315 payload cells. Follow docs/reviews/control-native-characterization.md:
   reject changed adapter specializations and unexplained cut loads, verify both

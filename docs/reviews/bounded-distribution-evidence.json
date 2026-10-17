@@ -1,0 +1,279 @@
+{
+  "scope": "structural distribution and loaded primitive-local timing; zero wire RC",
+  "physical_qualification": false,
+  "variants": {
+    "bd": {
+      "trees": 33,
+      "leaves": 6281,
+      "summary_rows": 660,
+      "maximum_propagation_ns": 3.840845195048982,
+      "maximum_spread_ns": 0.6960614504020617,
+      "budget_failures": [
+        {
+          "corner": "ss_125C_3v00",
+          "slew": 2.0,
+          "instance": "FourPhaseSoc.ca_child_i2c.ca_child_native.ca_child_publication.ca_primitive_frame_payload",
+          "edge": "fall",
+          "leaves": 337,
+          "earliest_ns": 2.269429708392143,
+          "latest_ns": 2.5005290767973483,
+          "spread_bound_ns": 0.2310993684052054,
+          "budget_ns": 2.5,
+          "within_budget": false,
+          "maximum_path_slew_ns": 2.0
+        }
+      ],
+      "controls": [
+        {
+          "control": "period",
+          "status": "pass",
+          "changed_rows": 0
+        },
+        {
+          "control": "late-branch",
+          "status": "pass",
+          "changed_rows": 64
+        }
+      ],
+      "area": {
+        "scope": "LEF footprints and separate Liberty area totals; pre-placement; timing-unqualified",
+        "variant": "bd",
+        "lef_total_before_mm2": 3.3146048574,
+        "lef_total_after_mm2": 3.505242611,
+        "liberty_total_before_mm2": 3.4765650288,
+        "liberty_total_after_mm2": 3.6672027824,
+        "macro_lef_area_mm2": 0.466240659,
+        "macro_liberty_area_mm2": 0.6282008304,
+        "original_cells": 102219,
+        "repaired_cells": 106431,
+        "logic_before_mm2": 2.8483641984,
+        "logic_after_mm2": 3.039001952,
+        "logic_delta_mm2": 0.19063775359999993,
+        "new_cell_area_mm2": 0.15523576320000002,
+        "resize_delta_mm2": 0.03540199039999999,
+        "buffers": {
+          "native_reset": {
+            "count": 1167,
+            "area_mm2": 0.015370790399999999
+          },
+          "sram_clock": {
+            "count": 3,
+            "area_mm2": 0.0002502528
+          },
+          "writer_feedback": {
+            "count": 890,
+            "area_mm2": 0.011722367999999999
+          },
+          "openroad_other": {
+            "count": 1958,
+            "area_mm2": 0.12618887680000002
+          }
+        },
+        "new_ties": {
+          "count": 194,
+          "area_mm2": 0.0017034752000000004
+        }
+      },
+      "retained_evidence": [
+        {
+          "path": "build/bounded-distribution-bd-r2/electrical-repair/receipt.json",
+          "sha256": "cdfce20db859bdaf02252c31280652bc72a7cf14a7bc300b7c56303eb1110883"
+        },
+        {
+          "path": "build/bounded-capture-bd-r2/results.json",
+          "sha256": "90e4aac011d1b0ef3f400b10cbf939cc57babe52d7394d9e06f4e4ca44d83547"
+        },
+        {
+          "path": "build/bounded-capture-bd-controls-r2/results.json",
+          "sha256": "0c0a687dfc4ebefc57c10b412a67a949e3a8b1f7c8530e7d3fb0f373cdc68fe8"
+        },
+        {
+          "path": "build/bounded-area-bd-r1.json",
+          "sha256": "c9fbd6efe8b8e319a8173faf883164b84ed05514774e92d33b1cc5c311ef3ec6"
+        }
+      ]
+    },
+    "click": {
+      "trees": 33,
+      "leaves": 6281,
+      "summary_rows": 660,
+      "maximum_propagation_ns": 2.5733916836965633,
+      "maximum_spread_ns": 0.32801584599163425,
+      "budget_failures": [
+        {
+          "corner": "ss_125C_3v00",
+          "slew": 2.0,
+          "instance": "ClickSoc.ca_child_i2c.ca_child_native.ca_child_publication.ca_primitive_frame_payload",
+          "edge": "fall",
+          "leaves": 337,
+          "earliest_ns": 2.269429708392143,
+          "latest_ns": 2.5005290767973483,
+          "spread_bound_ns": 0.2310993684052054,
+          "budget_ns": 2.5,
+          "within_budget": false,
+          "maximum_path_slew_ns": 2.0
+        },
+        {
+          "corner": "ss_125C_3v00",
+          "slew": 2.0,
+          "instance": "ClickSoc.ca_child_i2c.ca_child_frame_store.ca_primitive_payload0",
+          "edge": "fall",
+          "leaves": 337,
+          "earliest_ns": 2.269429708392143,
+          "latest_ns": 2.5005290767973483,
+          "spread_bound_ns": 0.2310993684052054,
+          "budget_ns": 2.5,
+          "within_budget": false,
+          "maximum_path_slew_ns": 2.0
+        },
+        {
+          "corner": "ss_125C_3v00",
+          "slew": 2.0,
+          "instance": "ClickSoc.ca_child_i2c.ca_child_frame_store.ca_primitive_payload1",
+          "edge": "fall",
+          "leaves": 337,
+          "earliest_ns": 2.269429708392143,
+          "latest_ns": 2.5005290767973483,
+          "spread_bound_ns": 0.2310993684052054,
+          "budget_ns": 2.5,
+          "within_budget": false,
+          "maximum_path_slew_ns": 2.0
+        },
+        {
+          "corner": "ss_125C_3v00",
+          "slew": 2.0,
+          "instance": "ClickSoc.ca_child_i2c.ca_child_frame_store.ca_primitive_payload2",
+          "edge": "fall",
+          "leaves": 337,
+          "earliest_ns": 2.269429708392143,
+          "latest_ns": 2.5005290767973483,
+          "spread_bound_ns": 0.2310993684052054,
+          "budget_ns": 2.5,
+          "within_budget": false,
+          "maximum_path_slew_ns": 2.0
+        },
+        {
+          "corner": "ss_125C_3v00",
+          "slew": 2.0,
+          "instance": "ClickSoc.ca_child_i2c.ca_child_frame_store.ca_primitive_payload3",
+          "edge": "fall",
+          "leaves": 337,
+          "earliest_ns": 2.269429708392143,
+          "latest_ns": 2.5005290767973483,
+          "spread_bound_ns": 0.2310993684052054,
+          "budget_ns": 2.5,
+          "within_budget": false,
+          "maximum_path_slew_ns": 2.0
+        },
+        {
+          "corner": "ss_125C_3v00",
+          "slew": 2.0,
+          "instance": "ClickSoc.ca_child_control.ca_child_join.ca_child_right_storage.ca_primitive_payload",
+          "edge": "fall",
+          "leaves": 379,
+          "earliest_ns": 2.4574810659784467,
+          "latest_ns": 2.5248165384155494,
+          "spread_bound_ns": 0.0673354724371027,
+          "budget_ns": 2.5,
+          "within_budget": false,
+          "maximum_path_slew_ns": 2.0
+        },
+        {
+          "corner": "ss_125C_3v00",
+          "slew": 2.0,
+          "instance": "ClickSoc.ca_child_housekeeping.ca_child_update.ca_primitive_payload",
+          "edge": "fall",
+          "leaves": 397,
+          "earliest_ns": 2.487624066038732,
+          "latest_ns": 2.549104222078362,
+          "spread_bound_ns": 0.061480156039630085,
+          "budget_ns": 2.5,
+          "within_budget": false,
+          "maximum_path_slew_ns": 2.0
+        },
+        {
+          "corner": "ss_125C_3v00",
+          "slew": 2.0,
+          "instance": "ClickSoc.ca_child_supervisor.ca_child_join.ca_child_right_storage.ca_primitive_payload",
+          "edge": "fall",
+          "leaves": 425,
+          "earliest_ns": 2.45162863616092,
+          "latest_ns": 2.5733916836965633,
+          "spread_bound_ns": 0.12176304753564349,
+          "budget_ns": 2.5,
+          "within_budget": false,
+          "maximum_path_slew_ns": 2.0
+        }
+      ],
+      "controls": [
+        {
+          "control": "period",
+          "status": "pass",
+          "changed_rows": 0
+        },
+        {
+          "control": "late-branch",
+          "status": "pass",
+          "changed_rows": 64
+        }
+      ],
+      "area": {
+        "scope": "LEF footprints and separate Liberty area totals; pre-placement; timing-unqualified",
+        "variant": "click",
+        "lef_total_before_mm2": 4.0794827838,
+        "lef_total_after_mm2": 4.2894580542,
+        "liberty_total_before_mm2": 4.2414429552,
+        "liberty_total_after_mm2": 4.4514182255999994,
+        "macro_lef_area_mm2": 0.466240659,
+        "macro_liberty_area_mm2": 0.6282008304,
+        "original_cells": 104399,
+        "repaired_cells": 110145,
+        "logic_before_mm2": 3.6132421247999997,
+        "logic_after_mm2": 3.8232173952,
+        "logic_delta_mm2": 0.20997527040000027,
+        "new_cell_area_mm2": 0.17365349119999998,
+        "resize_delta_mm2": 0.036321779199999994,
+        "buffers": {
+          "native_reset": {
+            "count": 1427,
+            "area_mm2": 0.018795302399999998
+          },
+          "sram_clock": {
+            "count": 3,
+            "area_mm2": 0.0002502528
+          },
+          "writer_feedback": {
+            "count": 2216,
+            "area_mm2": 0.029187379199999995
+          },
+          "openroad_other": {
+            "count": 1931,
+            "area_mm2": 0.12393660160000002
+          }
+        },
+        "new_ties": {
+          "count": 169,
+          "area_mm2": 0.0014839552000000002
+        }
+      },
+      "retained_evidence": [
+        {
+          "path": "build/bounded-distribution-click-r2/electrical-repair/receipt.json",
+          "sha256": "45ce6ec3b9e34e78448542130c0c56e35d0600e21e917d0855f21a8165c1ac4e"
+        },
+        {
+          "path": "build/bounded-capture-click-r2/results.json",
+          "sha256": "dc1f18e6c733f93df6551c98088cb97d7ed9c4fe9990f2ee7bfdfc2078638a8a"
+        },
+        {
+          "path": "build/bounded-capture-click-controls-r4/results.json",
+          "sha256": "c29ede30c5cf4c3ccb43a924c15f290f96b3f438289980d1d1631c34baabf734"
+        },
+        {
+          "path": "build/bounded-area-click-r1.json",
+          "sha256": "951a1c500d2d10b7f0f0605f58e99a289a8c1fe72e8342e9a7797da687aa5f40"
+        }
+      ]
+    }
+  }
+}

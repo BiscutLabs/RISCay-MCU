@@ -1177,8 +1177,12 @@ physical reset qualification (R2b) remains mandatory under item 17a3.
           see [binding evidence and limits](reviews/repaired-leaf-timing.md).
         - [ ] Repeat the full corner/slew campaigns on the final repaired graph;
           nominal binding/fault evidence does not qualify the guards.
-        - [ ] Provide separate parent drivers for all three SRAM clocks and
-          bounded native capture distribution for RF, frame banks and I2C publication.
+        - [x] Provide separate parent drivers for all three SRAM clocks and
+          structurally bounded native capture distribution for RF, frame banks
+          and I2C publication. Maximum branch fanout is 16. The full local
+          distribution sweeps retain one BD/eight Click propagation-budget
+          failures; see [the contract and measurements](native-capture-distribution.md).
+          This structural completion does not close physical distribution timing.
         - [ ] Repeat graph-proved repair after placement and global routing;
           report every corner's electrical violations.
         - [x] Publish total before/after repair area, including writer-workaround
