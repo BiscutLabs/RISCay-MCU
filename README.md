@@ -85,6 +85,8 @@ Control Join cases have positive conditional margins in the fresh repaired maps.
 The revised [capture trees](docs/native-capture-distribution.md) pass all 1,320
 local zero-wire cases at unchanged budgets. [BD source-retention](docs/reviews/bd-hold-credit.md)
 and complete electrical/routed timing remain open.
+The next priority is removing clocked service ownership and round trips under
+[checklist items 11b–14](docs/async-soc-migration.md#current-work-order-after-pr10-2026-10-17).
 The [A2b evidence](docs/reviews/loader-metadata-a2b-completion.md) records its
 checks and measured costs.
 An [opt-in Control buffer repair](docs/reviews/control-electrical-repair.md)

@@ -1,7 +1,9 @@
 # First GF180 place-and-route experiment
 
 Current flow note (2026-10-17): `gf180_pnr.py --placement-density` exposes the
-placement target independently of `--die-side-um`. The default remains 0.50.
+placement target independently of `--die-side-um`. The default is now 0.60, selected from the matched 0.60/0.70 runs.
+This is not a measured improvement over 0.50. Existing checkpoint provenance
+continues to bind its original density; no historical receipt is rewritten.
 The requested comparison uses 0.60 and 0.70 with a common 3250 µm outline and
 unchanged macro positions for both variants. Density is bound into the run's
 geometry; changing it on resume is rejected before any output write or tool

@@ -34,9 +34,10 @@ REPAIR_AUDIT_SOURCES = ('check_pnr_repair.py','check_pnr_clock.py','repair_gf180
                       'gf180_estimate.py','repair_gf180_control.py','characterize_gf180_liberty.py','gf180_constraints.py','gf180_pnr.py')
 GENERATED_INPUTS = ("config.tcl", "async-pnr.sdc", "async-electrical.sdc", "async-context.json", "protected.tcl")
 RC_CORNERS = ("nom", "min", "max")
+DEFAULT_PLACEMENT_DENSITY = 0.60
 
 
-def geometry(side, density=0.50):
+def geometry(side, density=DEFAULT_PLACEMENT_DENSITY):
     if not math.isfinite(side) or side < 1440:
         raise ValueError("INVALID_COMMON_OUTLINE")
     if not math.isfinite(density) or not 0 < density < 1:
@@ -201,7 +202,7 @@ def assets():
                                 source_files=ASSETS,files=observed))
     return dest
 
-def configuration(mapping,out,routing,threads,side=1440,density=0.50):
+def configuration(mapping,out,routing,threads,side=1440,density=DEFAULT_PLACEMENT_DENSITY):
     from repair_gf180_design import validate_receipt
     validate_receipt(mapping)
     accepted=json.loads((mapping/'netlist-audit.json').read_text())
@@ -307,7 +308,7 @@ def bind_flat_interfaces(modules,sdc):
         return '[concat '+" ".join('[rp '+brace(p)+']' for p in sorted(set(selected)))+']'
     return re.sub(r'\[rbus \{([^}]+)\} (\d+)\]',bind,sdc)
 
-def run(mapping,out,from_stage,to_stage,threads,side=1440,openroad=None,density=0.50):
+def run(mapping,out,from_stage,to_stage,threads,side=1440,openroad=None,density=DEFAULT_PLACEMENT_DENSITY):
     mapping=mapping.resolve(); out=out.resolve()
     from repair_gf180_design import validate_receipt
     validate_receipt(mapping)
@@ -431,7 +432,7 @@ if __name__=="__main__":
     p.add_argument("--to-stage",choices=STAGES,default="extract")
     p.add_argument("--threads",type=int,default=8)
     p.add_argument("--die-side-um",type=float,default=1440)
-    p.add_argument("--placement-density",type=float,default=0.50,
-                   help="Placement target; comparison variants must retain the same die outline")
+    p.add_argument("--placement-density",type=float,default=DEFAULT_PLACEMENT_DENSITY,
+                   help="Placement target (default: 0.60); comparison variants must retain the same die outline")
     p.add_argument("--openroad",help="P&R-only executable override; mapper runtime and evidence stay unchanged")
     a=p.parse_args(); run(a.mapping,a.output,a.from_stage,a.to_stage,a.threads,a.die_side_um,a.openroad,a.placement_density)

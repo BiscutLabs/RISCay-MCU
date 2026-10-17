@@ -52,8 +52,11 @@
   separate A5 reductions. No periodic clock belongs inside the scratch owner.
   Keep raw-reset diagnostic mirrors in verification fixtures only; production
   cancellation/debt remains POR-owned. Preserve diagnostic fault controls.
-  Physical requalification is item 17; the corrective gates below take priority
-  over further residual-state removal.
+  The 2026-10-17 review prioritizes clocked-state removal in items 11b–14
+  ahead of more repair tuning. Keep LF/watchdog, reset-hold qualification and
+  the SDA wake event. Physical requalification remains item 17; preserve its
+  real timing/reset/electrical acceptance gates without treating further tuning
+  as a prerequisite to every ownership reduction.
   Audit generated chip reset-hold state separately and cover supported parameter/
   profile configurations; the Groundlark low-power emitter is not a whole-chip
   or configuration-complete inventory. Preserve continuous-good reset hold.
@@ -527,9 +530,10 @@
   bank launch/hold is measured. A destination reached from a Join operand may
   also depend on RF data; union coverage cannot discharge that obligation.
   Preserve the original Control caller's queries and results, and exercise
-  graph rejection controls through the actual deduplicated parent. Prioritize
-  global electrical repair, then rerun existing campaigns, then RF launch and
-  elapsed seeded-owner/admission composition. Safe-direction guard lengthening
+  graph rejection controls through the actual deduplicated parent. The initial
+  electrical repair and selected campaign reruns are complete; RF launch and
+  elapsed seeded-owner/admission composition remain open. The current work
+  priority is clocked ownership removal (11b–14) before further repair tuning. Safe-direction guard lengthening
   and timing parameterization may proceed concurrently; shortening waits for
   the measured complete envelope. Keep elapsed step and owner policies separate.
   ACK activity follows docs/reviews/ack-guard-activity.md: count both source and

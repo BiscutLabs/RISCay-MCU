@@ -21,6 +21,40 @@ when no next item has been chosen. Both implementations remain active throughout
   Groundlark power supervision. Keep an independent timebase/watchdog even as
   service-clock work is removed. Never relax tests to accept implementation bugs.
 
+## Current work order after PR10 (2026-10-17)
+
+PR10 is merged. This order supersedes the older pauses and repair-first work
+priorities retained below. It does not waive any functional or physical gate.
+
+1. **11b–14 first: remove clocked ownership and unnecessary crossings.** Address
+   Services scheduling, receipts, queues/mailboxes, output/state replicas,
+   I2C epochs/ring/ordinal, SPI playback and the SRAM boundary in verified steps.
+   Count actual periodic sinks and total mapped area after each step. A flop
+   exchanged for several native payload copies is not automatically progress.
+   Keep the independent LF/watchdog, continuous-good reset qualifier and SDA
+   wake event. Self-timed SRAM remains subject to its existing macro/POR gates.
+2. **Explain wire-dependent repair cost.** Group added buffers by net length
+   and SRAM participation. Compare clustered macros plus a smaller common die,
+   and synthesis excluding complex AOI/OAI `_1` masters, with matched inputs.
+3. **Repair retained native/boundary failures.** Start with `sdaLow` and Click's
+   program-return `oai31_1`; preserve native graph contracts and fix the Click
+   slow/hot capacitance failure. The saved SDA prototype is not enabled.
+4. **Qualify the constructed work clock tree.** Measure skew, duty cycle and
+   pulse widths, including all three SRAM CLK pins; resolve latency-balancing
+   warnings. Construction coverage is not clock timing closure.
+5. **Compose other BD source-release paths.** Execute, elapsed, RAM and I2C
+   remain open. Control's guarded first-admission result does not cover them.
+6. **Re-measure capture trees with routed RC.** The local minimum margin is
+   only 25.6 ps; retain the existing budgets, mismatch and reset obligations.
+7. **Placement default: 0.60.** The 0.70 comparison saved little area and had
+   more slow/hot violating nets. This selection does not establish improvement
+   over the historical 0.50 default or justify rewriting old run receipts.
+
+The reviewed clock inventory is 1,253 service + 4,009 work + 78 LF sinks for BD,
+and 1,257 + 4,060 + 78 for Click, plus the separate SDA event sink. These are
+mapped clock-pin counts, not an RTL register-width estimate. RF/elapsed launch,
+full reset propagation, mismatch derates and extracted min/max RC remain open.
+
 ## Corrective gates from the independent reviews
 
 The area proposal against `c71b234` is tracked in the
@@ -51,9 +85,9 @@ host validation and the public ABI. Its acceptance is **digitally verified; matc
 the [area checklist](native-area-reduction.md#a2b-capacity-sized-loader-metadata)
 records the exact capacity, strict, cost and physical-screen scope. The
 2026-10-15 pause and incomplete strict attempt remain historical evidence.
-The subsequent request authorizes finishing this WIP PR only; broader
-migration remains paused, including C1e2, remaining A4/A5/A6 reductions,
-guard replacement and reset-tree qualification.
+At that point the request authorized finishing only the WIP PR, and broader
+migration was paused. The current post-PR10 work order above supersedes that
+pause; the prior incomplete attempt remains historical evidence.
 
 The subsequent user instruction on 2026-10-13 authorizes correcting the
 clocked coordination around native services and adapting timing analysis to

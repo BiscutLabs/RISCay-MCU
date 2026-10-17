@@ -57,6 +57,7 @@ class PnrBindings(unittest.TestCase):
 
     def test_density_sweep_does_not_change_common_outline_or_macro_placement(self):
         baseline=pnr.geometry(3250)
+        self.assertEqual(baseline['placement_density'],0.60)
         for density in (.6,.7):
             candidate=pnr.geometry(3250,density)
             self.assertEqual(candidate['placement_density'],density)
