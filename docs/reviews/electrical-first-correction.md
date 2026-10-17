@@ -156,6 +156,10 @@ BD; 5,573 buffers and 9,010 replacements in Click. All 55,722 BD and 61,203 Clic
 native leaves remain unchanged. The replacement count includes equivalent
 clock-inverter-to-inverter substitutions; it is not a count of stronger drivers.
 These added buffers must remain in subsequent area and leakage accounting.
+The subsequent [exact area report](../gf180-estimates.md#electrical-repair-area)
+includes every buffer, added tie and resizing delta: repaired logic is
+3.032245 mm² BD / 3.816860 mm² Click, an increase of 0.190388 / 0.209668 mm²
+over the respective original graph. Updated leakage and activity remain open.
 
 Electrical closure is **not** achieved. The worst remaining net in each variant
 drives the three SRAM clocks: its roughly 10 ns slew exceeds the loaded TT

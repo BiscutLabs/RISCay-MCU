@@ -1178,9 +1178,11 @@ physical reset qualification (R2b) remains mandatory under item 17a3.
           bounded native capture distribution for RF, frame banks and I2C publication.
         - [ ] Repeat graph-proved repair after placement and global routing;
           report every corner's electrical violations.
-        - [ ] Publish total before/after repair area, including writer-workaround
-          buffers; count the two-edge ACK guard in wake latency and energy.
-          Document Click's capture-to-ACK ordering independently.
+        - [x] Publish total before/after repair area, including writer-workaround
+          buffers, ties and resizing; see [accounting](gf180-estimates.md#electrical-repair-area).
+          A flat repair or writer fix remains a separately proved optimization.
+        - [ ] Count the two-edge ACK guard in wake latency and energy, and
+          document Click's capture-to-ACK ordering independently.
       - [ ] **Execute RF and elapsed seeded-owner composition.** Follow
         electrical repair and the rerun campaigns. Measure actual register-bank launch,
         forwarding/Fork/Join ordering and all 15 banks. Preserve elapsed's
