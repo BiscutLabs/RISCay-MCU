@@ -17,7 +17,7 @@
   obtain a fresh independent agent review, address its findings, rerun affected
   checks, update its evidence/contracts, commit and push. Repeat this review loop
   for every item. Continue to the next item when the user has authorized it;
-  otherwise ask. Items 1-9, 10a, 10b1, 10b2a, 10b2b, 10b2c1, 10b2c2a, 10b2c2b, 10b2d1, 10b2d2, 11a1 and 11a2a are digitally verified within their scopes.
+  otherwise ask. Items 1-9, 10a, 10b1, 10b2a, 10b2b, 10b2c1, 10b2c2a, 10b2c2b, 10b2d1, 10b2d2, 11a1, 11a2a and 11b1 are digitally verified within their scopes.
   The user has authorized deeper migration under expanded items 10-16: native
   service coordination, observation reduction, publication, direct interconnect
   and physically justified boundary minimization. Audit every remaining clocked
@@ -52,8 +52,19 @@
   separate A5 reductions. No periodic clock belongs inside the scratch owner.
   Keep raw-reset diagnostic mirrors in verification fixtures only; production
   cancellation/debt remains POR-owned. Preserve diagnostic fault controls.
-  Physical requalification is item 17; the corrective gates below take priority
-  over further residual-state removal.
+  The 2026-10-17 review prioritizes clocked-state removal in items 11b–14
+  ahead of more repair tuning. Keep LF/watchdog, reset-hold qualification and
+  the SDA wake event. Physical requalification remains item 17; preserve its
+  real timing/reset/electrical acceptance gates without treating further tuning
+  as a prerequisite to every ownership reduction.
+  The subsequent area review adds A7/A8 component inventory and bounded
+  same-corner guard/passive-allowance experiments alongside 11b–14. Follow
+  docs/native-area-reduction.md: separate functional adapters from guards,
+  avoid double-counting allowance subsets, and preserve pulse/reset constraints
+  when replacing absolute model delays with relative physical requirements.
+  Removing reset gates needs matching library semantics and invalid-data
+  isolation; reset-free payload or MOUSETRAP is not a drop-in Click substitution.
+  Firmware/SRAM proposals must preserve independent supervision and the ABI.
   Audit generated chip reset-hold state separately and cover supported parameter/
   profile configurations; the Groundlark low-power emitter is not a whole-chip
   or configuration-complete inventory. Preserve continuous-good reset hold.
@@ -299,6 +310,22 @@
   at A. Retain original receipt clock dependence and full BD RTZ. Rerun affected
   checks and obtain fresh independent review after changing this contract.
   Retain source epoch through D and compare against the coincident current epoch.
+  11b1 borrows the native frame through Control Join capture. Logical D still
+  releases the descriptor; R clears its tag only after the metadata sender
+  returns idle on an enabled work edge. Click accepts the head at R. BD accepts
+  at D and joins receipt ACK with selected native Control ACK in a per-bank
+  C-element, overlapping both returns. Physical bank return and clocked R are
+  separate; prove both owners returned for that bank even after the tag changes.
+  Keep the three retirement bits POR-owned, D-set/R-clear with set winning, and
+  include pending retirement in clock demand. Preserve separate current-descriptor and retiring
+  frame views; classify epoch/reset/busy at D. Check actual native Join D/Q,
+  wrong-bank/early-retirement faults and payload retention through native
+  command acceptance/return, with tag ownership through R. Qualify the
+  new bank-selector/mask path physically; old snapshot timing is not evidence.
+  Run structural policy mutations on immutable export copies: strict validators
+  generate probes and reset-check files. If the frame campaign is split by
+  variant, require both complete shards, identical source/tool/compiler custody
+  and the disjoint full case union before claiming the combined campaign passes.
   Queued descriptors awaiting head observation retain priority over CPU MMIO.
   Keep native logical credit removal separate; narrow Q/descriptors, tail, busy
   synchronization and four head receipts remain temporary for 11a2b/11b/14.
@@ -527,9 +554,10 @@
   bank launch/hold is measured. A destination reached from a Join operand may
   also depend on RF data; union coverage cannot discharge that obligation.
   Preserve the original Control caller's queries and results, and exercise
-  graph rejection controls through the actual deduplicated parent. Prioritize
-  global electrical repair, then rerun existing campaigns, then RF launch and
-  elapsed seeded-owner/admission composition. Safe-direction guard lengthening
+  graph rejection controls through the actual deduplicated parent. The initial
+  electrical repair and selected campaign reruns are complete; RF launch and
+  elapsed seeded-owner/admission composition remain open. The current work
+  priority is clocked ownership removal (11b–14) before further repair tuning. Safe-direction guard lengthening
   and timing parameterization may proceed concurrently; shortening waits for
   the measured complete envelope. Keep elapsed step and owner policies separate.
   ACK activity follows docs/reviews/ack-guard-activity.md: count both source and

@@ -108,7 +108,7 @@ abstract class FourPhasePlatform(p: SocParameters, board: SocParameters => Board
     fabric.io.response.ready:=false.B
   }
 
-  val host = asyncChild("i2c")(d => new I2cTarget(p.i2cAddress,p.i2cIdleCycles,d))
+  val host = asyncChild("i2c")(d => new I2cTarget(p.i2cAddress,p.i2cIdleCycles,d,borrowFrames=true))
   host.clock := serviceClock; host.scl := scl; host.sda := sda
   host.frameAcceptEnable := fabric.io.clockRunning
   host.snapshotAcceptEnable := fabric.io.clockRunning
@@ -213,13 +213,30 @@ abstract class FourPhasePlatform(p: SocParameters, board: SocParameters => Board
   // reset is synchronized service data, never a reset of image/lock state.
   val control = asyncChild("control")(d => new FourPhaseControl(p, d, owners))
   val controlCommandBridge = asyncChild("control_command_bridge")(d =>
-    new chiselasync.clocked.DecoupledToFourPhase(new ControlCommand, 2, d))
+    new chiselasync.clocked.DecoupledToFourPhase(new ControlCommandHeader, 2, d))
   val controlReplyBridge = asyncChild("control_reply_bridge")(d =>
     new FourPhaseServiceReplyReceipt(new ControlReply(p.config.programBytes), d))
   controlCommandBridge.clock := workClock; controlReplyBridge.clock := workClock
-  chiselasync.protocol.FourPhase.connect(control.command, controlCommandBridge.out)
+  // Borrow the immutable native bank; the periodic sender owns metadata only.
+  // Its full settling cycle precedes request, and idle follows native capture
+  // completion (including the complete BD return-to-zero).
+  control.command.req := controlCommandBridge.out.req
+  controlCommandBridge.out.ack := control.command.ack
+  controlCommandBridge.out.bits.elements.foreach { case (name, field) =>
+    control.command.bits.elements(name) := field
+  }
+  control.command.bits.frame := Mux(controlCommandBridge.out.bits.kind === ControlKind.Host.U,
+    fabric.io.controlFrame, 0.U.asTypeOf(new HostFrame))
+  host.frameCommandBank.get:=fabric.io.controlFrameBank
+  host.frameCommandHost.get:=controlCommandBridge.out.bits.kind === ControlKind.Host.U
+  host.frameCommandAck.get:=control.command.ack
   chiselasync.protocol.FourPhase.connect(controlReplyBridge.in, control.reply)
-  controlCommandBridge.in <> fabric.io.controlCommand
+  controlCommandBridge.in.valid := fabric.io.controlCommand.valid
+  fabric.io.controlCommand.ready := controlCommandBridge.in.ready
+  controlCommandBridge.in.bits.elements.foreach { case (name, field) =>
+    field := fabric.io.controlCommand.bits.elements(name)
+  }
+  fabric.io.controlCommandIdle := controlCommandBridge.in.ready
   fabric.io.controlReply <> controlReplyBridge.out
   // Preserve the complete held native reply ABI, including profile-unused fields.
   dontTouch(controlReplyBridge.out)

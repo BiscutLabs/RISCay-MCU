@@ -3,8 +3,9 @@
 Status: the matched density comparison, initial slew-policy experiment and failure classification are complete;
 electrical closure remains open. The density runs use the same PR9 RTL/mapping,
 patched OpenROAD executable, 3,250 µm square outline, macro positions and corrected
-periodic CTS flow. Only placement density differs. The default remains 0.50;
-neither experiment authorizes a timing or power claim.
+periodic CTS flow. Only placement density differs. Following review, the default is 0.60;
+this chooses between the measured candidates and does not establish improvement
+over 0.50. Neither experiment authorizes a timing or power claim.
 
 ## Density 0.60 versus 0.70
 

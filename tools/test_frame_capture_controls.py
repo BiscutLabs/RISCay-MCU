@@ -6,8 +6,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from check_frame_capture_controls import (LEAVES, PREFIX, assertion_sites,
-    classify, classify_wrap, copy_order_metrics, command_capture_policy, fixture_masks_policy, instrument, monitors, omit_same_edge_busy, packed, qualify, ring_budget_ns, service_period, skew, supplemental)
+from check_frame_capture_controls import (LEAVES, HEADER, PREFIX, assertion_sites,
+    classify, classify_wrap, copy_order_metrics, command_capture_policy, fixture_masks_policy, instrument, monitors, omit_same_edge_busy, packed, qualify, return_fault_target, ring_budget_ns, service_period, skew, supplemental)
 
 
 def fake_binding():
@@ -15,10 +15,12 @@ def fake_binding():
     store={'primitives':[dict(id=id,rtl_path='Top.store.'+id,parameters={'DELAY_FS':'1000000'}) for id in ('payload0','route','accepted_phase')], 'children':[]}
     return dict(variant='bd', source_q=path+'.ca_child_native.ca_child_publication.ca_primitive_frame_payload.q',
                 clock='Testbench.dut.workClock', target_path=path,
+                control_path='Testbench.dut.control',native_capture='Testbench.dut.control.payload.closed',
+                native_d='Testbench.dut.control.payload.d',native_q='Testbench.dut.control.payload.q',
                 publisher_path=path+'.ca_child_native.ca_child_publication', receipt_path=path+'.ca_child_frame_bridge',
                 route_q=path+'.route.q',route_d=path+'.route.d',route_capture=path+'.route.trigger',
                 store_path=path+'.ca_child_frame_store',store=store,command_path='Testbench.dut.ca_child_control_command_bridge',
-                banks=[dict(q=path+f'.bank{i}.q',d=path+f'.bank{i}.d',capture=path+f'.bank{i}.closed',
+                banks=[dict(receipt_path=path+f'.head{i}',q=path+f'.bank{i}.q',d=path+f'.bank{i}.d',capture=path+f'.bank{i}.closed',
                             phase=path+f'.phase{i}.q',req=path+f'.bank{i}.req',ack=path+f'.bank{i}.ack',available=path+f'.bank{i}.available') for i in range(4)],
                 frame_d={name:'incoming_'+name for name in ('bank','resetActive','programBusy')},
                 publisher={'primitives': [dict(id=n,rtl_path='Top.publisher.'+n,parameters={'DELAY_FS':delay})
@@ -38,6 +40,24 @@ endmodule
 
 
 class FrameCaptureControlTests(unittest.TestCase):
+    def test_return_fault_targets_actual_native_completion_only_when_needed(self):
+        b=fake_binding()
+        primitive=dict(id='completion0',model='ChiselAsyncAsymmetricC_v1',
+                       rtl_path='Top.ca_child_i2c.ca_child_bank_completion.ca_primitive_completion0')
+        b['bank_completion']=dict(primitives=[primitive])
+        receipt=b['banks'][0]['receipt_path']+'.acknowledge'
+        native='Testbench.dut.ca_child_i2c.ca_child_bank_completion.ca_primitive_completion0.q'
+        self.assertEqual(return_fault_target(b,'bank-unavailable-at-o'),native)
+        self.assertEqual(return_fault_target(b,'bank-return-stuck'),receipt)
+        b['variant']='click'
+        self.assertEqual(return_fault_target(b,'bank-unavailable-at-o'),receipt)
+        self.assertEqual(return_fault_target(b,'bank-return-stuck'),receipt)
+        b['variant']='bd'
+        for primitives in ([],[primitive,primitive],[dict(primitive,model='wrong')]):
+            b['bank_completion']['primitives']=primitives
+            with self.subTest(primitives=primitives),self.assertRaisesRegex(ValueError,'MUTATION_COMPLETION_STATE'):
+                return_fault_target(b,'bank-unavailable-at-o')
+
     def test_same_edge_busy_fault_preserves_direct_admission_context(self):
         terms=['_ca_child_i2c_host_frame_bits_programBusy','_ca_child_program_access_io_busy',
                'fabric_loaderPending','fabric_loaderControlPending',
@@ -65,11 +85,11 @@ class FrameCaptureControlTests(unittest.TestCase):
         for expected in ('posedge Testbench.dut.workClock','fabric_hostFrames_first_bank',
                          'fabric_hostFrames_second_programBusy','ca_primitive_frame_payload.q',
                          'native_payload[63:0]','resetEpoch_epoch','resetEpoch_previous',
-                         'in_bits_frame_bytes_0>=1','in_bits_frame_bytes_0<=6',
+                         'bank_q[first_q[3:2]][73:66]>=1','bank_q[first_q[3:2]][73:66]<=6',
                          'descriptor_d!=={slot,expected_reset,expected_busy}',
                          'if(occupancy==0 || deq)','expected_first=second_q',
                          'first_q!==expected_first','second_q!==expected_second',
-                         'data_frame_bytes_32','COMMAND_D_IDENTITY','COMMAND_Q_CAPTURE',
+                         'command_bits_frame_bytes_32','COMMAND_D_IDENTITY','COMMAND_NATIVE_Q_CAPTURE','COMMAND_EARLY_OR_WRONG_RETIRE',
                          'BANK_UNAVAILABLE_AT_O','COPY_COMPLETION_IDENTITY','DISPATCH_BEFORE_COPY_COMPLETION','next_offer=(next_offer+1)%4'):
             self.assertIn(expected,text)
         for index in range(4):
@@ -191,7 +211,7 @@ class FrameCaptureControlTests(unittest.TestCase):
             self.assertNotIn('dut.publisher.data_delay.DELAY_FS',changes)
 
     def test_command_capture_rejects_wrong_clock_missing_bit_extra_writer_or_wrong_source(self):
-        fields=[(n if n!='resetActive' else 'cpuResetActive',w) for n,w in LEAVES]
+        fields=HEADER
         rtl='module Command(input clock,input localReset_release_1);\n'
         rtl+='\n'.join('reg '+(f'[{w-1}:0] ' if w>1 else '')+'data_'+n+';' for n,w in fields)
         rtl+='\nalways @(posedge clock or posedge localReset_release_1) begin\nif(localReset_release_1) begin\n'
@@ -201,12 +221,12 @@ class FrameCaptureControlTests(unittest.TestCase):
         rtl+='\nend\nend\nend // always\nendmodule\n'
         self.assertEqual(command_capture_policy(rtl,False),fields)
         changes=[rtl.replace('posedge clock','posedge unrelatedClock'),
-                 rtl.replace('data_frame_bytes_32 <= in_bits_frame_bytes_32;',''),
-                 rtl.replace('endmodule','always @(posedge clock) data_frame_bytes_0 <= 0;\nendmodule'),
+                 rtl.replace('data_peripheralData <= in_bits_peripheralData;',''),
+                 rtl.replace('endmodule','always @(posedge clock) data_memory_data <= 0;\nendmodule'),
                  rtl.replace('data_programBusy <= in_bits_programBusy;','data_programBusy <= 0;'),
                  rtl.replace('if (_in_ready_T & _GEN)','if (_in_ready_T)'),
                  rtl.replace('if(localReset_release_1)', 'if(unrelated_reset)'),
-                 rtl.replace('endmodule', 'always @(posedge clock) data_frame_bytes_0[0] <= 0;\nendmodule')]
+                 rtl.replace('endmodule', 'always @(posedge clock) data_memory_data[0] <= 0;\nendmodule')]
         for changed in changes:
             with self.subTest(changed=changed),self.assertRaises(ValueError):command_capture_policy(changed,False)
 
@@ -320,14 +340,15 @@ class FrameCaptureControlTests(unittest.TestCase):
     def test_fixture_stall_masks_must_remain_symmetric_and_have_no_extra_uses(self):
         rtl='input holdFrame; input holdHostCommands; input holdSelectedHead;\nwire frame_enable=enabled & ~holdFrame;\n'
         rtl+='assign fabric_io_controlCommand_ready=_ca_child_control_command_bridge_in_ready & ~holdHostCommands;\n'
-        rtl+='wire fabric__io_i2c_heads_0_ready_T=enabled & fabric_hostFrames_io_deq_ready;\n'
+        rtl+='wire fabric__io_i2c_heads_0_ready_T=enabled & fabric_hostRetiring;\n'
         rtl+='Command command(.in_valid(fabric_io_controlCommand_valid & ~holdHostCommands));\n'
+        rtl+='wire _GEN_16=_GEN_15[fabric_hostRetiringBank];\nwire fabric_hostRetire=fabric_hostRetiring & _ca_child_control_command_bridge_in_ready & enabled & _GEN_16;\n'
         target={'frameAcceptEnable':'enabled&~holdFrame'};command={'in_valid':'fabric_io_controlCommand_valid&~holdHostCommands'}
         for i in range(4):
             target[f'host_heads_{i}_ready']=f'ca_child_i2c_host_heads_{i}_ready'
-            select=f"fabric_hostFrames_first_bank == 2'h{i}" if i<3 else '(&fabric_hostFrames_first_bank)'
+            select=f"fabric_hostRetiringBank == 2'h{i}" if i<3 else '(&fabric_hostRetiringBank)'
             rtl+=f'assign fabric_io_i2c_heads_{i}_valid=_ca_child_i2c_host_heads_{i}_valid & ~holdSelectedHead;\n'
-            rtl+=f'wire ca_child_i2c_host_heads_{i}_ready=fabric__io_i2c_heads_0_ready_T & fabric_hostFrames_io_deq_valid & {select} & ~holdSelectedHead;\n'
+            rtl+=f'wire ca_child_i2c_host_heads_{i}_ready=fabric__io_i2c_heads_0_ready_T & _ca_child_control_command_bridge_in_ready & _GEN_16 & {select} & ~holdSelectedHead;\n'
         fixture_masks_policy(rtl,target,command)
         for changed in (rtl.replace('& ~holdSelectedHead','',1),rtl+'wire unrelated=holdSelectedHead;',rtl.replace('& ~holdHostCommands','',1)):
             with self.subTest(changed=changed),self.assertRaises(ValueError):fixture_masks_policy(changed,target,command)

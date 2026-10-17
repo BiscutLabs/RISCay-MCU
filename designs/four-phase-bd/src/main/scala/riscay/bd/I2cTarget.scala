@@ -15,11 +15,14 @@ import riscay.soc._
   * belong to the native child. The eight retained edge slots avoid a clocked
   * request/acknowledge round trip for every SCL edge.
   */
-class I2cTarget(address: Int,idleCycles: Int,domain: ResetDomain) extends ClockedBridge(domain,2) {
+class I2cTarget(address: Int,idleCycles: Int,domain: ResetDomain,borrowFrames: Boolean=false) extends ClockedBridge(domain,2) {
   val scl=IO(Input(Bool())); val sda=IO(Input(Bool())); val pullLow=IO(Output(Bool()))
   val host=IO(new I2cHostPort)
   val frameAcceptEnable=IO(Input(Bool()))
   val snapshotAcceptEnable=IO(Input(Bool()))
+  val frameCommandBank=if(borrowFrames) Some(IO(Input(UInt(2.W)))) else None
+  val frameCommandHost=if(borrowFrames) Some(IO(Input(Bool()))) else None
+  val frameCommandAck=if(borrowFrames) Some(IO(Input(Bool()))) else None
   val native=asyncChild("native")(d => new FourPhaseI2c(address,d))
   val frames=asyncChild("frame_bridge")(d => new FourPhaseFrameReceipt(d))
   val frameStore=asyncChild("frame_store")(d => new FourPhaseFrameStore(d))
@@ -34,8 +37,17 @@ class I2cTarget(address: Int,idleCycles: Int,domain: ResetDomain) extends Clocke
     val tail=RegInit(0.U(2.W)); when(frames.out.fire) { tail:=tail+1.U }; tail
   }
   host.frameSlot:=frameSlot
+  val frameCompletion=if(borrowFrames) Some(asyncChild("bank_completion")(d => new FourPhaseFrameCompletion(d))) else None
+  frameCompletion.foreach { c =>
+    c.bank:=frameCommandBank.get; c.host:=frameCommandHost.get; c.commandAck:=frameCommandAck.get
+  }
   for(i <- 0 until 4) {
-    FourPhase.connect(frameHeads(i).in,frameStore.banks(i))
+    frameHeads(i).in.req:=frameStore.banks(i).req
+    frameHeads(i).in.bits:=frameStore.banks(i).bits
+    frameCompletion match {
+      case Some(c) => c.receiptAck(i):=frameHeads(i).in.ack; frameStore.banks(i).ack:=c.bankAck(i)
+      case None => frameStore.banks(i).ack:=frameHeads(i).in.ack
+    }
     host.heads(i) <> frameHeads(i).out
     // Preserve the complete declared internal port ABI for strict export.
     dontTouch(host.heads(i).bits.ingress.resetActive)

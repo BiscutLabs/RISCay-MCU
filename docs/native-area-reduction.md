@@ -124,6 +124,18 @@ periodic-clock staging. Measure each accepted step against its exact parent.
   guard-removal fault controls; account for the cells and energy of retained
   delays. Synchronous STA complaints alone are not grounds to add registers or
   waive real timing.
+  - [x] **A7a: refresh component costs and triage every mapped control adapter.**
+    The 11b1 inventory below distinguishes functional cells, ordering guards and
+    combined ordering/pulse/reset obligations. This is a purpose inventory, not
+    permission to shorten any chain.
+  - [ ] **A7b: size ordering guards against the same-corner requirement.** Use
+    complete launch/data/capture/ACK/return paths, loaded rise/fall slews, wire RC
+    and a justified mismatch derate. Keep physical minimum pulses and external
+    time requirements as separate constraints. Begin with an already composed
+    standard owner; retain the old recipe as the matched comparison.
+  - [ ] **A7c: compare mixed-cell tracking with the existing DLYD recipe.**
+    Characterize the actual chain at every corner, including interstage loading
+    and slew. A paper's average tracking error is not a GF180 mismatch bound.
 - [ ] **A8: qualify transform data allowances (proposal 5).** First count mapped
   leaf cells under each data_delay, separately from actual control delays. A
   library change may make an allowance a passive timing annotation only when
@@ -132,6 +144,120 @@ periodic-clock staging. Measure each accepted step against its exact parent.
   the assumption that every source/storage path already supplies their behavior.
   Keep mandatory export coverage and digital model obligations intact. Present
   the concrete library contract change for review before upstreaming it.
+  - [x] **A8a: refresh the actual leaf inventory.** The current counts below
+    supersede the C1g counts for this configuration; named `data_delay` is a
+    subset of all transform allowances, not an additional saving.
+  - [ ] **A8b: present a passive-allowance contract and one-owner experiment.**
+    Specify invalid-data use, reset observability, resolved transform endpoints,
+    actual capture/ACK pins and mandatory max/min checks. Preserve explicit
+    masks where reset isolation requires them. Run unknown-payload/reset and
+    immediate-source-reuse controls, then remap with any required hold repair.
+    This needs matching library/model semantics, not a mapper-only bypass.
+- [ ] **A9: reset-free payload storage, by owner.** Separate seeded state,
+  phase/control, architectural reset values and payload whose consumers are
+  valid-qualified. Prove read-before-write exclusion and both reset lifetimes
+  before removing payload reset. BD already mostly uses latches; see the counts
+  below. Event-triggered storage cannot be replaced by a transparent latch
+  without redesigning its controller and proving transparency/closure/hold.
+  Keep native Click. A MOUSETRAP implementation would be a separately reviewed
+  library primitive/target, not a silent replacement of Click.
+- [ ] **A10: fuse pass-through owners.** Inventory unchanged payload copies with
+  producer, consumer, lifetime, independent stall, reset and arbitration reasons.
+  Remove a copy and its controller/guards/crossings together where ownership
+  allows it; do not assume all FIFOs are redundant. Continue 11b–14, including
+  Housekeeping's existing-bank reuse, alongside A7/A8's measured experiments.
+- [ ] **A11: bulk SRAM and serial datapaths.** Evaluate frame/RF placement only
+  with an explicit capacity/port/concurrency budget and A4's qualified native
+  access. Do not consume advertised application SRAM silently or change loader
+  lock, retention or ABI. Charge extra macro accesses and wake duration against
+  the removed logic. Firmware may perform optional formatting, but permanent
+  time/age/power supervision must progress with the application CPU stalled,
+  asleep or reset; immutable boot ROM alone does not establish independence.
+
+## Current area priorities (11b1, 2026-10-17)
+
+The review correctly identifies implementation overhead as the target. With
+11b1 digitally verified and independently reviewed, use A7a/A8a to select a bounded
+guard or passive-allowance experiment with the largest supported saving. Keep ownership removal
+in 11b–14 active; further broad repair sweeps are lower priority. Every change
+still needs its own matched map, activity and leakage comparison. The proposed
+40–50% reduction is a hypothesis, not a measured result or a tape-out target.
+
+This inventory uses the **current repaired pre-placement graphs**, pinned GF180
+LEF sizes and exact preserved adapter leaves. It is neither routed area nor die
+area. `build/control-frame-borrow/current_native_cost.py` records its procedure;
+`current-native-cost.json` binds mapping, audit, netlist, LEF and helper hashes.
+Independent review reconstructed every row and all 56,128 BD / 61,309 Click
+preserved leaves without overlap.
+
+| Component | BD | Click |
+| --- | ---: | ---: |
+| Repaired logic excluding SRAM, mm² | 3.014986 | 3.795762 |
+| All matched-control-role adapters, mm² | 0.584674 | 1.115429 |
+| Of which 1 ns functional adapters, mm² | 0.042521 | 0.053598 |
+| All transform-allowance adapters, mm² | 0.413624 | 0.366484 |
+| Named `data_delay` subset, mm² | 0.353484 | 0.354077 |
+| Named `data_delay` lanes | 10,517 | 10,538 |
+| ClosingLatch storage cells | 10,091 | 0 |
+| EventRegister storage cells | 1,180 | 11,323 |
+| PhaseRegister storage cells | 0 | 101 |
+| Periodic clock sinks (including three SRAM macros) | 5,072 | 5,127 |
+
+Control plus transform adapters occupy 33.1% / 39.0% of repaired logic. These
+are component costs, not proven removable area. Control-role adapters include
+functional Boolean gates; DLYD leaves alone occupy 0.536041 / 1.052901 mm².
+Storage-class counts exclude C-element/keeper state. Adapter costs exclude
+parent-side repair and CTS, and latch counts do not imply reset-free mapping.
+The separate SDA event sink is not included in periodic clock counts.
+The older 13,733-lane and 0.457 mm² allowance figures predate several reductions.
+Elapsed/CRC and I2C reductions already implemented cannot be counted again.
+
+`classify_guards.py` and `guard-purpose.{csv,json}` record a first purpose pass
+for all **1,161** control adapters (498 BD / 663 Click), retaining every instance,
+owner/ID, width, model delay and area. None is marked qualified for shortening:
+
+| Purpose group | BD instances | Click instances | Required proof |
+| --- | ---: | ---: | --- |
+| Functional/feedback adapters at the 1 ns model | 268 | 346 | Preserve Boolean/reset behavior and feedback ordering; not a removable wait |
+| Ordering | 199 | 3 | Same-corner launch, transform, capture, hold and return composition |
+| Combined ordering with pulse/reset obligations | 31 | 314 | Ordering plus minimum capture pulse, phase drainage and reset containment |
+
+The owner/ID families are classified as follows. Numeric suffixes identify
+instances, not different physical qualifications.
+
+| Owner / IDs | Ordering purpose and additional obligations |
+| --- | --- |
+| BD Stage/LongHoldBuffer `request_delay`, `output_delay` | Data before closure; captured data before publication; source release and long-hold return remain composed obligations |
+| Click Stage/Buffer/PhaseDecoupledBuffer `request_delay`, `output_guard`, `acknowledge_guard` | Data before event; payload/phase settled and pulse drained before publication or source reuse |
+| InitialTokens `request_delay` | Seed valid before admission, including reset release |
+| Core `request_guard`; BD Control `acknowledge_guard` | RF writeback before next launch; source release after latest capture/hold |
+| FrameStore `request_delay`, BD `request_guard`/`return_guard`, Click output/ACK guards | Native route before selected capture; bank capture before publication; internal feedback returned before reuse; Click pulse width |
+| I2cPublication request/output/return/ACK guards | Capture before frame/snapshot publication and source reuse, including feedback pulse and reset |
+| Fabric/Completion request/output/return/ACK guards | Selection and data before capture; latest capture and complete phase drainage before source/output reuse |
+| RAM/Program/Publication Source request/output/return/ACK guards, `stored_request_delay` | Arm before grant, decision before retirement, publication/Stored identity, capture and cleanup; persistent roles across application reset |
+| RAM/Program Return request/output/return/ACK guards | Input/permission capture, arm before use, source hold, completion capture and cleanup; application/POR isolation |
+| RecoveryReturn request/return/ACK guards | Admit/issue/complete proof once, clear debt before reuse, preserve phase/reset history |
+
+These are largely relative-ordering problems, but a binary “ordering or fixed
+time” label would hide mixed obligations. POR hold counters, watchdog/LF time,
+I/O waveforms and SRAM pin minima are outside this ControlGate inventory and
+retain independent physical time constraints. All adapters also have reset
+propagation obligations. A 645 ns slow-corner result for a 100 ns model does
+not itself establish 6.45× removable delay: the corresponding data/control cone
+also changes at that corner. Require each corner's complete inequality before
+shortening, including rising and falling transitions and min/max wire RC.
+
+For a repeated-cell chain, taking the maximum required count across same-corner
+requirement/delay ratios is a starting estimate. Final acceptance uses actual
+loaded chain STA because stage delay changes with slew, load and wiring. Mixed
+cells are worth evaluating: the [ASYNC 2017 delay-line study](https://www.cs.upc.edu/~jordicf/gavina/BIB/files/Async2017_DelayLines.pdf)
+reports about 1% average tracking error in its experiments, using a commercial
+65 nm library and 22 PVT/interconnect corners. That is not a worst-case GF180
+on-chip-variation allowance. [Desynchronization](https://courses.e-ce.uth.gr/CE664/papers/De-Synchronisation/DESYNC-TCAD.pdf)
+supports low-overhead asynchronous pipelines, not a universal area ratio for
+this MCU. [MOUSETRAP](https://courses.e-ce.uth.gr/CE664/papers/Template-Based/mousetrap.pdf)
+uses a different latch controller with explicit data-overrun/closure timing;
+it does not make an EventRegister-to-latch substitution behavior-preserving.
 
 ## Evidence required per completed step
 

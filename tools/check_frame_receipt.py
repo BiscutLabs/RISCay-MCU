@@ -274,9 +274,13 @@ def validate_frame_receipts(manifest, directory):
             ids = [c.get("id") for c in children]
             expected_ids = {"native", "frame_bridge", "frame_store", "snapshot_bridge"} | {
                 f"frame_head{i}_bridge" for i in range(4)}
+            owners = {c["id"]: c["contract"].get("module", "") for c in children}
+            if "bank_completion" in ids:
+                if owners.get("bank_completion") != "FourPhaseFrameCompletion" or not owners.get("native", "").startswith("FourPhaseI2c"):
+                    raise ValueError("FRAME_RECEIPT_TARGET_COMPLETION_OWNER")
+                expected_ids.add("bank_completion")
             if len(ids) != len(expected_ids) or set(ids) != expected_ids:
                 raise ValueError("FRAME_RECEIPT_TARGET_INVENTORY")
-            owners = {c["id"]: c["contract"].get("module", "") for c in children}
             if re.fullmatch(r"(?:FourPhase|Click)I2c(?:_[0-9]+)?", owners["native"]) is None:
                 raise ValueError("FRAME_RECEIPT_TARGET_INVENTORY")
             prefix = "Click" if owners["native"].startswith("Click") else "FourPhase"

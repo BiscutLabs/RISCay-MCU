@@ -209,6 +209,7 @@ class FrameReceiptPolicyTests(unittest.TestCase):
             for mutate, error in (
                     (lambda n: n["children"].pop(), "TARGET_INVENTORY"),
                     (lambda n: n["children"].append(n["children"][-1]), "TARGET_INVENTORY"),
+                    (lambda n: n["children"].append(dict(id="bank_completion", contract=dict(module="ClockedJoin"))), "TARGET_COMPLETION_OWNER"),
                     (lambda n: n["children"][2]["contract"].update(module="HiddenRTZAdapter"), "TARGET_STORE_OWNER"),
                     (lambda n: n["children"][4]["contract"].update(module="ClickToDecoupled"), "TARGET_OWNER"),
                     (lambda n: n["children"][1]["contract"].update(module="ClickToDecoupled"), "TARGET_OWNER"),
@@ -216,6 +217,10 @@ class FrameReceiptPolicyTests(unittest.TestCase):
                 bad = copy.deepcopy(target); mutate(bad)
                 with self.assertRaisesRegex(ValueError, "^FRAME_RECEIPT_" + error + "$"):
                     validate_frame_receipts(dict(design=bad), Path("unused"))
+            if click:
+                target["children"].append(dict(id="bank_completion", contract=dict(module="FourPhaseFrameCompletion")))
+                with self.assertRaisesRegex(ValueError, "^FRAME_RECEIPT_TARGET_COMPLETION_OWNER$"):
+                    validate_frame_receipts(dict(design=target), Path("unused"))
 
 
 def actual_rtl_controls(directory, ordinal=0, saved=None):

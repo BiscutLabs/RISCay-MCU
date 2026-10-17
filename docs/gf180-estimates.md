@@ -8,6 +8,12 @@ storage and clocked coordination while preserving native BD/Click; see the
 
 ## Electrical repair area
 
+The newer [11b1 matched measurement](reviews/control-frame-borrow.md) reports
+**3.014986 / 3.795762 mm²** of repaired logic (BD / Click), excluding SRAM, and
+268 fewer periodic flip-flops per variant. Digital verification passes; the
+new path remains physically unqualified.
+The tables below retain the preceding physical baseline and its provenance.
+
 These are totals over every physical leaf in the accepted electrical-first maps
 (`bounded-distribution-bd-r2` and `-click-r2`, RTL at the merged PR #8 tree,
 with bounded native trees and three exclusive SRAM clock drivers).

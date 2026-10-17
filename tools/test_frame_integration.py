@@ -18,7 +18,7 @@ from unittest.mock import patch
 from check_frame_integration import (child, clean, compact, completion_metadata, driver, initial_policy,
                                      pins, projected_tree, statement_tree,
                                      validate_frame_integration, frame_receipt_probe, top_spelling,
-                                     validated_service_clock)
+                                     validated_service_clock, frame_arrays)
 from test_frame_receipt import PolicyRunEvidence, receipt_node, registers
 
 
@@ -227,6 +227,8 @@ def actual_controls(directory, saved):
              "bind":Path("verification/assert") / ("layers-" + target["module"] + "-Verification-Assert.sv"),
              "top_assertion":Path("verification/assert") / (top["module"] + "_Verification_Assert.sv"),
              "top_bind":Path("verification/assert") / ("layers-" + top["module"] + "-Verification-Assert.sv")}
+    if not receipt["module"].startswith("Click"):
+        paths["bank_completion"] = Path(child(target,"bank_completion")["module"] + ".sv")
     inline = not (directory / paths["assertion"]).is_file()
     if inline:
         paths["assertion"] = paths["target"]
@@ -436,7 +438,7 @@ def actual_controls(directory, saved):
     for i in range(4):
         for suffix in ("req", "ack"):
             mutate_pin(f"bank{i}-head-" + suffix, "target", f"ca_child_frame_head{i}_bridge", "in_" + suffix,
-                       "corrupt", f"BANK_HEAD_PIN:{i}:" + suffix)
+                       "corrupt", "BANK_COMPLETION_PARENT_PINS" if suffix=="ack" and not click else f"BANK_HEAD_PIN:{i}:" + suffix)
         for suffix in ("ready", "valid"):
             mutate_pin(f"bank{i}-head-" + suffix, "target", f"ca_child_frame_head{i}_bridge", "out_" + suffix,
                        "corrupt", f"HEAD_OUTPUT_PIN:{i}:" + suffix)
@@ -445,8 +447,8 @@ def actual_controls(directory, saved):
         mutate_pin(f"bank{i}-clock", "target", f"ca_child_frame_head{i}_bridge", "clock", "wrongClock", f"HEAD_CLOCK_RESET:{i}")
         mutate_pin(f"bank{i}-reset", "target", f"ca_child_frame_head{i}_bridge", "reset", "applicationReset", f"HEAD_CLOCK_RESET:{i}")
     for field in ["length", "overflow"] + [f"bytes_{i}" for i in range(33)]:
-        mutate_pin("command-frame-" + field, "top", "ca_child_control_command_bridge", "in_bits_frame_" + field,
-                   "corrupt", "COMMAND_FRAME_PIN:" + field)
+        mutate_pin("command-frame-" + field, "top", "ca_child_control", "command_bits_frame_" + field,
+                   "corrupt", "BORROWED_FRAME_PIN:" + field)
     for field in ("cpuResetActive", "programBusy"):
         mutate_pin("command-context-" + field, "top", "ca_child_control_command_bridge", "in_bits_" + field,
                    "corrupt", "COMMAND_CONTEXT_PIN:" + field)
@@ -505,10 +507,70 @@ def actual_controls(directory, saved):
     for field in ("bank","resetActive","programBusy"):
         net = "fabric_hostFrames_first_" + field
         inject("mailbox-extra-clocked-"+field,"top",f"always @(negedge serviceClock) {net} <= 0;","MAILBOX_WRITERS:"+net)
-    for name in ("fabric_mmioLaunch", "fabric_hostHeadValid", "fabric_controlBusy", "fabric__io_i2c_heads_0_ready_T", "fabric_io_controlCommand_valid", "fabric_io_controlCommand_bits_kind", "_GEN_12", "_GEN_13", "_GEN_14", "_GEN_15", "_GEN_47", "_GEN_48"):
+    arrays=frame_arrays(texts["top"])
+    array_fields={name:field for field,name in arrays.items()}
+    for name in ["fabric_mmioLaunch", "fabric_hostHeadValid", "fabric_controlBusy", "fabric__io_i2c_heads_0_ready_T", "fabric_io_controlCommand_valid", "fabric_io_controlCommand_bits_kind", "fabric_hostRetire", "_ca_child_control_command_bits_frame_T" if click else "_ca_child_i2c_frameCommandHost_T", *array_fields, *(["_GEN_13"] if click else [])]:
         changed, count = re.subn(r"(\b(?:wire\s+(?:\[[^\]]+\]\s*)*|assign\s+)" + re.escape(name) + r"\s*=)[^;]+;", r"\g<1> 1'h0;", texts["top"])
         if count != 1: raise AssertionError((name, "driver shape", count))
-        check("dispatch-driver-" + name, "top", changed, "DRIVER:" + name)
+        check("dispatch-driver-" + name, "top", changed, "FRAME_ARRAY:" + array_fields[name] if name in array_fields else "DRIVER:" + name)
+    if not click:
+        completion=child(target,"bank_completion")
+        cells={c["id"]:c for c in completion["primitives"]}
+        for identity,c in cells.items():
+            instance=c["rtl_path"].rsplit(".",1)[1]
+            actual=pins(texts["bank_completion"],instance,c["model"],c["parameters"])
+            for pin in actual:
+                if pin=="q": continue
+                mutate_pin("bank-completion-"+identity+"-"+pin,"bank_completion",instance,pin,"corrupt","BANK_COMPLETION_PINS:"+identity)
+            match=re.search(r"\b"+c["model"]+r"\s+#\s*\([^;]*?\)\s*"+instance+r"\s*\([^;]*?\);",texts["bank_completion"],re.S)
+            if match is None:raise AssertionError("Completion instance")
+            replace("bank-completion-hidden-"+identity,"bank_completion",match[0],"if(1'b0) begin : absent " + match[0] + " end","BANK_COMPLETION_SCOPE")
+            replace("bank-completion-ifdef-"+identity,"bank_completion",match[0],"`ifdef NEVER_ENABLE\n" + match[0] + "\n`endif","BANK_COMPLETION_SCOPE")
+        for pin in ("bank","host","commandAck","reset"):
+            mutate_pin("bank-completion-parent-"+pin,"target","ca_child_bank_completion",pin,"corrupt","BANK_COMPLETION_PARENT_PINS")
+        for pin in ("frameCommandBank","frameCommandHost","frameCommandAck"):
+            mutate_pin("bank-completion-source-"+pin,"top","ca_child_i2c",pin,"corrupt","BANK_COMPLETION_SOURCE")
+        for i in range(4):
+            for pin in (f"receiptAck_{i}",f"bankAck_{i}"):
+                mutate_pin("bank-completion-parent-"+pin,"target","ca_child_bank_completion",pin,"corrupt","BANK_COMPLETION_PARENT_PINS")
+        q=lambda identity:pins(texts["bank_completion"],cells[identity]["rtl_path"].rsplit(".",1)[1],cells[identity]["model"],cells[identity]["parameters"])["q"]
+        aliased=texts["bank_completion"].replace(q("bank1_ack_nb"),q("bank0_ack_nb"))
+        # Preserve a single declaration so this specifically exercises output aliasing.
+        aliased=re.sub(r"\bwire\s+"+re.escape(q("bank0_ack_nb"))+r"\s*;", "", aliased, count=1)
+        check("bank-completion-shorted-decoders","bank_completion",aliased,"BANK_COMPLETION_OUTPUT_ALIAS:bank1_ack_nb")
+        output=q("host_ack_na")
+        for port in ("reset","bank","host","commandAck",*(f"receiptAck_{i}" for i in range(4)),*(f"bankAck_{i}" for i in range(4))):
+            aliased=re.sub(r"\b"+re.escape(output)+r"\b",port,texts["bank_completion"])
+            check("bank-completion-output-short-"+port,"bank_completion",aliased,"BANK_COMPLETION_INTERNAL_OUTPUT:host_ack_na")
+        declaration=r"\bwire\s+"+re.escape(output)+r"\s*;"
+        for label,replacement in (("missing",""),("vector","wire [1:0] "+output+";"),("duplicate","wire "+output+"; wire "+output+";")):
+            changed,count=re.subn(declaration,replacement,texts["bank_completion"])
+            if count!=1: raise AssertionError("Completion scalar output declaration shape changed")
+            check("bank-completion-output-declaration-"+label,"bank_completion",changed,"BANK_COMPLETION_INTERNAL_OUTPUT:host_ack_na")
+        replace("bank-completion-extra-input","bank_completion","module FourPhaseFrameCompletion(","module FourPhaseFrameCompletion(input unexpected,","BANK_COMPLETION_PORTS")
+        for i in range(4):
+            instance=cells[f"completion{i}"]["rtl_path"].rsplit(".",1)[1]
+            for destination in ("receiptAck_0",f"bankAck_{(i+1)%4}"):
+                mutate_pin(f"bank-completion-final-{i}-to-{destination}","bank_completion",instance,"q",destination,f"BANK_COMPLETION_INTERNAL_OUTPUT:completion{i}")
+        inject("bank-completion-clocked-state","bank_completion","reg inserted;","BANK_COMPLETION_CLOCKED_STATE")
+        inject("bank-completion-defparam","bank_completion","defparam ca_primitive_completion0.COMMON=1;","BANK_COMPLETION_SCOPE")
+    # Borrowed data must use the retained identity, and its three state bits
+    # must survive application cancellation until native completion and R.
+    frame_pin = pins(texts["top"], "ca_child_control", child(top,"control")["module"])["command_bits_frame_bytes_0"]
+    mutate_pin("borrow-live-descriptor", "top", "ca_child_control", "command_bits_frame_bytes_0",
+               frame_pin.replace("fabric_hostRetiringBank", "fabric_hostFrames_first_bank"), "BORROWED_FRAME_PIN:bytes_0")
+    replace("retire-pending-not-in-clock-demand", "top", "fabric_controlOutstanding | fabric_hostRetiring",
+            "fabric_controlOutstanding", "DRIVER:fabric_controlBusy")
+    changed,count=re.subn(r"(fabric_hostRetiring\s*<=\s*[^;]+)~fabric_hostRetire",r"\1fabric_hostRetire",texts["top"])
+    if count!=1:raise AssertionError("Retirement clear shape")
+    check("retire-clear-polarity", "top", changed, "RETIRE_DISPATCH_ALIAS")
+    replace("retire-tag-wrong-bank", "top", "fabric_hostRetiringBank <= fabric_hostFrames_first_bank;",
+            "fabric_hostRetiringBank <= 2'h0;", "RETIRE_STATE_POLICY")
+    for name in ("fabric_hostRetiring", "fabric_hostRetiringBank"):
+        inject("retire-extra-writer-"+name,"top",f"always @(negedge serviceClock) {name} <= 0;", "RETIRE_WRITERS")
+    changed,count=re.subn(r"(fabric_hostRetiringBank\s*=\s*)2'h0;",r"\g<1>2'h1;",texts["top"])
+    if count!=1:raise AssertionError("Retiring tag initializer shape")
+    check("retire-initial-tag", "top", changed, "INITIAL_GUARDS:fabric_hostRetiringBank")
     for label, old, new, diagnostic in (
         ("tail-does-not-advance", "frameSlot <= frameSlot + 2'h1", "frameSlot <= frameSlot", "STATE_TRANSITIONS:frameSlot"),
         ("tail-starts-wrong-bank", "frameSlot <= 2'h0", "frameSlot <= 2'h1", "STATE_TRANSITIONS:frameSlot"),
@@ -596,7 +658,7 @@ def actual_controls(directory, saved):
     if count!=1:raise AssertionError("Enable pin shape")
     changed,count=re.subn(r"(\.snapshotAcceptEnable\s*\()gate_enabled(\))",r"\g<1>1'h1\g<2>",changed)
     if count!=1:raise AssertionError("Snapshot enable pin shape")
-    changed=changed.replace("serviceClock & gate_enabled","serviceClock").replace("gate_enabled & fabric_hostFrames_io_deq_ready", "fabric_hostFrames_io_deq_ready")
+    changed=changed.replace("serviceClock & gate_enabled","serviceClock").replace("gate_enabled & fabric_hostRetiring", "fabric_hostRetiring").replace("gate_enabled & fabric_hostFrames_io_deq_ready", "fabric_hostFrames_io_deq_ready").replace("_ca_child_control_command_bridge_in_ready & gate_enabled", "_ca_child_control_command_bridge_in_ready")
     record=validate_overlay("top",changed)
     if record["literal_enable_endpoint"]!=endpoint or record["gate"]!="1'b1":raise AssertionError("Literal endpoint binding missing")
     selected=(directory/paths["top"]).resolve()
@@ -623,7 +685,7 @@ if __name__=="__main__":
     run=unittest.main(argv=[sys.argv[0],*unit_args],exit=False)
     if not run.result.wasSuccessful():raise SystemExit(1)
     if args.export:
-        results=[actual_controls(path,args.out.parent/(args.out.stem+"-mutants")/path.name) for path in args.export]
+        results=[actual_controls(path,args.out.parent/(args.out.stem+"-mutants")/(str(index)+"-"+path.name)) for index,path in enumerate(args.export)]
         report=dict(schema="riscay-frame-integration-policy-controls-v1",status="PASS",exports=results,
                     attestation=evidence.finish(),
                     qualification="emitted RTL validator sensitivity only; no simulation or physical qualification")

@@ -77,6 +77,17 @@ class ControlCommand extends Bundle {
   val peripheralData = UInt(32.W)
   val applicationWritable = Bool()
 }
+/** Only dispatch-time metadata crosses the periodic command sender. The native
+  * frame bank retains HostFrame until that sender completes native acceptance.
+  * Keep ControlCommand itself unchanged: native owners still receive its ABI.
+  */
+class ControlCommandHeader extends Bundle {
+  val kind = UInt(3.W)
+  val cpuResetActive = Bool(); val programBusy = Bool()
+  val memory = new MemoryRequest
+  val peripheralData = UInt(32.W)
+  val applicationWritable = Bool()
+}
 class ControlReply(programBytes: Int) extends Bundle {
   val kind = UInt(3.W)
   val state = new ControlState(programBytes)

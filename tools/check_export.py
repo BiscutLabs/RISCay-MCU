@@ -428,6 +428,16 @@ def frame_head_background(source: str, manifest: dict, scopes: dict, checks: int
         force(top + ".fabric_hostFrames_first_bank", 2, bank)
         force(head["rtl_path"] + ".requestSync", 1, 1)
         check()
+        # R is independent of logical D. Exercise retained selection and every
+        # borrowed frame lane directly from its native bank, including bank 3.
+        force(top + ".fabric_hostRetiring", 1, 1)
+        force(top + ".fabric_hostRetiringBank", 2, bank)
+        owner = store if click else next(c["contract"] for c in store["children"] if c["id"] == f"storage{bank}")
+        payload = next(p for p in owner["primitives"] if p["id"] == (f"payload{bank}" if click else "payload"))
+        force(payload["rtl_path"] + ".q", 337, (1 << 337) - 1, primitive=True)
+        check()
+        force(payload["rtl_path"] + ".q", 337, 0, primitive=True)
+        check()
     count = checks + steps * len(coverage)
     position = coverage[0].start()
     result = source[:position] + "".join(extra) + source[position:]
