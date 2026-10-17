@@ -451,6 +451,12 @@
   P&R requires its complete receipt before launch. Keep the old opt-in Control
   experiment as historical evidence. Residual electrical violations still block
   qualification; successful repair execution is not electrical closure.
+  Wire-dependent repair follows docs/reviews/wire-electrical-repair.md: run
+  after placement and global routing, retain every corner's electrical report,
+  and prove the actual OpenDB graph before accepting checkpoints. Bind the
+  protected-net inventory and the actual wrapped tool executable. A resizer
+  no-progress warning is retained failure evidence, never electrical closure.
+  Keep clocked optimization reports separate from complete async obligations.
   Native capture distribution follows docs/native-capture-distribution.md:
   bound every branch to 16 loads, verify equal depth and protocol-specific
   polarity, and preserve unchanged propagation/spread budgets. Require all

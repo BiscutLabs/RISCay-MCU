@@ -8,12 +8,14 @@ from pathlib import Path
 import re
 import shutil
 import subprocess
+from dataclasses import replace
 from gf180_physical import ROOT, SC, SRAM, pdk_verify, sha, write_json
-from gf180_constraints import brace
+from gf180_constraints import brace, PRELUDE
 from gf180_estimate import linux
 from gf180_implement import audit
+from characterize_gf180_liberty import CORNERS
+from physical_tools import tool
 
-OPENROAD = "/nix/store/c4zxmi7w55jnz305yqc4407n4426zj7s-openroad-2026-02-17/bin/openroad"
 PDK_SOURCE = "/home/nixos/work/gf180mcu-project-template/gf180mcu/gf180mcuD"
 STAGES = ["floorplan", "place", "clock", "global", "route", "extract"]
 ASSETS = {
@@ -23,12 +25,14 @@ ASSETS = {
     "rcx.min": "libs.tech/librelane/rules.openrcx.gf180mcuD.min",
     "rcx.max": "libs.tech/librelane/rules.openrcx.gf180mcuD.max",
 }
-PROVENANCE_SCHEMA = "riscay-pnr-inputs-v2"
+PROVENANCE_SCHEMA = "riscay-pnr-inputs-v3"
 MAPPING_INPUTS = ("mapping.json", "netlist.v", "netlist.json", "base.sdc", "clocked.sdc",
                   "feedback-cuts.tcl", "async.sdc", "preserve-mapped.tcl", "constraints-bound.json",
                   "electrical-repair/receipt.json")
-FLOW_INPUTS = ("pnr.tcl", "pnr-pdn.tcl", "power.tcl")
-GENERATED_INPUTS = ("config.tcl", "async-pnr.sdc", "protected.tcl")
+FLOW_INPUTS = ("pnr.tcl", "pnr-pdn.tcl", "power.tcl", "pnr-repair.tcl")
+REPAIR_AUDIT_SOURCES = ('check_pnr_repair.py','repair_gf180_design.py','gf180_physical.py',
+                      'gf180_estimate.py','repair_gf180_control.py','characterize_gf180_liberty.py','gf180_constraints.py','gf180_pnr.py')
+GENERATED_INPUTS = ("config.tcl", "async-pnr.sdc", "async-electrical.sdc", "async-context.json", "protected.tcl")
 RC_CORNERS = ("nom", "min", "max")
 
 
@@ -46,8 +50,55 @@ def mapping_hashes(mapping):
     return {name: sha(mapping/name) for name in MAPPING_INPUTS}
 
 
+def pnr_tool(meta=None, executable=None):
+    selected=tool('openroad')
+    chosen=executable or (meta or {}).get('openroad') or selected.executable
+    return replace(selected,executable=chosen)
+
+
+def runtime_hashes(meta):
+    selected=pnr_tool(meta)
+    files=selected.input_files()
+    # Nix's makeWrapper launcher is not the ELF containing the resizer. Keep
+    # both; removing/replacing the wrapped target changes the exact inventory.
+    executable=selected.host_path()
+    wrapped=executable.with_name('.'+executable.name+'-wrapped')
+    if wrapped.is_file():files.append(wrapped)
+    files += [ROOT/'physical/gf180/openroad'/name for name in ('default.nix','repair-progress.patch')]
+    return {str(p.resolve()):sha(p) for p in files}
+
+
 def flow_key(hashes):
     return hashlib.sha256(json.dumps(hashes, sort_keys=True).encode()).hexdigest()
+
+
+def repair_audit_hashes():
+    return {name:sha(ROOT/'tools'/name) for name in REPAIR_AUDIT_SOURCES}
+
+
+def physical_input_hashes():
+    pdk=ROOT/'.tools/physical/pdk';pdk_verify(pdk)
+    lockpath=ROOT/'soc/sram-lock.json';lock=json.loads(lockpath.read_text())
+    macrofiles=[ROOT/'.tools/gf180-sram'/(SRAM+suffix) for suffix in ['.lef',*['__'+c+'.lib' for c in CORNERS]]]
+    for path in macrofiles:
+        if sha(path)!=lock['assets'][path.name]['sha256']:raise ValueError('PNR_SRAM_ASSET_CHANGED_'+path.name)
+    paths=[lockpath,ROOT/'physical/gf180/pdk-lock.json',ROOT/'physical/gf180/routing-lock.json',
+        *macrofiles,*[pdk/(SC+c+'.lib') for c in CORNERS],pdk/'gf180mcu_fd_sc_mcu7t5v0.lef',
+        *[ROOT/'.tools/physical/routing'/name for name in ASSETS]]
+    return {str(p.resolve()):sha(p) for p in paths}
+
+
+def electrical_report_names(stage):
+    if stage not in ('place','clock','global','extract'):return []
+    prefixes=[stage]+([stage+'-before-repair'] if stage in ('place','global') else [])
+    return [prefix+'-'+corner+'-electrical.rpt' for prefix in prefixes for corner in CORNERS]
+
+
+def current_inputs(meta,mapping):
+    if meta.get('openroad_runtime_sha256')!=runtime_hashes(meta):raise ValueError('PNR_RUNTIME_CHANGED')
+    if meta.get('repair_audit_sources_sha256')!=repair_audit_hashes():raise ValueError('PNR_REPAIR_AUDIT_CHANGED')
+    if meta.get('physical_inputs_sha256')!=physical_input_hashes():raise ValueError('PNR_PHYSICAL_INPUT_CHANGED')
+    if meta.get('mapping_inputs_sha256')!=mapping_hashes(mapping):raise ValueError('PNR_MAPPING_INPUT_CHANGED')
 
 
 def snapshot_flow(out, files):
@@ -67,6 +118,7 @@ def validate_provenance(mapping,out,stage,flow_sources=None):
     meta=json.loads((out/"run.json").read_text())
     if meta.get("provenance_schema")!=PROVENANCE_SCHEMA:
         raise ValueError("PNR_FRESH_RUN_REQUIRED")
+    current_inputs(meta,mapping)
     # Reading a checkpoint or its extracted RC is an acceptance path too.
     # Revalidate the complete repair evidence, then bind the exact receipt used
     # for this P&R run so a newly accepted repair cannot relabel an old ODB.
@@ -90,6 +142,21 @@ def validate_provenance(mapping,out,stage,flow_sources=None):
         raise ValueError("PNR_CHECKPOINT_CHANGED")
     if checkpoint.get("protected_baseline_sha256")!=sha(out/"protected-baseline.tcl"):
         raise ValueError("PNR_PROTECTED_BASELINE_CHANGED")
+    for prerequisite in STAGES[:STAGES.index(stage)+1]:
+        if prerequisite not in meta.get('checkpoints',{}):raise ValueError('PNR_PREREQUISITE_MISSING_'+prerequisite)
+        cp=meta['checkpoints'][prerequisite]
+        reports=cp.get('electrical_reports_sha256',{})
+        if set(reports)!=set(electrical_report_names(prerequisite)) or any(sha(out/p)!=h for p,h in reports.items()):
+            raise ValueError('PNR_ELECTRICAL_REPORT_CHANGED_'+prerequisite)
+    for repaired in ('place','global'):
+        if STAGES.index(repaired)>STAGES.index(stage):continue
+        proof=meta['checkpoints'][repaired].get('repair',{})
+        if proof.get('proof_sha256')!=sha(out/(repaired+'-repair-proof.json')):raise ValueError('PNR_REPAIR_PROOF_CHANGED')
+        expected={str((out/(repaired+'-repair-'+side+'.tsv')).resolve()) for side in ('before','after')}
+        if set(proof.get('inputs_sha256',{}))!=expected or any(sha(Path(p))!=h for p,h in proof['inputs_sha256'].items()):
+            raise ValueError('PNR_REPAIR_GRAPH_CHANGED')
+        if proof.get('protected_nets_sha256')!=sha(out/(repaired+'-native-protected-nets.txt')):
+            raise ValueError('PNR_REPAIR_PROTECTION_CHANGED')
     if stage=="extract" and checkpoint.get("spef_sha256")!=sha(out/"routed.spef"):
         raise ValueError("PNR_SPEF_CHANGED")
     if stage=="extract" and meta.get("wire_corners"):
@@ -125,7 +192,11 @@ def assets():
     return dest
 
 def configuration(mapping,out,routing,threads,side=1440):
-    pdk=ROOT/".tools/physical/pdk"; pdk_verify(pdk); audit(mapping)
+    from repair_gf180_design import validate_receipt
+    validate_receipt(mapping)
+    accepted=json.loads((mapping/'netlist-audit.json').read_text())
+    pdk=ROOT/".tools/physical/pdk"; pdk_verify(pdk)
+    audit(mapping,adapter_instances=accepted['adapter_instances'])
     lines=[]
     for name,path in dict(mapping=mapping,out=out,pdk=pdk,routing=routing,
                           sram=ROOT/".tools/gf180-sram",source=ROOT/"physical/gf180").items():
@@ -153,7 +224,29 @@ def configuration(mapping,out,routing,threads,side=1440):
         text+="  {"+brace(name)+" "+brace(master)+" {"+" ".join(pins)+"}}\n"
     (out/"protected.tcl").write_text(text+"}\n")
     modules=json.loads((mapping/"netlist.json").read_text())["modules"]
-    (out/"async-pnr.sdc").write_text(bind_flat_interfaces(modules,(mapping/"async.sdc").read_text()))
+    full=bind_flat_interfaces(modules,(mapping/"async.sdc").read_text())
+    electrical,context=electrical_context(full)
+    (out/"async-pnr.sdc").write_text(full)
+    (out/"async-electrical.sdc").write_text(electrical)
+    write_json(out/'async-context.json',context)
+
+
+def electrical_context(sdc):
+    """Separate optimization from async path analysis; retain every obligation."""
+    if not sdc.startswith(PRELUDE):raise ValueError('PNR_ASYNC_PRELUDE_CHANGED')
+    caps=[];deferred=[]
+    for line in sdc[len(PRELUDE):].splitlines():
+        if not line.strip() or line.startswith('#'):continue
+        command=line.split(' ',1)[0]
+        if command=='set_max_capacitance':caps.append(line)
+        elif command in ('set_max_delay','set_min_delay','set_data_check'):deferred.append(line)
+        else:raise ValueError('PNR_UNKNOWN_ASYNC_CONSTRAINT_'+command)
+    if not caps or not deferred:raise ValueError('PNR_EMPTY_ASYNC_CONTEXT')
+    context=dict(physical_qualification=False,async_timing_coverage=False,
+        scope='Electrical and real-clock optimization only; complete async-pnr.sdc remains mandatory timing input',
+        electrical_commands=caps,deferred_timing_commands=deferred,
+        full_text_sha256=hashlib.sha256(sdc.encode()).hexdigest())
+    return PRELUDE+'\n'.join(caps)+'\n',context
 
 def bind_flat_interfaces(modules,sdc):
     # OpenDB flattens hierarchical interface pins. Resolve their connected leaf
@@ -179,6 +272,7 @@ def bind_flat_interfaces(modules,sdc):
                     union(net(bit),portmap[name][i])
         for name,port in {**mod.get('netnames',{}),**mod['ports']}.items(): boundaries[path+name]=[net(b) for b in port["bits"]]
         for name,cell in mod.get("cells",{}).items():
+            if name.startswith('\\$'):name=name[1:]
             instance=path+name
             connections={p:[net(b) for b in bits] for p,bits in cell["connections"].items()}
             if cell["type"].startswith(SC) or cell["type"]==SRAM:
@@ -203,7 +297,7 @@ def bind_flat_interfaces(modules,sdc):
         return '[concat '+" ".join('[rp '+brace(p)+']' for p in sorted(set(selected)))+']'
     return re.sub(r'\[rbus \{([^}]+)\} (\d+)\]',bind,sdc)
 
-def run(mapping,out,from_stage,to_stage,threads,side=1440):
+def run(mapping,out,from_stage,to_stage,threads,side=1440,openroad=None):
     mapping=mapping.resolve(); out=out.resolve()
     from repair_gf180_design import validate_receipt
     validate_receipt(mapping)
@@ -215,7 +309,7 @@ def run(mapping,out,from_stage,to_stage,threads,side=1440):
     if begin:
         # Never regenerate constraints or relabel an old ODB with new inputs.
         meta=validate_provenance(mapping,out,STAGES[begin-1],hashes)
-        if meta.get("openroad")!=OPENROAD or meta.get("threads")!=threads or meta.get("routing_lock_sha256")!=sha(ROOT/"physical/gf180/routing-lock.json"):
+        if (openroad is not None and meta.get('openroad')!=openroad) or meta.get("threads")!=threads or meta.get("routing_lock_sha256")!=sha(ROOT/"physical/gf180/routing-lock.json"):
             raise ValueError("PNR_RUN_CONFIGURATION_CHANGED")
         if meta.get("mapping_directory")!=str(mapping) or meta.get("output_directory")!=str(out):
             raise ValueError("PNR_RESUME_DIRECTORY_CHANGED")
@@ -231,8 +325,10 @@ def run(mapping,out,from_stage,to_stage,threads,side=1440):
         with (out/"config.tcl").open("a") as config: config.write('set source '+brace(linux(snapshot))+'\n')
         meta=dict(status="running-unqualified",source_commit=subprocess.check_output(
         ["git","rev-parse","HEAD"],cwd=ROOT,text=True).strip(),mapping_sha256=sha(mapping/"mapping.json"),
-        netlist_sha256=sha(mapping/"netlist.v"),openroad=OPENROAD,
+        netlist_sha256=sha(mapping/"netlist.v"),openroad=pnr_tool(executable=openroad).executable,
         flow_sha256=sha(files[0]),flow_sources=hashes,provenance_schema=PROVENANCE_SCHEMA,
+        repair_audit_sources_sha256=repair_audit_hashes(),
+        physical_inputs_sha256=physical_input_hashes(),
         mapping_inputs_sha256=mapping_hashes(mapping),checkpoints={},
         mapping_directory=str(mapping),output_directory=str(out),
         generated_inputs_sha256={name:sha(out/name) for name in GENERATED_INPUTS},
@@ -241,6 +337,7 @@ def run(mapping,out,from_stage,to_stage,threads,side=1440):
         die_um=g['die_um'],core_um=g['core_um'],geometry=g,threads=threads,
         limits=["digital block only; no pads/analog", "no async timing closure",
                 "initial placement and routing, no density/antenna/LVS signoff"])
+        meta['openroad_runtime_sha256']=runtime_hashes(meta)
     else:
         # OpenROAD rewrites logs, metrics, ODBs and route products in place.
         # Copy every existing top-level artifact before allowing any retry;
@@ -261,18 +358,29 @@ def run(mapping,out,from_stage,to_stage,threads,side=1440):
             +f'set previous {STAGES[i-1] if i else "none"}\n'
             +f'source {brace(linux(snapshot/"pnr.tcl"))}\n')
         print("START",stage,flush=True)
+        current_inputs(meta,mapping)
         with (out/(stage+".log")).open("w") as log:
-            result=subprocess.run(["wsl","-d","nixos-librelane","-e",OPENROAD,"-exit",
-                "-metrics",linux(out/(stage+"-metrics.json")),linux(driver)],stdout=log,stderr=subprocess.STDOUT)
+            result=subprocess.run(pnr_tool(meta).command(["-exit",
+                "-metrics",linux(out/(stage+"-metrics.json")),linux(driver)]),stdout=log,stderr=subprocess.STDOUT)
         log=(out/(stage+".log")).read_text()
         if result.returncode or f'PNR_STAGE_COMPLETE {stage}' not in log:
             meta.update(status="stopped-unqualified",failed_stage=stage,returncode=result.returncode)
             write_json(out/"run.json",meta)
             raise RuntimeError("PNR_STAGE_FAILED_"+stage+"\n"+log[-4000:])
+        current_inputs(meta,mapping)
         # A regenerated checkpoint invalidates all downstream saved stages.
         for later in STAGES[i+1:]: meta["checkpoints"].pop(later,None)
         meta["checkpoints"][stage]=dict(odb_sha256=sha(out/(stage+".odb")),
-            protected_baseline_sha256=sha(out/"protected-baseline.tcl"))
+            protected_baseline_sha256=sha(out/"protected-baseline.tcl"),
+            electrical_reports_sha256={name:sha(out/name) for name in electrical_report_names(stage)})
+        if stage in ('place','global'):
+            from check_pnr_repair import check
+            try:meta['checkpoints'][stage]['repair']=check(mapping,out,stage)
+            except BaseException:
+                meta['checkpoints'].pop(stage,None)
+                meta.update(status='stopped-unqualified',failed_stage=stage+'-repair-proof')
+                write_json(out/'run.json',meta)
+                raise
         if stage=="extract":
             meta["checkpoints"][stage]["spef_sha256"]=sha(out/"routed.spef")
             # Independent fresh OpenROAD processes read the identical routed
@@ -285,7 +393,8 @@ def run(mapping,out,from_stage,to_stage,threads,side=1440):
                     +f'set checkpoint {checkpoint}\nset previous route\nset rc_corner {rc}\n'
                     +f'source {brace(linux(snapshot/"pnr.tcl"))}\n')
                 with (out/(checkpoint+".log")).open("w") as log:
-                    r=subprocess.run(["wsl","-d","nixos-librelane","-e",OPENROAD,"-exit",linux(rc_driver)],stdout=log,stderr=subprocess.STDOUT)
+                    r=subprocess.run(pnr_tool(meta).command(["-exit",linux(rc_driver)]),stdout=log,stderr=subprocess.STDOUT)
+                current_inputs(meta,mapping)
                 if r.returncode or 'PNR_STAGE_COMPLETE extract' not in (out/(checkpoint+".log")).read_text():
                     meta.update(status="stopped-unqualified",failed_stage=checkpoint,returncode=r.returncode)
                     write_json(out/"run.json",meta)
@@ -304,4 +413,5 @@ if __name__=="__main__":
     p.add_argument("--to-stage",choices=STAGES,default="extract")
     p.add_argument("--threads",type=int,default=8)
     p.add_argument("--die-side-um",type=float,default=1440)
-    a=p.parse_args(); run(a.mapping,a.output,a.from_stage,a.to_stage,a.threads,a.die_side_um)
+    p.add_argument("--openroad",help="P&R-only executable override; mapper runtime and evidence stay unchanged")
+    a=p.parse_args(); run(a.mapping,a.output,a.from_stage,a.to_stage,a.threads,a.die_side_um,a.openroad)

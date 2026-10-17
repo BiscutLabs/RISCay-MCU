@@ -15,7 +15,11 @@ def brace(s):
     if any(c in s for c in '{}\r\n'): raise ValueError("UNSAFE_TCL_NAME")
     return '{'+s+'}'
 
-def pin(s): return '[rp '+brace(s)+']'
+def pin(s):
+    # Yosys JSON from the hierarchical OpenROAD writer retains a Verilog escape
+    # on generated $ names; OpenDB/STA store the identifier without that escape.
+    s='/'.join(part[1:] if part.startswith('\\$') else part for part in s.split('/'))
+    return '[rp '+brace(s)+']'
 
 
 def data_bound(budget,source_refs,sink,*,optimized_source=False):

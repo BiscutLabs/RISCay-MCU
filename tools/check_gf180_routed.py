@@ -16,7 +16,7 @@ import subprocess
 from gf180_physical import ROOT, SC, SRAM, sha, write_json
 from gf180_constraints import brace, PRELUDE
 from gf180_estimate import linux
-from gf180_pnr import OPENROAD, validate_provenance, rc_inputs, RC_CORNERS
+from gf180_pnr import pnr_tool, validate_provenance, rc_inputs, RC_CORNERS
 from gf180_netgraph import graph
 from gf180_probe_plan import gates, plan
 
@@ -248,7 +248,7 @@ def run_suffix(run_tag):
 
 def run(mapping,routed,corner,wire_corner="nom",only_ids=None,run_tag=None):
     tag_suffix=run_suffix(run_tag)
-    validate_provenance(mapping,routed,"extract")
+    meta=validate_provenance(mapping,routed,"extract")
     odb,spef=rc_inputs(mapping,routed,wire_corner)
     suffix='-selected-'+hashlib.sha256(json.dumps(sorted(only_ids)).encode()).hexdigest()[:12] if only_ids else ''
     out=routed/("async-"+corner+"-"+wire_corner+suffix+tag_suffix); out.mkdir(exist_ok=False)
@@ -293,7 +293,8 @@ def run(mapping,routed,corner,wire_corner="nom",only_ids=None,run_tag=None):
     t+='puts ROUTED_PROBES_COMPLETE\nexit\n'
     (out/"check.tcl").write_text(t)
     with (out/"check.log").open("w") as log:
-        result=subprocess.run(["wsl","-d","nixos-librelane","-e",OPENROAD,"-exit",linux(out/"check.tcl")],stdout=log,stderr=subprocess.STDOUT)
+        result=subprocess.run(pnr_tool(meta).command(["-exit",linux(out/"check.tcl")]),stdout=log,stderr=subprocess.STDOUT)
+    validate_provenance(mapping,routed,"extract")
     log=(out/"check.log").read_text()
     if result.returncode or "ROUTED_PROBES_COMPLETE" not in log: raise RuntimeError(log[-3000:])
     if re.search(r'STA-(1648|1650)',log): raise ValueError("SPEF_ANNOTATION_INCOMPLETE")

@@ -95,9 +95,10 @@ The [relative-timing pilot](docs/reviews/control-relative-timing.md) resolves
 local Control capture/ACK paths under explicit handshake states at five cell
 corners. Source launch, full return/pulse behavior, electrical repair and routed
 timing remain open; no hardware clock or shortened guard is introduced.
-The [reusable stage survey](docs/reviews/native-stage-timing.md) applies those
-local checks to execute, elapsed, SRAM and I²C update. Negative execute/elapsed
-allowances remain visible; custom I²C publication and those stages' upstream launch stay open.
+The earlier [reusable stage survey](docs/reviews/native-stage-timing.md) found
+negative execute/elapsed allowances. Longer timing policies and the repaired-leaf
+measurements above supersede those local results; their original failure evidence
+remains visible. Custom I²C publication and upstream launch stay open.
 The [Control Join check](docs/reviews/control-join-timing.md) composes its actual
 operand storage and update capture at all five corners under explicit admission states; full source
 reuse, other transition histories and physical qualification remain open.
@@ -108,6 +109,10 @@ The same template now measures [execute's Join paths](docs/reviews/execute-join-
 Their conditional margins are positive; the 480 independent register-file bits
 and elapsed's seeded owner remain uncomposed. Global electrical repair is now the
 first gate in the default mapper; timing campaigns consume its proved graph.
+The [wire-dependent repair](docs/reviews/wire-electrical-repair.md) also completes
+after placement and global routing for both variants with exact native graphs
+preserved. Five-corner reports retain slew failures and the added cell area;
+electrical closure remains the next gate.
 The [electrical-first correction](docs/reviews/electrical-first-correction.md)
 also adds independent owner timing policies and longer elapsed/execute request
 guards plus a native BD Control ACK guard. These targets remain unqualified;

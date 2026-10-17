@@ -2,3 +2,7 @@
 analog/gf180-lf-osc/upstream/* -text
 analog/gf180-lf-osc/*.spice text eol=lf
 soc/src/main/resources/riscay/sram/* -text
+# Keep the reviewed Nix recipe/backport bytes stable; unified diff context
+# represents an empty source line with one literal space.
+physical/gf180/openroad/default.nix text eol=lf
+physical/gf180/openroad/*.patch -text whitespace=-blank-at-eol
