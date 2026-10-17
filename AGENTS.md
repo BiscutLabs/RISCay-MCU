@@ -26,8 +26,17 @@
   mapped logic below 2.3 mm² excluding SRAM, measured with matched inputs.
   An isolated pilot's saving is not an adopted whole-chip result. Full physical
   requalification stays at item 17; retain each changed path's local obligations.
+  For 11b2/11b3 borrowed service commands, retain the existing bank through full
+  sender return, not merely reply publication. Housekeeping period-update writers
+  must wait for bank availability; recovery identity stays in its scalar sender.
+  Telemetry borrows only immutable Commit fields, with zero outside Commit;
+  cancellation must not destroy a dispatched payload. Run CommandBorrowSpec,
+  the affected owner/reset/sleep suites and all four strict SoC exports. Preserve
+  exact live-source mutation diagnostics and publication-role binding equations.
+  See docs/reviews/service-command-borrow.md for the contract and remaining
+  physical source/capture/return obligations.
   Continue to the next item when the user has authorized it;
-  otherwise ask. Items 1-9, 10a, 10b1, 10b2a, 10b2b, 10b2c1, 10b2c2a, 10b2c2b, 10b2d1, 10b2d2, 11a1, 11a2a and 11b1 are digitally verified within their scopes.
+  otherwise ask. Items 1-9, 10a, 10b1, 10b2a, 10b2b, 10b2c1, 10b2c2a, 10b2c2b, 10b2d1, 10b2d2, 11a1, 11a2a, 11b1, 11b2 and 11b3 are digitally verified within their scopes.
   The user has authorized deeper migration under expanded items 10-16: native
   service coordination, observation reduction, publication, direct interconnect
   and physically justified boundary minimization. Audit every remaining clocked

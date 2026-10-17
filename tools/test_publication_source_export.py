@@ -25,8 +25,14 @@ class PublicationSourceExportTests(unittest.TestCase):
             endpoints[name]={n:path+'.'+n for n in ('in_valid','in_ready','out_valid','out_data')}
             scopes[path]=dict(ports={'in_bits_recovery':dict(name='in_bits_recovery',width=1,direction='input')})
         command=dict(module='DecoupledTo'+prefix,rtl_path=top+f'.ca_child_{owner}_command_bridge')
+        recovery_pin='in_bits' if owner=='housekeeping' else 'in_bits_recovery'
+        if owner=='housekeeping':
+            command['channels']=[dict(id=side,layout=[dict(field='bits',lsb=0,width=1,signed=False,
+                source='~|'+command['module']+'>'+side+'.bits')]) for side in ('in','out')]
+            command['endpoints']=[dict(id=side+'_data',width=1,
+                source='~|'+command['module']+'>'+side+'.bits') for side in ('in','out')]
         scopes[command['rtl_path']]=dict(ports={
-            'in_bits_recovery':dict(name='in_bits_recovery',width=1,direction='input'),
+            recovery_pin:dict(name=recovery_pin,width=1,direction='input'),
             'in_ready':dict(name='in_ready',width=1,direction='output')})
         return top,owner,endpoints,command,top+'.applicationCancel',scopes
 
@@ -42,7 +48,7 @@ class PublicationSourceExportTests(unittest.TestCase):
                     for name in ('reserve','decision','publication'):
                         self.assertIn(endpoints[name]['in_ready'],available)
                     for name in ('grant','drain'):self.assertIn('!'+endpoints[name]['out_valid'],available)
-                    command_pin=command['rtl_path']+'.in_bits_recovery'
+                    command_pin=command['rtl_path']+('.in_bits' if owner=='housekeeping' else '.in_bits_recovery')
                     for term in ('active','pending','revoked','role'):
                         self.assertIn(top+'.'+owner+'Boundary_'+term,mapping[command_pin])
                     self.assertIn(endpoints['grant']['out_data']+'[1]',mapping[command_pin])
@@ -59,6 +65,24 @@ class PublicationSourceExportTests(unittest.TestCase):
         self.assertEqual(mapping[top+'.telemetryBoundary_io_eligible'],mapping[top+'.fabric_io_telemetrySource_eligible'])
         self.assertEqual(mapping[top+'.fabric_io_telemetrySource_ownerRecovery'],top+'.telemetryBoundary_role')
         self.assertEqual(mapping[top+'.fabric_io_telemetrySource_ownerRecovery_0'],top+'.telemetryBoundary_role')
+
+    def test_housekeeping_scalar_role_rejects_old_layout_and_wrong_pins(self):
+        for click in (False,True):
+            for side in range(2):
+                for key,value in (('field','recovery'),('width',2),('lsb',1),('source','wrong')):
+                    args=list(self.boundary_fixture(click=click,owner='housekeeping'))
+                    args[3]['channels'][side]['layout'][0][key]=value
+                    with self.assertRaisesRegex(ValueError,'PUBLICATION_BOUNDARY_COMMAND_LAYOUT'):
+                        publication_boundary_bindings(*args)
+                args=list(self.boundary_fixture(click=click,owner='housekeeping'))
+                args[3]['endpoints'][side]['width']=2
+                with self.assertRaisesRegex(ValueError,'PUBLICATION_BOUNDARY_COMMAND_LAYOUT'):
+                    publication_boundary_bindings(*args)
+            for key,value in (('width',2),('direction','output')):
+                args=list(self.boundary_fixture(click=click,owner='housekeeping'))
+                args[-1][args[3]['rtl_path']]['ports']['in_bits'][key]=value
+                with self.assertRaisesRegex(ValueError,'PUBLICATION_BOUNDARY_PIN'):
+                    publication_boundary_bindings(*args)
 
     def test_missing_or_wrong_alias_state_and_actual_pin_fail_closed(self):
         for inline in (False,True):

@@ -73,7 +73,8 @@ class FourPhaseServices(p: SocParameters, boardFactory: SocParameters => BoardPr
   val telemetryRecoveryBlocked = io.telemetrySource.recoveryDebt || io.telemetrySource.returnFence
   val telemetryCommitPending = applicationReg(false.B)
   val telemetryCommit = Reg(new TelemetryCommand(config.measurements.size))
-  val telemetryBarrier = telemetryOutstanding || telemetryRecoveryBlocked || telemetryCommitPending
+  io.telemetryCommitFields.elements.foreach { case (name, field) => field := telemetryCommit.elements(name) }
+  val telemetryBarrier = telemetryOutstanding || telemetryRecoveryBlocked || telemetryCommitPending || !io.telemetryCommandIdle
   val telemetryWork = Wire(Bool())
   val telemetryAccepted = WireDefault(false.B)
   val telemetryDispatchedEvents = applicationReg(0.U(6.W))
@@ -106,7 +107,12 @@ class FourPhaseServices(p: SocParameters, boardFactory: SocParameters => BoardPr
   val housekeepingOutstanding = RegInit(false.B)
   val housekeepingInFlight = RegInit(0.U.asTypeOf(new HousekeepingCommand))
   val housekeepingBarrierBusy = Wire(Bool())
+  // One retained bank serves ordered actions and background commands. Its
+  // payload survives reply publication until the command sender fully returns.
   val housekeepingOrdered = Reg(new HousekeepingCommand)
+  io.housekeepingPayload := housekeepingOrdered
+  io.housekeepingPayload.recovery := false.B
+  val housekeepingBankAvailable = !housekeepingOutstanding && io.housekeepingCommandIdle
   val housekeepingOrderedPending = RegInit(false.B)
   val housekeepingQueued = RegInit(0.U.asTypeOf(new HousekeepingCommand))
   val housekeepingRecoveryBlocked = io.housekeepingSource.recoveryDebt || io.housekeepingSource.returnFence
@@ -569,7 +575,7 @@ class FourPhaseServices(p: SocParameters, boardFactory: SocParameters => BoardPr
       (!telemetryBarrier && !housekeepingBarrierBusy && completionAvailable && !io.applicationCancel &&
         !resetRecovery && io.clockRunning && io.admissionGrant.valid && !bootWait && !eventWait &&
         !memoryBusy && !telemetryRecoveryBlocked && !housekeepingRecoveryBlocked && publicationAdmission)) &&
-    (!io.controlReply.bits.periodUpdate || !housekeepingOrderedPending) &&
+    (!io.controlReply.bits.periodUpdate || (!housekeepingOrderedPending && housekeepingBankAvailable)) &&
     (!io.controlReply.bits.programWrite || programLoaderReady)
   when(io.controlReply.fire) {
     val result = io.controlReply.bits
@@ -631,7 +637,10 @@ class FourPhaseServices(p: SocParameters, boardFactory: SocParameters => BoardPr
   housekeepingCommand.bits.resetApplication := housekeepingRecoveryReady || io.applicationCancel
   housekeepingCommand.bits.started := started; housekeepingCommand.bits.parked := parked
   housekeepingCommand.bits.adcBusy := io.adc.busy || adcLaunchPending
-  when(housekeepingOrderedPending) { housekeepingCommand.bits := housekeepingOrdered }
+  when(housekeepingOrderedPending) {
+    housekeepingCommand.bits := housekeepingOrdered
+    housekeepingCommand.bits.recovery := false.B
+  }
   housekeepingRecoveryCommit:=housekeepingCommand.fire && housekeepingCommand.bits.recovery
   val housekeepingOwnedReply=housekeepingReply.bits.cpuCompletion || housekeepingReply.bits.recovery
   housekeepingReply.ready := housekeepingOutstanding &&
@@ -644,10 +653,19 @@ class FourPhaseServices(p: SocParameters, boardFactory: SocParameters => BoardPr
   when(housekeepingCommand.fire) {
     housekeepingOutstanding:=true.B; housekeepingInFlight:=housekeepingCommand.bits
     when(housekeepingOrderedPending) { housekeepingOrderedPending:=false.B }
-      .otherwise { housekeepingQueued:=0.U.asTypeOf(new HousekeepingCommand) }
+      .otherwise {
+        // Capture on the existing sender's acceptance edge. Its unchanged
+        // settling interval precedes the native request.
+        housekeepingOrdered:=housekeepingCommand.bits
+        // Recovery identity belongs to the one-bit sender and in-flight role;
+        // this bank is read as an ordered command only after a non-recovery write.
+        housekeepingOrdered.recovery:=false.B
+        housekeepingQueued:=0.U.asTypeOf(new HousekeepingCommand)
+      }
   }
   when(housekeepingBarrier) {
     assert(!housekeepingOrderedPending,"HOUSEKEEPING_ORDERED_OVERFLOW")
+    assert(housekeepingBankAvailable,"HOUSEKEEPING_BORROW_OVERWRITE")
     housekeepingOrdered:=queueNext
     housekeepingOrdered.write:=housekeepingAction.write
     housekeepingOrdered.offset:=housekeepingAction.offset; housekeepingOrdered.data:=housekeepingAction.data
@@ -705,6 +723,7 @@ class FourPhaseServices(p: SocParameters, boardFactory: SocParameters => BoardPr
   telemetryWork := telemetryBarrier || observationPending || io.telemetryDraining || io.telemetrySource.draining
   telemetryAccepted := io.request.fire && nativeMmio && telemetryRequired
   when(telemetryAccepted) {
+    assert(io.telemetryCommandIdle && !telemetryOutstanding,"TELEMETRY_COMMIT_BORROW_OVERWRITE")
     telemetryCommitPending := true.B
     telemetryCommit := 0.U.asTypeOf(new TelemetryCommand(config.measurements.size))
     telemetryCommit.kind := TelemetryKind.Commit.U; telemetryCommit.offset := req.address(6,0)

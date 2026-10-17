@@ -9,7 +9,9 @@ retain a separate ownership proof and fault controls for every included item.
 The [single area ledger](area-ledger.md) records accepted batches and isolated
 pilots separately. The next milestone is BD mapped logic below **2.3 mm²**,
 excluding SRAM, after A7b/A8b and the next ownership batch. At the 11b1 baseline
-this requires 0.525888 mm² (18.61%) more reduction; it is not a measured saving.
+this required 0.525888 mm² (18.61%) more reduction. The accepted 11b2/11b3
+batch reaches 2.792933 mm², leaving **0.492933 mm² (17.65%)**; the milestone
+remains unmet. Isolated pilot deltas are not included in this production total.
 
 ## Order and acceptance gates
 
@@ -194,16 +196,17 @@ this requires 0.525888 mm² (18.61%) more reduction; it is not a measured saving
 
 ## Current area priorities (11b1, 2026-10-17)
 
-The review correctly identifies implementation overhead as the target. With
-11b1 digitally verified and independently reviewed, run A7b's BD elapsed guard
-and A8b's standard-stage passive allowance pilots in parallel with the 11b2/11b3
-ownership batch. Keep full physical requalification at item 17 and retain the
+The review correctly identifies implementation overhead as the target.
+A7b's BD elapsed guard and A8b's standard-stage passive allowance pilots ran
+in parallel with the now digitally verified 11b2/11b3 ownership batch. Their
+isolated results and remaining production-adoption gates are recorded in the
+[area ledger](area-ledger.md). Keep full physical requalification at item 17 and retain the
 changed paths' local timing/reset obligations. Further broad repair sweeps are
 lower priority. Every accepted batch needs a matched map, activity and leakage
 comparison; individual pilot deltas cannot be extrapolated as whole-chip savings. The proposed
 40–50% reduction is a hypothesis, not a measured result or a tape-out target.
 
-This inventory uses the **current repaired pre-placement graphs**, pinned GF180
+This baseline inventory uses the **11b1 repaired pre-placement graphs**, pinned GF180
 LEF sizes and exact preserved adapter leaves. It is neither routed area nor die
 area. `build/control-frame-borrow/current_native_cost.py` records its procedure;
 `current-native-cost.json` binds mapping, audit, netlist, LEF and helper hashes.

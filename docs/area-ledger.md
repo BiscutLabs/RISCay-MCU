@@ -6,8 +6,10 @@ libraries, mapper and accepted repair flow for matched production comparisons.
 Full routed physical requalification remains migration item 17.
 
 The next milestone is **BD mapped logic below 2.3 mm² excluding SRAM**. Starting
-from 2.825888 mm², that requires another **0.525888 mm² (18.61%)** reduction.
-The milestone is unmet. A7b/A8b start as isolated experiments; their local deltas
+from 2.825888 mm², that required **0.525888 mm² (18.61%)** reduction. The measured
+11b2/11b3 batch is 2.792933 mm², leaving **0.492933 mm² (17.65%)** of its area
+to remove. The batch is digitally verified; the milestone is unmet.
+A7b/A8b are isolated experiments; their local deltas
 do not count toward it until adopted and measured on the production design.
 
 ## Accepted production batches
@@ -18,6 +20,7 @@ electrical repair; repaired means accepted pre-placement repair, not P&R.
 | Item / source | Mapped logic | Repaired logic | Guards | Allowances | DLYD | Periodic clock sinks |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
 | 11b1 (`c195deb`, merged `29e0ea7`) | 2.825888 / 3.585890 | 3.014986 / 3.795762 | 0.542153 / 1.061831 | 0.413624 / 0.366484 | 0.536041 / 1.052901 | 5,072 / 5,127 |
+| 11b2 + 11b3 | 2.792933 / 3.554119 | 2.978974 / 3.757950 | 0.542153 / 1.061831 | 0.413624 / 0.366484 | 0.536041 / 1.052901 | 4,810 / 4,865 |
 
 11b1 removes 268 periodic flip-flops per variant. Its complete contract, matched
 parent comparison, wake activity and listed-state leakage bounds remain in the
@@ -86,7 +89,17 @@ production adoption remain open.
 | --- | --- | --- |
 | A7b | Independently reviewed isolated BD elapsed request guard candidate above | Complete launch/return/reset and routed qualification before production shortening |
 | A8b | Independently reviewed RAM prepare passive-allowance candidates above | Supported library API, fanout isolation audit and physical qualification before adoption |
-| 11b2 + 11b3 | Borrow Housekeeping ordered payload and Telemetry commit fields | Focused ownership/reset/stall faults, shared regressions, strict exports, matched map/activity and review |
 
-Replace these rows with measured pilot/batch evidence when complete. Keep
-experimental component deltas separate from the accepted production totals.
+## Accepted ownership batch: 11b2 + 11b3
+
+The combined batch passes 319 Scala cases, all four strict SoC exports, exact
+fault controls and fresh independent review. Accepted electrical repair and
+matched area/activity comparisons pass. It removes 262 work-clock flip-flops per variant without changing native
+storage or other clock domains. Mapped logic falls 1.166% / 0.886%; repaired
+logic falls 1.194% / 0.996%. Guards and allowances remain 34.22% / 40.19% of
+mapped logic. All 27 native-model wakes per variant are unchanged. Independent
+review reproduced the area, activity and clock counts; see the
+[batch evidence](reviews/service-command-borrow.md). Its final reports are
+`build/command-borrow/area-bd-r3.json`, `area-click-r3.json`, `cost-r3.json` and
+`activity-r3.json`. Full physical qualification remains at item 17.
+Keep isolated pilot deltas separate.

@@ -18,6 +18,14 @@ claim that the clocked shell is minimal.
 | I2C reset history | Eight sampled-edge slots carry 512 clocked epoch bits, plus the 64-bit current epoch and native copies. A stale-history redesign must preserve every queued descriptor's reset history; truncating the epoch is insufficient. | R5, 11a2b |
 | Services queues, histories and coherent snapshots | Still clocked. Removing the crossing requires moving the corresponding scheduler and acceptance/order/freshness ownership together. | C3, 11–14 |
 | Control command's duplicate frame | 11b1 borrows the retained native bank through native acceptance, replacing 271 sender payload bits with three POR ownership bits. Matched maps remove 268 periodic flip-flops per variant; digital verification passes and physical timing remains open. The 108-bit header sender, descriptors and head receipts remain; see [evidence](reviews/control-frame-borrow.md). | 11b1 |
+| Housekeeping command's duplicate payload | 11b2 removes 211 sender flops by reusing the existing ordered bank through complete sender return. Recovery identity stays in the sender; period-update writers wait for the bank. Queued observations and the in-flight projection remain clocked. Functional tests, all four strict exports, matched mapping and independent review pass; physical timing remains open. See [ownership contract](reviews/service-command-borrow.md). | 11b2 |
+| Telemetry command's duplicate commit operands | 11b3 removes 51 sender flops by borrowing immutable commit operands, masking them outside Commit and preserving the dynamic header. Cancellation does not destroy a dispatched payload. Functional tests, all four strict exports, matched mapping and independent review pass; physical timing remains open. See [ownership contract](reviews/service-command-borrow.md). | 11b3 |
+
+After 11b2/11b3, matched maps contain **4,810 BD / 4,865 Click periodic sinks**,
+including the three SRAM clocks. The batch removes 262 work-clock cells per
+variant; service/LF clocks, the SDA event and native storage are unchanged.
+See the [area ledger](area-ledger.md) for current costs; older inventories below
+remain historical evidence.
 
 C1e2's source/map audit is retained in
 `build/async-quiescing-small-receivers-audit-r1/REPORT.md`; it is an inventory,

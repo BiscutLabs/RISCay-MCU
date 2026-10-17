@@ -42,6 +42,15 @@ class TelemetryCommand(channels: Int) extends Bundle {
   val offset = UInt(7.W); val data = UInt(32.W); val appIndex = UInt(6.W)
   val captures = if(channels > 0) Some(Vec(channels, new TelemetryCapture)) else None
 }
+/** Periodic sender fields; immutable commit operands remain in Services until return. */
+class TelemetryCommandHeader(channels: Int) extends Bundle {
+  val recovery = Bool(); val kind = UInt(2.W); val events = UInt(6.W)
+  val elapsedUpper = UInt(32.W)
+  val captures = if(channels > 0) Some(Vec(channels, new TelemetryCapture)) else None
+}
+class TelemetryCommitFields extends Bundle {
+  val clear = UInt(6.W); val offset = UInt(7.W); val data = UInt(32.W); val appIndex = UInt(6.W)
+}
 class TelemetryReply(channels: Int, words: Int) extends Bundle {
   val recovery = Bool()
   val kind = UInt(2.W); val state = new TelemetryState(channels, words)

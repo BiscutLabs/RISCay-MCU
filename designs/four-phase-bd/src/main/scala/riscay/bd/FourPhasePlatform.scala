@@ -242,13 +242,19 @@ abstract class FourPhasePlatform(p: SocParameters, board: SocParameters => Board
   dontTouch(controlReplyBridge.out)
   val housekeeping=asyncChild("housekeeping")(d => new FourPhaseHousekeeping(p,d))
   val housekeepingCommandBridge=asyncChild("housekeeping_command_bridge")(d =>
-    new chiselasync.clocked.DecoupledToFourPhase(new HousekeepingCommand, 2, d))
+    new chiselasync.clocked.DecoupledToFourPhase(Bool(), 2, d))
   val housekeepingReplyBridge=asyncChild("housekeeping_reply_bridge")(d =>
     new FourPhaseServiceReplyReceipt(new HousekeepingReply, d))
   housekeepingCommandBridge.clock:=workClock; housekeepingReplyBridge.clock:=workClock
-  chiselasync.protocol.FourPhase.connect(housekeeping.command,housekeepingCommandBridge.out)
+  housekeeping.command.req:=housekeepingCommandBridge.out.req
+  housekeepingCommandBridge.out.ack:=housekeeping.command.ack
+  housekeeping.command.bits:=fabric.io.housekeepingPayload
+  housekeeping.command.bits.recovery:=housekeepingCommandBridge.out.bits
   chiselasync.protocol.FourPhase.connect(housekeepingReplyBridge.in,housekeeping.reply)
-  housekeepingCommandBridge.in <> fabric.housekeepingCommand
+  housekeepingCommandBridge.in.valid:=fabric.housekeepingCommand.valid
+  housekeepingCommandBridge.in.bits:=fabric.housekeepingCommand.bits.recovery
+  fabric.housekeepingCommand.ready:=housekeepingCommandBridge.in.ready
+  fabric.io.housekeepingCommandIdle:=housekeepingCommandBridge.in.ready
   fabric.housekeepingReply <> housekeepingReplyBridge.out
   dontTouch(housekeepingReplyBridge.out)
   val housekeepingReturning=withClockAndReset(workClock,reset) {
@@ -261,13 +267,26 @@ abstract class FourPhasePlatform(p: SocParameters, board: SocParameters => Board
     (housekeepingReturning && housekeepingReplyBridge.in.ack)
   val telemetry = asyncChild("telemetry")(d => new FourPhaseTelemetry(p, fabric.telemetryWords, d))
   val telemetryCommandBridge = asyncChild("telemetry_command_bridge")(d =>
-    new chiselasync.clocked.DecoupledToFourPhase(new TelemetryCommand(p.config.measurements.size), 2, d))
+    new chiselasync.clocked.DecoupledToFourPhase(new TelemetryCommandHeader(p.config.measurements.size), 2, d))
   val telemetryReplyBridge = asyncChild("telemetry_reply_bridge")(d =>
     new FourPhaseServiceReplyReceipt(new TelemetryReply(p.config.measurements.size, fabric.telemetryWords.size), d))
-  chiselasync.protocol.FourPhase.connect(telemetry.command, telemetryCommandBridge.out)
+  telemetry.command.req:=telemetryCommandBridge.out.req
+  telemetryCommandBridge.out.ack:=telemetry.command.ack
+  telemetryCommandBridge.out.bits.elements.foreach { case (name, field) =>
+    telemetry.command.bits.elements(name):=field
+  }
+  fabric.io.telemetryCommitFields.elements.foreach { case (name, field) =>
+    telemetry.command.bits.elements(name):=Mux(telemetryCommandBridge.out.bits.kind === TelemetryKind.Commit.U,
+      field,0.U.asTypeOf(field))
+  }
   chiselasync.protocol.FourPhase.connect(telemetryReplyBridge.in, telemetry.reply)
   telemetryCommandBridge.clock := workClock; telemetryReplyBridge.clock := workClock
-  telemetryCommandBridge.in <> fabric.telemetryCommand
+  telemetryCommandBridge.in.valid:=fabric.telemetryCommand.valid
+  fabric.telemetryCommand.ready:=telemetryCommandBridge.in.ready
+  telemetryCommandBridge.in.bits.elements.foreach { case (name, field) =>
+    field:=fabric.telemetryCommand.bits.elements(name)
+  }
+  fabric.io.telemetryCommandIdle:=telemetryCommandBridge.in.ready
   fabric.telemetryReply <> telemetryReplyBridge.out
   dontTouch(telemetryReplyBridge.out)
   // The bridge ACK is already a work-clock register. Its falling edge proves

@@ -240,27 +240,46 @@ abstract class ClickPlatform(p: SocParameters, board: SocParameters => BoardProf
   dontTouch(controlReplyBridge.out)
   val housekeeping=asyncChild("housekeeping")(d => new ClickHousekeeping(p,d))
   val housekeepingCommandBridge=asyncChild("housekeeping_command_bridge")(d =>
-    new DecoupledToClick(new HousekeepingCommand, d))
+    new DecoupledToClick(Bool(), d))
   val housekeepingReplyBridge=asyncChild("housekeeping_reply_bridge")(d =>
     new ClickServiceReplyReceipt(new HousekeepingReply, d))
   housekeepingCommandBridge.clock:=workClock; housekeepingReplyBridge.clock:=workClock
-  chiselasync.protocol.TwoPhase.connect(housekeeping.command,housekeepingCommandBridge.out)
+  housekeeping.command.req:=housekeepingCommandBridge.out.req
+  housekeepingCommandBridge.out.ack:=housekeeping.command.ack
+  housekeeping.command.bits:=fabric.io.housekeepingPayload
+  housekeeping.command.bits.recovery:=housekeepingCommandBridge.out.bits
   chiselasync.protocol.TwoPhase.connect(housekeepingReplyBridge.in,housekeeping.reply)
-  housekeepingCommandBridge.in <> fabric.housekeepingCommand
+  housekeepingCommandBridge.in.valid:=fabric.housekeepingCommand.valid
+  housekeepingCommandBridge.in.bits:=fabric.housekeepingCommand.bits.recovery
+  fabric.housekeepingCommand.ready:=housekeepingCommandBridge.in.ready
+  fabric.io.housekeepingCommandIdle:=housekeepingCommandBridge.in.ready
   fabric.housekeepingReply <> housekeepingReplyBridge.out
   dontTouch(housekeepingReplyBridge.out)
   housekeeping.start:=controlStart
   fabric.io.housekeepingDraining:= !housekeepingCommandBridge.in.ready
   val telemetry = asyncChild("telemetry")(d => new ClickTelemetry(p, fabric.telemetryWords, d))
   val telemetryCommandBridge = asyncChild("telemetry_command_bridge")(d =>
-    new DecoupledToClick(new TelemetryCommand(p.config.measurements.size), d))
+    new DecoupledToClick(new TelemetryCommandHeader(p.config.measurements.size), d))
   val telemetryReplyBridge = asyncChild("telemetry_reply_bridge")(d =>
     new ClickServiceReplyReceipt(new TelemetryReply(p.config.measurements.size, fabric.telemetryWords.size), d))
   telemetry.start := controlStart
-  chiselasync.protocol.TwoPhase.connect(telemetry.command, telemetryCommandBridge.out)
+  telemetry.command.req:=telemetryCommandBridge.out.req
+  telemetryCommandBridge.out.ack:=telemetry.command.ack
+  telemetryCommandBridge.out.bits.elements.foreach { case (name, field) =>
+    telemetry.command.bits.elements(name):=field
+  }
+  fabric.io.telemetryCommitFields.elements.foreach { case (name, field) =>
+    telemetry.command.bits.elements(name):=Mux(telemetryCommandBridge.out.bits.kind === TelemetryKind.Commit.U,
+      field,0.U.asTypeOf(field))
+  }
   chiselasync.protocol.TwoPhase.connect(telemetryReplyBridge.in, telemetry.reply)
   telemetryCommandBridge.clock := workClock; telemetryReplyBridge.clock := workClock
-  telemetryCommandBridge.in <> fabric.telemetryCommand
+  telemetryCommandBridge.in.valid:=fabric.telemetryCommand.valid
+  fabric.telemetryCommand.ready:=telemetryCommandBridge.in.ready
+  telemetryCommandBridge.in.bits.elements.foreach { case (name, field) =>
+    field:=fabric.telemetryCommand.bits.elements(name)
+  }
+  fabric.io.telemetryCommandIdle:=telemetryCommandBridge.in.ready
   fabric.telemetryReply <> telemetryReplyBridge.out
   dontTouch(telemetryReplyBridge.out)
   // Click reply acceptance returns the clocked bridge to idle on that edge.

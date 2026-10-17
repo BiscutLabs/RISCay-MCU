@@ -37,6 +37,7 @@ from check_held_receipts import validate_held_receipts, held_receipt_probe
 from check_native_clock_inventory import native_clock_inventory
 from check_quiescing_receipt import native_request_source, pack_request, request_receipt_probe
 from check_probe_budget import require_paired_probe_budget
+from check_command_borrow import telemetry_borrow_background
 from check_program_address import prove_program_address, program_address_probe
 from check_ram_source_export import ARM_PATH, RETIRE_PATH, validate_ram_source, ram_source_bindings, ram_source_probe
 from check_program_source_export import PROGRAM_PATHS, validate_program_source, program_source_bindings, program_source_probe, validate_program_receipts
@@ -1555,6 +1556,7 @@ def main() -> None:
         source, count = i2c_background(source, manifest, scopes, count)
         source, count = sram_background(source, manifest, scopes, count, program_bytes)
         source, count = service_background(source, manifest, scopes, count)
+        source, count = telemetry_borrow_background(source, manifest, scopes, count)
         source, count = completion_background(source, manifest, scopes, count, program_bytes)
         source, count = publication_recovery_background(source, manifest, scopes, count)
         if args.sleep_clock:

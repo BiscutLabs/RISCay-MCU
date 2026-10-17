@@ -985,15 +985,25 @@ physical reset qualification (R2b) remains mandatory under item 17a3.
       periodic flip-flops per variant, repaired logic down 0.024174 / 0.028878 mm²,
       with unchanged native-model firmware wake edges. Physical timing remains open.
       This does not migrate the Services scheduler or remove its header crossing.
-    - [ ] **11b2. Borrow retained Housekeeping command storage.** Audit confirms
-      212 mapped sender payload flops per variant alongside an existing 211-bit
-      ordered bank. Reuse that bank for ordered, background and recovery commands;
-      keep it immutable until actual sender idle and backpressure the competing
-      Control period-update writer. Preserve the sender's settling/return cadence,
-      queued observations, publication-only consumedGray advancement and the
-      separate 33-bit in-flight projection. Verify stopped work, reset, overlapping
-      ordered/background traffic and overwrite/backpressure faults. Expected
-      210–211 net flops are an estimate, pending implementation and matched mapping.
+    - [x] **11b2. Borrow retained Housekeeping command storage, digitally verified.**
+      Functional tests, strict exports, matched mapping and fresh review pass.
+      The existing ordered bank holds
+      ordered, background and recovery commands through actual sender idle, with
+      backpressure on the competing Control period-update writer. Only recovery
+      identity travels through the sender. Settling/return cadence, queued
+      observations, publication-only consumedGray advancement and the separate
+      33-bit in-flight projection remain. Removes 211 sender flops per variant.
+    - [x] **11b3. Borrow Telemetry commit operands, digitally verified.**
+      Verified with 11b2 in one batch: 319 Scala cases, all four strict exports,
+      exact fault controls and matched cost/activity. The existing commit bank retains
+      clear/offset/data/appIndex through complete sender return. Non-Commit
+      commands see zero; dynamic observations remain in the sender header.
+      Cancellation must not destroy an already dispatched payload. Removes 51
+      sender flops per variant. Both contracts, stopped-consumer/reset/return tests and
+      exact live-source fault controls are in the
+      [batch review](reviews/service-command-borrow.md). These changes remove
+      copies, not the remaining clocked dispatch owners; physical apertures stay
+      open under item 17.
   - [ ] **11c. Independent-request arbitration.** Implement and qualify the
     required arbitration or event scheduler, including simultaneous arrivals,
     bounded CPU/background fairness and permanent-supervisor independence.

@@ -396,7 +396,22 @@ def publication_boundary_bindings(top,owner,endpoints,command,cut,scopes):
     prefix='Click' if top=='ClickSoc' else 'FourPhase'
     if not re.fullmatch('DecoupledTo'+prefix+r'(?:_[0-9]+)?',command['module']):
         raise ValueError('PUBLICATION_BOUNDARY_COMMAND_OWNER')
-    pairs.append((pin(command['rtl_path']+'.in_bits_recovery'),'('+' && '.join(terms)+')'))
+    recovery_pin='in_bits_recovery'
+    if owner=='housekeeping':
+        # 11b2 transports only the role. Require the exact scalar contract;
+        # never fall back to whichever old/new port happens to be present.
+        channels={c['id']:c for c in command.get('channels',[])}
+        data={e['id']:e for e in command.get('endpoints',[])}
+        if set(channels)!={'in','out'}:
+            raise ValueError('PUBLICATION_BOUNDARY_COMMAND_LAYOUT')
+        for side in ('in','out'):
+            source='~|'+command['module']+'>'+side+'.bits'
+            expected=[dict(field='bits',lsb=0,width=1,signed=False,source=source)]
+            endpoint=data.get(side+'_data',{})
+            if channels[side]['layout']!=expected or endpoint.get('width')!=1 or endpoint.get('source')!=source:
+                raise ValueError('PUBLICATION_BOUNDARY_COMMAND_LAYOUT')
+        recovery_pin='in_bits'
+    pairs.append((pin(command['rtl_path']+'.'+recovery_pin),'('+' && '.join(terms)+')'))
     return pairs
 
 
