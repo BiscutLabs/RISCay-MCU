@@ -5,7 +5,8 @@ from pathlib import Path
 import subprocess
 import tempfile
 import unittest
-from gf180_physical import adapter, sha
+from gf180_physical import adapter, sha, distribution_profile, SC
+from copy import deepcopy
 from gf180_control_roles import CONTROL, DATA
 from gf180_constraints import monitors, brace
 from check_gf180_envelopes import strict, run as envelopes
@@ -69,6 +70,53 @@ class PhysicalControls(unittest.TestCase):
         for x in c.cells:
             if "CLK" in x["pins"]: fanout[x["pins"]["CLK"]]=fanout.get(x["pins"]["CLK"],0)+1
         self.assertLessEqual(max(fanout.values()),16)
+
+    def test_every_tree_level_and_depth_at_boundaries_and_real_widths(self):
+        for width in (1,16,17,256,257,337,687,992):
+            for model in ('EventRegister','ClosingLatch'):
+                with self.subTest(width=width,model=model):
+                    params=dict(WIDTH=width,DELAY_FS=1000000)
+                    if model=='EventRegister':params['RESET_VALUE']=0
+                    c,r=adapter(primitive(model,**params),.1)
+                    report=distribution_profile(c.cells,capture_root='trigger' if model=='EventRegister' else 'closed')
+                    self.assertLessEqual(report['maximum_input_fanout'],16)
+                    self.assertEqual(sum(any(x in c['cell'] for x in ('dffrnq','latrnq')) for c in c.cells),width)
+            c,r=adapter(primitive('ControlGate',OP=0,WIDTH=width,RESET_VALUE=0,DELAY_FS=1000000),.1,role=DATA)
+            self.assertLessEqual(distribution_profile(c.cells,data_reset=True)['maximum_input_fanout'],16)
+
+    def test_overloaded_root_and_unbalanced_branch_rejected(self):
+        c,_=adapter(primitive('EventRegister',WIDTH=992,RESET_VALUE=0,DELAY_FS=1000000),.1)
+        root=next(x['pins']['Z'] for x in c.cells if x['cell']==SC+'buf_8' and x['pins']['I']=='trigger')
+        bad=deepcopy(c.cells)
+        for x in bad:
+            if x['cell']==SC+'buf_4':x['pins']['I']=root
+        with self.assertRaisesRegex(ValueError,'DISTRIBUTION_FANOUT'):
+            distribution_profile(bad,capture_root='trigger')
+        bad=deepcopy(c.cells)
+        next(x for x in bad if 'CLK' in x['pins'])['pins']['CLK']=root
+        with self.assertRaisesRegex(ValueError,'DISTRIBUTION_UNBALANCED_CAPTURE'):
+            distribution_profile(bad,capture_root='trigger')
+
+    def test_phase_register_feedback_is_preserved(self):
+        c,_=adapter(primitive('PhaseRegister',RESET_VALUE=0,DELAY_FS=1000000),.1)
+        reg=next(x for x in c.cells if x['cell']==SC+'dffrnq_1')
+        driver=next(x for x in c.cells if x['pins'].get('ZN')==reg['pins']['D'])
+        self.assertEqual(driver['cell'],SC+'inv_1')
+        self.assertEqual(driver['pins']['I'],reg['pins']['Q'])
+
+    def test_capture_and_reset_branch_polarity_is_audited(self):
+        for model,root in (('EventRegister','trigger'),('ClosingLatch','closed'),('PhaseRegister','trigger')):
+            parameters=dict(DELAY_FS=1000000)
+            if model!='ClosingLatch':parameters['RESET_VALUE']=1
+            if model!='PhaseRegister':parameters['WIDTH']=337
+            c,_=adapter(primitive(model,**parameters),.1)
+            for pin,reason in (('E' if model=='ClosingLatch' else 'CLK','CAPTURE'),
+                               ('SETN' if model=='PhaseRegister' else 'RN','RESET')):
+                bad=deepcopy(c.cells);net=next(x['pins'][pin] for x in bad if pin in x['pins'])
+                branch=next(x for x in bad if x['pins'].get('Z')==net)
+                branch['cell']=SC+'inv_1';branch['pins']['ZN']=branch['pins'].pop('Z')
+                with self.assertRaisesRegex(ValueError,'DISTRIBUTION_POLARITY_'+reason):
+                    distribution_profile(bad,capture_root=root)
 
     def test_tcl_injection_is_rejected(self):
         for name in ("x}\nexit", "{x", "x\ry"):

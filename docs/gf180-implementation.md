@@ -39,6 +39,13 @@ The default mapper now runs global electrical repair before downstream timing
 or P&R. See [its graph and evidence contract](reviews/electrical-first-correction.md).
 Native cells remain protected and residual electrical violations remain failures.
 The default P&R entry point rejects a mapping without its complete repair receipt.
+It also runs wire-dependent repair after placement and global routing, with
+complete OpenDB graph proofs and all five cell-corner reports. See the
+[execution record](reviews/wire-electrical-repair.md): both variants complete
+through global routing with a tested, explicitly selected resizer progress
+backport. Native cells and connections remain protected. Residual slew
+violations still block electrical closure. Nominal estimated wire RC is not
+extracted min/max RC qualification.
 Use a fresh mapping directory for every attempt; historical maps are retained.
 
 The local adapter binds each complete primitive parameter tuple, checks the RTL

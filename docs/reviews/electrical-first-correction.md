@@ -156,6 +156,10 @@ BD; 5,573 buffers and 9,010 replacements in Click. All 55,722 BD and 61,203 Clic
 native leaves remain unchanged. The replacement count includes equivalent
 clock-inverter-to-inverter substitutions; it is not a count of stronger drivers.
 These added buffers must remain in subsequent area and leakage accounting.
+The subsequent [exact area report](../gf180-estimates.md#electrical-repair-area)
+includes every buffer, added tie and resizing delta: repaired logic is
+3.032245 mm² BD / 3.816860 mm² Click, an increase of 0.190388 / 0.209668 mm²
+over the respective original graph. Updated leakage and activity remain open.
 
 Electrical closure is **not** achieved. The worst remaining net in each variant
 drives the three SRAM clocks: its roughly 10 ns slew exceeds the loaded TT
@@ -188,7 +192,7 @@ electrical violations. In particular, the BD update controller still has a
 1.663 ns local ACK margin. This standalone-stage measurement excludes the new
 parent-level 32 ns source-ACK guard; its full composed envelope is still open.
 
-The **complete rerun fails**, rather than silently omitting unsupported paths.
+The **initial complete rerun failed**, rather than silently omitting unsupported paths.
 Execute and SRAM preparation reject with `CONTROL_SOURCE_WIDTH` after unused
 ports disappear from the repaired hierarchy. Elapsed rejects with
 `STAGE_UNDECLARED_INPUT`: a real distribution branch now crosses the stage
@@ -196,6 +200,10 @@ boundary. Both Control Join campaigns reject with `JOIN_RENDEZVOUS_WIRING`;
 both execute Join campaigns reject with `CONTROL_SOURCE_WIDTH`. Preserve the
 actual buffers and parent paths when extending these bindings. No old Join
 margin or old execute/elapsed measurement qualifies the new graph.
+
+The subsequent [leaf-binding correction](repaired-leaf-timing.md) resolves these
+paths on the full repaired graph in nominal smoke and actual-arc controls. The
+full corner/slew rerun remains required on the final repaired graph.
 
 Local evidence is under `build/electrical-first-campaign-{bd,click}-r2`,
 `build/electrical-first-control-{nominal,faults}-{bd,click}-r1` and

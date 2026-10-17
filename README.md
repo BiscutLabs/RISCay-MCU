@@ -69,8 +69,20 @@ the addressed [I2C receive store](docs/native-i2c-byte-store-contract.md) remove
 another 513 native payload bits. CPU request receipts remove 70 duplicate
 clocked bits per variant. Capacity-sized loader metadata removes
 183 native payload bits and 40 periodic bits per variant.
-The latest mapped logic area is **2.830967 / 3.596523 mm²**, excluding SRAM.
-All 27 ordinal wake windows per variant remain unchanged; the 43-instruction firmware wakes still use 3,255 BD / 3,160 Click work-clock edges. A2b functional and strict export checks pass; physical timing remains unqualified.
+Current repaired logic area is **3.039002 / 3.823217 mm²** (BD / Click), excluding
+SRAM. Global repair adds **0.190638 / 0.209975 mm²** to the same current maps;
+see [area accounting](docs/gf180-estimates.md#electrical-repair-area).
+The earlier A2b measurements were 2.830967 / 3.596523 mm² with 3,255 BD / 3,160
+Click work-clock edges for the 43-instruction firmware wake. Those activity and
+power figures are historical. The current native-model firmware wake uses
+3,257 BD / 3,212 Click work edges; [ACK guard accounting](docs/reviews/ack-guard-activity.md)
+separates accumulated guard waits from elapsed wake time and component energy.
+Mapped wake timing and whole-chip power remain unqualified.
+A2b functional and strict export checks pass; physical timing remains unqualified.
+Repaired stage and Join [leaf bindings](docs/reviews/repaired-leaf-timing.md) now
+resolve the previously blocked paths: all 140 standard-stage and 20 Control
+Join corner/slew cases have positive conditional margins. Distribution-budget
+failures, small BD hold margins and complete electrical/routed timing remain open.
 The [A2b evidence](docs/reviews/loader-metadata-a2b-completion.md) records its
 checks and measured costs.
 An [opt-in Control buffer repair](docs/reviews/control-electrical-repair.md)
@@ -83,9 +95,10 @@ The [relative-timing pilot](docs/reviews/control-relative-timing.md) resolves
 local Control capture/ACK paths under explicit handshake states at five cell
 corners. Source launch, full return/pulse behavior, electrical repair and routed
 timing remain open; no hardware clock or shortened guard is introduced.
-The [reusable stage survey](docs/reviews/native-stage-timing.md) applies those
-local checks to execute, elapsed, SRAM and I²C update. Negative execute/elapsed
-allowances remain visible; custom I²C publication and those stages' upstream launch stay open.
+The earlier [reusable stage survey](docs/reviews/native-stage-timing.md) found
+negative execute/elapsed allowances. Longer timing policies and the repaired-leaf
+measurements above supersede those local results; their original failure evidence
+remains visible. Custom I²C publication and upstream launch stay open.
 The [Control Join check](docs/reviews/control-join-timing.md) composes its actual
 operand storage and update capture at all five corners under explicit admission states; full source
 reuse, other transition histories and physical qualification remain open.
@@ -96,10 +109,18 @@ The same template now measures [execute's Join paths](docs/reviews/execute-join-
 Their conditional margins are positive; the 480 independent register-file bits
 and elapsed's seeded owner remain uncomposed. Global electrical repair is now the
 first gate in the default mapper; timing campaigns consume its proved graph.
+The [wire-dependent repair](docs/reviews/wire-electrical-repair.md) also completes
+after placement and global routing for both variants with exact native graphs
+preserved. Five-corner reports retain slew failures and the added cell area;
+electrical closure remains the next gate.
 The [electrical-first correction](docs/reviews/electrical-first-correction.md)
 also adds independent owner timing policies and longer elapsed/execute request
 guards plus a native BD Control ACK guard. These targets remain unqualified;
 no clocked pipeline or shorter matched delay is introduced.
+The [slow-guard throughput check](docs/reviews/elapsed-throughput.md) exercises
+existing tick batching at a measured 645 ns request delay. Production-coefficient
+isolated maintenance drains in the digital tests; the accelerated 2 µs tick
+sleep stress fails at that delay. Full physical throughput remains open.
 See the [elapsed](docs/native-elapsed-contract.md) and
 [CRC](docs/native-crc-contract.md) contracts. Wider payload reductions remain
 open. Self-timed SRAM access follows a separate

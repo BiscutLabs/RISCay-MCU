@@ -72,7 +72,8 @@ object ClockedSimulation {
     val delays=maximumDelays.filterNot(x => selectedDelays.exists(_._1 == x._1)) ++ selectedDelays
     Files.writeString(base.resolve("maximum-delays.json"),ujson.write(ujson.Obj.from(delays.map { case(k,v) => k -> ujson.Str(v) }),indent=2))
     val delayOverrides=delays.map { case(path,delay) =>
-      s"defparam dut.${path.split('.').drop(1).mkString(".")}.DELAY_FS=$delay;"
+      val root=if(onChipOscillator) "dut.soc" else "dut"
+      s"defparam $root.${path.split('.').drop(1).mkString(".")}.DELAY_FS=$delay;"
     }.mkString("\n")
     val ports = ujson.read(Files.readString(base.resolve("ports.json")))("nodes")(0)("ports").arr.toSeq
     val chipSources = if(onChipOscillator) {

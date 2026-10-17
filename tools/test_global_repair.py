@@ -6,9 +6,9 @@ from unittest.mock import patch
 from tempfile import TemporaryDirectory
 from pathlib import Path
 import json
-from gf180_physical import SC
+from gf180_physical import SC, SRAM
 from repair_gf180_design import (graph_proof, validate_receipt, split_output_feedback, correct_scalar_port_escaping,
-    buffer_native_resets, prune_added_orphan_ties, EVIDENCE, sha)
+    buffer_native_resets, buffer_sram_clocks, validate_sram_clock_drivers, prune_added_orphan_ties, EVIDENCE, sha)
 
 
 def cell(kind, **pins):
@@ -18,7 +18,7 @@ def cell(kind, **pins):
 
 BUF='pin(I){direction:input;} pin(Z){direction:output; function:"I";}'
 INV='pin(I){direction:input;} pin(Z){direction:output; function:"!I";}'
-LIB={SC+'buf_1':BUF,SC+'buf_2':BUF,SC+'inv_1':INV,
+LIB={SC+'buf_1':BUF,SC+'buf_2':BUF,SC+'buf_16':BUF,SC+'inv_1':INV,
      SC+'tieh':'pin(Z){direction:output; function:"1";}',
      SC+'tiel':'pin(ZN){direction:output; function:"0";}',
      SC+'dff_1':'ff(IQ,IQN){clocked_on:"I";} '+BUF,
@@ -39,6 +39,44 @@ def buffered():
 class GlobalRepairTest(unittest.TestCase):
     def proof(self,before,after,protected=None):
         return graph_proof(before,after,'top',protected or {},[LIB]*5)
+
+    def test_three_sram_clocks_keep_exact_macros_and_get_exclusive_drivers(self):
+        a=dict(modules=dict(top=dict(ports={'clk':dict(direction='input',bits=[1])},cells={
+            'ram'+str(i):dict(type=SRAM,connections=dict(CLK=[1],Q=[i+2]),
+                            port_directions=dict(CLK='input',Q='output')) for i in range(3)})))
+        b=deepcopy(a);report=buffer_sram_clocks(b,'top')
+        self.assertEqual(len(report),3)
+        self.assertEqual(len(self.proof(a,b)['added_buffers']),3)
+        self.assertEqual({b['modules']['top']['cells'][r['owner']]['type'] for r in report},{SRAM})
+        self.assertEqual(len({tuple(b['modules']['top']['cells'][r['buffer']]['connections']['Z']) for r in report}),3)
+        self.assertEqual(validate_sram_clock_drivers(b,'top'),report)
+        # Whole-graph contraction alone deliberately permits a shared buffer.
+        # The final physical clock check must reject that electrically bad case.
+        bad=deepcopy(b);cells=bad['modules']['top']['cells'];first=report[0]['buffer']
+        for r in report[1:]:
+            cells[r['owner']]['connections']['CLK']=cells[first]['connections']['Z']
+            del cells[r['buffer']]
+        self.proof(a,bad)
+        with self.assertRaisesRegex(ValueError,'REPAIR_SRAM_CLOCK_EXCLUSIVE'):
+            validate_sram_clock_drivers(bad,'top')
+        cells=b['modules']['top']['cells'];cells[first]['type']=SC+'inv_1'
+        cells[first]['connections']['ZN']=cells[first]['connections'].pop('Z')
+        cells[first]['port_directions']['ZN']=cells[first]['port_directions'].pop('Z')
+        with self.assertRaisesRegex(ValueError,'REPAIR_SRAM_CLOCK_NONINVERTING'):
+            validate_sram_clock_drivers(b,'top')
+
+    def test_shared_sram_parent_is_edited_once_and_counted_three_times(self):
+        wrapper=dict(ports={'clk':dict(direction='input',bits=[1]),'q':dict(direction='output',bits=[2])},cells=dict(
+            ram=dict(type=SRAM,connections=dict(CLK=[1],Q=[2]),port_directions=dict(CLK='input',Q='output'))))
+        top=dict(ports={'clk':dict(direction='input',bits=[1])},cells={
+            'bank'+str(i):dict(type='wrapper',connections=dict(clk=[1],q=[i+2]),port_directions=dict(clk='input',q='output')) for i in range(3)})
+        a=dict(modules=dict(top=top,wrapper=wrapper));b=deepcopy(a)
+        report=buffer_sram_clocks(b,'top')
+        self.assertEqual(len(report),3)
+        self.assertEqual(len(b['modules']['wrapper']['cells']),2)
+        self.assertEqual(len(self.proof(a,b)['added_buffers']),3)
+        del a['modules']['top']['cells']['bank2']
+        with self.assertRaisesRegex(ValueError,'REPAIR_SRAM_COUNT'):buffer_sram_clocks(a,'top')
 
     def reject(self,after,diagnostic,before=None,protected=None):
         with self.assertRaisesRegex(ValueError,diagnostic):self.proof(before or fixture(),after,protected)

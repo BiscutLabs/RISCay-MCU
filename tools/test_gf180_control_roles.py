@@ -192,7 +192,10 @@ class ControlRoles(unittest.TestCase):
             graph, req = adapter(primitive("data", width), 1.4, role=DATA)
             self.assertEqual(sum(x["cell"] == SC + "buf_1" for x in graph.cells), width)
             self.assertFalse(any(x["cell"] == SC + "dlyd_1" for x in graph.cells))
-            self.assertEqual(req, dict(role=DATA, data_max_ns=10))
+            self.assertEqual(req, dict(role=DATA, data_max_ns=10,
+                distribution_fanout_limit=16, reset_branch_levels=2 if width>256 else 1,
+                distribution_structure=dict(maximum_input_fanout=min(width,16),
+                    reset_depth=4 if width>256 else 3)))
 
     def test_vector_controls_have_independent_preserved_lane_chains(self):
         for delay, count, kind in ((1000000, 9, "buf_1"), (32000000, 28, "dlyd_1"), (110000000, 95, "dlyd_1")):

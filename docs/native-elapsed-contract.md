@@ -89,6 +89,58 @@ complete capture path. The retained tables and logs are bound by
 
 ## Acceptance evidence
 
+### Throughput and tick batching
+
+The command crossing snapshots the latest synchronized target on admission.
+Ticks arriving while native computation, receipt publication or return is busy
+are represented by the next modulo-32-bit delta. They are already batched; a
+thousand missed ticks do not create a thousand transactions. Services also
+coalesces elapsed observations before final Housekeeping publication. Neither
+batching point may discard time, fractions or final consumedGray ownership.
+
+For the GF180 LF engineering profile, the fastest source tick interval is
+1/12 s = 83,333.333 us. The following are **conditional regression ceilings**,
+not physical maximum-delay guarantees:
+
+| Operation | Ceiling | Preconditions |
+|---|---:|---|
+| Full-width target update through elapsed receipt and return drainage | 32 us | One admitted batch; unstalled consumer |
+| Two batches, including ticks arriving after first admission | 64 us | Unstalled consumer |
+| Isolated LF restart through final Housekeeping effect and retained sleep | 64 us | Quiescent application; no competing peripheral or host traffic |
+
+The tests use the production 129354/83333/200000 us coefficients, 8 and 20 MHz
+service clocks, and a **645 ns request guard**, rounding up the measured adapter
+maximum of 644.726257 ns. Other native cells retain their digital models. The
+maintenance waveform manually pauses LF between events; it is not a simulation
+of the physical 5..12 Hz oscillator. No finite completion bound is promised
+under unbounded backpressure, active competing work, repeated reset or a full
+32-bit source-counter wrap while service is absent.
+
+A production throughput qualification must establish
+`fast-source startup + coherent tick-to-final-sleep drain < minimum tick interval`
+at every supported corner/configuration, including actual wire and capture
+delays. The planning allocation is 100 us startup + 64 us drainage + 1 us
+observation margin = 165 us, below the 83,333 us fastest production interval.
+These allocations are not newly measured physical bounds. The isolated test's
+drain measurement already includes Gray observation and gate return; the extra
+1 us is margin, not an omitted stage. Generic faster timebase configurations
+need their own throughput proof.
+
+BD also pays the arithmetic guard on Reply-to-Return and Return-to-Idle. With
+eight arithmetic turns plus those two cleanup turns, its request-chain edges
+alone account for approximately 12.9 us at 645 ns per edge. Splitting cleanup
+from arithmetic is an open latency optimization, not a reason to release busy
+early. Click has no four-phase return adapter.
+
+The unchanged accelerated test generates one tick every 2 us. At 645 ns both
+variants fail `MAINTENANCE_STARVED_SLEEP` with zero sleep entries. This failure
+is retained and is **not** superseded by the isolated-event passes. Batching
+preserves elapsed time under that overload but cannot guarantee a quiet window
+if another tick arrives before each transaction drains. See the
+[measurement and test record](reviews/elapsed-throughput.md).
+
+### Earlier digital acceptance
+
 The electrical-first correction makes owner and arithmetic-step timing separate
 constructor parameters. Its default step request guard is 100 ns in each native
 implementation; owner, data, storage, output and acknowledgment models retain

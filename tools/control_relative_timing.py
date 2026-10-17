@@ -218,17 +218,24 @@ def parse(log, plan, context):
     expected={q["id"]:q for q in context["queries"]}; rows={}; points={};event_slew=None
     for line in log.splitlines():
         f=line.split("\t")
-        if f[0] in ("CONTROL_PATH","RELATIVE_ACK"):
+        if f[0] in ("CONTROL_PATH","RELATIVE_ACK","LEAF_ACK_PATH","LEAF_ACK_SEQUENTIAL"):
             key=f[1]
             require(key in expected and key not in rows,"RELATIVE_QUERY_ID")
             q=expected[key]
-            if f[0]=="CONTROL_PATH":
+            is_leaf_ack=f[0].startswith('LEAF_ACK_')
+            require(not is_leaf_ack or plan.get('leaf_anchored') and q['role']=='ack',"RELATIVE_LEAF_ACK_KIND")
+            require(not plan.get('leaf_anchored') or (q['role']=='ack')==is_leaf_ack,"RELATIVE_LEAF_ACK_KIND")
+            if f[0] in ("CONTROL_PATH","LEAF_ACK_PATH"):
                 require(context["kind"]!="sequential_ack" and len(f)==11,"RELATIVE_ROW_SHAPE")
                 source,arrival,data,delay,slew=map(float,f[2:7])
-                require(all(math.isfinite(v) for v in (source,arrival,data,delay,slew)) and
-                        abs(source)<1e-6 and abs(arrival-data)<1e-6 and abs(arrival-delay)<1e-6 and delay>=0 and slew>=0,
-                        "RELATIVE_NUMERIC")
                 start,end,se,te=f[7:]
+                numeric=(abs(source-(0 if se=='rise' else 1))<1e-6 and
+                         abs(arrival-source-delay)<1e-4 and abs(data-delay)<1e-4
+                         if plan.get('leaf_anchored') else
+                         abs(source)<1e-6 and abs(arrival-data)<1e-6 and abs(arrival-delay)<1e-6)
+                require(all(math.isfinite(v) for v in (source,arrival,data,delay,slew)) and
+                        numeric and delay>=0 and slew>=0,
+                        "RELATIVE_NUMERIC")
                 require(start in context["sources"] and end==q["sink"] and te==q["sink_edge"] and
                         se in ("rise","fall") and (q["source_edge"]=="any" or q["source_edge"]==se),"RELATIVE_PATH_BINDING")
                 rows[key]=dict(delay_ns=delay,start=start,end=end,max_slew_ns=slew)
@@ -236,9 +243,11 @@ def parse(log, plan, context):
                 require(context["kind"]=="sequential_ack" and len(f)==5,"RELATIVE_ROW_SHAPE")
                 delay,qa,cq=map(float,f[2:])
                 require(all(math.isfinite(v) and v>=0 for v in (delay,qa,cq)) and delay>=qa>=cq,"RELATIVE_ACK_NUMERIC")
-                rows[key]=dict(delay_ns=delay,q_arrival_ns=qa,clk_q_ns=cq,start=plan["event"],end="in_ack")
-        elif f[0] in ("CONTROL_POINTS","RELATIVE_ACK_POINTS"):
+                rows[key]=dict(delay_ns=delay,q_arrival_ns=qa,clk_q_ns=cq,start=plan["event"],end=q['sink'])
+            if is_leaf_ack:rows[key].update(measurement='propagated-graph-arrival',receiver_role=q['receiver_role'])
+        elif f[0] in ("CONTROL_POINTS","RELATIVE_ACK_POINTS","LEAF_ACK_POINTS"):
             require(f[1] in rows and f[1] not in points,"RELATIVE_POINTS_ID")
+            require((f[0]=='LEAF_ACK_POINTS')==(rows[f[1]].get('measurement')=='propagated-graph-arrival'),"RELATIVE_LEAF_ACK_POINTS")
             points[f[1]]=f[2:]
         elif f[0]=="RELATIVE_EVENT_SLEW":
             require(len(f)==3 and event_slew is None,"RELATIVE_EVENT_SLEW_ROW")
@@ -279,14 +288,19 @@ def margins(results, plan, cell):
         lo,hi=result["event_slew_ns"]
         require(lo>=low-2e-6 and hi<=high+2e-6,"RELATIVE_COMMON_SLEW_COVERAGE")
     values=[]
+    def ack_bound(rows, mode, edge):
+        selected=[v for k,v in rows.items() if k.startswith('ack:') and k.endswith(':'+mode+':'+edge)]
+        require(selected,'RELATIVE_ACK_COVERAGE')
+        return (min if mode=='min' else max)(selected,key=lambda v:v['delay_ns'])
     for phase in ([0] if plan["variant"]=="bd" else [0,1]):
         edge="rise" if phase==0 else "fall"
         request=results[f"request-{phase}"]["rows"]
         acks=common if plan["variant"]=="bd" else results["ack"]["rows"]
-        ack=acks[f"ack:min:{edge}"]["delay_ns"]
+        limiting_ack=ack_bound(acks,'min',edge)
+        ack=limiting_ack['delay_ns']
         if plan["variant"]=="click":
             for mode in ("min","max"):
-                a=acks[f"ack:{mode}:{edge}"]
+                a=ack_bound(acks,mode,edge)
                 clk=common[f"phase_clock:{mode}"]["delay_ns"]
                 require(abs(a["q_arrival_ns"]-clk-a["clk_q_ns"])<1e-4,"RELATIVE_ACK_CLOCK_ACCOUNTING")
         for lane in range(plan.get("payload_width",315)):
@@ -301,12 +315,15 @@ def margins(results, plan, cell):
             close=common[f"capture:{lane}:max"]["delay_ns"]
             values.append(dict(lane=lane,phase=phase,
                 maximum_input_data_lag_ns=capture-dmax-cell["setup_ns"],
-                zero_reuse_hold_margin_ns=ack+dmin-close-cell["hold_ns"],
+                # Leaf source launch/retention is uncomposed. Grant no parent
+                # distribution or transform contamination-delay credit.
+                zero_reuse_hold_margin_ns=ack+(0 if plan.get('leaf_anchored') else dmin)-close-cell["hold_ns"],
                 ack_after_capture_ns=ack-close))
+            if plan.get('leaf_anchored'):values[-1].update(ack_receiver=limiting_ack['end'],ack_receiver_role=limiting_ack['receiver_role'])
     return dict(lanes=values, minimum_input_data_lag_ns=min((v["maximum_input_data_lag_ns"] for v in values if v["maximum_input_data_lag_ns"] is not None),default=None),
                 minimum_zero_reuse_hold_ns=min((v["zero_reuse_hold_margin_ns"] for v in values if v["zero_reuse_hold_margin_ns"] is not None),default=None),
                 minimum_ack_after_capture_ns=min(v["ack_after_capture_ns"] for v in values),
-                unresolved=["Join storage Q/request launch alignment", "BD pending admission and both returns",
+                unresolved=["Join storage Q/request launch alignment", "Execute RF source launch and retention/hold", "Elapsed owner/admission launch and retention/hold", "BD pending admission and both returns",
                             "Click feedback pulse and phase self-hold", "local variation/mismatch", "wire RC and reset", "electrical limits"],
                 physical_qualification=False)
 

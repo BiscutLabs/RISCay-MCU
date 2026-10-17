@@ -6,6 +6,59 @@ are independently audited. The subsequent corrective work targets redundant
 storage and clocked coordination while preserving native BD/Click; see the
 [migration checklist](async-soc-migration.md). Physical timing remains unqualified.
 
+## Electrical repair area
+
+These are totals over every physical leaf in the accepted electrical-first maps
+(`bounded-distribution-bd-r2` and `-click-r2`, RTL at the merged PR #8 tree,
+with bounded native trees and three exclusive SRAM clock drivers).
+The comparison is the original and repaired graph of **the same mapping**, not
+the earlier A2b RTL. Pinned LEF dimensions supply physical cell footprints.
+SRAM's three unchanged macros occupy **0.4662406590 mm²**; their distinct
+Liberty area fields sum to 0.6282008304 mm². Both totals are reported explicitly.
+Standard-cell areas agree between the two views.
+
+| Area metric (mm²) | BD | Click |
+|---|---:|---:|
+| LEF footprint before repair, including SRAM | 3.3146048574 | 4.0794827838 |
+| LEF footprint after repair, including SRAM | 3.5052426110 | 4.2894580542 |
+| Liberty area sum before repair, including SRAM | 3.4765650288 | 4.2414429552 |
+| Liberty area sum after repair, including SRAM | 3.6672027824 | 4.4514182256 |
+| Before repair, excluding SRAM | 2.8483641984 | 3.6132421248 |
+| After repair, excluding SRAM | 3.0390019520 | 3.8232173952 |
+| Repair increase | **0.1906377536** | **0.2099752704** |
+| Added native-reset distribution buffers | 0.0153707904 | 0.0187953024 |
+| Three exclusive SRAM clock drivers | 0.0002502528 | 0.0002502528 |
+| Added hierarchy-writer feedback buffers | 0.0117223680 | 0.0291873792 |
+| Other OpenROAD buffers | 0.1261888768 | 0.1239366016 |
+| Added constant ties | 0.0017034752 | 0.0014839552 |
+| Net change from equivalent ordinary-cell resizing | 0.0354019904 | 0.0363217792 |
+
+The buffer counts are 1,167/1,427 reset, 890/2,216 writer workaround, and
+1,958/1,931 other OpenROAD buffers (BD/Click), plus three SRAM clock drivers each.
+The bounded-tree/clock-driver update increases repaired logic area by
+0.0067568256 / 0.0063572992 mm² relative to the previous electrical-first maps.
+Exact accounting reconciles
+`after - before = added cells + net resizing`; no workaround cell is hidden.
+Fixing the writer or proving a flat-netlist repair could remove the workaround
+cost, at most the currently listed 0.0117/0.0292 mm² before any replacement
+distribution. It would not eliminate most of the repair cost. Neither alternative
+has yet passed the required graph and roundtrip proof.
+
+Reproduce with `python tools/report_repair_area.py <mapping> <new-output.json>`
+and the configured physical-tool environment. The report validates the complete
+repair receipt, records hashes and inventories every leaf. Evidence is
+`build/bounded-area-bd-r1.json` and `build/bounded-area-click-r1.json`.
+The previous electrical-first reports remain in `build/repair-area-{bd,click}-r2.json`.
+Independent review caught the original Liberty/LEF naming error; the earlier
+`repair-area-*-r1` reports remain as superseded accounting. Seven focused tests cover distinct
+SRAM views, hierarchical leaves, resizing/additions, missing areas and overlapping
+or empty named inventories.
+These are cell totals before placement, excluding routing, fillers, analog and
+pads. They do not establish leakage, wake energy or timing closure. The older
+activity and leakage tables below do **not** describe these repaired maps.
+
+## Earlier A2b comparison
+
 The A2b retained-loader-metadata comparison against accepted C1e1 `64e6211`
 uses the same pinned mapper, macros, native bindings and five-corner cost
 method. Acceptance: **digitally verified; matched cost recorded; physical timing open**. Logic area excluding SRAM is

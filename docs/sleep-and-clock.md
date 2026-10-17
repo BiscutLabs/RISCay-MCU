@@ -14,8 +14,11 @@ more, a divider retains a nominal 1 ms source tick for legacy fixtures. Below
 1 kHz, each oscillator edge is one tick. The service domain synchronizes Gray,
 decodes it and captures a target for its own native elapsed-time engine. A
 POR-owned state token subtracts the previously processed target modulo 2^32.
-Four native handshake stages consume eight radix-2 bits each, retaining exact
-fractional milliseconds between updates. No multiplier or divider is instantiated.
+One native four-bit step iterates one through eight times per coalesced delta,
+retaining exact fractional milliseconds between updates. Work is bounded by
+the 32-bit delta width, not by the number of missed ticks. No general multiplier
+or divider is instantiated. The [elapsed contract](native-elapsed-contract.md)
+separates maintenance throughput targets from physical qualification.
 A clocked scaler boundary publishes one coalesced elapsed observation. Independent
 measurement/supervisor ingress consumes it immediately; the separate native
 Housekeeping loop orders it with timer/cadence writes. Only the final housekeeping

@@ -32,6 +32,36 @@ def fixture(variant='bd'):
 
 
 class CompositionTests(unittest.TestCase):
+    def test_leaf_sdf_rejects_wire_delays(self):
+        j.validate_leaf_sdf('(DELAYFILE (CELL (DELAY (ABSOLUTE (IOPATH I Z (1:1:1))))))')
+        for kind in ('INTERCONNECT','PORT','NETDELAY','TIMINGCHECK'):
+            with self.assertRaisesRegex(ValueError,'JOIN_LEAF_SDF_WIRE_OR_UNSUPPORTED'):
+                j.validate_leaf_sdf('(DELAYFILE ('+kind+' a b (1:1:1)))')
+
+    def test_leaf_paths_allow_only_selected_click_storage(self):
+        p,_=fixture('click');ctx=dict(side='left',kind='launch')
+        cells={k:dict(type=j.SC+kind,connections={x:[] for x in pins}) for k,kind,pins in
+               [('fire','buf_1',['Z']),('left/store','dffrnq_1',['CLK','Q']),
+                ('other','dffrnq_1',['CLK','Q']),('update/store','dffrnq_1',['D'])]}
+        points=['fire/Z','left/store/CLK','left/store/Q','update/store/D']
+        j.validate_leaf_paths({'q':points},p,ctx,cells)
+        with self.assertRaisesRegex(ValueError,'JOIN_LEAF_INTERMEDIATE_STORAGE'):
+            j.validate_leaf_paths({'q':points[:3]+['other/CLK','other/Q']+points[3:]},p,ctx,cells)
+        with self.assertRaisesRegex(ValueError,'JOIN_LEAF_PATH_PIN'):
+            j.validate_leaf_paths({'q':points+['missing/D']},p,ctx,cells)
+
+    def test_parent_ack_guard_is_an_explicit_channel_route(self):
+        join=dict(connections=dict(reset=[1],out_ack=[2],out_req=[3],out_bits_left=[4],out_bits_right=[5]))
+        sink=dict(connections=dict(reset=[1],in_ack=[6],in_req=[3],in_bits_left=[4],in_bits_right=[5],out_ack=[7]),
+                  port_directions=dict(reset='input',in_ack='output',in_req='input',in_bits_left='input',in_bits_right='input',out_ack='input'))
+        guard=dict(a=[6],q=[2],b=['0'],reset=[1])
+        args=(dict(cells={}),join,sink,dict(left='left',right='right'),{})
+        self.assertEqual(len(j.bind_inputs(*args,guard)),4)
+        with self.assertRaisesRegex(ValueError,'JOIN_UPDATE_WIRING'):j.bind_inputs(*args)
+        for pin in ('a','q','b','reset'):
+            bad=deepcopy(guard);bad[pin]=[99]
+            with self.assertRaisesRegex(ValueError,'JOIN_ACK_GUARD_WIRING'):j.bind_inputs(*args,bad)
+
     def test_identity_storage_checks_each_lane_not_just_width(self):
         b=dict(ports=dict(in_bits=dict(bits=[2,3]),out_bits=dict(bits=[4,5])),
             cells=dict(ca_primitive_payload=dict(connections=dict(d=[6,7],q=[4,5])),

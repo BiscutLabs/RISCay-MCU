@@ -1,0 +1,73 @@
+{
+  "scope": "tool-loop-progress-only-not-electrical-closure",
+  "upstream_fix": "191a654f8a1a80abb91fa437d3a849f4649460c4",
+  "nix_derivation": "/nix/store/ywgk2blvamv8myjvna3ha5xm42aq7630-openroad-26Q2.drv",
+  "physical_qualification": false,
+  "inputs_sha256": {
+    "P:\\Personal\\RISCay-MCU\\physical\\gf180\\openroad\\default.nix": "536147f548b35ff24532aa3f477cc0c12e1763e49016afc2e527c5b58dd2b8c9",
+    "P:\\Personal\\RISCay-MCU\\physical\\gf180\\openroad\\repair-progress.patch": "780eda403ac1f90e99f6fc78f5baf729036712d8240a89b91b4f188b0718cd3f",
+    "P:\\Personal\\RISCay-MCU\\build\\openroad-progress\\RepairDesign-26Q2.cc": "53fb37a4b91c176ab063d49c49550bd4c30af87f96de36ddbca5af0080f4f34a",
+    "P:\\Personal\\RISCay-MCU\\build\\openroad-progress\\RepairDesign-fixed.cc": "08a44866ac9a920995e61eec36b1f5b2eff6d297f2a4a9f6e4adb35b2c12ed93",
+    "P:\\Personal\\RISCay-MCU\\build\\openroad-progress\\repair_slew_no_progress.tcl": "9cf073bde921b7441f4ac9576892877fcd38fb7b0c5fc31858d347735dea7f63",
+    "P:\\Personal\\RISCay-MCU\\build\\openroad-progress\\run_controls.py": "44b12c37dd39469386828b1fb0e7b45f0c0e5593190891398647057bcf66d96a",
+    "P:\\Personal\\RISCay-MCU\\build\\openroad-progress\\build.log": "974df59d22951eced17d6cb3c9d86f8378765a117d9a9cca6e28638efb078edf",
+    "\\\\wsl.localhost\\nixos-librelane\\nix\\store\\pi9m3br8ni97dfybd24lldfa185py07x-source\\test\\helpers.tcl": "3a997739f19ccac2bf7403a306c792df455a74f19993eb919cc37edd063ca53a",
+    "\\\\wsl.localhost\\nixos-librelane\\nix\\store\\pi9m3br8ni97dfybd24lldfa185py07x-source\\src\\rsz\\test\\repair_slew10.tcl": "75b0a0e42346dbc06b8ac1b34808420b6252d4c101109f32140be237adb413e6",
+    "\\\\wsl.localhost\\nixos-librelane\\nix\\store\\pi9m3br8ni97dfybd24lldfa185py07x-source\\src\\rsz\\test\\repair_slew10.def": "ca4662a1542c67b55c48f7ab3a76a81ba1d217b3d07387734aaddfc58823d170",
+    "\\\\wsl.localhost\\nixos-librelane\\nix\\store\\pi9m3br8ni97dfybd24lldfa185py07x-source\\src\\rsz\\test\\repair_slew10.lib": "5715ab88d13eebb1cf65208505c06dc77795548411f85a2462e519c69f2c9b58",
+    "\\\\wsl.localhost\\nixos-librelane\\nix\\store\\pi9m3br8ni97dfybd24lldfa185py07x-source\\test\\Nangate45\\Nangate45_typ.lib": "2efd0b32eb580e4e60e72fc0575bb3bc69aac907c91d908442e4ae6d7fe55895",
+    "\\\\wsl.localhost\\nixos-librelane\\nix\\store\\pi9m3br8ni97dfybd24lldfa185py07x-source\\test\\Nangate45\\Nangate45.lef": "caa4e9b45e081f93720ce2c4d581497321ddc6fbcb1ffe1b384e324bbd5d43a7",
+    "\\\\wsl.localhost\\nixos-librelane\\nix\\store\\47hmnli2xi6gcwhdisqaj039grm55yb8-openroad-26Q2\\bin\\openroad": "18b7aee34a95449fb98336eff76253f1b6da6638f6ee587f1160e635e56f9b3e",
+    "\\\\wsl.localhost\\nixos-librelane\\nix\\store\\47hmnli2xi6gcwhdisqaj039grm55yb8-openroad-26Q2\\bin\\.openroad-wrapped": "6df8a8409aca3cc0eb79e834d26be1f5fdf42a5238280dbfa2c3a02ccf265f09",
+    "\\\\wsl.localhost\\nixos-librelane\\nix\\store\\hrxjpkkppbzkcnzf44f60lsm0cj1f4yh-openroad-26Q2\\bin\\openroad": "2c12fe5111618dcd623061f4c6d28ee6e5e28506e838490a1e97b1be20b719d8",
+    "\\\\wsl.localhost\\nixos-librelane\\nix\\store\\hrxjpkkppbzkcnzf44f60lsm0cj1f4yh-openroad-26Q2\\bin\\.openroad-wrapped": "16687b0e82d5d1589e1c9375e9a994030992eed6c72939e8b046164f477cc445",
+    "P:\\Personal\\RISCay-MCU\\build\\openroad-progress\\one-useful-insertion.def": "bbebe0fd88596cd030ea8b005f349e5a382fe59c7dfe9c0fd2187fd4f358a3d5",
+    "P:\\Personal\\RISCay-MCU\\build\\openroad-progress\\one-useful-insertion.tcl": "68b34741baf44b2888f7eea0cf704ab972851ef06f5f906c5ff9d1ca9279e924",
+    "P:\\Personal\\RISCay-MCU\\build\\openroad-progress\\one-useful-insertion-r4.log": "d9c3246fa4af9547e6848f0be040c67f4de77a10a99202d55ef5ab3239b1a899"
+  },
+  "controls": {
+    "original-stalled": {
+      "binary": "/nix/store/47hmnli2xi6gcwhdisqaj039grm55yb8-openroad-26Q2/bin/openroad",
+      "returncode": 124,
+      "script_sha256": "eaa35b7c0be91900585507d01554ebb2d8b5d0d773bffcfdda0a2affa8ceaef6",
+      "log_sha256": "e9a235209867b29ba378a46c1486fbacd0121bf9baf0eaec9434904783b99bfc",
+      "warnings": 0,
+      "completed": false,
+      "retained_violations": null
+    },
+    "patched-stalled": {
+      "binary": "/nix/store/hrxjpkkppbzkcnzf44f60lsm0cj1f4yh-openroad-26Q2/bin/openroad",
+      "returncode": 0,
+      "script_sha256": "eaa35b7c0be91900585507d01554ebb2d8b5d0d773bffcfdda0a2affa8ceaef6",
+      "log_sha256": "f8fb6dd2a6a25670f1f2daf4577bee1f579122705e30dab7ba2b35f847406433",
+      "warnings": 1,
+      "completed": true,
+      "retained_violations": true
+    },
+    "patched-repairable": {
+      "binary": "/nix/store/hrxjpkkppbzkcnzf44f60lsm0cj1f4yh-openroad-26Q2/bin/openroad",
+      "returncode": 0,
+      "script_sha256": "7bcc81a37feb8b78f1be6e011b45180b7faa5a628f85d61854b4c18c8459e55c",
+      "log_sha256": "053d96ebcc3409e059082e8a805e8fe63ad8ac1ab0661d6160ea2169210f0fa2",
+      "warnings": 0,
+      "completed": true,
+      "retained_violations": false
+    },
+    "patched-useful-zero-distance": {
+      "completed": true,
+      "returncode": 0,
+      "zero_distance_insertions": 2,
+      "warnings": 0,
+      "initial_capacitance_ff": 26.87,
+      "limit_ff": 3.0,
+      "retained_violations": false,
+      "scope": "two successive useful zero-distance load reductions must not be aborted"
+    }
+  },
+  "packaged_tests": {
+    "passed": 7631,
+    "failed": 0,
+    "seconds": 387.97,
+    "log": "build/openroad-progress/build.log"
+  }
+}

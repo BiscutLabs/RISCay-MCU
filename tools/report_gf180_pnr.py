@@ -10,10 +10,10 @@ from characterize_gf180_liberty import CORNERS
 from gf180_physical import ROOT, SC, SRAM, sha, write_json
 from gf180_constraints import brace
 from gf180_estimate import linux
-from gf180_pnr import OPENROAD, validate_provenance, rc_inputs, RC_CORNERS
+from gf180_pnr import pnr_tool, validate_provenance, rc_inputs, RC_CORNERS
 
 def corner_report(mapping,out,corner,wire_corner="nom"):
-    validate_provenance(mapping,out,"extract")
+    meta=validate_provenance(mapping,out,"extract")
     odb,spef=rc_inputs(mapping,out,wire_corner)
     d=out/("sta-"+corner+"-"+wire_corner); d.mkdir(exist_ok=False)
     t=f'read_liberty {brace(linux(ROOT/".tools/physical/pdk"/(SC+corner+".lib")))}\n'
@@ -34,7 +34,8 @@ def corner_report(mapping,out,corner,wire_corner="nom"):
     t+='report_check_types -max_slew -max_capacitance -violators\nputs EXTRACTED_STA_COMPLETE\nexit\n'
     (d/"check.tcl").write_text(t)
     with (d/"check.log").open("w") as log:
-        r=subprocess.run(["wsl","-d","nixos-librelane","-e",OPENROAD,"-exit",linux(d/"check.tcl")],stdout=log,stderr=subprocess.STDOUT)
+        r=subprocess.run(pnr_tool(meta).command(["-exit",linux(d/"check.tcl")]),stdout=log,stderr=subprocess.STDOUT)
+    validate_provenance(mapping,out,"extract")
     log=(d/"check.log").read_text()
     if r.returncode or "EXTRACTED_STA_COMPLETE" not in log: raise RuntimeError(log[-3000:])
     if re.search(r'STA-(1648|1650)',log): raise ValueError("SPEF_ANNOTATION_INCOMPLETE")

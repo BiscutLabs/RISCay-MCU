@@ -1168,6 +1168,39 @@ physical reset qualification (R2b) remains mandatory under item 17a3.
         see [the correction record](reviews/electrical-first-correction.md) for
         their digital evidence and the remaining physical gates.
         Shortening any guard waits for the complete measured envelope.
+        - [x] Measure the slow request adapter and test existing elapsed batching
+          and final maintenance drainage at 645 ns. Retain the unchanged 2 us
+          tick sleep oracle's failure; document the production-coefficient
+          conditional throughput budget. See [evidence](reviews/elapsed-throughput.md).
+        - [x] Anchor repaired stage/Join queries on preserved native leaf pins,
+          including elapsed mode fanout and the actual BD Control ACK guard;
+          see [binding evidence and limits](reviews/repaired-leaf-timing.md).
+        - [x] Repeat the seven-stage and Control Join corner/slew campaigns on
+          the final mapped/repaired graph: 140 stage cases and 20 Join cases
+          resolve with positive conditional margins. See
+          [results and limits](reviews/repaired-leaf-timing.md#final-mapped-graph-corner-sweeps).
+          Small BD hold/ACK margins, RF/elapsed source composition and routed
+          measurements remain open; this is not full-chip guard qualification.
+        - [x] Provide separate parent drivers for all three SRAM clocks and
+          structurally bounded native capture distribution for RF, frame banks
+          and I2C publication. Maximum branch fanout is 16. The full local
+          distribution sweeps retain one BD/eight Click propagation-budget
+          failures; see [the contract and measurements](native-capture-distribution.md).
+          This structural completion does not close physical distribution timing.
+        - [x] Repeat graph-proved repair after placement and global routing;
+          both variants complete with exact native connectivity and all three
+          exclusive SRAM drivers preserved. The pinned resizer's zero-progress
+          loop required a tested upstream backport. All five corners retain
+          electrical reports: the final SS-hot slew counts are 9,241 BD/11,241
+          Click, with no capacitance violations. This completes execution and
+          accounting, not electrical closure. See [results and runtime correction](reviews/wire-electrical-repair.md).
+        - [x] Publish total before/after repair area, including writer-workaround
+          buffers, ties and resizing; see [accounting](gf180-estimates.md#electrical-repair-area).
+          A flat repair or writer fix remains a separately proved optimization.
+        - [x] Count both ACK-guard edges in the native-model wake workload and
+          explicit representative guard energy; document Click's existing native
+          guard and physical ordering obligation. See [activity evidence](reviews/ack-guard-activity.md).
+          Mapped wake timing, actual energy and complete Click capture/ACK closure remain open.
       - [ ] **Execute RF and elapsed seeded-owner composition.** Follow
         electrical repair and the rerun campaigns. Measure actual register-bank launch,
         forwarding/Fork/Join ordering and all 15 banks. Preserve elapsed's

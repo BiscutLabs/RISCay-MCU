@@ -27,11 +27,15 @@ def receipt_original(mapping, receipt):
     return json.loads(data)
 
 
-def receipt_buffers(mapping, receipt):
+def receipt_proof(mapping, receipt):
     data=(mapping/'electrical-repair/proof.json').read_bytes()
     require(hashlib.sha256(data).hexdigest()==receipt['evidence_sha256']['proof.json'],
             'STAGE_REPAIR_PROOF_CHANGED')
-    return json.loads(data)['added_buffers']
+    return json.loads(data)
+
+
+def receipt_buffers(mapping, receipt):
+    return receipt_proof(mapping,receipt)['added_buffers']
 
 
 def repaired_bindings(record, netlist, original, audit, buffers=()):
@@ -173,6 +177,7 @@ def inventory(manifest):
 def run(mapping, output, variant, paths, campaign=False):
     require(not output.exists(),"STAGE_OUTPUT_EXISTS")
     from repair_gf180_design import validate_receipt
+    import native_leaf_timing as leaf
     receipt=validate_receipt(mapping)
     record=json.loads((mapping/"mapping.json").read_text())
     audit=json.loads((mapping/"netlist-audit.json").read_text())
@@ -183,18 +188,25 @@ def run(mapping, output, variant, paths, campaign=False):
             policy["contract_sha256"]==sha(mapping/"timing-intent.json"),"STAGE_STALE_CONTRACT")
     manifest=json.loads((mapping/"timing-intent.json").read_text())["manifest"]
     netlist=json.loads((mapping/"netlist.json").read_text())
-    record=repaired_bindings(record,netlist,receipt_original(mapping,receipt),audit,receipt_buffers(mapping,receipt))
+    original=receipt_original(mapping,receipt)
+    proof=receipt_proof(mapping,receipt)
+    leaf_index=leaf.LeafIndex(original,netlist,proof['added_buffers'],proof['added_ties'])
+    cuts=leaf.keeper_cuts(leaf_index,audit)
     require(paths and len(paths)<=16 and len(set(paths))==len(paths),"STAGE_SELECTION_BOUND")
-    descriptors=[descriptor(manifest,netlist,record,p,variant) for p in paths]
-    plans=[relative.make_plan(netlist,record,variant,d) for d in descriptors]
+    # Original hierarchy supplies logical identity, never timing. Every query
+    # runs on the complete repaired graph with its parent buffers and loads.
+    descriptors=[descriptor(manifest,original,record,p,variant) for p in paths]
+    plans=[leaf.bind_plan(relative.make_plan(original,record,variant,d),leaf_index,d,original,cuts)
+           for d in descriptors]
     sta=tool("sta");yosys=tool("yosys");pdk=ROOT/".tools/physical/pdk";pdk_verify(pdk)
-    source_names=("native_stage_timing.py","physical_tools.py","control_relative_timing.py","characterize_gf180_control_native.py",
+    source_names=("native_stage_timing.py","native_leaf_timing.py","physical_tools.py","control_relative_timing.py","characterize_gf180_control_native.py",
                   "screen_gf180_control_repair.py","gf180_physical.py","gf180_estimate.py","gf180_implement.py","repair_gf180_control.py","characterize_gf180_liberty.py")
     files=[mapping/f for f in ("mapping.json","netlist.v","netlist.json","netlist-audit.json","timing-intent.json","physical-policy.json")]
     files += [mapping/'electrical-repair/receipt.json',mapping/'electrical-repair/reference/netlist.json',
               mapping/'electrical-repair/proof.json',ROOT/'tools/repair_gf180_design.py']
     files += [ROOT/"tools"/f for f in source_names]+[relative.PROBE]+sta.input_files()+yosys.input_files()
     files += [pdk/(relative.SC+c+".lib") for c in relative.CORNERS]
+    files += [ROOT/'.tools/gf180-sram'/(leaf.SRAM+'__tt_025C_3v30.lib')]
     frozen={str(p.resolve()):sha(p) for p in files}
     output.mkdir(parents=True);write_json(output/"inventory.json",inventory(manifest))
     roundtrip(mapping,output,netlist,yosys,pdk)
@@ -206,11 +218,15 @@ def run(mapping, output, variant, paths, campaign=False):
             for slew in ([0.02,2.0] if campaign else [0.2]):
                 key=f"{corner}-s{slew}";results={};failure=None
                 for ctx in plan["contexts"]:
+                    if ctx['kind'] in ('common','sequential_ack'):
+                        prior=[r['event_slew_ns'] for name,r in results.items() if name.startswith(('request-','release-'))]
+                        require(prior,'LEAF_COMMON_SLEW_REQUIRED')
+                        ctx['root_slew_ns']=dict(min=min(r[0] for r in prior),max=max(r[1] for r in prior))
                     tcl=sub/(key+"-"+ctx["id"]+".tcl");log=tcl.with_suffix(".log")
-                    tcl.write_text(relative.script(mapping/"netlist.v",corner,slew,plan,ctx,path=sta.path),newline="\n")
+                    tcl.write_text(leaf.script(mapping/"netlist.v",corner,slew,plan,ctx,sta=sta),newline="\n")
                     with log.open("w") as stream:
                         subprocess.run(sta.command(["-no_init","-exit",sta.path(tcl)],timeout=55),stdout=stream,stderr=subprocess.STDOUT,check=True,timeout=65)
-                    try:results[ctx["id"]]=relative.parse(log.read_text(),plan,ctx)
+                    try:results[ctx["id"]]=leaf.parse(log.read_text(),plan,ctx,slew,leaf_index)
                     except ValueError as e:
                         failure=dict(context=ctx["id"],diagnostic=str(e));break
                 if failure is None:

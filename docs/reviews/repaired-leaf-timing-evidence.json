@@ -1,0 +1,421 @@
+{
+  "scope": "conditional zero-wire-RC leaf binding and actual-arc controls; no physical qualification",
+  "physical_qualification": false,
+  "runs": [
+    {
+      "path": "build/native-leaf-bd-smoke-r3/results.json",
+      "sha256": "d5fa7751ee178d1c41af2e0dae258e28ed195259d8adb7a5037a0e197a56decd",
+      "cases": [
+        {
+          "instance": "FourPhaseSoc.ca_child_core.ca_child_execute",
+          "key": "tt_025C_3v30-s0.2",
+          "status": "CONDITIONAL_LOCAL_MEASUREMENTS",
+          "failure": null,
+          "numerical": {
+            "status": "NONNEGATIVE_LOCAL_MARGINS",
+            "negative_metrics": [],
+            "physical_qualification": false
+          },
+          "summary": {
+            "minimum_input_data_lag_ns": 213.0507996395994,
+            "minimum_zero_reuse_hold_ns": 2.115891022725267,
+            "minimum_ack_after_capture_ns": 2.419891022725267,
+            "unresolved": [
+              "Join storage Q/request launch alignment",
+              "Execute RF source launch and retention/hold",
+              "Elapsed owner/admission launch and retention/hold",
+              "BD pending admission and both returns",
+              "Click feedback pulse and phase self-hold",
+              "local variation/mismatch",
+              "wire RC and reset",
+              "electrical limits"
+            ],
+            "physical_qualification": false
+          }
+        },
+        {
+          "instance": "FourPhaseSoc.ca_child_elapsed_scaler.ca_child_native.ca_child_step",
+          "key": "tt_025C_3v30-s0.2",
+          "status": "CONDITIONAL_LOCAL_MEASUREMENTS",
+          "failure": null,
+          "numerical": {
+            "status": "NONNEGATIVE_LOCAL_MARGINS",
+            "negative_metrics": [],
+            "physical_qualification": false
+          },
+          "summary": {
+            "minimum_input_data_lag_ns": 240.48631216685678,
+            "minimum_zero_reuse_hold_ns": 2.0556154587014235,
+            "minimum_ack_after_capture_ns": 2.3596154587014233,
+            "unresolved": [
+              "Join storage Q/request launch alignment",
+              "Execute RF source launch and retention/hold",
+              "Elapsed owner/admission launch and retention/hold",
+              "BD pending admission and both returns",
+              "Click feedback pulse and phase self-hold",
+              "local variation/mismatch",
+              "wire RC and reset",
+              "electrical limits"
+            ],
+            "physical_qualification": false
+          }
+        },
+        {
+          "instance": "FourPhaseSoc.ca_child_ram_access.ca_child_native.ca_child_prepare",
+          "key": "tt_025C_3v30-s0.2",
+          "status": "CONDITIONAL_LOCAL_MEASUREMENTS",
+          "failure": null,
+          "numerical": {
+            "status": "NONNEGATIVE_LOCAL_MARGINS",
+            "negative_metrics": [],
+            "physical_qualification": false
+          },
+          "summary": {
+            "minimum_input_data_lag_ns": 36.8970019939606,
+            "minimum_zero_reuse_hold_ns": 2.267893437682458,
+            "minimum_ack_after_capture_ns": 2.571893437682458,
+            "unresolved": [
+              "Join storage Q/request launch alignment",
+              "Execute RF source launch and retention/hold",
+              "Elapsed owner/admission launch and retention/hold",
+              "BD pending admission and both returns",
+              "Click feedback pulse and phase self-hold",
+              "local variation/mismatch",
+              "wire RC and reset",
+              "electrical limits"
+            ],
+            "physical_qualification": false
+          }
+        }
+      ],
+      "verdicts": null
+    },
+    {
+      "path": "build/native-leaf-bd-controls-r2/controls.json",
+      "sha256": "f0869bbb84766c66c82d46c4eec8f80f56b4ec3e286da6209981150c5d6736f2",
+      "cases": null,
+      "verdicts": [
+        {
+          "index": 1,
+          "instance": "FourPhaseSoc.ca_child_elapsed_scaler.ca_child_native.ca_child_step",
+          "fault": "period",
+          "status": "IDENTICAL"
+        },
+        {
+          "index": 1,
+          "instance": "FourPhaseSoc.ca_child_elapsed_scaler.ca_child_native.ca_child_step",
+          "fault": "short_request",
+          "status": "EXPECTED",
+          "baseline_negative": 0,
+          "newly_negative": 188,
+          "changed": 228,
+          "arc_count": 86,
+          "static_capture_members": 0
+        },
+        {
+          "index": 1,
+          "instance": "FourPhaseSoc.ca_child_elapsed_scaler.ca_child_native.ca_child_step",
+          "fault": "early_ack",
+          "status": "EXPECTED",
+          "baseline_negative": 0,
+          "newly_negative": 228,
+          "changed": 228,
+          "arc_count": 19,
+          "static_capture_members": 0
+        },
+        {
+          "index": 1,
+          "instance": "FourPhaseSoc.ca_child_elapsed_scaler.ca_child_native.ca_child_step",
+          "fault": "late_capture",
+          "status": "EXPECTED",
+          "baseline_negative": 0,
+          "newly_negative": 16,
+          "changed": 16,
+          "arc_count": 1,
+          "static_capture_members": 0
+        },
+        {
+          "index": 1,
+          "instance": "FourPhaseSoc.ca_child_elapsed_scaler.ca_child_native.ca_child_step",
+          "fault": "late_parent_data",
+          "status": "EXPECTED",
+          "changed": 220,
+          "arc_count": 1
+        }
+      ]
+    },
+    {
+      "path": "build/leaf-join-bd-final-r1/results.json",
+      "sha256": "6406dc540bd5a9781b2370246e06e7f53c9a6d95212397b7ae4130f9a8d136d8",
+      "cases": [
+        {
+          "key": "tt_025C_3v30-s0.2",
+          "corner": "tt_025C_3v30",
+          "slew_ns": 0.2,
+          "status": "CONDITIONAL_SETUP_MEASUREMENTS",
+          "negative_metrics": [],
+          "failure": null,
+          "summary": [
+            {
+              "side": "left",
+              "phase": 0,
+              "maximum_input_data_lag_ns": 37.03096772514962,
+              "minimum_conditional_setup_margin_ns": 119.88847381555573,
+              "source_q_bound_ns": 41.95670063468121,
+              "return_after_source_close_ns": 229.19039403925683,
+              "checked_data_transitions": 624,
+              "physical_qualification": false
+            },
+            {
+              "side": "right",
+              "phase": 0,
+              "maximum_input_data_lag_ns": 37.21758112183376,
+              "minimum_conditional_setup_margin_ns": 119.03450356353842,
+              "source_q_bound_ns": 42.03463296414346,
+              "return_after_source_close_ns": 229.10581102959978,
+              "checked_data_transitions": 630,
+              "physical_qualification": false
+            }
+          ]
+        }
+      ],
+      "verdicts": null
+    },
+    {
+      "path": "build/leaf-join-bd-final-controls-r1/controls.json",
+      "sha256": "c0d28cfa42d383dff0dff8fc0540dfe225f7bef2173f6f96d53a88508df9a8b2",
+      "cases": null,
+      "verdicts": [
+        {
+          "fault": "period",
+          "status": "IDENTICAL"
+        },
+        {
+          "fault": "parent_ack_arc",
+          "status": "EXPECTED_SENSITIVITY",
+          "changed": 8,
+          "arc": {
+            "cell": "soc/ca_child_control/ca_primitive_acknowledge_guard/genblk1.genblk1.genblk1.genblk1.genblk1.genblk1.genblk1.genblk1.genblk1.genblk1.genblk1.genblk1.genblk1.genblk1.genblk1.genblk1.genblk1.genblk1.genblk1.genblk1.genblk1.genblk1.genblk1.genblk1.genblk1.genblk1.genblk1.genblk1.genblk1.genblk1.genblk1.genblk1.genblk1.genblk1.genblk1.genblk1.genblk1.genblk1.genblk1.variant_39.mapped/u10",
+            "source": "I",
+            "sink": "Z",
+            "delay_ns": 1000
+          }
+        }
+      ]
+    },
+    {
+      "path": "build/native-leaf-click-smoke-r3/results.json",
+      "sha256": "bdd3d8f910136768008fdd80f62480f97ce64dcc42209e83b1eb17b0de37090a",
+      "cases": [
+        {
+          "instance": "ClickSoc.ca_child_core.ca_child_execute",
+          "key": "tt_025C_3v30-s0.2",
+          "status": "CONDITIONAL_LOCAL_MEASUREMENTS",
+          "failure": null,
+          "numerical": {
+            "status": "NONNEGATIVE_LOCAL_MARGINS",
+            "negative_metrics": [],
+            "physical_qualification": false
+          },
+          "summary": {
+            "minimum_input_data_lag_ns": 213.72725121005988,
+            "minimum_zero_reuse_hold_ns": 97.8585732154913,
+            "minimum_ack_after_capture_ns": 98.2665732154913,
+            "unresolved": [
+              "Join storage Q/request launch alignment",
+              "Execute RF source launch and retention/hold",
+              "Elapsed owner/admission launch and retention/hold",
+              "BD pending admission and both returns",
+              "Click feedback pulse and phase self-hold",
+              "local variation/mismatch",
+              "wire RC and reset",
+              "electrical limits"
+            ],
+            "physical_qualification": false
+          }
+        },
+        {
+          "instance": "ClickSoc.ca_child_elapsed_scaler.ca_child_native.ca_child_step",
+          "key": "tt_025C_3v30-s0.2",
+          "status": "CONDITIONAL_LOCAL_MEASUREMENTS",
+          "failure": null,
+          "numerical": {
+            "status": "NONNEGATIVE_LOCAL_MARGINS",
+            "negative_metrics": [],
+            "physical_qualification": false
+          },
+          "summary": {
+            "minimum_input_data_lag_ns": 242.72332868098061,
+            "minimum_zero_reuse_hold_ns": 97.9525976730391,
+            "minimum_ack_after_capture_ns": 98.3605976730391,
+            "unresolved": [
+              "Join storage Q/request launch alignment",
+              "Execute RF source launch and retention/hold",
+              "Elapsed owner/admission launch and retention/hold",
+              "BD pending admission and both returns",
+              "Click feedback pulse and phase self-hold",
+              "local variation/mismatch",
+              "wire RC and reset",
+              "electrical limits"
+            ],
+            "physical_qualification": false
+          }
+        },
+        {
+          "instance": "ClickSoc.ca_child_ram_access.ca_child_native.ca_child_prepare",
+          "key": "tt_025C_3v30-s0.2",
+          "status": "CONDITIONAL_LOCAL_MEASUREMENTS",
+          "failure": null,
+          "numerical": {
+            "status": "NONNEGATIVE_LOCAL_MARGINS",
+            "negative_metrics": [],
+            "physical_qualification": false
+          },
+          "summary": {
+            "minimum_input_data_lag_ns": 39.22334239223537,
+            "minimum_zero_reuse_hold_ns": 98.06215703772061,
+            "minimum_ack_after_capture_ns": 98.47015703772061,
+            "unresolved": [
+              "Join storage Q/request launch alignment",
+              "Execute RF source launch and retention/hold",
+              "Elapsed owner/admission launch and retention/hold",
+              "BD pending admission and both returns",
+              "Click feedback pulse and phase self-hold",
+              "local variation/mismatch",
+              "wire RC and reset",
+              "electrical limits"
+            ],
+            "physical_qualification": false
+          }
+        }
+      ],
+      "verdicts": null
+    },
+    {
+      "path": "build/native-leaf-click-controls-r2/controls.json",
+      "sha256": "04d5f0023e4bbde7d4b17bb4bcc70525c03f27ebbffc86bef14646c799133027",
+      "cases": null,
+      "verdicts": [
+        {
+          "index": 1,
+          "instance": "ClickSoc.ca_child_elapsed_scaler.ca_child_native.ca_child_step",
+          "fault": "period",
+          "status": "IDENTICAL"
+        },
+        {
+          "index": 1,
+          "instance": "ClickSoc.ca_child_elapsed_scaler.ca_child_native.ca_child_step",
+          "fault": "short_request",
+          "status": "EXPECTED",
+          "baseline_negative": 0,
+          "newly_negative": 354,
+          "changed": 446,
+          "arc_count": 86,
+          "static_capture_members": 0
+        },
+        {
+          "index": 1,
+          "instance": "ClickSoc.ca_child_elapsed_scaler.ca_child_native.ca_child_step",
+          "fault": "early_ack",
+          "status": "EXPECTED",
+          "baseline_negative": 0,
+          "newly_negative": 454,
+          "changed": 454,
+          "arc_count": 47,
+          "static_capture_members": 0
+        },
+        {
+          "index": 1,
+          "instance": "ClickSoc.ca_child_elapsed_scaler.ca_child_native.ca_child_step",
+          "fault": "late_capture",
+          "status": "EXPECTED",
+          "baseline_negative": 0,
+          "newly_negative": 32,
+          "changed": 32,
+          "arc_count": 1,
+          "static_capture_members": 2
+        },
+        {
+          "index": 1,
+          "instance": "ClickSoc.ca_child_elapsed_scaler.ca_child_native.ca_child_step",
+          "fault": "late_parent_data",
+          "status": "EXPECTED",
+          "changed": 438,
+          "arc_count": 1
+        }
+      ]
+    },
+    {
+      "path": "build/leaf-join-click-final-r1/results.json",
+      "sha256": "5ae166153d894aa2e6cd958b5213f9a43043fae1724305013b988c02c0b0bacf",
+      "cases": [
+        {
+          "key": "tt_025C_3v30-s0.2",
+          "corner": "tt_025C_3v30",
+          "slew_ns": 0.2,
+          "status": "CONDITIONAL_SETUP_MEASUREMENTS",
+          "negative_metrics": [],
+          "failure": null,
+          "summary": [
+            {
+              "side": "left",
+              "phase": 0,
+              "maximum_input_data_lag_ns": 39.41566144724903,
+              "minimum_conditional_setup_margin_ns": 134.11101002342681,
+              "source_q_bound_ns": 0,
+              "return_after_source_close_ns": null,
+              "checked_data_transitions": 624,
+              "physical_qualification": false
+            },
+            {
+              "side": "left",
+              "phase": 1,
+              "maximum_input_data_lag_ns": 41.06784044318328,
+              "minimum_conditional_setup_margin_ns": 142.0391181955678,
+              "source_q_bound_ns": 0,
+              "return_after_source_close_ns": null,
+              "checked_data_transitions": 624,
+              "physical_qualification": false
+            },
+            {
+              "side": "right",
+              "phase": 0,
+              "maximum_input_data_lag_ns": 39.6035218464697,
+              "minimum_conditional_setup_margin_ns": 131.20956197059706,
+              "source_q_bound_ns": 0,
+              "return_after_source_close_ns": null,
+              "checked_data_transitions": 630,
+              "physical_qualification": false
+            },
+            {
+              "side": "right",
+              "phase": 1,
+              "maximum_input_data_lag_ns": 41.25570084240395,
+              "minimum_conditional_setup_margin_ns": 139.16489814114243,
+              "source_q_bound_ns": 0,
+              "return_after_source_close_ns": null,
+              "checked_data_transitions": 630,
+              "physical_qualification": false
+            }
+          ]
+        }
+      ],
+      "verdicts": null
+    },
+    {
+      "path": "build/leaf-join-click-final-controls-r1/controls.json",
+      "sha256": "c27581a5fbc8e8d9ffb68fadaca1bb7271123cf78f10d08c553b758d6edebed1",
+      "cases": null,
+      "verdicts": [
+        {
+          "fault": "period",
+          "status": "IDENTICAL"
+        }
+      ]
+    }
+  ],
+  "tests": {
+    "build/native-leaf-unit-r5.log": "a40f3e02730ea993e6c868b50b1370f352473b75962831c11362384fef3eeb1a",
+    "build/native-leaf-python-r2.log": "7b63c159f00e7f29444418493a8427c9e9b5ac78ae47181ce382560ed50fcbe0"
+  }
+}

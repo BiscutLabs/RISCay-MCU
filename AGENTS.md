@@ -451,6 +451,19 @@
   P&R requires its complete receipt before launch. Keep the old opt-in Control
   experiment as historical evidence. Residual electrical violations still block
   qualification; successful repair execution is not electrical closure.
+  Wire-dependent repair follows docs/reviews/wire-electrical-repair.md: run
+  after placement and global routing, retain every corner's electrical report,
+  and prove the actual OpenDB graph before accepting checkpoints. Bind the
+  protected-net inventory and the actual wrapped tool executable. A resizer
+  no-progress warning is retained failure evidence, never electrical closure.
+  Keep clocked optimization reports separate from complete async obligations.
+  Native capture distribution follows docs/native-capture-distribution.md:
+  bound every branch to 16 loads, verify equal depth and protocol-specific
+  polarity, and preserve unchanged propagation/spread budgets. Require all
+  actual leaves, both transitions and min/max bounds at all five corners.
+  Retain budget failures, including small excesses; zero-wire equal delays are
+  not routed skew evidence. Each of the three SRAM clocks needs a distinct,
+  exclusive immediate parent driver in the final repaired graph.
   The native Control SPICE harness preserves uncut controller feedback and all
   315 payload cells. Follow docs/reviews/control-native-characterization.md:
   reject changed adapter specializations and unexplained cut loads, verify both
@@ -476,6 +489,14 @@
   Freeze runtime configuration/executables, and use the same runtime for fault
   controls. Configured native/WSL invocation currently covers the stage runner
   and Control relative pilot/controls; legacy physical tools remain separate.
+  Repaired stage/Join timing follows docs/reviews/repaired-leaf-timing.md. Use
+  original hierarchy only for identity and measure the full loaded live graph.
+  Read/hash repair proof bytes once; retain all added parent buffers. Verify
+  all four root-slew annotations and actual parent-buffer fault controls.
+  Local hold grants no source/transform contamination credit. Report graph ACK
+  arrivals separately from constrained PathEnds and name the limiting receiver.
+  A case-conditioned ACK receiver may use its unique live driver observation
+  only at zero wire RC; this does not bound maximum receiver-wire propagation.
   For Control Join setup composition, follow docs/reviews/control-join-timing.md.
   Resolve the actual parent/children, prove source identity and dynamic-lane
   coverage, and preserve the original loaded cells in the analysis wrapper.
@@ -507,10 +528,19 @@
   elapsed seeded-owner/admission composition. Safe-direction guard lengthening
   and timing parameterization may proceed concurrently; shortening waits for
   the measured complete envelope. Keep elapsed step and owner policies separate.
+  ACK activity follows docs/reviews/ack-guard-activity.md: count both source and
+  output edges, require no pending edge at shutdown, and compare exact generated
+  exports before attributing latency/energy changes. On-chip fixture overrides
+  bind beneath dut.soc; direct SoC fixtures bind beneath dut. Native-model wait
+  sums are not additive wall time or mapped/whole-chip energy evidence.
   Default elapsed requests are 100 ns, execute requests 80 ns and the BD Control
   source ACK guard 32 ns on both edges. Keep that guard's recognized
   `acknowledge_guard` ID so AsyncTest does not randomize away its fixed delay.
   Run actual-edge/bypass controls plus the unchanged accelerated sleep oracle.
+  Run ElapsedThroughputSpec for the measured 645 ns request-guard sensitivity
+  and retain the accelerated oracle's failing stress result separately. Follow
+  docs/native-elapsed-contract.md for conditional batching/drainage budgets;
+  isolated LF events and a guard-only override do not qualify physical throughput.
   Preserve exact async cells and connections, native delay chains and three SRAMs.
   Keep clocked STA separate from internal async path measurements. Recharacterize
   changed cells/whole transforms across all five pinned corners, and rerun

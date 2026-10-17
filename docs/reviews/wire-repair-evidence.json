@@ -1,0 +1,682 @@
+{
+  "scope": "Graph-preserving repair after placement and global routing; five cell PVT corners with nominal estimated layer RC",
+  "physical_qualification": false,
+  "variants": {
+    "bd": {
+      "run": "build\\bounded-pnr-bd-r11",
+      "run_sha256": "7e96e5f3d8db36117198de534216350743ee3b6a1a566de8c9260bce396bb870",
+      "runtime": "/nix/store/hrxjpkkppbzkcnzf44f60lsm0cj1f4yh-openroad-26Q2/bin/openroad",
+      "runtime_sha256": {
+        "P:\\Personal\\RISCay-MCU\\build\\control-join-tools.json": "739b00203414ee6ebc10e94fa80026fb3203258e9da967f5b3610af5b9d607a4",
+        "\\\\wsl.localhost\\nixos-librelane\\nix\\store\\hrxjpkkppbzkcnzf44f60lsm0cj1f4yh-openroad-26Q2\\bin\\openroad": "2c12fe5111618dcd623061f4c6d28ee6e5e28506e838490a1e97b1be20b719d8",
+        "\\\\wsl.localhost\\nixos-librelane\\nix\\store\\2lwxwsaixnaq561hbq02v5236935ass8-coreutils-full-9.8\\bin\\coreutils": "1d95f37fda247ff4075e81d354c04bde7640a855034f0f9906571050871aad27",
+        "P:\\Personal\\RISCay-MCU\\tools\\physical_tools.py": "9e0cefda56e76be27c4e9ea71918b5b582e9c9cb94874910934132f1c71acefd",
+        "\\\\wsl.localhost\\nixos-librelane\\nix\\store\\hrxjpkkppbzkcnzf44f60lsm0cj1f4yh-openroad-26Q2\\bin\\.openroad-wrapped": "16687b0e82d5d1589e1c9375e9a994030992eed6c72939e8b046164f477cc445",
+        "P:\\Personal\\RISCay-MCU\\physical\\gf180\\openroad\\default.nix": "536147f548b35ff24532aa3f477cc0c12e1763e49016afc2e527c5b58dd2b8c9",
+        "P:\\Personal\\RISCay-MCU\\physical\\gf180\\openroad\\repair-progress.patch": "780eda403ac1f90e99f6fc78f5baf729036712d8240a89b91b4f188b0718cd3f"
+      },
+      "stages": {
+        "place": {
+          "proof": "exact-original-graph-after-buffer-contraction-and-equivalent-resize",
+          "protected_cells": 55836,
+          "added_buffers": 10347,
+          "resized_cells": 1437,
+          "sram_clock_drivers": [
+            {
+              "owner": "soc/fabric_program_macros_0",
+              "port": "CLK",
+              "buffer": "soc/riscay_sram_clock_0",
+              "master": "gf180mcu_fd_sc_mcu7t5v0__buf_12"
+            },
+            {
+              "owner": "soc/fabric_program_macros_1",
+              "port": "CLK",
+              "buffer": "soc/riscay_sram_clock_1",
+              "master": "gf180mcu_fd_sc_mcu7t5v0__buf_12"
+            },
+            {
+              "owner": "soc/fabric_ram_macros_0",
+              "port": "CLK",
+              "buffer": "soc/riscay_sram_clock_2",
+              "master": "gf180mcu_fd_sc_mcu7t5v0__buf_12"
+            }
+          ],
+          "corners": {
+            "tt_025C_3v30": {
+              "before": {
+                "slew": {
+                  "rows": 4434,
+                  "worst_slack": -12.773718,
+                  "maximum_observed": 14.773718
+                },
+                "capacitance": {
+                  "rows": 12,
+                  "worst_slack": -0.097152,
+                  "maximum_observed": 0.397522
+                }
+              },
+              "after": {
+                "slew": {
+                  "rows": 917,
+                  "worst_slack": -5.849856,
+                  "maximum_observed": 7.849856
+                },
+                "capacitance": {
+                  "rows": 0,
+                  "worst_slack": null,
+                  "maximum_observed": null
+                }
+              }
+            },
+            "ss_125C_3v00": {
+              "before": {
+                "slew": {
+                  "rows": 29256,
+                  "worst_slack": -27.171694,
+                  "maximum_observed": 29.171694
+                },
+                "capacitance": {
+                  "rows": 15,
+                  "worst_slack": -0.107341,
+                  "maximum_observed": 0.397738
+                }
+              },
+              "after": {
+                "slew": {
+                  "rows": 5399,
+                  "worst_slack": -12.466681,
+                  "maximum_observed": 14.466681
+                },
+                "capacitance": {
+                  "rows": 0,
+                  "worst_slack": null,
+                  "maximum_observed": null
+                }
+              }
+            },
+            "ss_n40C_3v00": {
+              "before": {
+                "slew": {
+                  "rows": 8897,
+                  "worst_slack": -16.661324,
+                  "maximum_observed": 18.661324
+                },
+                "capacitance": {
+                  "rows": 12,
+                  "worst_slack": -0.097266,
+                  "maximum_observed": 0.397205
+                }
+              },
+              "after": {
+                "slew": {
+                  "rows": 1443,
+                  "worst_slack": -8.102133,
+                  "maximum_observed": 10.102133
+                },
+                "capacitance": {
+                  "rows": 0,
+                  "worst_slack": null,
+                  "maximum_observed": null
+                }
+              }
+            },
+            "ff_125C_3v60": {
+              "before": {
+                "slew": {
+                  "rows": 3099,
+                  "worst_slack": -11.057787,
+                  "maximum_observed": 13.057787
+                },
+                "capacitance": {
+                  "rows": 12,
+                  "worst_slack": -0.113229,
+                  "maximum_observed": 0.397664
+                }
+              },
+              "after": {
+                "slew": {
+                  "rows": 613,
+                  "worst_slack": -4.71534,
+                  "maximum_observed": 6.71534
+                },
+                "capacitance": {
+                  "rows": 0,
+                  "worst_slack": null,
+                  "maximum_observed": null
+                }
+              }
+            },
+            "ff_n40C_3v60": {
+              "before": {
+                "slew": {
+                  "rows": 1111,
+                  "worst_slack": -6.324922,
+                  "maximum_observed": 8.324923
+                },
+                "capacitance": {
+                  "rows": 10,
+                  "worst_slack": -0.098932,
+                  "maximum_observed": 0.397579
+                }
+              },
+              "after": {
+                "slew": {
+                  "rows": 183,
+                  "worst_slack": -2.795787,
+                  "maximum_observed": 4.795786
+                },
+                "capacitance": {
+                  "rows": 0,
+                  "worst_slack": null,
+                  "maximum_observed": null
+                }
+              }
+            }
+          }
+        },
+        "global": {
+          "proof": "exact-original-graph-after-buffer-contraction-and-equivalent-resize",
+          "protected_cells": 55836,
+          "added_buffers": 1596,
+          "resized_cells": 233,
+          "sram_clock_drivers": [
+            {
+              "owner": "soc/fabric_program_macros_0",
+              "port": "CLK",
+              "buffer": "soc/riscay_sram_clock_0",
+              "master": "gf180mcu_fd_sc_mcu7t5v0__buf_12"
+            },
+            {
+              "owner": "soc/fabric_program_macros_1",
+              "port": "CLK",
+              "buffer": "soc/riscay_sram_clock_1",
+              "master": "gf180mcu_fd_sc_mcu7t5v0__buf_12"
+            },
+            {
+              "owner": "soc/fabric_ram_macros_0",
+              "port": "CLK",
+              "buffer": "soc/riscay_sram_clock_2",
+              "master": "gf180mcu_fd_sc_mcu7t5v0__buf_12"
+            }
+          ],
+          "corners": {
+            "tt_025C_3v30": {
+              "before": {
+                "slew": {
+                  "rows": 1003,
+                  "worst_slack": -5.555256,
+                  "maximum_observed": 7.555256
+                },
+                "capacitance": {
+                  "rows": 0,
+                  "worst_slack": null,
+                  "maximum_observed": null
+                }
+              },
+              "after": {
+                "slew": {
+                  "rows": 1003,
+                  "worst_slack": -5.555256,
+                  "maximum_observed": 7.555256
+                },
+                "capacitance": {
+                  "rows": 0,
+                  "worst_slack": null,
+                  "maximum_observed": null
+                }
+              }
+            },
+            "ss_125C_3v00": {
+              "before": {
+                "slew": {
+                  "rows": 9968,
+                  "worst_slack": -11.927726,
+                  "maximum_observed": 13.927726
+                },
+                "capacitance": {
+                  "rows": 0,
+                  "worst_slack": null,
+                  "maximum_observed": null
+                }
+              },
+              "after": {
+                "slew": {
+                  "rows": 9241,
+                  "worst_slack": -11.927726,
+                  "maximum_observed": 13.927726
+                },
+                "capacitance": {
+                  "rows": 0,
+                  "worst_slack": null,
+                  "maximum_observed": null
+                }
+              }
+            },
+            "ss_n40C_3v00": {
+              "before": {
+                "slew": {
+                  "rows": 2091,
+                  "worst_slack": -7.722036,
+                  "maximum_observed": 9.722036
+                },
+                "capacitance": {
+                  "rows": 0,
+                  "worst_slack": null,
+                  "maximum_observed": null
+                }
+              },
+              "after": {
+                "slew": {
+                  "rows": 2097,
+                  "worst_slack": -7.722036,
+                  "maximum_observed": 9.722036
+                },
+                "capacitance": {
+                  "rows": 0,
+                  "worst_slack": null,
+                  "maximum_observed": null
+                }
+              }
+            },
+            "ff_125C_3v60": {
+              "before": {
+                "slew": {
+                  "rows": 651,
+                  "worst_slack": -4.463846,
+                  "maximum_observed": 6.463846
+                },
+                "capacitance": {
+                  "rows": 0,
+                  "worst_slack": null,
+                  "maximum_observed": null
+                }
+              },
+              "after": {
+                "slew": {
+                  "rows": 655,
+                  "worst_slack": -4.463846,
+                  "maximum_observed": 6.463846
+                },
+                "capacitance": {
+                  "rows": 0,
+                  "worst_slack": null,
+                  "maximum_observed": null
+                }
+              }
+            },
+            "ff_n40C_3v60": {
+              "before": {
+                "slew": {
+                  "rows": 177,
+                  "worst_slack": -2.481832,
+                  "maximum_observed": 4.481833
+                },
+                "capacitance": {
+                  "rows": 0,
+                  "worst_slack": null,
+                  "maximum_observed": null
+                }
+              },
+              "after": {
+                "slew": {
+                  "rows": 177,
+                  "worst_slack": -2.481832,
+                  "maximum_observed": 4.481833
+                },
+                "capacitance": {
+                  "rows": 0,
+                  "worst_slack": null,
+                  "maximum_observed": null
+                }
+              }
+            }
+          }
+        }
+      },
+      "reported_design_area_um2": {
+        "floorplan": 3792616.0,
+        "place": 4111766.0,
+        "clock": 4122654.0,
+        "global": 4169888.0
+      }
+    },
+    "click": {
+      "run": "build\\bounded-pnr-click-r2",
+      "run_sha256": "df7e8c8b46ba7f3224aab6c2c67ae5a3a7d6069eef1c4ba9d1905f2addc244c9",
+      "runtime": "/nix/store/hrxjpkkppbzkcnzf44f60lsm0cj1f4yh-openroad-26Q2/bin/openroad",
+      "runtime_sha256": {
+        "P:\\Personal\\RISCay-MCU\\build\\control-join-tools.json": "739b00203414ee6ebc10e94fa80026fb3203258e9da967f5b3610af5b9d607a4",
+        "\\\\wsl.localhost\\nixos-librelane\\nix\\store\\hrxjpkkppbzkcnzf44f60lsm0cj1f4yh-openroad-26Q2\\bin\\openroad": "2c12fe5111618dcd623061f4c6d28ee6e5e28506e838490a1e97b1be20b719d8",
+        "\\\\wsl.localhost\\nixos-librelane\\nix\\store\\2lwxwsaixnaq561hbq02v5236935ass8-coreutils-full-9.8\\bin\\coreutils": "1d95f37fda247ff4075e81d354c04bde7640a855034f0f9906571050871aad27",
+        "P:\\Personal\\RISCay-MCU\\tools\\physical_tools.py": "9e0cefda56e76be27c4e9ea71918b5b582e9c9cb94874910934132f1c71acefd",
+        "\\\\wsl.localhost\\nixos-librelane\\nix\\store\\hrxjpkkppbzkcnzf44f60lsm0cj1f4yh-openroad-26Q2\\bin\\.openroad-wrapped": "16687b0e82d5d1589e1c9375e9a994030992eed6c72939e8b046164f477cc445",
+        "P:\\Personal\\RISCay-MCU\\physical\\gf180\\openroad\\default.nix": "536147f548b35ff24532aa3f477cc0c12e1763e49016afc2e527c5b58dd2b8c9",
+        "P:\\Personal\\RISCay-MCU\\physical\\gf180\\openroad\\repair-progress.patch": "780eda403ac1f90e99f6fc78f5baf729036712d8240a89b91b4f188b0718cd3f"
+      },
+      "stages": {
+        "place": {
+          "proof": "exact-original-graph-after-buffer-contraction-and-equivalent-resize",
+          "protected_cells": 61309,
+          "added_buffers": 10928,
+          "resized_cells": 1616,
+          "sram_clock_drivers": [
+            {
+              "owner": "soc/fabric_program_macros_0",
+              "port": "CLK",
+              "buffer": "soc/riscay_sram_clock_0",
+              "master": "gf180mcu_fd_sc_mcu7t5v0__buf_12"
+            },
+            {
+              "owner": "soc/fabric_program_macros_1",
+              "port": "CLK",
+              "buffer": "soc/riscay_sram_clock_1",
+              "master": "gf180mcu_fd_sc_mcu7t5v0__buf_12"
+            },
+            {
+              "owner": "soc/fabric_ram_macros_0",
+              "port": "CLK",
+              "buffer": "soc/riscay_sram_clock_2",
+              "master": "gf180mcu_fd_sc_mcu7t5v0__buf_12"
+            }
+          ],
+          "corners": {
+            "tt_025C_3v30": {
+              "before": {
+                "slew": {
+                  "rows": 6060,
+                  "worst_slack": -12.63346,
+                  "maximum_observed": 14.63346
+                },
+                "capacitance": {
+                  "rows": 12,
+                  "worst_slack": -0.165591,
+                  "maximum_observed": 0.523991
+                }
+              },
+              "after": {
+                "slew": {
+                  "rows": 1513,
+                  "worst_slack": -4.831595,
+                  "maximum_observed": 6.831595
+                },
+                "capacitance": {
+                  "rows": 0,
+                  "worst_slack": null,
+                  "maximum_observed": null
+                }
+              }
+            },
+            "ss_125C_3v00": {
+              "before": {
+                "slew": {
+                  "rows": 32704,
+                  "worst_slack": -27.043501,
+                  "maximum_observed": 29.043501
+                },
+                "capacitance": {
+                  "rows": 17,
+                  "worst_slack": -0.171528,
+                  "maximum_observed": 0.524228
+                }
+              },
+              "after": {
+                "slew": {
+                  "rows": 7497,
+                  "worst_slack": -10.601517,
+                  "maximum_observed": 12.601517
+                },
+                "capacitance": {
+                  "rows": 0,
+                  "worst_slack": null,
+                  "maximum_observed": null
+                }
+              }
+            },
+            "ss_n40C_3v00": {
+              "before": {
+                "slew": {
+                  "rows": 10380,
+                  "worst_slack": -16.656452,
+                  "maximum_observed": 18.656452
+                },
+                "capacitance": {
+                  "rows": 11,
+                  "worst_slack": -0.167599,
+                  "maximum_observed": 0.523799
+                }
+              },
+              "after": {
+                "slew": {
+                  "rows": 2295,
+                  "worst_slack": -6.788525,
+                  "maximum_observed": 8.788525
+                },
+                "capacitance": {
+                  "rows": 0,
+                  "worst_slack": null,
+                  "maximum_observed": null
+                }
+              }
+            },
+            "ff_125C_3v60": {
+              "before": {
+                "slew": {
+                  "rows": 4017,
+                  "worst_slack": -10.876705,
+                  "maximum_observed": 12.876705
+                },
+                "capacitance": {
+                  "rows": 12,
+                  "worst_slack": -0.163798,
+                  "maximum_observed": 0.524098
+                }
+              },
+              "after": {
+                "slew": {
+                  "rows": 1104,
+                  "worst_slack": -3.845846,
+                  "maximum_observed": 5.845847
+                },
+                "capacitance": {
+                  "rows": 0,
+                  "worst_slack": null,
+                  "maximum_observed": null
+                }
+              }
+            },
+            "ff_n40C_3v60": {
+              "before": {
+                "slew": {
+                  "rows": 1288,
+                  "worst_slack": -6.194927,
+                  "maximum_observed": 8.194927
+                },
+                "capacitance": {
+                  "rows": 11,
+                  "worst_slack": -0.169013,
+                  "maximum_observed": 0.524013
+                }
+              },
+              "after": {
+                "slew": {
+                  "rows": 298,
+                  "worst_slack": -2.171552,
+                  "maximum_observed": 4.171552
+                },
+                "capacitance": {
+                  "rows": 0,
+                  "worst_slack": null,
+                  "maximum_observed": null
+                }
+              }
+            }
+          }
+        },
+        "global": {
+          "proof": "exact-original-graph-after-buffer-contraction-and-equivalent-resize",
+          "protected_cells": 61309,
+          "added_buffers": 1603,
+          "resized_cells": 197,
+          "sram_clock_drivers": [
+            {
+              "owner": "soc/fabric_program_macros_0",
+              "port": "CLK",
+              "buffer": "soc/riscay_sram_clock_0",
+              "master": "gf180mcu_fd_sc_mcu7t5v0__buf_12"
+            },
+            {
+              "owner": "soc/fabric_program_macros_1",
+              "port": "CLK",
+              "buffer": "soc/riscay_sram_clock_1",
+              "master": "gf180mcu_fd_sc_mcu7t5v0__buf_12"
+            },
+            {
+              "owner": "soc/fabric_ram_macros_0",
+              "port": "CLK",
+              "buffer": "soc/riscay_sram_clock_2",
+              "master": "gf180mcu_fd_sc_mcu7t5v0__buf_12"
+            }
+          ],
+          "corners": {
+            "tt_025C_3v30": {
+              "before": {
+                "slew": {
+                  "rows": 1610,
+                  "worst_slack": -4.60843,
+                  "maximum_observed": 6.60843
+                },
+                "capacitance": {
+                  "rows": 0,
+                  "worst_slack": null,
+                  "maximum_observed": null
+                }
+              },
+              "after": {
+                "slew": {
+                  "rows": 1613,
+                  "worst_slack": -4.60843,
+                  "maximum_observed": 6.60843
+                },
+                "capacitance": {
+                  "rows": 0,
+                  "worst_slack": null,
+                  "maximum_observed": null
+                }
+              }
+            },
+            "ss_125C_3v00": {
+              "before": {
+                "slew": {
+                  "rows": 11896,
+                  "worst_slack": -10.192681,
+                  "maximum_observed": 12.192682
+                },
+                "capacitance": {
+                  "rows": 0,
+                  "worst_slack": null,
+                  "maximum_observed": null
+                }
+              },
+              "after": {
+                "slew": {
+                  "rows": 11241,
+                  "worst_slack": -10.192681,
+                  "maximum_observed": 12.192682
+                },
+                "capacitance": {
+                  "rows": 0,
+                  "worst_slack": null,
+                  "maximum_observed": null
+                }
+              }
+            },
+            "ss_n40C_3v00": {
+              "before": {
+                "slew": {
+                  "rows": 2976,
+                  "worst_slack": -6.500558,
+                  "maximum_observed": 8.500559
+                },
+                "capacitance": {
+                  "rows": 0,
+                  "worst_slack": null,
+                  "maximum_observed": null
+                }
+              },
+              "after": {
+                "slew": {
+                  "rows": 2980,
+                  "worst_slack": -6.500558,
+                  "maximum_observed": 8.500559
+                },
+                "capacitance": {
+                  "rows": 0,
+                  "worst_slack": null,
+                  "maximum_observed": null
+                }
+              }
+            },
+            "ff_125C_3v60": {
+              "before": {
+                "slew": {
+                  "rows": 1194,
+                  "worst_slack": -3.655212,
+                  "maximum_observed": 5.655212
+                },
+                "capacitance": {
+                  "rows": 0,
+                  "worst_slack": null,
+                  "maximum_observed": null
+                }
+              },
+              "after": {
+                "slew": {
+                  "rows": 1197,
+                  "worst_slack": -3.655212,
+                  "maximum_observed": 5.655212
+                },
+                "capacitance": {
+                  "rows": 0,
+                  "worst_slack": null,
+                  "maximum_observed": null
+                }
+              }
+            },
+            "ff_n40C_3v60": {
+              "before": {
+                "slew": {
+                  "rows": 269,
+                  "worst_slack": -1.917691,
+                  "maximum_observed": 3.917691
+                },
+                "capacitance": {
+                  "rows": 0,
+                  "worst_slack": null,
+                  "maximum_observed": null
+                }
+              },
+              "after": {
+                "slew": {
+                  "rows": 269,
+                  "worst_slack": -1.917691,
+                  "maximum_observed": 3.917691
+                },
+                "capacitance": {
+                  "rows": 0,
+                  "worst_slack": null,
+                  "maximum_observed": null
+                }
+              }
+            }
+          }
+        }
+      },
+      "reported_design_area_um2": {
+        "floorplan": 4576884.0,
+        "place": 4911619.0,
+        "clock": 4923535.0,
+        "global": 4972723.0
+      }
+    }
+  }
+}

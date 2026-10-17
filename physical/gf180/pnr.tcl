@@ -1,8 +1,13 @@
 # SPDX-License-Identifier: Apache-2.0
 # Experimental digital-only flow. Keep every failed timing report visible.
 set_thread_count $threads
-read_liberty $pdk/${sc}tt_025C_3v30.lib
-read_liberty $sram/${sram_cell}__tt_025C_3v30.lib
+set pvt_corners {tt_025C_3v30 ss_125C_3v00 ss_n40C_3v00 ff_125C_3v60 ff_n40C_3v60}
+define_corners {*}$pvt_corners
+foreach corner $pvt_corners {
+  read_liberty -corner $corner $pdk/${sc}${corner}.lib
+  read_liberty -corner $corner $sram/${sram_cell}__${corner}.lib
+}
+source $source/pnr-repair.tcl
 if {$stage eq "floorplan"} {
   read_lef $routing/technology.tlef
   read_lef $pdk/gf180mcu_fd_sc_mcu7t5v0.lef
@@ -15,7 +20,10 @@ if {$stage eq "floorplan"} {
 source $mapping/base.sdc
 source $mapping/clocked.sdc
 source $mapping/feedback-cuts.tcl
-source $out/async-pnr.sdc
+# Electrical optimization must not expand the legacy all-register/wide-bus
+# async path matrix. Its complete constraints are saved and hashed separately;
+# native timing is measured in the contract-driven analysis campaigns.
+source $out/async-electrical.sdc
 source $out/protected.tcl
 proc connect_power {} {
   global protected_cells mapping source
@@ -89,6 +97,8 @@ if {$stage eq "place"} {
   detailed_placement
   check_placement -verbose
   estimate_parasitics -placement
+  wire_repair
+  estimate_parasitics -placement
 }
 if {$stage eq "clock"} {
   # Explicit roots exclude SDA and all self-timed capture networks. The service
@@ -108,6 +118,11 @@ if {$stage eq "global"} {
   set_routing_layers -signal Metal2-Metal5 -clock Metal2-Metal5
   set_global_routing_layer_adjustment Metal2-Metal5 0.15
   global_route -guide_file $out/route.guide -congestion_iterations 100 -congestion_report_file $out/congestion.rpt -verbose
+  estimate_parasitics -global_routing
+  # Track added cells, moved cells and changed nets in the existing route.
+  global_route -start_incremental
+  wire_repair
+  global_route -end_incremental -guide_file $out/route.guide -congestion_iterations 100
   estimate_parasitics -global_routing
 }
 if {$stage eq "route"} {
@@ -143,8 +158,9 @@ write_def $out/$checkpoint.def
 write_verilog -include_pwr_gnd $out/$checkpoint.v
 write_sdc $out/$checkpoint.sdc
 if {$stage in {place clock global extract}} {
-  report_checks -path_delay min_max -group_path_count 10 -format full_clock_expanded > $out/$checkpoint-timing.rpt
+  report_checks -path_delay min_max -group_path_count 10 -format full_clock_expanded > $out/$checkpoint-clocked-timing.rpt
   report_check_types -max_slew -max_capacitance -violators > $out/$checkpoint-electrical.rpt
+  electrical_reports $checkpoint
 }
 report_design_area
 puts "PNR_STAGE_COMPLETE $stage"
