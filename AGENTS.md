@@ -13,13 +13,20 @@
 - Each `designs/` target owns its separate SoC implementation. `soc/` retains
   schemas, parameters, fixed macro models and wrapper utilities, not a shared
   service implementation. Keep Click native and endpoint bridges explicit.
-  Follow `docs/async-soc-migration.md`: finish and verify one checklist item,
-  obtain a fresh independent agent review, address its findings, rerun affected
-  checks, update its evidence/contracts, commit and push. The user's current
+  Follow `docs/async-soc-migration.md`: batch compatible 11b–14 ownership
+  removals into one verification cycle, with separate ownership and fault
+  evidence for each change. Obtain a fresh independent agent review, address
+  its findings, rerun affected checks, update evidence/contracts, commit and
+  push. The user's current
   workflow is to commit directly to `main`. Keep verification and
   independent review; open a pull request only when the user requests one.
-  Repeat this review loop
-  for every item. Continue to the next item when the user has authorized it;
+  Repeat this review loop for every batch or independent item. Run the bounded
+  A7b guard and A8b passive-allowance pilots in parallel. Maintain the single
+  item/batch cost ledger in `docs/area-ledger.md`; its next milestone is BD
+  mapped logic below 2.3 mm² excluding SRAM, measured with matched inputs.
+  An isolated pilot's saving is not an adopted whole-chip result. Full physical
+  requalification stays at item 17; retain each changed path's local obligations.
+  Continue to the next item when the user has authorized it;
   otherwise ask. Items 1-9, 10a, 10b1, 10b2a, 10b2b, 10b2c1, 10b2c2a, 10b2c2b, 10b2d1, 10b2d2, 11a1, 11a2a and 11b1 are digitally verified within their scopes.
   The user has authorized deeper migration under expanded items 10-16: native
   service coordination, observation reduction, publication, direct interconnect

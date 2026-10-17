@@ -1,9 +1,11 @@
 # Asynchronous SoC migration checklist
 
 This checklist is the migration boundary, not a claim that all peripheral RTL is
-asynchronous. Complete and verify one item, obtain a fresh independent agent
-review, implement fixes, rerun affected checks, document, commit and push. Repeat
-this review loop for each item. Continue only to an authorized next item; ask
+asynchronous. The latest work order groups compatible 11b–14 ownership removals
+into one verification cycle, retaining each item's ownership and fault checks.
+Obtain a fresh independent agent review, implement fixes, rerun affected checks,
+document, commit and push directly to main for each batch or independent item.
+Continue only to an authorized next item; ask
 when no next item has been chosen. Both implementations remain active throughout.
 
 ## Ownership and invariants
@@ -27,16 +29,18 @@ PR10 is merged. This order supersedes the older pauses and repair-first work
 priorities retained below. It does not waive any functional or physical gate.
 
 The subsequent area review adds [A7/A8 guard and allowance work](native-area-reduction.md#current-area-priorities-11b1-2026-10-17)
-alongside ownership removal: current component counts and a complete first
-purpose inventory are recorded; select a bounded same-corner guard or passive
-allowance experiment now that 11b1 is digitally verified. Do this before further broad repair
-tuning. Removing reset/data gates or changing latch controllers requires its
+alongside ownership removal: run A7b's BD elapsed guard and A8b's standard-stage
+passive allowance experiments in parallel with the 11b2/11b3 ownership batch.
+Use the [single area ledger](area-ledger.md) for mapped/repaired logic, guards,
+allowances, DLYD and periodic sinks. The next milestone is **BD mapped logic
+below 2.3 mm² excluding SRAM**; this is a target, not a result. Full physical
+requalification remains item 17. Removing reset/data gates or changing latch controllers requires its
 own semantics and hold proof; historical area estimates are not measured savings.
 
 1. **11b–14 first: remove clocked ownership and unnecessary crossings.** Address
    Services scheduling, receipts, queues/mailboxes, output/state replicas,
    I2C epochs/ring/ordinal, SPI playback and the SRAM boundary in verified steps.
-   Count actual periodic sinks and total mapped area after each step. A flop
+   Count actual periodic sinks and total mapped area after each verified batch. A flop
    exchanged for several native payload copies is not automatically progress.
    Keep the independent LF/watchdog, continuous-good reset qualifier and SDA
    wake event. Self-timed SRAM remains subject to its existing macro/POR gates.

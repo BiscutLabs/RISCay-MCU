@@ -6,10 +6,35 @@ import unittest
 
 from gf180_physical import SC, SRAM
 from repair_gf180_design import flat
-from report_repair_area import lef_areas, summarize
+from report_repair_area import adapter_costs, lef_areas, summarize
 
 
 class RepairAreaTest(unittest.TestCase):
+    def test_adapter_categories_and_dlyd_are_not_added_twice(self):
+        cells={n:dict(type=SC+k) for n,k in (
+            ('guard/delay','dlyd_1'),('logic/gate','and2_1'),('data/buf','buf_1'))}
+        areas={SC+'dlyd_1':75,SC+'and2_1':18,SC+'buf_1':13}
+        def binding(name,role,kind,delay):
+            return dict(model='Gate',requirements=dict(role=role),parameters=dict(DELAY_FS=delay),
+                        instances=[name],cells=[dict(name=kind,cell=cells[name+'/'+kind]['type'])])
+        mapping=dict(bindings=[binding('guard','matched-control-delay','delay',32000000),
+            binding('logic','matched-control-delay','gate',1000000),
+            binding('data','whole-transform-allowance','buf',10000000)])
+        audit=dict(adapter_instances={n:n for n in ('guard','logic','data')},preserved_async_cells=3)
+        result=adapter_costs(cells,mapping,audit,areas)
+        self.assertAlmostEqual(result['matched_control_mm2'],93/1e6)
+        self.assertAlmostEqual(result['guards_mm2'],75/1e6)
+        self.assertAlmostEqual(result['functional_control_mm2'],18/1e6)
+        self.assertAlmostEqual(result['allowances_mm2'],13/1e6)
+        self.assertAlmostEqual(result['dlyd_mm2'],75/1e6)
+        self.assertEqual(result['dlyd_cells'],1)
+        for changed in (dict(audit,preserved_async_cells=4),
+                        dict(audit,adapter_instances=dict(guard='logic',logic='logic',data='data'))):
+            with self.assertRaisesRegex(ValueError,'AREA_LEDGER_'):
+                adapter_costs(cells,mapping,changed,areas)
+        with self.assertRaisesRegex(ValueError,'AREA_LEDGER_ADAPTER_LEAF'):
+            adapter_costs(cells,dict(bindings=mapping['bindings']+[mapping['bindings'][0]]),audit,areas)
+
     def setUp(self):
         def netlist(kinds):
             return dict(modules=dict(RiscayMcuDigital=dict(ports={},cells=dict(island=dict(

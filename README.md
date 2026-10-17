@@ -61,7 +61,10 @@ LF timebase/watchdog. The [remaining-state ledger](docs/async-residual-state.md)
 tracks removal candidates; a smaller clocked-bit count does not establish lower
 area or power. The [native area reduction plan](docs/native-area-reduction.md)
 targets elapsed/CRC arithmetic, wide payload transport and duplicate storage,
-with measured cost gates. The bounded native elapsed loop preserves the time ABI;
+with measured cost gates. The [area ledger](docs/area-ledger.md) separates mapped,
+repaired and component costs, with BD mapped logic below 2.3 mm² as the next
+unmet milestone. A7b/A8b experiments run alongside batched ownership removals.
+The bounded native elapsed loop preserves the time ABI;
 compact native CRC feedback removes redundant command storage. The I2C
 observation projection removes 325 native storage bits per variant. The compact
 [SPI player](docs/spi-player-contract.md) removes 90 clocked bits per variant;
@@ -139,8 +142,8 @@ open. Self-timed SRAM access follows a separate
 macro timing qualification; the millisecond and scaled-value ABI remains unchanged.
 The [experimental native byte owners](docs/experimental-native-sram-byte.md)
 have a maintained digital verification campaign and are not instantiated in the SoC.
-Each migration item requires fresh independent review, fixes,
-verification, documentation and a separate commit/push.
+Each compatible ownership batch or independent migration item requires fresh
+independent review, fixes, verification, documentation and a commit/push to main.
 
 The reset-domain and reset-interval corrections pass digital verification and
 independent review. After receiver closure and rebase, native reset remains

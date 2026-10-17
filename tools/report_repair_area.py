@@ -10,6 +10,7 @@ from gf180_estimate import groups, scalar
 from gf180_physical import ROOT, SC, SRAM, sha, write_json
 from repair_gf180_control import require
 from repair_gf180_design import flat, validate_receipt
+from gf180_netgraph import periodic_loads
 
 
 def lef_areas(paths):
@@ -51,6 +52,32 @@ def summarize(a,b,proof,prep,liberty,areas):
         new_ties=dict(count=len(ties),area_mm2=area(b[n] for n in ties)/1e6))
 
 
+def adapter_costs(cells, mapping, audit, areas):
+    """Disjoint adapter costs, with DLYD reported as an overlapping subset."""
+    result=dict(matched_control_mm2=0.0, functional_control_mm2=0.0,
+                guards_mm2=0.0, allowances_mm2=0.0)
+    seen=set()
+    for binding in mapping['bindings']:
+        role=binding['requirements'].get('role',binding['model'])
+        for instance in binding['instances']:
+            total=0.0
+            for leaf in binding['cells']:
+                path=audit['adapter_instances'][instance]+'/'+leaf['name']
+                require(path not in seen and path in cells and
+                        cells[path]['type']==leaf['cell'],'AREA_LEDGER_ADAPTER_LEAF')
+                seen.add(path); total+=areas[leaf['cell']]/1e6
+            if role=='matched-control-delay':
+                result['matched_control_mm2']+=total
+                key='functional_control_mm2' if int(binding['parameters']['DELAY_FS'])<=1000000 else 'guards_mm2'
+                result[key]+=total
+            elif role=='whole-transform-allowance':result['allowances_mm2']+=total
+    require(len(seen)==audit['preserved_async_cells'],'AREA_LEDGER_NATIVE_COVERAGE')
+    result['dlyd_cells']=sum(c['type'].startswith(SC+'dlyd_') for c in cells.values())
+    result['dlyd_mm2']=math.fsum(areas[c['type']] for c in cells.values()
+                               if c['type'].startswith(SC+'dlyd_'))/1e6
+    return result
+
+
 def report(mapping, output):
     mapping=mapping.resolve();require(not output.exists(),'REPAIR_AREA_OUTPUT_EXISTS')
     validate_receipt(mapping)
@@ -59,11 +86,13 @@ def report(mapping, output):
     lefpaths=[ROOT/'.tools/physical/pdk/gf180mcu_fd_sc_mcu7t5v0.lef',ROOT/'.tools/gf180-sram'/(SRAM+'.lef')]
     files=[mapping/'netlist.json',mapping/'electrical-repair/reference/netlist.json',
            mapping/'electrical-repair/receipt.json',mapping/'electrical-repair/proof.json',
-           mapping/'electrical-repair/preparation.json',Path(__file__),*libpaths,*lefpaths]
+           mapping/'electrical-repair/preparation.json',Path(__file__),*libpaths,*lefpaths,
+           mapping/'mapping.json',mapping/'netlist-audit.json',ROOT/'tools/gf180_netgraph.py']
     frozen={str(p.resolve()):sha(p) for p in files}
     # This report reads geometry only; SRAM and standard cells use different
     # Liberty power units, so the energy estimator's unit checks do not apply.
-    liberty={k:scalar(body,'area') for p in libpaths for k,body in groups(p.read_text(),'cell')}
+    library={k:body for p in libpaths for k,body in groups(p.read_text(),'cell')}
+    liberty={k:scalar(body,'area') for k,body in library.items()}
     require(liberty and all(math.isfinite(a) and a>0 for a in liberty.values()),'REPAIR_AREA_LIBRARY')
     a=flat(json.loads(files[1].read_text()),'RiscayMcuDigital')['cells']
     b=flat(json.loads(files[0].read_text()),'RiscayMcuDigital')['cells']
@@ -71,6 +100,11 @@ def report(mapping, output):
     result=dict(scope='LEF footprints and separate Liberty area totals; pre-placement; timing-unqualified',
         variant=json.loads((mapping/'mapping.json').read_text())['variant'],
         **summarize(a,b,proof,prep,liberty,lef_areas(lefpaths)),inputs_sha256=frozen)
+    result['components']=adapter_costs(b,json.loads((mapping/'mapping.json').read_text()),
+                                     json.loads((mapping/'netlist-audit.json').read_text()),lef_areas(lefpaths))
+    result['clock_domains']=periodic_loads(json.loads(files[0].read_text())['modules'],library)
+    result['periodic_clock_sinks']=sum(result['clock_domains'][domain]['storage_cells']
+                                       for domain in ('service','work','lf'))
     require(all(sha(Path(p))==h for p,h in frozen.items()),'REPAIR_AREA_INPUT_CHANGED')
     validate_receipt(mapping)
     write_json(output,result)

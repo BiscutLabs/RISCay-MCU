@@ -4,7 +4,12 @@ The proposal against `c71b234` is authorized for implementation, subject to
 the existing ABI, reset, retention and independent-review requirements. Its
 area estimates and target of roughly halving logic area are hypotheses, not
 mapped results. Keep native BD and Click; do not replace native work with
-periodic-clock staging. Measure each accepted step against its exact parent.
+periodic-clock staging. Measure each accepted batch against its exact parent;
+retain a separate ownership proof and fault controls for every included item.
+The [single area ledger](area-ledger.md) records accepted batches and isolated
+pilots separately. The next milestone is BD mapped logic below **2.3 mm²**,
+excluding SRAM, after A7b/A8b and the next ownership batch. At the 11b1 baseline
+this requires 0.525888 mm² (18.61%) more reduction; it is not a measured saving.
 
 ## Order and acceptance gates
 
@@ -133,6 +138,13 @@ periodic-clock staging. Measure each accepted step against its exact parent.
     and a justified mismatch derate. Keep physical minimum pulses and external
     time requirements as separate constraints. Begin with an already composed
     standard owner; retain the old recipe as the matched comparison.
+    The [first isolated elapsed-step experiment](reviews/a7b-elapsed-guard.md)
+    measures an 86 → 25 DLYD request chain at ten corner/slew cases, saving
+    0.004553 mm² locally. Setup remains positive under a 15% sensitivity check;
+    data, hold and ACK timing are unchanged. Source launch/return/reset,
+    justified mismatch and routed qualification remain open; production
+    shortening is disabled. The [area ledger](area-ledger.md) keeps this
+    component delta separate from adopted whole-chip savings.
   - [ ] **A7c: compare mixed-cell tracking with the existing DLYD recipe.**
     Characterize the actual chain at every corner, including interstage loading
     and slew. A paper's average tracking error is not a GF180 mismatch bound.
@@ -177,10 +189,12 @@ periodic-clock staging. Measure each accepted step against its exact parent.
 ## Current area priorities (11b1, 2026-10-17)
 
 The review correctly identifies implementation overhead as the target. With
-11b1 digitally verified and independently reviewed, use A7a/A8a to select a bounded
-guard or passive-allowance experiment with the largest supported saving. Keep ownership removal
-in 11b–14 active; further broad repair sweeps are lower priority. Every change
-still needs its own matched map, activity and leakage comparison. The proposed
+11b1 digitally verified and independently reviewed, run A7b's BD elapsed guard
+and A8b's standard-stage passive allowance pilots in parallel with the 11b2/11b3
+ownership batch. Keep full physical requalification at item 17 and retain the
+changed paths' local timing/reset obligations. Further broad repair sweeps are
+lower priority. Every accepted batch needs a matched map, activity and leakage
+comparison; individual pilot deltas cannot be extrapolated as whole-chip savings. The proposed
 40–50% reduction is a hypothesis, not a measured result or a tape-out target.
 
 This inventory uses the **current repaired pre-placement graphs**, pinned GF180
