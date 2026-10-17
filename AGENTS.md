@@ -1,5 +1,21 @@
 # RISCay-MCU contributor instructions
 
+- Use the repository skill `.agents/skills/async-circuit-design/SKILL.md` for
+  native architecture, area, timing and physical-flow changes; load its relevant
+  references. The uploaded skill's example costs and process margins are
+  guidance, not measurements of this design. Preserve the ABI and permanent
+  supervision requirements below when considering firmware or SRAM ownership.
+- The latest area review authorizes a supported passive-allowance primitive in
+  chisel-async, an invalid-data/fanout audit of every MCU allowance instance,
+  one same-corner sizing campaign for all 199 BD ordering guards, and Click ACK
+  guard sizing with pulse-width minima preserved. Record the selected GF180
+  mismatch policy and its evidence; never call an engineering derate measured
+  process variation. Adopt measured reversible parameters after the affected
+  digital/local timing checks and review; item 17 is subsequent full physical
+  qualification, not a blanket prerequisite to these production changes.
+  Keep fixed-time requirements separate, retain failure evidence, and lengthen
+  parameters if later physical evidence requires it. RAM prepare is the first
+  A10 stage-fusion candidate. This supersedes older blanket adoption holds below.
 - Implement the MCU here; chisel-async and Chiselator remain separate projects.
 - Deliver a reusable SoC with on-chip boot ROM, executable RAM and working RAM.
   Keep common CPU/host services independent of board names, pins and policy.
