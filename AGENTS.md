@@ -511,6 +511,10 @@
   source ACK guard 32 ns on both edges. Keep that guard's recognized
   `acknowledge_guard` ID so AsyncTest does not randomize away its fixed delay.
   Run actual-edge/bypass controls plus the unchanged accelerated sleep oracle.
+  Run ElapsedThroughputSpec for the measured 645 ns request-guard sensitivity
+  and retain the accelerated oracle's failing stress result separately. Follow
+  docs/native-elapsed-contract.md for conditional batching/drainage budgets;
+  isolated LF events and a guard-only override do not qualify physical throughput.
   Preserve exact async cells and connections, native delay chains and three SRAMs.
   Keep clocked STA separate from internal async path measurements. Recharacterize
   changed cells/whole transforms across all five pinned corners, and rerun

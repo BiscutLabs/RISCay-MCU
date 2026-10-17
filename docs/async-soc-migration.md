@@ -1168,6 +1168,19 @@ physical reset qualification (R2b) remains mandatory under item 17a3.
         see [the correction record](reviews/electrical-first-correction.md) for
         their digital evidence and the remaining physical gates.
         Shortening any guard waits for the complete measured envelope.
+        - [x] Measure the slow request adapter and test existing elapsed batching
+          and final maintenance drainage at 645 ns. Retain the unchanged 2 us
+          tick sleep oracle's failure; document the production-coefficient
+          conditional throughput budget. See [evidence](reviews/elapsed-throughput.md).
+        - [ ] Anchor repaired stage/Join queries on preserved native leaf pins,
+          including elapsed mode fanout and the actual BD Control ACK guard.
+        - [ ] Provide separate parent drivers for all three SRAM clocks and
+          bounded native capture distribution for RF, frame banks and I2C publication.
+        - [ ] Repeat graph-proved repair after placement and global routing;
+          report every corner's electrical violations.
+        - [ ] Publish total before/after repair area, including writer-workaround
+          buffers; count the two-edge ACK guard in wake latency and energy.
+          Document Click's capture-to-ACK ordering independently.
       - [ ] **Execute RF and elapsed seeded-owner composition.** Follow
         electrical repair and the rerun campaigns. Measure actual register-bank launch,
         forwarding/Fork/Join ordering and all 15 banks. Preserve elapsed's

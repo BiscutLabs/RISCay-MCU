@@ -100,6 +100,10 @@ The [electrical-first correction](docs/reviews/electrical-first-correction.md)
 also adds independent owner timing policies and longer elapsed/execute request
 guards plus a native BD Control ACK guard. These targets remain unqualified;
 no clocked pipeline or shorter matched delay is introduced.
+The [slow-guard throughput check](docs/reviews/elapsed-throughput.md) exercises
+existing tick batching at a measured 645 ns request delay. Production-coefficient
+isolated maintenance drains in the digital tests; the accelerated 2 µs tick
+sleep stress fails at that delay. Full physical throughput remains open.
 See the [elapsed](docs/native-elapsed-contract.md) and
 [CRC](docs/native-crc-contract.md) contracts. Wider payload reductions remain
 open. Self-timed SRAM access follows a separate

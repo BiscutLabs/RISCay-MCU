@@ -9,11 +9,13 @@ class BdScalingSleepFixture(p: SocParameters) extends FabricFixture(p) {
   val scalingBusy = IO(Output(Bool())); scalingBusy := fabric.io.elapsedScaling.busy
   val sleepEligible = IO(Output(Bool())); sleepEligible := fabric.io.canSleep
   val consumedGray = IO(Output(UInt(32.W))); consumedGray := fabric.io.consumedGray
+  val scalingTarget = IO(Output(UInt(32.W))); scalingTarget := fabric.io.elapsedScaling.target
 }
 class ClickScalingSleepFixture(p: SocParameters) extends ClickFabricFixture(p) {
   val scalingBusy = IO(Output(Bool())); scalingBusy := fabric.io.elapsedScaling.busy
   val sleepEligible = IO(Output(Bool())); sleepEligible := fabric.io.canSleep
   val consumedGray = IO(Output(UInt(32.W))); consumedGray := fabric.io.consumedGray
+  val scalingTarget = IO(Output(UInt(32.W))); scalingTarget := fabric.io.elapsedScaling.target
 }
 class ScalingGateFixture(click: Boolean, p: SocParameters) extends FabricFixture(p.copy(lowPower=None)) {
   val gateCanSleep = IO(Input(Bool())); val gateActivity = IO(Input(Bool()))
@@ -68,13 +70,20 @@ always @(posedge serviceClock) if(!reset && scalingBusy && sleepEligible)
 """,referenceHalfPeriodNs=1000)
   }
   for(click <- Seq(false,true)) test(s"${if(click) "click" else "bd"}: accelerated time maintenance still leaves retained-sleep windows") {
+    // Optional diagnostic sensitivity run. The oracle and the tick rate remain
+    // unchanged; a failing physical-delay experiment must remain a failed test.
+    val stress = sys.env.get("RISCAY_ELAPSED_STRESS_NS").map(_.toLong)
+    require(stress.forall(_ > 0), "INVALID_ELAPSED_STRESS_DELAY")
+    val overrides = stress.map(ns =>
+      ("ca_child_elapsed_scaler.ca_child_native.ca_child_step", "request_delay") -> (ns * 1000000L)).toMap
+    info(s"elapsed request guard diagnostic: ${stress.fold("production model")(ns => s"$ns ns")}")
     ClockedSimulation.run(if(click) new ClickScalingSleepFixture(p) else new BdScalingSleepFixture(p),
       "scaling-maintenance","""
         request_valid=1; request_bits_operation=1; request_bits_address=32'h30000000;
         request_bits_mask=15; response_ready=1;
         #100000;
         if(sleepEntries < 10) $fatal(1,"MAINTENANCE_STARVED_SLEEP entries=%d",sleepEntries);
-      """,referenceHalfPeriodNs=250)
+      """,referenceHalfPeriodNs=250, primitiveDelayOverrides=overrides)
   }
   for(click <- Seq(false,true)) test(s"${if(click) "click" else "bd"}: ordinary activity and reset retain the full guard after maintenance") {
     ClockedSimulation.run(new ScalingGateFixture(click,p),"maintenance-guard","""
