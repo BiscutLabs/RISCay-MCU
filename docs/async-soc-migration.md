@@ -1219,9 +1219,16 @@ physical reset qualification (R2b) remains mandatory under item 17a3.
           waiving protected-pin or graph proofs.
           Classification now resolves actual final nets and retained warnings
           at all five corners; the corresponding repairs remain open.
-        - [ ] Measure BD source/transform contamination credit. If the complete
-          hold envelope remains inadequate, add a short native stage ACK guard.
-          Click already has its 32 ns stage ACK guard.
+        - [x] Extract the retained per-lane BD root-to-D minima and distinguish
+          Control's internal-feedback bound from its guarded source release.
+          The latter has a 52.094408 ns conditional first-admission margin with
+          zero data-path credit; retain its existing guard. See
+          [the hold evidence and assumptions](reviews/bd-hold-credit.md).
+        - [ ] Complete BD source retention, including RF/FIFO launch/reuse,
+          pending admission and both returns. If an owner's complete envelope
+          remains inadequate, add a short native outward ACK guard. The local
+          contamination samples do not close this item. Click already has its
+          32 ns stage ACK guard.
         - [x] Close the nine **local, zero-wire** capture-tree budget failures
           with stronger wide EventRegister capture roots/trunks; 660 cases per
           variant pass the unchanged budgets. Routed capture/ACK closure and

@@ -1,0 +1,82 @@
+{
+  "status": "conditional-retained-evidence-analysis",
+  "physical_qualification": false,
+  "root_slew_ns": [
+    0.02,
+    2.0
+  ],
+  "wire_rc": "zero",
+  "guarded_first_admission_control": {
+    "cases": 20,
+    "minimum_hold_ns": 52.09440797233411,
+    "limiting": {
+      "case": "ff_n40C_3v60-s2.0.json",
+      "side": "right",
+      "ack_query": "return:0:min",
+      "ack_receiver": "soc/ca_child_control/ca_child_join/ca_child_right/ca_primitive_a/genblk1.genblk1.genblk1.genblk1.genblk1.genblk1.genblk1.genblk1.genblk1.genblk1.genblk1.genblk1.genblk1.genblk1.genblk1.genblk1.genblk1.variant_17.mapped/u1/I",
+      "ack_driver": "soc/ca_child_control/ca_primitive_acknowledge_guard/genblk1.genblk1.genblk1.genblk1.genblk1.genblk1.genblk1.genblk1.genblk1.genblk1.genblk1.genblk1.genblk1.genblk1.genblk1.genblk1.genblk1.genblk1.genblk1.genblk1.genblk1.genblk1.genblk1.genblk1.genblk1.genblk1.genblk1.genblk1.genblk1.genblk1.genblk1.genblk1.genblk1.genblk1.genblk1.genblk1.genblk1.genblk1.genblk1.variant_39.mapped/u29/Z",
+      "earliest_guarded_ack_ns": 147.10714840429304,
+      "latest_capture_query": "capture:9:max:fall",
+      "latest_capture_ns": 94.81874043195893,
+      "liberty_hold_ns": 0.194,
+      "guarded_first_admission_hold_ns": 52.09440797233411
+    }
+  },
+  "stage_conditional_contamination": [
+    {
+      "instance": "FourPhaseSoc.ca_child_core.ca_child_execute",
+      "cases": 10,
+      "minimum_zero_credit_ns": 1.0971773682362298,
+      "minimum_root_to_D_ns": 0.5364661644535665,
+      "minimum_conditional_hold_ns": 1.6336435326897965
+    },
+    {
+      "instance": "FourPhaseSoc.ca_child_elapsed_scaler.ca_child_native.ca_child_step",
+      "cases": 10,
+      "minimum_zero_credit_ns": 1.1539102104882997,
+      "minimum_root_to_D_ns": 0.5112197476707243,
+      "minimum_conditional_hold_ns": 1.665129958159024
+    },
+    {
+      "instance": "FourPhaseSoc.ca_child_ram_access.ca_child_native.ca_child_prepare",
+      "cases": 10,
+      "minimum_zero_credit_ns": 1.2859520916546865,
+      "minimum_root_to_D_ns": 0.35675471919738866,
+      "minimum_conditional_hold_ns": 1.6427068108520753
+    },
+    {
+      "instance": "FourPhaseSoc.ca_child_ram_access.ca_child_native.ca_child_lane_0_issue",
+      "cases": 10,
+      "minimum_zero_credit_ns": 1.2479531532499726,
+      "minimum_root_to_D_ns": 0.35675471919738866,
+      "minimum_conditional_hold_ns": 1.6047078724473613
+    },
+    {
+      "instance": "FourPhaseSoc.ca_child_ram_access.ca_child_native.ca_child_lane_0_capture",
+      "cases": 10,
+      "minimum_zero_credit_ns": 1.2859520916546865,
+      "minimum_root_to_D_ns": 0.35675471919738866,
+      "minimum_conditional_hold_ns": 1.6427068108520753
+    },
+    {
+      "instance": "FourPhaseSoc.ca_child_i2c.ca_child_native.ca_child_update",
+      "cases": 10,
+      "minimum_zero_credit_ns": 1.1871750467598199,
+      "minimum_root_to_D_ns": 0.35675471919738866,
+      "minimum_conditional_hold_ns": 1.5439297659572087
+    },
+    {
+      "instance": "FourPhaseSoc.ca_child_control.ca_child_update",
+      "cases": 10,
+      "minimum_zero_credit_ns": 0.9871038037463145,
+      "minimum_root_to_D_ns": 0.35675471919738866,
+      "minimum_conditional_hold_ns": 1.3891834902282052
+    }
+  ],
+  "evidence_sha256": {
+    "build\\capture-drive-bd-stages-r1\\results.json": "fc9109b9803bb77fb506b8862b73a3cf56d7c9262be6af2db429afeba592adfb",
+    "build\\capture-drive-bd-join-r1\\results.json": "7da8fca0e9167b07f14afe48ab79577b7fc1b961c99788d09034d1c95cc5f08f",
+    "build\\bd-hold-credit-r1.json": "dadc29277de36cab9ae335118e61d4b9febb81dc393fa75ab018987b9a375619",
+    "build/summarize_bd_hold_credit.py": "5e5d66815248ee8776f8d16642efc6e7d917352a35861567bc6d0777d24ea953"
+  }
+}

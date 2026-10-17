@@ -83,8 +83,8 @@ Repaired stage and Join [leaf bindings](docs/reviews/repaired-leaf-timing.md) no
 resolve the previously blocked paths: all 160 selected standard-stage and 20
 Control Join cases have positive conditional margins in the fresh repaired maps.
 The revised [capture trees](docs/native-capture-distribution.md) pass all 1,320
-local zero-wire cases at unchanged budgets. Small BD hold margins and complete
-electrical/routed timing remain open.
+local zero-wire cases at unchanged budgets. [BD source-retention](docs/reviews/bd-hold-credit.md)
+and complete electrical/routed timing remain open.
 The [A2b evidence](docs/reviews/loader-metadata-a2b-completion.md) records its
 checks and measured costs.
 An [opt-in Control buffer repair](docs/reviews/control-electrical-repair.md)
