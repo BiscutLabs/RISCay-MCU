@@ -1,5 +1,13 @@
 # First GF180 place-and-route experiment
 
+Current flow note (2026-10-17): `gf180_pnr.py --placement-density` exposes the
+placement target independently of `--die-side-um`. The default remains 0.50.
+The requested comparison uses 0.60 and 0.70 with a common 3250 µm outline and
+unchanged macro positions for both variants. Density is bound into the run's
+geometry; changing it on resume is rejected before any output write or tool
+launch. Use new output directories for each case. This adds the comparison
+control; those density runs and their area/electrical conclusions remain open.
+
 On 2026-10-08 both native variants completed digital-block floorplanning,
 placement, clock-tree synthesis, global routing, detailed routing and nominal
 wire-parasitic extraction. **Both route; neither has timing closure.**

@@ -54,6 +54,17 @@ class PnrBindings(unittest.TestCase):
         for side in (0,1400,float('inf'),float('nan')):
             with self.assertRaisesRegex(ValueError,'INVALID_COMMON_OUTLINE'):pnr.geometry(side)
         self.assertEqual(pnr.geometry(3250)['core_um'],[30,30,3220,3220])
+
+    def test_density_sweep_does_not_change_common_outline_or_macro_placement(self):
+        baseline=pnr.geometry(3250)
+        for density in (.6,.7):
+            candidate=pnr.geometry(3250,density)
+            self.assertEqual(candidate['placement_density'],density)
+            self.assertEqual({k:v for k,v in candidate.items() if k!='placement_density'},
+                             {k:v for k,v in baseline.items() if k!='placement_density'})
+        for density in (0,1,-.1,float('inf'),float('nan')):
+            with self.assertRaisesRegex(ValueError,'INVALID_PLACEMENT_DENSITY'):
+                pnr.geometry(3250,density)
     def test_aliased_ports_resolve_to_real_leaf_driver(self):
         # Two output aliases with different parent bit IDs must be unioned,
         # including the alias visited last, rather than overwriting the first.
@@ -253,6 +264,15 @@ class PnrProvenance(unittest.TestCase):
         with patch.object(pnr,'ROOT',self.root),patch.object(pnr,'assets') as assets,patch.object(pnr.subprocess,'run') as launch:
             with self.assertRaisesRegex(ValueError,'PNR_MAPPING_INPUT_CHANGED'):
                 pnr.run(self.mapping,self.out,'place','place',8)
+            assets.assert_not_called(); launch.assert_not_called()
+        self.assertTrue(all(p.read_bytes()==b for p,b in before.items()))
+
+    def test_resume_rejects_density_change_before_writing_or_launching(self):
+        self.meta['geometry']=pnr.geometry(3250,.6); self.save()
+        before={p:p.read_bytes() for p in self.out.rglob('*') if p.is_file()}
+        with patch.object(pnr,'ROOT',self.root),patch.object(pnr,'assets') as assets,patch.object(pnr.subprocess,'run') as launch:
+            with self.assertRaisesRegex(ValueError,'PNR_GEOMETRY_CHANGED'):
+                pnr.run(self.mapping,self.out,'place','place',8,side=3250,density=.7)
             assets.assert_not_called(); launch.assert_not_called()
         self.assertTrue(all(p.read_bytes()==b for p,b in before.items()))
 
