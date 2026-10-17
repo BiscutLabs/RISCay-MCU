@@ -192,7 +192,7 @@ electrical violations. In particular, the BD update controller still has a
 1.663 ns local ACK margin. This standalone-stage measurement excludes the new
 parent-level 32 ns source-ACK guard; its full composed envelope is still open.
 
-The **complete rerun fails**, rather than silently omitting unsupported paths.
+The **initial complete rerun failed**, rather than silently omitting unsupported paths.
 Execute and SRAM preparation reject with `CONTROL_SOURCE_WIDTH` after unused
 ports disappear from the repaired hierarchy. Elapsed rejects with
 `STAGE_UNDECLARED_INPUT`: a real distribution branch now crosses the stage
@@ -200,6 +200,10 @@ boundary. Both Control Join campaigns reject with `JOIN_RENDEZVOUS_WIRING`;
 both execute Join campaigns reject with `CONTROL_SOURCE_WIDTH`. Preserve the
 actual buffers and parent paths when extending these bindings. No old Join
 margin or old execute/elapsed measurement qualifies the new graph.
+
+The subsequent [leaf-binding correction](repaired-leaf-timing.md) resolves these
+paths on the full repaired graph in nominal smoke and actual-arc controls. The
+full corner/slew rerun remains required on the final repaired graph.
 
 Local evidence is under `build/electrical-first-campaign-{bd,click}-r2`,
 `build/electrical-first-control-{nominal,faults}-{bd,click}-r1` and

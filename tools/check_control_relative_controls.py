@@ -11,11 +11,13 @@ import control_relative_timing as r
 
 def fault_sdf(plan, fault, capture=None):
     cells=plan["native"]["cells"]
+    prefix=plan['native'].get('physical_prefix','')
     if fault=="short_request":
-        selected=[c for c in cells if c["path"].startswith("ca_primitive_request_delay/") and c["cell"]==r.SC+"dlyd_1"]
+        selected=[c for c in cells if c["path"].startswith(prefix+"ca_primitive_request_delay/") and c["cell"]==r.SC+"dlyd_1"]
         value=0.000001
     elif fault=="early_ack":
         roots=("ca_primitive_acknowledge/",) if plan["variant"]=="bd" else ("ca_primitive_acknowledge_guard/","ca_primitive_input_phase/")
+        roots=tuple(prefix+p for p in roots)
         selected=[c for c in cells if c["path"].startswith(roots)]
         value=0.000001
     else:

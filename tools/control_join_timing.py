@@ -72,7 +72,7 @@ def selection(variant, target):
                              for i in range(15)})
 
 
-def bind_inputs(parent, join, sink, operand_fields, side_inputs):
+def bind_inputs(parent, join, sink, operand_fields, side_inputs, ack_guard=None):
     """Account for each sink input, including inputs overlapping a Join cone."""
     jc, uc = join["connections"], sink["connections"]
     require(set(operand_fields) == {"left", "right"} and len(set(operand_fields.values())) == 2,
@@ -87,7 +87,10 @@ def bind_inputs(parent, join, sink, operand_fields, side_inputs):
             if dest == root or dest.startswith(root+"_"):
                 dest = "in_bits_"+field+dest[len(root):]
                 break
-        require(dest in uc and jc[pin] == uc[dest], "JOIN_UPDATE_WIRING")
+        if pin=='out_ack' and ack_guard is not None:
+            require(ack_guard['a']==uc.get(dest) and ack_guard['q']==jc[pin] and
+                    ack_guard['reset']==jc['reset'] and ack_guard['b']==['0'], 'JOIN_ACK_GUARD_WIRING')
+        else:require(dest in uc and jc[pin] == uc[dest], "JOIN_UPDATE_WIRING")
         covered.add(dest)
         bindings.append(dict(source=pin, destination=dest, width=len(uc[dest]), kind="join"))
     side_bits=set()
@@ -119,6 +122,21 @@ def bound_slice(netlist, record, manifest, variant, *, target="control"):
     require(re.fullmatch(config['parent_family']+r"(?:_\d+)?",kind) is not None,"JOIN_PARENT_FAMILY")
     parent=netlist["modules"][kind]
     selected={name:deepcopy(parent["cells"][name]) for name in ("ca_child_join",sink_name)}
+    ack_guard=None
+    guard_name='ca_primitive_acknowledge_guard'
+    if guard_name in parent['cells']:
+        require(variant=='bd' and target=='control','JOIN_UNEXPECTED_ACK_GUARD')
+        pnode=next(n for n in nodes(manifest['design']) if n['rtl_path']==path)
+        ps=[p for p in pnode['primitives'] if p['id']=='acknowledge_guard' and p['view']!='constraint-marker']
+        require(len(ps)==1,'JOIN_ACK_GUARD_CONTRACT')
+        p=ps[0];params={k:int(v) for k,v in p['parameters'].items()}
+        require(p['model']=='ChiselAsyncControlGate_v1' and p['rtl_path']==path+'.'+guard_name and p['version']==1 and
+                set(params)=={'OP','WIDTH','RESET_VALUE','DELAY_FS'} and params['DELAY_FS']>0 and
+                {k:v for k,v in params.items() if k!='DELAY_FS'}==dict(OP=0,WIDTH=1,RESET_VALUE=0),
+                'JOIN_ACK_GUARD_SPECIALIZATION')
+        audit_bindings(netlist,record,dict(module=kind,variant=variant,aliases=[],verify_roots=[guard_name],
+            expected_bindings={guard_name:(p['model'],params)},physical_prefix='soc/'+'/'.join(path.split('.')[1:])+'/'))
+        selected[guard_name]=deepcopy(parent['cells'][guard_name]);ack_guard=selected[guard_name]['connections']
     join=netlist["modules"][selected["ca_child_join"]["type"]]
     update=netlist["modules"][selected[sink_name]["type"]]
     plans={}
@@ -158,7 +176,7 @@ def bound_slice(netlist, record, manifest, variant, *, target="control"):
                    "out_ack" if pin=="out_ack" else "reset" if pin=="reset" else None)
             if outer is not None:require(conn[pin]==join["ports"][outer]["bits"],"JOIN_OPERAND_WIRING")
     jc,uc=[selected[n]["connections"] for n in ("ca_child_join",sink_name)]
-    input_bindings=bind_inputs(parent,selected['ca_child_join'],selected[sink_name],config['operand_fields'],config['side_inputs'])
+    input_bindings=bind_inputs(parent,selected['ca_child_join'],selected[sink_name],config['operand_fields'],config['side_inputs'],ack_guard)
     internal={b for pin in jc if pin.startswith('out_') for b in jc[pin]}
     require(jc["reset"]==uc["reset"],"JOIN_RESET_WIRING")
     # The retained Join output must have exactly the consumers in this slice.
@@ -184,7 +202,8 @@ def bound_slice(netlist, record, manifest, variant, *, target="control"):
     return dict(modules=modules),dict(variant=variant,module=TOP,stages=plans,join_module=selected["ca_child_join"]["type"],
         parent_module=kind,parent_instance=path,target=target,input_bindings=input_bindings,
         uncomposed_side_input_bits=sum(b['width'] for b in input_bindings if b['kind']=='uncomposed-side-source'),
-        whole_stage_setup_established=False,rendezvous="ca_child_join/"+rname+"/")
+        whole_stage_setup_established=False,rendezvous="ca_child_join/"+rname+"/",
+        acknowledge_guard=guard_name if ack_guard else None)
 
 
 def identity_storage(body):
@@ -330,12 +349,75 @@ def contexts(plan,cells):
     return result
 
 
+def bind_leaf_plan(plan, index, cuts):
+    """Resolve identities on the original graph; measure the full live graph."""
+    prefix='soc/'+'/'.join(plan['parent_instance'].split('.')[1:])+'/'
+    plan=deepcopy(plan)
+    for p in plan['stages'].values():p['prefix']=prefix+p['prefix']
+    plan['rendezvous']=prefix+plan['rendezvous']
+    cells=[dict(path=p,cell=c['type'],pins={k:v[0] for k,v in c['connections'].items()},directions=c['directions'])
+           for p,c in index.after['cells'].items() if all(len(v)==1 for v in c['connections'].values())]
+    generated=contexts(plan,cells)
+    drivers=defaultdict(list)
+    for path,cell in index.after['cells'].items():
+        for pin,ns in cell['connections'].items():
+            if cell['directions'][pin]=='output':
+                for lane,net in enumerate(ns):drivers[net].append(path+'/'+pin+(f'[{lane}]' if len(ns)>1 else ''))
+    dest_path=plan['stages']['update']['prefix'][:-1]
+    signals={p:index.scalar(dest_path,s) for p,s in (('reset','reset'),('update_out_ack','out_ack'))}
+    for ctx in generated:
+        ctx['state']['cases']=[(*signals[p],v) if k=='port' else (k,p,v) for k,p,v in ctx['state']['cases']]
+        ctx['state']['keeper_cuts']=cuts
+        src=plan['stages'][ctx['side']]
+        path=src['prefix'][:-1]
+        if ctx['kind']=='input':
+            ports=sorted({re.sub(r'\[\d+\]$','',p) for p in next(c for c in src['contexts'] if c['id']=='data')['sources']})
+            lanes=[row for p in ports for row in index.boundary(path,p)]
+            require(all(row['kind']=='pin' for row in lanes),'JOIN_LEAF_INPUT_SOURCE')
+            ctx['sources']=sorted({row['source'] for row in lanes})
+            ctx['input_lanes']=lanes
+        elif ctx['kind']=='request':
+            kind,pin=index.scalar(path,'in_req');require(kind=='pin','JOIN_LEAF_REQUEST_SOURCE')
+            ctx['sources']=[pin]
+        ctx['source_kind']='clock'
+        qs=[]
+        for q in ctx['queries']:
+            if q['role']!='return':qs.append(q);continue
+            rows=index.boundary(path,'out_ack')
+            require(len(rows)==1 and rows[0]['kind']=='pin','JOIN_LEAF_RETURN_SOURCE')
+            # Receiver case analysis proves initial admission but removes its
+            # timing arrival. Observe its actual loaded driver instead. This
+            # zero-wire-RC campaign does not bound receiver wire propagation.
+            conditioned={p for k,p,v in ctx['state']['cases'] if k=='pin'}
+            for i,p in enumerate(rows[0]['consumers']):
+                require(p in conditioned,'JOIN_RETURN_RECEIVER_CONDITION')
+                actual=drivers[index.live_net('pin',p)]
+                require(len(actual)==1,'JOIN_RETURN_DRIVER_COUNT')
+                qs.append(dict(q,id=q['id'].replace('return:',f'return:{i}:'),sink=actual[0],sink_kind='pin',
+                               receiver=p,measurement='conditioned-receiver-driver-arrival'))
+        ctx['queries']=qs
+    plan.update(module='RiscayMcuDigital',leaf_anchored=True,contexts=generated,
+                physical_prefix=prefix,keeper_cuts=cuts,wire_rc_scope='zero; receiver wire delay unmeasured')
+    return plan
+
+
 def script(netlist,corner,slew,plan,ctx,*,sta,period=1000,dq=None,sdf=None):
     b=relative.brace
+    leaf=plan.get('leaf_anchored',False)
+    if leaf:
+        require(plan['wire_rc_scope']=='zero; receiver wire delay unmeasured','JOIN_LEAF_WIRE_RC_MODE')
+        if sdf:validate_leaf_sdf(sdf.read_text())
+        values=ctx.get('root_slew_ns',dict(min=slew,max=slew))
+        ctx['expected_root_slews']={(i,m,e):(dq[str(plan['stages'][ctx['side']]['lane_map'][i]['lane'])][e]['slew_ns']
+            if plan['variant']=='bd' and ctx['kind']=='launch' else values[m])
+            for i in range(len(ctx['sources'])) for m in ('min','max') for e in ('rise','fall')}
     text='read_liberty '+b(sta.path(ROOT/".tools/physical/pdk"/(SC+corner+".lib")))+'\n'+relative.PROBE.read_text()+'\n'+JOIN_PROBE+'\n'
-    text+='read_verilog '+b(sta.path(netlist))+'\nlink_design '+TOP+'\n'
+    if leaf:
+        from native_leaf_timing import SRAM, SLEW_TCL
+        text+='read_liberty '+b(sta.path(ROOT/'.tools/gf180-sram'/(SRAM+'__tt_025C_3v30.lib')))+'\n'+SLEW_TCL+'\n'
+    text+='read_verilog '+b(sta.path(netlist))+'\nlink_design '+plan.get('module',TOP)+'\n'
     text+=f'set_input_transition {slew} [all_inputs]\nset_load 0.05 [all_outputs]\nset_max_transition 2 [current_design]\n'
-    text+='set_load 0 [exact_object port probe_update_ack]\n'
+    if not leaf:text+='set_load 0 [exact_object port probe_update_ack]\n'
     for kind,pin,value in ctx["state"]["cases"]:text+=f'set_case_analysis {value} [exact_object {kind} {b(pin)}]\n'
     for cell in ctx["state"]["keeper_cuts"]:text+='set_disable_timing -from A1 -to ZN [get_cells '+b(cell)+']\n'
     if sdf:text+='read_sdf '+b(sta.path(sdf))+'\n'
@@ -344,7 +426,7 @@ def script(netlist,corner,slew,plan,ctx,*,sta,period=1000,dq=None,sdf=None):
         # Fixed event offsets avoid subtracting a period/2 floating-point epoch
         # from falling-data paths. Neither offset is used as a timing budget.
         text+=f'create_clock -name event -period {period} -waveform {{0 1}} $sources\nset_propagated_clock [all_clocks]\n'
-        if plan["variant"]=="bd":
+        if plan["variant"]=="bd" and ctx['kind']=='launch':
             require(dq is not None,"JOIN_DQ_SLEW_REQUIRED")
             text+='sta::find_delays\n'
             for lane in plan["stages"][ctx["side"]]["lane_map"]:
@@ -352,13 +434,22 @@ def script(netlist,corner,slew,plan,ctx,*,sta,period=1000,dq=None,sdf=None):
                 for edge in ("rise","fall"):
                     value=dq[str(lane["lane"])][edge]["slew_ns"]
                     text+='set vertices [[exact_object pin '+b(pin)+'] vertices]\nif {![llength $vertices]} {error JOIN_SLEW_VERTEX}\n'
-                    text+='foreach vertex $vertices {sta::set_annotated_slew $vertex [sta::cmd_corner] max '+edge+' [sta::time_ui_sta '+str(value)+']}\n'
+                    text+='foreach vertex $vertices {foreach mode {min max} {sta::set_annotated_slew $vertex [sta::cmd_corner] $mode '+edge+' [sta::time_ui_sta '+str(value)+']}}\n'
+        elif leaf:
+            values=ctx.get('root_slew_ns',dict(min=slew,max=slew))
+            require(ctx['kind']!='launch' or 'root_slew_ns' in ctx,'JOIN_LEAF_EVENT_SLEW_REQUIRED')
+            text+='sta::find_delays\n'
+            for mode in ('min','max'):
+                text+='foreach pin $sources {foreach vertex [$pin vertices] {foreach edge {rise fall} {sta::set_annotated_slew $vertex [sta::cmd_corner] '+mode+' $edge [sta::time_ui_sta '+str(values[mode])+']}}}\n'
         text+='set sources [get_clocks event]\n'
     text+='row JOIN_BEGIN\nset targets {}\n'
-    for kind,pin in sorted({(q['sink_kind'],q['sink']) for q in ctx['queries']}):text+='lappend targets [exact_object '+kind+' '+b(pin)+']\n'
+    for kind,pin in sorted({(q['sink_kind'],q['sink']) for q in ctx['queries'] if not (leaf and q['role']=='return')}):text+='lappend targets [exact_object '+kind+' '+b(pin)+']\n'
     text+='set_max_delay 100000 -from $sources -to $targets\nset_min_delay 0 -from $sources -to $targets\n'
     batches=defaultdict(list)
-    for q in ctx['queries']:batches[(q['mode'],q['source_edge'],q['sink_edge'],q['sink_kind'])].append(q)
+    for q in ctx['queries']:
+        if leaf and q['role']=='return':
+            text+='leaf_ack '+' '.join(map(b,[q['id'],q['mode'],q['sink_edge'],ctx['sources'][0],'','',q['sink']]))+'\n'
+        else:batches[(q['mode'],q['source_edge'],q['sink_edge'],q['sink_kind'])].append(q)
     for (mode,se,te,kind),qs in batches.items():
         text+='join_batch '+mode+' '+se+' '+te+' $sources '+kind+' [list '+" ".join(b(q[k]) for q in qs for k in ('id','sink'))+']\n'
     if plan["variant"]=="bd" and ctx["kind"]=="input":
@@ -373,21 +464,49 @@ def script(netlist,corner,slew,plan,ctx,*,sta,period=1000,dq=None,sdf=None):
         text+='set p [exact_object pin '+b(pin)+']\nrow JOIN_SOURCE_SLEW '+str(i)+' [join_slew $p rise] [join_slew $p fall]\n'
     if plan['variant']=='click' and ctx['kind'] in ('request','launch'):
         text+='row JOIN_EVENT_SLEW [join_slew $p rise min] [join_slew $p rise max]\n'
+    if leaf:
+        for i,pin in enumerate(ctx['sources']):
+            text+='set p [exact_object pin '+b(pin)+']\n'
+            for mode in ('min','max'):
+                for edge in ('rise','fall'):text+=f'row JOIN_ROOT_SLEW {i} {mode} {edge} [leaf_slew $p {edge} {mode}]\n'
     text+='row JOIN_ELECTRICAL_BEGIN\nreport_check_types -max_slew -max_capacitance -violators -digits 6\nrow JOIN_ELECTRICAL_END\nrow JOIN_COMPLETE\nexit\n'
     return text
 
 
-def parse(log,plan,ctx):
+def validate_leaf_sdf(text):
+    # Driver-only return observations cannot accept a wire annotation. Keep
+    # faults limited to explicit cell arcs, as in the actual-arc campaigns.
+    forms=set(re.findall(r'\(\s*([A-Za-z_][A-Za-z_0-9]*)',text))
+    require(forms<={'DELAYFILE','SDFVERSION','DESIGN','DIVIDER','TIMESCALE','CELL','CELLTYPE',
+                    'INSTANCE','DELAY','ABSOLUTE','IOPATH'},'JOIN_LEAF_SDF_WIRE_OR_UNSUPPORTED')
+
+
+def validate_leaf_paths(paths,plan,ctx,cells):
+    require(cells is not None,'JOIN_LEAF_PHYSICAL_CELLS_REQUIRED')
+    src=plan['stages'][ctx['side']]
+    allowed=({src['prefix']+l['Q'] for l in src['lane_map']}|{src['prefix']+src['phase']['Q']['pin']}
+             if plan['variant']=='click' and ctx['kind']=='launch' else set())
+    for points in paths.values():
+        for i,pin in enumerate(points):
+            path,port=pin.rsplit('/',1)
+            require(path in cells and port in cells[path]['connections'],'JOIN_LEAF_PATH_PIN')
+            if i and port in ('Q','QN') and cells[path]['type'].startswith((SC+'dff',SC+'lat')):
+                require(pin in allowed,'JOIN_LEAF_INTERMEDIATE_STORAGE')
+
+
+def parse(log,plan,ctx,*,cells=None):
     require(log.count('JOIN_BEGIN\n')==log.count('JOIN_COMPLETE\n')==1,"JOIN_INCOMPLETE")
     require(not re.search(r'(?mi)^(?:Error:|ERROR|Warning:)',log),"JOIN_TOOL_DIAGNOSTIC")
     expected={q['id']:q for q in ctx['queries']};rows={};paths={};slews={};event_slews=None;src=plan['stages'][ctx['side']]
     source_q={src['prefix']+l['Q']:src['prefix']+l['capture'] for l in src['lane_map']}
     phase_q=src['prefix']+src['phase']['Q']['pin'] if plan['variant']=='click' else None
+    root_slews={}
     for line in log.splitlines():
         f=line.split('\t')
-        if f[0]=='CONTROL_PATH':
+        if f[0] in ('CONTROL_PATH','LEAF_ACK_PATH'):
             require(len(f)==11 and f[1] in expected and f[1] not in rows,"JOIN_QUERY_ROW")
             q=expected[f[1]];start_arrival,arrival,data,delay,slew=map(float,f[2:7]);start,end,se,te=f[7:]
+            require((f[0]=='LEAF_ACK_PATH')==(plan.get('leaf_anchored',False) and q['role']=='return'),'JOIN_RETURN_MEASUREMENT')
             require(all(math.isfinite(v) and v>=0 for v in (start_arrival,arrival,data,delay,slew)) and
                     abs(arrival-start_arrival-delay)<1e-5,"JOIN_NUMERIC")
             require(end==q['sink'] and te==q['sink_edge'] and se in ('rise','fall') and
@@ -402,8 +521,9 @@ def parse(log,plan,ctx):
                 if ctx['source_kind']=='port':require(abs(start_arrival)<1e-6,"JOIN_INPUT_ARRIVAL")
                 measured=delay
             rows[f[1]]=dict(delay_ns=measured,start=start,end=end,max_slew_ns=slew)
-        elif f[0]=='CONTROL_POINTS':
+        elif f[0] in ('CONTROL_POINTS','LEAF_ACK_POINTS'):
             require(f[1] in rows and f[1] not in paths,"JOIN_POINTS_ID");paths[f[1]]=f[2:]
+            require((f[0]=='LEAF_ACK_POINTS')==(plan.get('leaf_anchored',False) and expected[f[1]]['role']=='return'),'JOIN_RETURN_POINTS')
         elif f[0]=='JOIN_SOURCE_SLEW':
             require(len(f)==4 and f[1] not in slews,"JOIN_SOURCE_SLEW_ROW")
             values=list(map(float,f[2:]));require(all(math.isfinite(v) and v>=0 for v in values),"JOIN_SOURCE_SLEW_MISSING")
@@ -412,7 +532,15 @@ def parse(log,plan,ctx):
             require(event_slews is None and len(f)==3,"JOIN_EVENT_SLEW_ROW")
             event_slews=list(map(float,f[1:]));require(all(math.isfinite(v) and v>=0 for v in event_slews) and
                 event_slews[0]<=event_slews[1],"JOIN_EVENT_SLEW_NUMERIC")
+        elif f[0]=='JOIN_ROOT_SLEW':
+            require(plan.get('leaf_anchored') and len(f)==5,'JOIN_ROOT_SLEW_ROW')
+            key=(int(f[1]),f[2],f[3]);value=float(f[4])
+            require(key not in root_slews and key in ctx['expected_root_slews'] and math.isfinite(value) and
+                    abs(value-ctx['expected_root_slews'][key])<1e-5,'JOIN_ROOT_SLEW_CHANGED')
+            root_slews[key]=value
+    if plan.get('leaf_anchored'):require(root_slews.keys()==ctx['expected_root_slews'].keys(),'JOIN_ROOT_SLEW_COVERAGE')
     require(set(rows)==set(paths)==set(expected),"JOIN_QUERY_COVERAGE")
+    if plan.get('leaf_anchored'):validate_leaf_paths(paths,plan,ctx,cells)
     for key,points in paths.items():
         q=expected[key];row=rows[key]
         sequential=ctx['kind']=='launch' and plan['variant']=='click'
@@ -431,6 +559,9 @@ def parse(log,plan,ctx):
             owners=('request_delay','a','long_hold') if plan['variant']=='bd' else ('request_delay','input_compare','fire')
             ordered=[dest['prefix']+relative.driver(dest['native'],owner) for owner in owners]
             require(all(points.count(pin)==1 for pin in ordered) and [points.index(pin) for pin in ordered]==sorted(points.index(pin) for pin in ordered),"JOIN_UPDATE_PROVENANCE")
+        if q['role']=='return' and plan.get('leaf_anchored') and plan.get('acknowledge_guard'):
+            guard=plan['physical_prefix']+plan['acknowledge_guard']+'/'
+            require(any(p.startswith(guard) for p in points),'JOIN_ACK_GUARD_PROVENANCE')
     count=len(ctx['sources']) if ctx['kind']=='launch' else 1 if ctx['kind']=='request' and plan['variant']=='click' else 0
     require(set(slews)=={str(i) for i in range(count)},"JOIN_SLEW_COVERAGE")
     require((event_slews is not None)==(plan['variant']=='click' and ctx['kind'] in ('request','launch')),"JOIN_EVENT_SLEW_COVERAGE")
@@ -502,7 +633,7 @@ def margins(results,plan,aperture):
                 slacks.append(capture-latest-launch[q['id']]['delay_ns']-aperture['setup_ns'])
             summaries.append(dict(side=side,phase=phase,maximum_input_data_lag_ns=min(leads),
                 minimum_conditional_setup_margin_ns=min(slacks),source_q_bound_ns=latest,
-                return_after_source_close_ns=req['return:min']['delay_ns']-latest if plan['variant']=='bd' else None,
+                return_after_source_close_ns=min(v['delay_ns'] for k,v in req.items() if k.startswith('return:') and k.endswith(':min'))-latest if plan['variant']=='bd' else None,
                 checked_data_transitions=len(slacks),physical_qualification=False))
     return summaries
 
@@ -517,19 +648,25 @@ def run(mapping,output,variant,campaign=False,*,target="control"):
             audit['mapping_sha256']==sha(mapping/'mapping.json'),"JOIN_STALE_AUDIT")
     require(record['physical_policy_sha256']==sha(mapping/'physical-policy.json') and policy['contract_sha256']==sha(mapping/'timing-intent.json'),"JOIN_STALE_CONTRACT")
     manifest=json.loads((mapping/'timing-intent.json').read_text())['manifest']
-    record=stages.repaired_bindings(record,netlist,stages.receipt_original(mapping,receipt),audit,stages.receipt_buffers(mapping,receipt))
-    sliced,plan=bound_slice(netlist,record,manifest,variant,target=target);cells=flat_cells(sliced);plan['contexts']=contexts(plan,cells)
+    import native_leaf_timing as leaf
+    original=stages.receipt_original(mapping,receipt)
+    proof=stages.receipt_proof(mapping,receipt)
+    index=leaf.LeafIndex(original,netlist,proof['added_buffers'],proof['added_ties'])
+    cuts=leaf.keeper_cuts(index,audit)
+    sliced,plan=bound_slice(original,record,manifest,variant,target=target);cells=flat_cells(sliced)
     plan['side_input_reachability']=side_reachability(sliced,plan,cells)
+    plan=bind_leaf_plan(plan,index,cuts)
     sta=tool('sta');yosys=tool('yosys');pdk=ROOT/'.tools/physical/pdk';pdk_verify(pdk)
     files=[mapping/f for f in ('mapping.json','netlist.json','netlist.v','netlist-audit.json','timing-intent.json','physical-policy.json')]
     files += [mapping/'electrical-repair/receipt.json',mapping/'electrical-repair/reference/netlist.json',
               mapping/'electrical-repair/proof.json',ROOT/'tools/repair_gf180_design.py']
-    files += [ROOT/'tools'/f for f in ('control_join_timing.py','native_stage_timing.py','control_relative_timing.py',
+    files += [ROOT/'tools'/f for f in ('control_join_timing.py','native_leaf_timing.py','native_stage_timing.py','control_relative_timing.py',
         'characterize_gf180_control_native.py','screen_gf180_control_repair.py','repair_gf180_control.py',
         'gf180_physical.py','gf180_implement.py','gf180_estimate.py','characterize_gf180_liberty.py')]
     files += [relative.PROBE]+sta.input_files()+yosys.input_files()+[pdk/(SC+c+'.lib') for c in relative.CORNERS]
+    files += [ROOT/'.tools/gf180-sram'/(leaf.SRAM+'__tt_025C_3v30.lib')]
     frozen={str(p.resolve()):sha(p) for p in files}
-    output.mkdir(parents=True);stages.roundtrip(mapping,output,netlist,yosys,pdk);emit_slice(sliced,output,yosys,pdk)
+    output.mkdir(parents=True);stages.roundtrip(mapping,output,netlist,yosys,pdk)
     write_json(output/'plan.json',plan);cases=[]
     for corner in (relative.CORNERS if campaign else relative.CORNERS[:1]):
         aperture=relative.aperture(relative.library(pdk/(SC+corner+'.lib')),variant)
@@ -538,10 +675,13 @@ def run(mapping,output,variant,campaign=False,*,target="control"):
             for ctx in plan['contexts']:
                 tcl=output/(key+'-'+ctx['id']+'.tcl');log=tcl.with_suffix('.log')
                 dq=results[ctx['side']+'-input']['dq'] if ctx['kind']=='launch' and variant=='bd' else None
-                tcl.write_text(script(output/'slice.v',corner,slew,plan,ctx,sta=sta,dq=dq),newline='\n')
+                if ctx['kind']=='launch' and variant=='click':
+                    a,b=results[f"{ctx['side']}-request-{ctx['phase']}"]['event_slews']
+                    ctx['root_slew_ns']=dict(min=a,max=b)
+                tcl.write_text(script(mapping/'netlist.v',corner,slew,plan,ctx,sta=sta,dq=dq),newline='\n')
                 with log.open('w') as stream:
                     subprocess.run(sta.command(['-no_init','-exit',sta.path(tcl)],timeout=55),stdout=stream,stderr=subprocess.STDOUT,check=True,timeout=65)
-                try:results[ctx['id']]=parse(log.read_text(),plan,ctx)
+                try:results[ctx['id']]=parse(log.read_text(),plan,ctx,cells=index.after['cells'])
                 except ValueError as e:failure=dict(context=ctx['id'],diagnostic=str(e));break
             summary=None if failure else margins(results,plan,aperture)
             fields=('maximum_input_data_lag_ns','minimum_conditional_setup_margin_ns','return_after_source_close_ns')

@@ -476,6 +476,14 @@
   Freeze runtime configuration/executables, and use the same runtime for fault
   controls. Configured native/WSL invocation currently covers the stage runner
   and Control relative pilot/controls; legacy physical tools remain separate.
+  Repaired stage/Join timing follows docs/reviews/repaired-leaf-timing.md. Use
+  original hierarchy only for identity and measure the full loaded live graph.
+  Read/hash repair proof bytes once; retain all added parent buffers. Verify
+  all four root-slew annotations and actual parent-buffer fault controls.
+  Local hold grants no source/transform contamination credit. Report graph ACK
+  arrivals separately from constrained PathEnds and name the limiting receiver.
+  A case-conditioned ACK receiver may use its unique live driver observation
+  only at zero wire RC; this does not bound maximum receiver-wire propagation.
   For Control Join setup composition, follow docs/reviews/control-join-timing.md.
   Resolve the actual parent/children, prove source identity and dynamic-lane
   coverage, and preserve the original loaded cells in the analysis wrapper.

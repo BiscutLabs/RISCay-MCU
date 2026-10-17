@@ -1172,8 +1172,11 @@ physical reset qualification (R2b) remains mandatory under item 17a3.
           and final maintenance drainage at 645 ns. Retain the unchanged 2 us
           tick sleep oracle's failure; document the production-coefficient
           conditional throughput budget. See [evidence](reviews/elapsed-throughput.md).
-        - [ ] Anchor repaired stage/Join queries on preserved native leaf pins,
-          including elapsed mode fanout and the actual BD Control ACK guard.
+        - [x] Anchor repaired stage/Join queries on preserved native leaf pins,
+          including elapsed mode fanout and the actual BD Control ACK guard;
+          see [binding evidence and limits](reviews/repaired-leaf-timing.md).
+        - [ ] Repeat the full corner/slew campaigns on the final repaired graph;
+          nominal binding/fault evidence does not qualify the guards.
         - [ ] Provide separate parent drivers for all three SRAM clocks and
           bounded native capture distribution for RF, frame banks and I2C publication.
         - [ ] Repeat graph-proved repair after placement and global routing;

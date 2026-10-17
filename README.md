@@ -76,6 +76,9 @@ The earlier A2b measurements were 2.830967 / 3.596523 mm² with 3,255 BD / 3,160
 Click work-clock edges for the 43-instruction firmware wake. Those activity and
 power figures have not been refreshed for the longer guards and repaired graph.
 A2b functional and strict export checks pass; physical timing remains unqualified.
+Repaired stage and Join [leaf bindings](docs/reviews/repaired-leaf-timing.md) now
+resolve the previously blocked paths with nominal fault controls. Full corner
+campaigns and the remaining electrical/distribution repairs are still required.
 The [A2b evidence](docs/reviews/loader-metadata-a2b-completion.md) records its
 checks and measured costs.
 An [opt-in Control buffer repair](docs/reviews/control-electrical-repair.md)
