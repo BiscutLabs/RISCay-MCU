@@ -5,8 +5,11 @@ placement target independently of `--die-side-um`. The default remains 0.50.
 The requested comparison uses 0.60 and 0.70 with a common 3250 µm outline and
 unchanged macro positions for both variants. Density is bound into the run's
 geometry; changing it on resume is rejected before any output write or tool
-launch. Use new output directories for each case. This adds the comparison
-control; those density runs and their area/electrical conclusions remain open.
+launch. Use new output directories for each case. The four matched runs are
+complete through global-route repair; see the [density and failure report](reviews/repair-efficiency.md).
+Density 0.70 saves about 0.002 mm² per variant but increases slow/hot violating-net
+counts. Corrected CTS covers the previously skipped work tree; electrical and
+complete clock/native timing closure remain open.
 
 On 2026-10-08 both native variants completed digital-block floorplanning,
 placement, clock-tree synthesis, global routing, detailed routing and nominal

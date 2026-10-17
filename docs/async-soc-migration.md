@@ -1208,9 +1208,17 @@ physical reset qualification (R2b) remains mandatory under item 17a3.
           ordinary logic, while enforcing 2 ns on native request/capture/ACK
           networks. Preserve tighter macro limits. Compare density 0.6 and 0.7
           using the same die outline for both variants; report area and failures.
+          The matched density comparison is complete: 0.70 saves only about
+          0.002 mm² per variant and increases slow/hot violating-net counts.
+          The first corner-policy comparison passes graph/report controls but
+          saves no pre-placement area (about +0.0009 mm² per variant); the
+          default remains unchanged pending a wire-dependent comparison.
+          See [repair efficiency](reviews/repair-efficiency.md).
         - [ ] Classify remaining slew failures by protected native boundary,
           unsuccessful repair and ordinary logic, then repair each group without
           waiving protected-pin or graph proofs.
+          Classification now resolves actual final nets and retained warnings
+          at all five corners; the corresponding repairs remain open.
         - [ ] Measure BD source/transform contamination credit. If the complete
           hold envelope remains inadequate, add a short native stage ACK guard.
           Click already has its 32 ns stage ACK guard.

@@ -1,0 +1,553 @@
+{
+  "status": "matched-density-experiment-electrically-unqualified",
+  "physical_qualification": false,
+  "cases": [
+    {
+      "variant": "bd",
+      "density": 0.6,
+      "die_um": [
+        0,
+        0,
+        3250.0,
+        3250.0
+      ],
+      "mapping": "P:\\Personal\\RISCay-MCU\\build\\bounded-distribution-bd-r2",
+      "output": "P:\\Personal\\RISCay-MCU\\build\\cts-covered-bd-density60-r1",
+      "reported_area_mm2": {
+        "floorplan": 3.792616,
+        "place": 4.09627,
+        "clock": 4.163631,
+        "global": 4.225286
+      },
+      "corners": {
+        "tt_025C_3v30": {
+          "slew_rows": 993,
+          "unique_nets": 144,
+          "nets_by_category": {
+            "locked-native-net": 136,
+            "ordinary-or-clock": 8
+          },
+          "worst_slew_ns": 7.544168,
+          "capacitance_rows": 0
+        },
+        "ss_125C_3v00": {
+          "slew_rows": 5563,
+          "unique_nets": 1244,
+          "nets_by_category": {
+            "locked-native-net": 678,
+            "ordinary-or-clock": 421,
+            "resizer-no-progress": 145
+          },
+          "worst_slew_ns": 13.907333,
+          "capacitance_rows": 0
+        },
+        "ss_n40C_3v00": {
+          "slew_rows": 1347,
+          "unique_nets": 229,
+          "nets_by_category": {
+            "locked-native-net": 213,
+            "ordinary-or-clock": 11,
+            "resizer-no-progress": 5
+          },
+          "worst_slew_ns": 9.707807,
+          "capacitance_rows": 0
+        },
+        "ff_125C_3v60": {
+          "slew_rows": 689,
+          "unique_nets": 99,
+          "nets_by_category": {
+            "locked-native-net": 91,
+            "ordinary-or-clock": 8
+          },
+          "worst_slew_ns": 6.454426,
+          "capacitance_rows": 0
+        },
+        "ff_n40C_3v60": {
+          "slew_rows": 142,
+          "unique_nets": 21,
+          "nets_by_category": {
+            "locked-native-net": 13,
+            "ordinary-or-clock": 8
+          },
+          "worst_slew_ns": 4.475373,
+          "capacitance_rows": 0
+        }
+      },
+      "evidence_sha256": {
+        "build\\cts-covered-bd-density60-r1\\run.json": "36003f1669f29831d7184be532625030031320a87e5a81cde32d700d4753a16e",
+        "build\\cts-covered-bd-density60-r1\\clock-coverage-proof.json": "ff9377b30575bf406fcc29c01807d2b3f618f0ca5ecfc02e19eedc231be38abf",
+        "build\\cts-covered-bd-density60-r1\\global-repair-proof.json": "8fff68e376fcdecc7ae6cec8ac73b10268ad8fdb0a1e42466015232c6d733b96",
+        "build\\cts-covered-bd-density60-r1\\electrical-groups-r2.json": "f7a94e8801c7bf0728f70d661c061c0f8ce8a649c48c0b5969c06d6d5662766c",
+        "build\\cts-covered-bd-density60-r1\\floorplan.log": "95731a1b216df216897053068a45b57a635cff734498b2d756c3d5b7c4a70fb8",
+        "build\\cts-covered-bd-density60-r1\\place.log": "a35c614bda76294b2968073419953adb348dd5b25a76cab595335c63cb699acd",
+        "build\\cts-covered-bd-density60-r1\\clock.log": "b30fbf7836a304dc60d77076d25e420c89fc74d68677d0bc3e4caa258a7aa8f6",
+        "build\\cts-covered-bd-density60-r1\\global.log": "c623fcfa924f8bb7cf25ed32698bfc41758014530ababe44755970ea7afd719a"
+      }
+    },
+    {
+      "variant": "bd",
+      "density": 0.7,
+      "die_um": [
+        0,
+        0,
+        3250.0,
+        3250.0
+      ],
+      "mapping": "P:\\Personal\\RISCay-MCU\\build\\bounded-distribution-bd-r2",
+      "output": "P:\\Personal\\RISCay-MCU\\build\\cts-covered-bd-density70-r1",
+      "reported_area_mm2": {
+        "floorplan": 3.792616,
+        "place": 4.089726,
+        "clock": 4.15459,
+        "global": 4.223451
+      },
+      "corners": {
+        "tt_025C_3v30": {
+          "slew_rows": 874,
+          "unique_nets": 120,
+          "nets_by_category": {
+            "locked-native-net": 112,
+            "ordinary-or-clock": 8
+          },
+          "worst_slew_ns": 7.658217,
+          "capacitance_rows": 0
+        },
+        "ss_125C_3v00": {
+          "slew_rows": 6011,
+          "unique_nets": 1563,
+          "nets_by_category": {
+            "locked-native-net": 592,
+            "ordinary-or-clock": 822,
+            "resizer-no-progress": 149
+          },
+          "worst_slew_ns": 14.116127,
+          "capacitance_rows": 0
+        },
+        "ss_n40C_3v00": {
+          "slew_rows": 1257,
+          "unique_nets": 204,
+          "nets_by_category": {
+            "locked-native-net": 187,
+            "ordinary-or-clock": 10,
+            "resizer-no-progress": 7
+          },
+          "worst_slew_ns": 9.85482,
+          "capacitance_rows": 0
+        },
+        "ff_125C_3v60": {
+          "slew_rows": 569,
+          "unique_nets": 88,
+          "nets_by_category": {
+            "locked-native-net": 80,
+            "ordinary-or-clock": 8
+          },
+          "worst_slew_ns": 6.5517,
+          "capacitance_rows": 0
+        },
+        "ff_n40C_3v60": {
+          "slew_rows": 137,
+          "unique_nets": 19,
+          "nets_by_category": {
+            "locked-native-net": 12,
+            "ordinary-or-clock": 7
+          },
+          "worst_slew_ns": 4.543068,
+          "capacitance_rows": 0
+        }
+      },
+      "evidence_sha256": {
+        "build\\cts-covered-bd-density70-r1\\run.json": "38362743e9ae14e823b1bbddbb7454295624360ffb501fe7938edc53a164860c",
+        "build\\cts-covered-bd-density70-r1\\clock-coverage-proof.json": "d004ce8d202fe6ce9d8dcfe30831e8d4a39c98c014d1b3b6b62d6a4d8c9f35c1",
+        "build\\cts-covered-bd-density70-r1\\global-repair-proof.json": "5484d8c6d861017cc887397ac60f495bb07048c11502d56fb86967246bb65b1d",
+        "build\\cts-covered-bd-density70-r1\\electrical-groups-r2.json": "3376635ffa29460b63c7acf4c601f7e2223176200c2e7f95823fef9c7302ae76",
+        "build\\cts-covered-bd-density70-r1\\floorplan.log": "95731a1b216df216897053068a45b57a635cff734498b2d756c3d5b7c4a70fb8",
+        "build\\cts-covered-bd-density70-r1\\place.log": "048f89d0c8e5f89b97cc068464285a7a61c74dfae6fed4961b83c0d6725c1e74",
+        "build\\cts-covered-bd-density70-r1\\clock.log": "0851ba239c62ad857d37aaa9062301a46394a56b34c10b6b32155bf43d927371",
+        "build\\cts-covered-bd-density70-r1\\global.log": "6ef18493f4b102d43ed02eb15c8623cadcddd26b13ad7022e12914a53cde537b"
+      }
+    },
+    {
+      "variant": "click",
+      "density": 0.6,
+      "die_um": [
+        0,
+        0,
+        3250.0,
+        3250.0
+      ],
+      "mapping": "P:\\Personal\\RISCay-MCU\\build\\bounded-distribution-click-r2",
+      "output": "P:\\Personal\\RISCay-MCU\\build\\cts-covered-click-density60-r1",
+      "reported_area_mm2": {
+        "floorplan": 4.576884,
+        "place": 4.895337,
+        "clock": 4.963363,
+        "global": 5.021924
+      },
+      "corners": {
+        "tt_025C_3v30": {
+          "slew_rows": 1439,
+          "unique_nets": 278,
+          "nets_by_category": {
+            "locked-native-net": 267,
+            "ordinary-or-clock": 9,
+            "resizer-no-progress": 2
+          },
+          "worst_slew_ns": 8.083727,
+          "capacitance_rows": 0
+        },
+        "ss_125C_3v00": {
+          "slew_rows": 7054,
+          "unique_nets": 1571,
+          "nets_by_category": {
+            "locked-native-net": 1044,
+            "ordinary-or-clock": 354,
+            "resizer-no-progress": 173
+          },
+          "worst_slew_ns": 16.054615,
+          "capacitance_rows": 1
+        },
+        "ss_n40C_3v00": {
+          "slew_rows": 2182,
+          "unique_nets": 487,
+          "nets_by_category": {
+            "locked-native-net": 454,
+            "ordinary-or-clock": 20,
+            "resizer-no-progress": 13
+          },
+          "worst_slew_ns": 10.253295,
+          "capacitance_rows": 0
+        },
+        "ff_125C_3v60": {
+          "slew_rows": 871,
+          "unique_nets": 177,
+          "nets_by_category": {
+            "locked-native-net": 169,
+            "ordinary-or-clock": 8
+          },
+          "worst_slew_ns": 7.124293,
+          "capacitance_rows": 0
+        },
+        "ff_n40C_3v60": {
+          "slew_rows": 253,
+          "unique_nets": 60,
+          "nets_by_category": {
+            "locked-native-net": 53,
+            "ordinary-or-clock": 7
+          },
+          "worst_slew_ns": 4.522966,
+          "capacitance_rows": 0
+        }
+      },
+      "evidence_sha256": {
+        "build\\cts-covered-click-density60-r1\\run.json": "16d276efc92b29c998e11b2ffca76f72db55a9753318396458fd8428e5b8eb2e",
+        "build\\cts-covered-click-density60-r1\\clock-coverage-proof.json": "efc1cb87f601307f29a76b494192e80ab84cbd4aab9b4510f809b552449f830c",
+        "build\\cts-covered-click-density60-r1\\global-repair-proof.json": "dc5fc925a354c1364bda4167321c2509219ac3b534a5bbb54056d035b7a6b549",
+        "build\\cts-covered-click-density60-r1\\electrical-groups-r2.json": "e61a7811eebe038f305a2ae9234b441d0ce3b67bb5d5e8b5137326825adcdbbc",
+        "build\\cts-covered-click-density60-r1\\floorplan.log": "f5f5200bc6b74fb086fab4e36363ef51a3d974e8dcd6ffc2677c575cb7699aa4",
+        "build\\cts-covered-click-density60-r1\\place.log": "484738de35a18be6046118050208069b3a79679dfef21327417f947491ba3535",
+        "build\\cts-covered-click-density60-r1\\clock.log": "44f8b61d43c5d68c874e68f98dd1d5146fb891a60ffc136762df9d35fb32dd97",
+        "build\\cts-covered-click-density60-r1\\global.log": "bc114d5448aa50996295216f52b6a8c4bee2ee59708f0f235b26ac60b24f2d19"
+      }
+    },
+    {
+      "variant": "click",
+      "density": 0.7,
+      "die_um": [
+        0,
+        0,
+        3250.0,
+        3250.0
+      ],
+      "mapping": "P:\\Personal\\RISCay-MCU\\build\\bounded-distribution-click-r2",
+      "output": "P:\\Personal\\RISCay-MCU\\build\\cts-covered-click-density70-r1",
+      "reported_area_mm2": {
+        "floorplan": 4.576884,
+        "place": 4.883879,
+        "clock": 4.948242,
+        "global": 5.019961
+      },
+      "corners": {
+        "tt_025C_3v30": {
+          "slew_rows": 1388,
+          "unique_nets": 272,
+          "nets_by_category": {
+            "locked-native-net": 257,
+            "ordinary-or-clock": 11,
+            "resizer-no-progress": 4
+          },
+          "worst_slew_ns": 7.603373,
+          "capacitance_rows": 0
+        },
+        "ss_125C_3v00": {
+          "slew_rows": 7075,
+          "unique_nets": 1847,
+          "nets_by_category": {
+            "locked-native-net": 930,
+            "ordinary-or-clock": 735,
+            "resizer-no-progress": 182
+          },
+          "worst_slew_ns": 15.113087,
+          "capacitance_rows": 0
+        },
+        "ss_n40C_3v00": {
+          "slew_rows": 2026,
+          "unique_nets": 456,
+          "nets_by_category": {
+            "locked-native-net": 410,
+            "ordinary-or-clock": 18,
+            "resizer-no-progress": 28
+          },
+          "worst_slew_ns": 9.649556,
+          "capacitance_rows": 0
+        },
+        "ff_125C_3v60": {
+          "slew_rows": 813,
+          "unique_nets": 169,
+          "nets_by_category": {
+            "locked-native-net": 157,
+            "ordinary-or-clock": 10,
+            "resizer-no-progress": 2
+          },
+          "worst_slew_ns": 6.70086,
+          "capacitance_rows": 0
+        },
+        "ff_n40C_3v60": {
+          "slew_rows": 237,
+          "unique_nets": 54,
+          "nets_by_category": {
+            "locked-native-net": 46,
+            "ordinary-or-clock": 8
+          },
+          "worst_slew_ns": 4.488161,
+          "capacitance_rows": 0
+        }
+      },
+      "evidence_sha256": {
+        "build\\cts-covered-click-density70-r1\\run.json": "c5d1d271aadcb80e98deb175db6516eca0eeae012e7ab3c06fc6b8436f5e9feb",
+        "build\\cts-covered-click-density70-r1\\clock-coverage-proof.json": "e89c375d1d646811d871b55a8eb9f8e80bb3c2bca6ddff8fa0dbae3dafd517f3",
+        "build\\cts-covered-click-density70-r1\\global-repair-proof.json": "75ebd6e2836ce98cda0da869e2c3dac09f96dc560fe1fbbdba2c576a0829a09a",
+        "build\\cts-covered-click-density70-r1\\electrical-groups-r2.json": "24cdeadbb7789d887b78fba5eaf5c7104afa26464cd2d26b6b9a75fa7bb7d70f",
+        "build\\cts-covered-click-density70-r1\\floorplan.log": "f5f5200bc6b74fb086fab4e36363ef51a3d974e8dcd6ffc2677c575cb7699aa4",
+        "build\\cts-covered-click-density70-r1\\place.log": "342dcffb74102a964f75b04b7cf4995b2384110e0df618d1489fef28e7594aae",
+        "build\\cts-covered-click-density70-r1\\clock.log": "32a79d4f51f6caa6d0ea0f9832ebea49aaea3e9c3adc0241631224f5adb52f69",
+        "build\\cts-covered-click-density70-r1\\global.log": "99de489db5105d1bdcc9f35074bea80215a93cbf387a078f93e4e24cc85f92a1"
+      }
+    }
+  ],
+  "slew_policy_experiment": {
+    "status": "pre-placement-no-area-saving-electrically-unqualified",
+    "default_flow_changed": false,
+    "physical_qualification": false,
+    "cases": [
+      {
+        "variant": "bd",
+        "policy": "baseline",
+        "output": "build\\corner-slew-bd-baseline-r6",
+        "cell_count": 106630,
+        "logic_area_mm2": 3.0407493312,
+        "macro_area_mm2": 0.6282008304,
+        "added_buffers": 4018,
+        "resized": 10561,
+        "corners": {
+          "tt_025C_3v30": {
+            "slew_rows": 80,
+            "cap_rows": 0,
+            "worst_slew_ns": 2.713568,
+            "by_policy": {
+              "native-or-boundary": 80
+            }
+          },
+          "ss_125C_3v00": {
+            "slew_rows": 109,
+            "cap_rows": 0,
+            "worst_slew_ns": 5.041401,
+            "by_policy": {
+              "native-or-boundary": 109
+            }
+          },
+          "ss_n40C_3v00": {
+            "slew_rows": 95,
+            "cap_rows": 0,
+            "worst_slew_ns": 3.40255,
+            "by_policy": {
+              "native-or-boundary": 95
+            }
+          },
+          "ff_125C_3v60": {
+            "slew_rows": 71,
+            "cap_rows": 0,
+            "worst_slew_ns": 2.358272,
+            "by_policy": {
+              "native-or-boundary": 71
+            }
+          },
+          "ff_n40C_3v60": {
+            "slew_rows": 0,
+            "cap_rows": 0,
+            "worst_slew_ns": 0,
+            "by_policy": {}
+          }
+        },
+        "result_sha256": "befd682e914232f066ef075066085d3b047e3a3c3e4de6990a03a3db325d211a"
+      },
+      {
+        "variant": "bd",
+        "policy": "split",
+        "output": "build\\corner-slew-bd-split-r6",
+        "cell_count": 106630,
+        "logic_area_mm2": 3.0416120448,
+        "macro_area_mm2": 0.6282008304,
+        "added_buffers": 4018,
+        "resized": 10600,
+        "corners": {
+          "tt_025C_3v30": {
+            "slew_rows": 80,
+            "cap_rows": 0,
+            "worst_slew_ns": 2.713568,
+            "by_policy": {
+              "native-or-boundary": 80
+            }
+          },
+          "ss_125C_3v00": {
+            "slew_rows": 109,
+            "cap_rows": 0,
+            "worst_slew_ns": 5.041401,
+            "by_policy": {
+              "native-or-boundary": 109
+            }
+          },
+          "ss_n40C_3v00": {
+            "slew_rows": 95,
+            "cap_rows": 0,
+            "worst_slew_ns": 3.40255,
+            "by_policy": {
+              "native-or-boundary": 95
+            }
+          },
+          "ff_125C_3v60": {
+            "slew_rows": 71,
+            "cap_rows": 0,
+            "worst_slew_ns": 2.358272,
+            "by_policy": {
+              "native-or-boundary": 71
+            }
+          },
+          "ff_n40C_3v60": {
+            "slew_rows": 0,
+            "cap_rows": 0,
+            "worst_slew_ns": 0,
+            "by_policy": {}
+          }
+        },
+        "result_sha256": "b406a71ba57005e34f6e892e5ec26dc8160d35cbff5c3d7306aa88dd41334293"
+      },
+      {
+        "variant": "click",
+        "policy": "baseline",
+        "output": "build\\corner-slew-click-baseline-r6",
+        "cell_count": 110230,
+        "logic_area_mm2": 3.8239637632,
+        "macro_area_mm2": 0.6282008304,
+        "added_buffers": 5577,
+        "resized": 9010,
+        "corners": {
+          "tt_025C_3v30": {
+            "slew_rows": 57,
+            "cap_rows": 0,
+            "worst_slew_ns": 4.329396,
+            "by_policy": {
+              "native-or-boundary": 57
+            }
+          },
+          "ss_125C_3v00": {
+            "slew_rows": 230,
+            "cap_rows": 0,
+            "worst_slew_ns": 8.072802,
+            "by_policy": {
+              "native-or-boundary": 230
+            }
+          },
+          "ss_n40C_3v00": {
+            "slew_rows": 84,
+            "cap_rows": 0,
+            "worst_slew_ns": 5.448909,
+            "by_policy": {
+              "native-or-boundary": 84
+            }
+          },
+          "ff_125C_3v60": {
+            "slew_rows": 57,
+            "cap_rows": 0,
+            "worst_slew_ns": 3.762446,
+            "by_policy": {
+              "native-or-boundary": 57
+            }
+          },
+          "ff_n40C_3v60": {
+            "slew_rows": 11,
+            "cap_rows": 0,
+            "worst_slew_ns": 2.66646,
+            "by_policy": {
+              "native-or-boundary": 11
+            }
+          }
+        },
+        "result_sha256": "0c2d3a0522f60bfb9b2a839fe05f3455c201a9b7cb5f1785b3f7ebb1aa7b8e47"
+      },
+      {
+        "variant": "click",
+        "policy": "split",
+        "output": "build\\corner-slew-click-split-r6",
+        "cell_count": 110230,
+        "logic_area_mm2": 3.8248089151999998,
+        "macro_area_mm2": 0.6282008304,
+        "added_buffers": 5577,
+        "resized": 9038,
+        "corners": {
+          "tt_025C_3v30": {
+            "slew_rows": 57,
+            "cap_rows": 0,
+            "worst_slew_ns": 4.329396,
+            "by_policy": {
+              "native-or-boundary": 57
+            }
+          },
+          "ss_125C_3v00": {
+            "slew_rows": 230,
+            "cap_rows": 0,
+            "worst_slew_ns": 8.072802,
+            "by_policy": {
+              "native-or-boundary": 230
+            }
+          },
+          "ss_n40C_3v00": {
+            "slew_rows": 84,
+            "cap_rows": 0,
+            "worst_slew_ns": 5.448909,
+            "by_policy": {
+              "native-or-boundary": 84
+            }
+          },
+          "ff_125C_3v60": {
+            "slew_rows": 57,
+            "cap_rows": 0,
+            "worst_slew_ns": 3.762446,
+            "by_policy": {
+              "native-or-boundary": 57
+            }
+          },
+          "ff_n40C_3v60": {
+            "slew_rows": 11,
+            "cap_rows": 0,
+            "worst_slew_ns": 2.66646,
+            "by_policy": {
+              "native-or-boundary": 11
+            }
+          }
+        },
+        "result_sha256": "bcf27bb9042747c91defa24d24cbc9145f3a0f7d60a4b9c1321166c8b85828b9"
+      }
+    ],
+    "targeted_control_output": "build/slew-target-controls-r4"
+  }
+}

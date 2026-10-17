@@ -112,7 +112,10 @@ first gate in the default mapper; timing campaigns consume its proved graph.
 The [wire-dependent repair](docs/reviews/wire-electrical-repair.md) also completes
 after placement and global routing for both variants with exact native graphs
 preserved. Five-corner reports retain slew failures and the added cell area;
-electrical closure remains the next gate.
+electrical closure remains the next gate. The [clock audit](docs/reviews/remaining-clock-trees.md)
+found and corrected a skipped work-clock tree; independent sink/graph checks now
+cover it. The [matched density comparison](docs/reviews/repair-efficiency.md)
+finds little area benefit from 0.70 versus 0.60, with more slow-corner violating nets.
 The [electrical-first correction](docs/reviews/electrical-first-correction.md)
 also adds independent owner timing policies and longer elapsed/execute request
 guards plus a native BD Control ACK guard. These targets remain unqualified;
