@@ -1201,6 +1201,32 @@ physical reset qualification (R2b) remains mandatory under item 17a3.
           explicit representative guard energy; document Click's existing native
           guard and physical ordering obligation. See [activity evidence](reviews/ack-guard-activity.md).
           Mapped wake timing, actual energy and complete Click capture/ACK closure remain open.
+      - [ ] **Post-PR9 repair efficiency and coverage.** PR9 was merged at
+        `d72ee39`. Its 140 positive stage cases use the repaired mapped graph
+        with zero wire RC; they are not extracted-chip timing closure.
+        - [ ] Use corner-specific fractions of the Liberty slew limits for
+          ordinary logic, while enforcing 2 ns on native request/capture/ACK
+          networks. Preserve tighter macro limits. Compare density 0.6 and 0.7
+          using the same die outline for both variants; report area and failures.
+        - [ ] Classify remaining slew failures by protected native boundary,
+          unsuccessful repair and ordinary logic, then repair each group without
+          waiving protected-pin or graph proofs.
+        - [ ] Measure BD source/transform contamination credit. If the complete
+          hold envelope remains inadequate, add a short native stage ACK guard.
+          Click already has its 32 ns stage ACK guard.
+        - [ ] Close all nine native capture-tree budget failures through driver,
+          branch-load or measured-slew corrections; retain the 2.5 ns budget.
+        - [x] Send the OpenROAD progress findings upstream. Both fixes were
+          already merged; [our integration report](https://github.com/The-OpenROAD-Project/OpenROAD/pull/10514#issuecomment-6235806466)
+          supplies downstream controls and test evidence, with upstream attribution.
+        - [x] Audit remaining periodic clocks against native ownership. The
+          [clock audit](reviews/remaining-clock-trees.md) distinguishes physical
+          sampling/time obligations from removable Services/transport state.
+        - [ ] Correct the newly found gated-work CTS coverage gap and verify
+          every periodic sink, including falling-edge launch and three SRAMs.
+          Current CTS skips a repair-buffer-hidden tree of 4,009 BD/4,060 Click
+          clock pins. Existing buffers and propagated STA are not proof that CTS
+          balanced that tree. Keep native capture events and SDA out of CTS.
       - [ ] **Execute RF and elapsed seeded-owner composition.** Follow
         electrical repair and the rerun campaigns. Measure actual register-bank launch,
         forwarding/Fork/Join ordering and all 15 banks. Preserve elapsed's
