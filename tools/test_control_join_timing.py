@@ -167,4 +167,64 @@ class StorageDescriptorTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError,'^STAGE_STORAGE_WIDTH$'):j.stages.descriptor(*values,storage=True)
 
 
+class InputCoverageTests(unittest.TestCase):
+    def fixture(self):
+        parent=dict(cells={'rf':dict(connections={'values_0':[20,21],'values_1':[22,23]},
+                                    port_directions={'values_0':'output','values_1':'output'})})
+        join=dict(connections={'out_req':[2],'out_ack':[3],'out_bits_left':[4,5],'out_bits_right':[6,7]})
+        conn={'reset':[1],'in_req':[2],'in_ack':[3],'in_bits_state':[4,5],
+              'in_bits_response':[6,7],'in_bits_registers_0':[20,21],'in_bits_registers_1':[22,23],'out_ack':[8]}
+        sink=dict(connections=conn,port_directions={p:'output' if p=='in_ack' else 'input' for p in conn})
+        side={f'in_bits_registers_{i}':dict(cell='rf',port=f'values_{i}',width=2) for i in range(2)}
+        return parent,join,sink,{'left':'state','right':'response'},side
+
+    def test_every_side_bit_keeps_actual_parent_provenance(self):
+        rows=j.bind_inputs(*self.fixture());side=[r for r in rows if r['kind']=='uncomposed-side-source']
+        self.assertEqual(sum(r['width'] for r in side),4)
+        self.assertEqual(side[0]['lanes'],[dict(source_bit=i,destination_bit=i,parent_net=20+i) for i in range(2)])
+
+    def test_register_permutation_tieoff_and_wrong_width_reject(self):
+        for value in ([21,20],['0','0'],[20]):
+            args=self.fixture();args[2]['connections']['in_bits_registers_0']=value
+            with self.assertRaisesRegex(ValueError,'^JOIN_SIDE_INPUT_BINDING$'):j.bind_inputs(*args)
+
+    def test_duplicated_declared_source_cannot_fake_coverage(self):
+        args=self.fixture();args[0]['cells']['rf']['connections']['values_1']=[20,21]
+        args[2]['connections']['in_bits_registers_1']=[20,21]
+        with self.assertRaisesRegex(ValueError,'^JOIN_SIDE_INPUT_ALIAS$'):j.bind_inputs(*args)
+
+    def test_constant_side_source_is_not_an_independent_launch(self):
+        args=self.fixture();args[0]['cells']['rf']['connections']['values_0']=['0','1']
+        args[2]['connections']['in_bits_registers_0']=['0','1']
+        with self.assertRaisesRegex(ValueError,'^JOIN_SIDE_INPUT_ALIAS$'):j.bind_inputs(*args)
+
+    def test_extra_input_and_omitted_rf_are_not_covered_by_destination_union(self):
+        for extra in (False,True):
+            args=self.fixture()
+            if extra:
+                args[2]['connections']['in_bits_hidden']=[24];args[2]['port_directions']['in_bits_hidden']='input'
+            else:del args[4]['in_bits_registers_0']
+            with self.assertRaisesRegex(ValueError,'^JOIN_INPUT_COVERAGE$'):j.bind_inputs(*args)
+
+    def test_operand_field_permutation_rejects(self):
+        args=self.fixture();args[3].update(left='response',right='state')
+        with self.assertRaisesRegex(ValueError,'^JOIN_UPDATE_WIRING$'):j.bind_inputs(*args)
+
+    def test_overlapping_rf_path_remains_a_separate_obligation(self):
+        cells=[dict(path='mux',cell=j.SC+'mux2_1',pins=dict(I0='join',I1='rf',S='select',Z='d'),
+                    directions=dict(I0='input',I1='input',S='input',Z='output')),
+               dict(path='sink/store',cell=j.SC+'latrnq_1',pins=dict(D='d',Q='q',E='e'),
+                    directions=dict(D='input',Q='output',E='input'))]
+        dest=dict(prefix='sink/',lane_map=[dict(lane=0,D='store/D')])
+        self.assertEqual(j.reachable_from(cells,{'join'},dest),[0])
+        self.assertEqual(j.reachable_from(cells,{'rf'},dest),[0])
+
+    def test_execute_selection_enumerates_all_fifteen_banks(self):
+        for variant in ('bd','click'):
+            config=j.selection(variant,'execute')
+            self.assertEqual(sum(s['width'] for s in config['side_inputs'].values()),480)
+            self.assertEqual(len(config['side_inputs']),15)
+        with self.assertRaisesRegex(ValueError,'^JOIN_TARGET$'):j.selection('bd','elapsed')
+
+
 if __name__=='__main__':unittest.main()

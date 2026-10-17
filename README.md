@@ -89,9 +89,17 @@ allowances remain visible; custom I²C publication and those stages' upstream la
 The [Control Join check](docs/reviews/control-join-timing.md) composes its actual
 operand storage and update capture at all five corners under explicit admission states; full source
 reuse, other transition histories and physical qualification remain open.
-The [capture-retention check](docs/reviews/control-retention-timing.md) measures
+The earlier [capture-retention check](docs/reviews/control-retention-timing.md) measures
 capture-to-ACK hold and BD's settled-B hold fork. Full source lifecycle,
 overlapping transitions and routed timing remain separate qualification gates.
+The same template now measures [execute's Join paths](docs/reviews/execute-join-timing.md).
+Their conditional margins are positive; the 480 independent register-file bits
+and elapsed's seeded owner remain uncomposed. Global electrical repair is now the
+first gate in the default mapper; timing campaigns consume its proved graph.
+The [electrical-first correction](docs/reviews/electrical-first-correction.md)
+also adds independent owner timing policies and longer elapsed/execute request
+guards plus a native BD Control ACK guard. These targets remain unqualified;
+no clocked pipeline or shorter matched delay is introduced.
 See the [elapsed](docs/native-elapsed-contract.md) and
 [CRC](docs/native-crc-contract.md) contracts. Wider payload reductions remain
 open. Self-timed SRAM access follows a separate

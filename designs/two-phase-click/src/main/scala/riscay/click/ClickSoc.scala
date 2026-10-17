@@ -11,13 +11,14 @@ import riscay._
 
 class ClickSoc(p: SocParameters, board: SocParameters => BoardProfile = p => new GenericBoard(p),
     timing: ClickTiming = ClickTiming.Simulation,
-    executeData: ModelTime = RegisterTiming.executeData)
-    extends ClickPlatform(p, board, clockedCpuResponse=false) {
-  require((Seq(executeData.fs + timing.requestDelay.fs,timing.requestDelay.fs,
-    timing.acknowledgeDelay.fs,timing.outputDelay.fs) ++ timing.cells.values.map(_.max.fs))
-      .forall(_ <= ApplicationResetContract.digitalDelayLimitFs),
-    "custom execute timing exceeds supported digital timing-policy limit")
-  val core = asyncChild("core")(d => new ClickCore(d, timing=timing, executeData=executeData))
+    executeData: ModelTime = RegisterTiming.executeData,
+    executeTiming: Option[ClickTiming] = None, owners: OwnerTiming = OwnerTiming())
+    extends ClickPlatform(p, board, clockedCpuResponse=false, owners=owners) {
+  OwnerTiming.check(timing)
+  private val resolvedExecuteTiming = executeTiming.getOrElse(OwnerTiming.execute(timing,executeData))
+  OwnerTiming.check(resolvedExecuteTiming)
+  val core = asyncChild("core")(d => new ClickCore(d, timing=timing, executeData=executeData,
+    executeTiming=Some(resolvedExecuteTiming)))
   val transactions = asyncChild("transactions")(d => new ClickFabric(p.config, timing, d))
   val requestBridge = asyncChild("request_bridge")(d => new ClickQuiescingReceipt(new MemoryRequest,d))
   transactions.reset:=nativeApplicationReset.asAsyncReset

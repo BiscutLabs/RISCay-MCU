@@ -15,16 +15,17 @@ import riscay.soc._
   * accepted SRAM completion is accounted independently of application lifetime.
   * Peripheral commits route through explicit endpoint boundaries.
   */
-class ClickControl(p: SocParameters, domain: ResetDomain) extends AsyncModule(domain) {
+class ClickControl(p: SocParameters, domain: ResetDomain,
+    owners: OwnerTiming = OwnerTiming()) extends AsyncModule(domain) {
   val command = twoPhaseInput("command", new ControlCommand)
   val reply = twoPhaseOutput("reply", new ControlReply(p.config.programBytes))
   val start = IO(Input(Bool()))
-  private val timing = ClickTiming.Simulation
+  private val timing = owners.controlOwner
   private val state = asyncChild("state")(d => new PhaseDecoupledClickBuffer(new ControlToken(p.config.programBytes),
     timing, Some(ControlToken.initial(p.config.programBytes)), d))
   private val join = asyncChild("join")(d => new ClickJoin(new ControlToken(p.config.programBytes), new ControlCommand, timing, d))
   private val update = asyncChild("update")(d => new ClickStage(new Joined(new ControlToken(p.config.programBytes), new ControlCommand),
-    new ControlReply(p.config.programBytes), (x: Joined[ControlToken, ControlCommand]) => transition(x.left.state, x.right, x.left.pendingCrc), timing, d))
+    new ControlReply(p.config.programBytes), (x: Joined[ControlToken, ControlCommand]) => transition(x.left.state, x.right, x.left.pendingCrc), owners.controlUpdate, d))
   // Compute only the candidate CRC here; update retains the entire context.
   // Every feedback starts from architectural crc, even while loaderPending
   // survives other commands. Only Stored commits the candidate to that state.

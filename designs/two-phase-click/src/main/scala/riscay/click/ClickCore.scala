@@ -16,7 +16,9 @@ import riscay._
 class ClickCore(domain: ResetDomain = new ResetDomain("root"),
     registerCell: ModelTime = RegisterTiming.minimum,
     timing: ClickTiming = ClickTiming.Simulation,
-    executeData: ModelTime = RegisterTiming.executeData) extends AsyncModule(domain) {
+    executeData: ModelTime = RegisterTiming.executeData,
+    executeTiming: Option[ClickTiming] = None) extends AsyncModule(domain) {
+  private val resolvedExecuteTiming = executeTiming.getOrElse(OwnerTiming.execute(timing,executeData))
   RegisterTiming.check(registerCell)
   val start = IO(Input(Bool()))
   val request = twoPhaseOutput("request", new MemoryRequest)
@@ -32,8 +34,7 @@ class ClickCore(domain: ResetDomain = new ResetDomain("root"),
   private val execute = asyncChild("execute")(d => new ClickStage(
     new ExecutionInput, new ExecutionResult,
     (p: ExecutionInput) => Execute.step(p.state, p.response, p.a, p.b),
-    timing.copy(data=DelayBounds.fixed(executeData),
-      requestDelay=ModelTime(executeData.fs + timing.requestDelay.fs - timing.data.max.fs)), d))
+    resolvedExecuteTiming, d))
   private val registers = asyncChild("register_file")(d => new ArchitecturalRegisters(d,registerCell))
   private val arrival = Module(new XorGate(registerCell))
   arrival.reset := reset; arrival.a := state.out.req; arrival.b := state.out.ack

@@ -5,6 +5,11 @@ This follow-up to [Join setup composition](control-join-timing.md) changes only
 analysis tools and documentation. It adds no hardware clocks or storage and
 changes no RTL, guards, simulation budgets or mapping policy.
 
+These results describe RTL `6aa8033` before the
+[electrical-first correction](electrical-first-correction.md). They do not
+qualify its repaired graph or its added BD Control source-ACK guard. New
+retention runs require a current, hash-valid Join baseline.
+
 ## What is measured
 
 The runner consumes the sealed, loaded Join/update slice from the previous

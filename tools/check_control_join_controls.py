@@ -51,19 +51,28 @@ def fault_sdf(plan,cells,fault,side='left'):
     return '(DELAYFILE (SDFVERSION "3.0") (DESIGN "'+j.TOP+'") (DIVIDER /) (TIMESCALE 1ns)\n'+"\n".join(rows)+')\n',arcs
 
 
-def graph_controls(mapping,variant):
+def graph_controls(mapping,variant,target='control'):
     manifest=json.loads((mapping/'timing-intent.json').read_text())['manifest'];record=json.loads((mapping/'mapping.json').read_text())
     original=json.loads((mapping/'netlist.json').read_text());prefix='FourPhase' if variant=='bd' else 'Click';verdicts=[]
     # A differently named, actual instance must win over an unused named sibling.
     net=deepcopy(original);soc=net['modules'][net['modules']['RiscayMcuDigital']['cells']['soc']['type']]
-    parent=soc['cells']['ca_child_control']['type'];renamed=prefix+'Control_999'
-    net['modules'][renamed]=deepcopy(net['modules'][parent]);soc['cells']['ca_child_control']['type']=renamed
+    cfg=j.selection(variant,target);parent_name=cfg['parent_path'].split('.')[-1]
+    parent=soc['cells'][parent_name]['type'];renamed=cfg['parent_family']+'_999'
+    net['modules'][renamed]=deepcopy(net['modules'][parent]);soc['cells'][parent_name]['type']=renamed
     net['modules'][parent]['cells'].clear()
-    _,plan=j.bound_slice(net,record,manifest,variant)
+    _,plan=j.bound_slice(net,record,manifest,variant,target=target)
     j.require(plan['parent_module']==renamed,'JOIN_CONTROL_DEDUP_PARENT')
     verdicts.append(dict(fault='deduplicated_parent',status='EXPECTED'))
-    for fault in ('identity_permutation','external_load','unmodeled_lane','operand_wiring'):
-        net=deepcopy(original);parent=net['modules'][prefix+'Control'];join=net['modules'][parent['cells']['ca_child_join']['type']]
+    # All rejection controls must also follow the actual renamed instance.
+    # The unused unsuffixed sibling is deliberately empty, so a name-based
+    # lookup cannot accidentally validate a mutation of the wrong module.
+    original=net
+    faults=['identity_permutation','external_load','unmodeled_lane','operand_wiring']
+    if target=='execute':faults+=['rf_permutation','rf_tieoff','rf_duplicate','rf_undeclared','rf_only_lane']
+    for fault in faults:
+        net=deepcopy(original);kind='RiscayMcuDigital'
+        for name in ('soc',*cfg['parent_path'].split('.')[1:]):kind=net['modules'][kind]['cells'][name]['type']
+        parent=net['modules'][kind];join=net['modules'][parent['cells']['ca_child_join']['type']]
         left='ca_child_left'+('_storage' if variant=='click' else '')
         if fault=='identity_permutation':
             a=net['modules'][join['cells'][left]['type']]['cells']['ca_primitive_data_delay']['connections']['a'];a[0],a[1]=a[1],a[0]
@@ -75,12 +84,23 @@ def graph_controls(mapping,variant):
         elif fault=='operand_wiring':
             conn=join['cells'][left]['connections'];name=next(n for n,b in conn.items() if n.startswith('in_bits') and len(b)>1)
             conn[name]=list(reversed(conn[name]));expected='JOIN_OPERAND_WIRING'
+        elif fault.startswith('rf_'):
+            sink=parent['cells'][cfg['sink_name']];conn=sink['connections'];pin='in_bits_registers_0'
+            if fault=='rf_permutation':conn[pin]=list(reversed(conn[pin]));expected='JOIN_SIDE_INPUT_BINDING'
+            elif fault=='rf_tieoff':conn[pin]=['0']*32;expected='JOIN_SIDE_INPUT_BINDING'
+            elif fault=='rf_duplicate':conn[pin]=list(conn['in_bits_registers_1']);expected='JOIN_SIDE_INPUT_BINDING'
+            elif fault=='rf_undeclared':
+                conn['in_bits_hidden']=[987654321];sink['port_directions']['in_bits_hidden']='input';expected='JOIN_INPUT_COVERAGE'
+            else:
+                body=net['modules'][sink['type']]
+                body['cells']['ca_primitive_data_delay']['connections']['a'][0]=body['ports'][pin]['bits'][0]
+                expected='JOIN_DYNAMIC_LANE_COVERAGE'
         else:
-            body=net['modules'][parent['cells']['ca_child_update']['type']]
+            body=net['modules'][parent['cells'][cfg['sink_name']]['type']]
             body['cells']['ca_primitive_data_delay']['connections']['a'][0]=body['ports']['in_req']['bits'][0]
             expected='JOIN_DYNAMIC_LANE_COVERAGE'
         try:
-            sliced,plan=j.bound_slice(net,record,manifest,variant);j.contexts(plan,j.flat_cells(sliced))
+            sliced,plan=j.bound_slice(net,record,manifest,variant,target=target);j.contexts(plan,j.flat_cells(sliced))
         except ValueError as e:j.require(str(e)==expected,'JOIN_CONTROL_WRONG_REJECTION_'+str(e))
         else:raise ValueError('JOIN_CONTROL_ACCEPTED_'+fault)
         verdicts.append(dict(fault=fault,status='EXPECTED',diagnostic=expected))
@@ -153,7 +173,7 @@ def run(baseline,output):
         j.write_json(output/(fault+'.json'),dict(summary=summary,results=results,changes=changes,arcs=arcs))
         verdicts.append(dict(fault=fault,status='EXPECTED',arc_count=len(arcs),changes=changes));print(fault+' EXPECTED',flush=True)
     mapping=next(Path(p).parent for p in receipt['inputs_sha256'] if p.endswith('mapping.json'))
-    verdicts+=graph_controls(mapping,plan['variant']);verify();j.require(j.sha(Path(__file__))==own_hash,'JOIN_CONTROL_SOURCE_CHANGED')
+    verdicts+=graph_controls(mapping,plan['variant'],plan.get('target','control'));verify();j.require(j.sha(Path(__file__))==own_hash,'JOIN_CONTROL_SOURCE_CHANGED')
     j.write_json(output/'controls.json',dict(status='PASS',physical_qualification=False,verdicts=verdicts,
         baseline_sha256=j.sha(baseline/'results.json'),source_sha256=own_hash,
         files_sha256={str(p.relative_to(output)).replace('\\','/'):j.sha(p) for p in output.iterdir() if p.is_file()}))

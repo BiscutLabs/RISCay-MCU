@@ -59,6 +59,9 @@ object PhysicalSocExport {
         "policy_enabled" -> true, "gpio_count" -> p.config.gpioCount,
         "service_max_hz" -> ApplicationResetContract.maximumServiceHz, "lf_max_hz" -> 12,
         "timing_policy" -> "current-supported-digital", "qualification" -> "unqualified",
+        "owner_targets_fs" -> ujson.Obj("execute_request" -> "80000000",
+          "elapsed_step_request" -> "100000000", "control_source_ack" ->
+            (if(variant=="bd") "32000000" else "unchanged-native-click")),
         "timing_intent" -> "contract.json", "contract_sha256" -> sha(out.resolve("contract.json")),
         "ports_sha256" -> sha(out.resolve("ports.json")), "verification_layers" -> "inline",
         "application_reset" -> ujson.Obj(

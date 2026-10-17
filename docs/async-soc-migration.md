@@ -1154,6 +1154,29 @@ physical reset qualification (R2b) remains mandatory under item 17a3.
         tests pass, and fresh independent review has no blocking findings.
         See [scope and evidence](reviews/control-retention-timing.md).
         B-before-ACK, overlapping transitions and complete source reuse stay open.
+      - [x] **Reusable Join binding and conditional execute composition.**
+        Reuse the Control measurement template with exact operand-field mapping
+        and a separate source-input ledger. Keep all 480 RF bits symbolic and
+        explicitly uncomposed, including their overlap with 274 result lanes.
+        See [execute evidence](reviews/execute-join-timing.md); positive
+        conditional Join margins do not qualify whole execute timing.
+      - [ ] **Electrical-first correction.** Run global graph-preserving repair
+        in the default mapper with native leaves protected, then rerun the
+        existing campaigns on its accepted graph. Retain residual electrical
+        failures. Owner parameterization, longer elapsed/execute requests and
+        the BD Control source ACK guard are implemented alongside this work;
+        see [the correction record](reviews/electrical-first-correction.md) for
+        their digital evidence and the remaining physical gates.
+        Shortening any guard waits for the complete measured envelope.
+      - [ ] **Execute RF and elapsed seeded-owner composition.** Follow
+        electrical repair and the rerun campaigns. Measure actual register-bank launch,
+        forwarding/Fork/Join ordering and all 15 banks. Preserve elapsed's
+        seeded FIFO/merge or phase-decoupled Click owner, parent admission/data
+        glue, independent side sources and publication loads. Its modeled
+        output guard is 31/32 ns, not the 11 ns request guard. Cover command-last,
+        owner-last and feedback contexts. Repair electrical violations before
+        trusting small margins; safe-direction parameterization/lengthening
+        does not need to wait for composition.
       - [ ] **Complete controller templates and custom publication.** Derive
         the missing BD pending/return and Click pulse/self-hold cases from the
         controller state graphs; add FIFO/Join and I2cPublication templates.
@@ -1168,8 +1191,8 @@ physical reset qualification (R2b) remains mandatory under item 17a3.
         remain conditional. Full source retention/reuse, BD pending
         admission/returns and Click pulse/feedback remain open. Bound full
         source reuse without blind cuts or periodic staging, repair residual
-        electrical violations, then include routed min/max RC. The default
-        physical flow remains unchanged until its acceptance gates pass.
+        electrical violations, then include routed min/max RC. Global mapper
+        repair has its own structural gate; it does not waive these obligations.
         The [uncut native Control harness](reviews/control-native-characterization.md)
         now retains every controller feedback cell and all 315 payload cells.
         Coarse TT pilots expose unresolved sampling, including a possible short

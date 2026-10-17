@@ -6,6 +6,8 @@ width, guards, corner and input slew remain part of each measurement. Custom
 owners, FIFOs and Joins are deliberately not relabeled as canonical stages.
 """
 import argparse
+from copy import deepcopy
+import hashlib
 import json
 from pathlib import Path
 import re
@@ -16,6 +18,46 @@ from characterize_gf180_control_native import OWNERS, expected_binding
 from gf180_physical import ROOT, nodes, sha, write_json, pdk_verify
 from repair_gf180_control import require, connectivity
 from physical_tools import tool
+
+
+def receipt_original(mapping, receipt):
+    data=(mapping/'electrical-repair/reference/netlist.json').read_bytes()
+    expected=receipt['inputs_sha256'][str((mapping/'netlist.json').resolve())]
+    require(hashlib.sha256(data).hexdigest()==expected,'STAGE_REPAIR_REFERENCE_CHANGED')
+    return json.loads(data)
+
+
+def receipt_buffers(mapping, receipt):
+    data=(mapping/'electrical-repair/proof.json').read_bytes()
+    require(hashlib.sha256(data).hexdigest()==receipt['evidence_sha256']['proof.json'],
+            'STAGE_REPAIR_PROOF_CHANGED')
+    return json.loads(data)['added_buffers']
+
+
+def repaired_bindings(record, netlist, original, audit, buffers=()):
+    """Bind live cloned modules by the receipt's exact original instance paths.
+
+    Callers validate the complete repair receipt before using this metadata.
+    Original definitions left behind by a hierarchical writer are not evidence
+    for a live clone: audit_bindings still checks its actual recipe and pins.
+    """
+    from gf180_implement import instances
+    live=dict(instances(netlist['modules'],'RiscayMcuDigital'))
+    prior=dict(instances(original['modules'],'RiscayMcuDigital'))
+    result=deepcopy(record)
+    result['repair_buffers']=list(buffers)
+    result['original_modules']={path:kind for path,kind in prior.items() if path in live}
+    expected={i for b in result['bindings'] for i in b['instances']}
+    require(set(audit['adapter_instances'])==expected,'STAGE_REPAIRED_ADAPTER_INVENTORY')
+    for b in result['bindings']:
+        modules=set()
+        for instance in b['instances']:
+            path=audit['adapter_instances'][instance]
+            require(path.startswith('soc/'+'/'.join(instance.split('.')[1:])+'/') and
+                    prior.get(path)==b['module'] and path in live,'STAGE_REPAIRED_ADAPTER_PATH')
+            modules.add(live[path])
+        b['physical_modules']=sorted(modules)
+    return result
 
 
 def descriptor(manifest, netlist, record, path, variant, *, storage=False):
@@ -32,7 +74,8 @@ def descriptor(manifest, netlist, record, path, variant, *, storage=False):
         body=netlist["modules"][kind]
         require(part in body["cells"],"STAGE_INSTANCE_BINDING")
         kind=body["cells"][part]["type"]
-    require(kind in netlist["modules"] and re.fullmatch(family+r"(?:_\d+)?",kind) is not None,"STAGE_MAPPED_FAMILY")
+    original=record.get('original_modules',{}).get('soc/'+'/'.join(path.split('.')[1:]),kind)
+    require(kind in netlist["modules"] and re.fullmatch(family+r"(?:_\d+)?",original) is not None,"STAGE_MAPPED_FAMILY")
     endpoints={e["id"]:e for e in node["endpoints"]}
     require(len(endpoints)==len(node["endpoints"]),"STAGE_DUPLICATE_ENDPOINT")
     iw,ow=[endpoints[k]["width"] for k in ("in_data","out_data")]
@@ -129,6 +172,8 @@ def inventory(manifest):
 
 def run(mapping, output, variant, paths, campaign=False):
     require(not output.exists(),"STAGE_OUTPUT_EXISTS")
+    from repair_gf180_design import validate_receipt
+    receipt=validate_receipt(mapping)
     record=json.loads((mapping/"mapping.json").read_text())
     audit=json.loads((mapping/"netlist-audit.json").read_text())
     require(audit["status"]=="pass" and audit["netlist_sha256"]==sha(mapping/"netlist.v") and audit["mapping_sha256"]==sha(mapping/"mapping.json"),"STAGE_STALE_AUDIT")
@@ -138,6 +183,7 @@ def run(mapping, output, variant, paths, campaign=False):
             policy["contract_sha256"]==sha(mapping/"timing-intent.json"),"STAGE_STALE_CONTRACT")
     manifest=json.loads((mapping/"timing-intent.json").read_text())["manifest"]
     netlist=json.loads((mapping/"netlist.json").read_text())
+    record=repaired_bindings(record,netlist,receipt_original(mapping,receipt),audit,receipt_buffers(mapping,receipt))
     require(paths and len(paths)<=16 and len(set(paths))==len(paths),"STAGE_SELECTION_BOUND")
     descriptors=[descriptor(manifest,netlist,record,p,variant) for p in paths]
     plans=[relative.make_plan(netlist,record,variant,d) for d in descriptors]
@@ -145,6 +191,8 @@ def run(mapping, output, variant, paths, campaign=False):
     source_names=("native_stage_timing.py","physical_tools.py","control_relative_timing.py","characterize_gf180_control_native.py",
                   "screen_gf180_control_repair.py","gf180_physical.py","gf180_estimate.py","gf180_implement.py","repair_gf180_control.py","characterize_gf180_liberty.py")
     files=[mapping/f for f in ("mapping.json","netlist.v","netlist.json","netlist-audit.json","timing-intent.json","physical-policy.json")]
+    files += [mapping/'electrical-repair/receipt.json',mapping/'electrical-repair/reference/netlist.json',
+              mapping/'electrical-repair/proof.json',ROOT/'tools/repair_gf180_design.py']
     files += [ROOT/"tools"/f for f in source_names]+[relative.PROBE]+sta.input_files()+yosys.input_files()
     files += [pdk/(relative.SC+c+".lib") for c in relative.CORNERS]
     frozen={str(p.resolve()):sha(p) for p in files}
@@ -174,6 +222,7 @@ def run(mapping, output, variant, paths, campaign=False):
                 write_json(sub/(key+".json"),dict(case=case,results=results,aperture=cell,summary=None if failure else summary))
                 cases.append(case);print(json.dumps(case),flush=True)
     require(all(sha(Path(p))==h for p,h in frozen.items()),"STAGE_INPUT_CHANGED")
+    validate_receipt(mapping)
     write_json(output/"results.json",dict(physical_qualification=False,cases=cases,inputs_sha256=frozen,
         files_sha256={str(p.relative_to(output)).replace("\\","/"):sha(p) for p in sorted(output.rglob("*")) if p.is_file()}))
     if any(c["status"]=="UNRESOLVED" for c in cases):raise ValueError("STAGE_CAMPAIGN_UNRESOLVED")

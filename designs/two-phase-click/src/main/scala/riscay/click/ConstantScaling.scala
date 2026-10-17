@@ -28,7 +28,10 @@ object ConstantScaling {
   * unsigned 32-bit delta. Publication and retained fractions keep the ms ABI.
   * Digital timing is explicit; complete physical closure remains separate.
   */
-class ClickElapsed(micros: Seq[Int], domain: ResetDomain) extends AsyncModule(domain) {
+class ClickElapsed(micros: Seq[Int], domain: ResetDomain,
+    ownerTiming: ClickTiming = ClickTiming.Simulation,
+    stepTiming: ClickTiming = OwnerTiming.elapsedStep) extends AsyncModule(domain) {
+  OwnerTiming.check(ownerTiming); OwnerTiming.check(stepTiming)
   require(micros.nonEmpty && micros.forall(_ > 0))
   private val lanes = micros.size
   private val modeWidth = 1
@@ -36,7 +39,7 @@ class ClickElapsed(micros: Seq[Int], domain: ResetDomain) extends AsyncModule(do
   private val runMode = 1.U(modeWidth.W)
   val command = twoPhaseInput("command", UInt(32.W))
   val reply = twoPhaseOutput("reply", new ElapsedResult(lanes))
-  private val timing = ClickTiming.Simulation
+  private val timing = ownerTiming
   private val cell = ModelTime.ps(1000)
   private val resetRef = contract.endpoint("reset", reset)
   val start = IO(Input(Bool()))
@@ -76,7 +79,7 @@ class ClickElapsed(micros: Seq[Int], domain: ResetDomain) extends AsyncModule(do
       r.mode := Mux(last, idleMode, runMode)
       when(last) { r.replyPhase := !x.state.replyPhase }
       r
-    }, timing, d))
+    }, stepTiming, d))
 
   // Source reuse is allowed after command ACK; unused live source fields must
   // not enter a pending arithmetic token during later feedback turns.
@@ -147,10 +150,12 @@ class ClickSample(numerator: Int, denominator: Int, domain: ResetDomain) extends
   * Consumed advances on the same edge as time/age publication. Keep the source
   * running through request and response bridge drainage, even with zero elapsed.
   */
-class ElapsedTicks(micros: Seq[Int], domain: ResetDomain) extends ClockedBridge(domain, 2) {
+class ElapsedTicks(micros: Seq[Int], domain: ResetDomain,
+    ownerTiming: ClickTiming = ClickTiming.Simulation,
+    stepTiming: ClickTiming = OwnerTiming.elapsedStep) extends ClockedBridge(domain, 2) {
   val io = IO(new ElapsedScalingPort(micros.size))
   dontTouch(io) // Profiles may ignore observation flags or duplicate elapsed lanes.
-  val native = asyncChild("native")(d => new ClickElapsed(micros, d))
+  val native = asyncChild("native")(d => new ClickElapsed(micros, d, ownerTiming, stepTiming))
   private val commandBridge = asyncChild("command_bridge")(d => new DecoupledToClick(UInt(32.W), d))
   private val replyBridge = asyncChild("reply_bridge")(d => new ClickServiceReplyReceipt(new ElapsedResult(micros.size), d))
   commandBridge.clock := clock; replyBridge.clock := clock

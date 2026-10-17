@@ -16,7 +16,7 @@ import subprocess
 from gf180_estimate import direct_groups, library, linux
 from gf180_physical import ROOT, SC, pdk_verify, sha, write_json
 from characterize_gf180_liberty import CORNERS, STA
-from characterize_gf180_control_native import extract, audit_bindings
+from characterize_gf180_control_native import extract, audit_bindings, tied_constants
 from repair_gf180_control import require
 from screen_gf180_control_repair import stage_plan, brace, PROBE, TIMEOUT
 from physical_tools import tool
@@ -85,6 +85,8 @@ def make_plan(netlist, record, variant, descriptor=None):
     if descriptor:
         payload=netlist["modules"][native["module"]]["cells"]["ca_primitive_payload"]["connections"]
         allowance=netlist["modules"][native["module"]]["cells"]["ca_primitive_data_delay"]["connections"]
+        constants=tied_constants(netlist['modules'][native['module']])
+        allowance=dict(allowance,a=[constants.get(b,b) for b in allowance['a']])
         constants,lane_map=lane_bindings(native,payload,allowance,captures)
         data=[q for q in data if str(q["lane"]) not in constants]
     event = driver(native, "long_hold" if variant == "bd" else "fire")

@@ -28,7 +28,10 @@ object ConstantScaling {
   * unsigned 32-bit delta. Publication and retained fractions keep the ms ABI.
   * Digital timing is explicit; complete physical closure remains separate.
   */
-class FourPhaseElapsed(micros: Seq[Int], domain: ResetDomain) extends AsyncModule(domain) {
+class FourPhaseElapsed(micros: Seq[Int], domain: ResetDomain,
+    ownerTiming: BundledTiming = BundledTiming.Simulation,
+    stepTiming: BundledTiming = OwnerTiming.elapsedStep) extends AsyncModule(domain) {
+  OwnerTiming.check(ownerTiming); OwnerTiming.check(stepTiming)
   require(micros.nonEmpty && micros.forall(_ > 0))
   private val lanes = micros.size
   private val modeWidth = 2
@@ -38,7 +41,7 @@ class FourPhaseElapsed(micros: Seq[Int], domain: ResetDomain) extends AsyncModul
   private val returnMode = 3.U(modeWidth.W)
   val command = fourPhaseInput("command", UInt(32.W))
   val reply = fourPhaseOutput("reply", new ElapsedResult(lanes))
-  private val timing = BundledTiming.Simulation
+  private val timing = ownerTiming
   private val cell = ModelTime.ps(1000)
   private val resetRef = contract.endpoint("reset", reset)
   private val owner = asyncChild("owner")(d => new FourPhaseFifo(
@@ -82,7 +85,7 @@ class FourPhaseElapsed(micros: Seq[Int], domain: ResetDomain) extends AsyncModul
         r.mode := idleMode; r.commandPhase := false.B
       }
       r
-    }, timing, d))
+    }, stepTiming, d))
 
   // Four-phase source data is held through complete REQ/ACK return. Qualify it
   // only on admission; feedback turns use the retained target and delta.
@@ -152,10 +155,12 @@ class FourPhaseSample(numerator: Int, denominator: Int, domain: ResetDomain) ext
   * Consumed advances on the same edge as time/age publication. Keep the source
   * running through request and response bridge drainage, even with zero elapsed.
   */
-class ElapsedTicks(micros: Seq[Int], domain: ResetDomain) extends ClockedBridge(domain, 2) {
+class ElapsedTicks(micros: Seq[Int], domain: ResetDomain,
+    ownerTiming: BundledTiming = BundledTiming.Simulation,
+    stepTiming: BundledTiming = OwnerTiming.elapsedStep) extends ClockedBridge(domain, 2) {
   val io = IO(new ElapsedScalingPort(micros.size))
   dontTouch(io) // Profiles may ignore observation flags or duplicate elapsed lanes.
-  val native = asyncChild("native")(d => new FourPhaseElapsed(micros, d))
+  val native = asyncChild("native")(d => new FourPhaseElapsed(micros, d, ownerTiming, stepTiming))
   private val commandBridge = asyncChild("command_bridge")(d => new DecoupledToFourPhase(UInt(32.W), 2, d))
   private val replyBridge = asyncChild("reply_bridge")(d => new FourPhaseServiceReplyReceipt(new ElapsedResult(micros.size), d))
   commandBridge.clock := clock; replyBridge.clock := clock

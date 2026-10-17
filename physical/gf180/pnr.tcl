@@ -82,7 +82,9 @@ if {$stage eq "floorplan"} {
   set f [open $out/protected-baseline.tcl w]; puts $f [list set expected_protected [protected_snapshot]]; close $f
 }
 if {$stage eq "place"} {
-  # Timing-driven resizing is opt-in and deliberately omitted in this run.
+  # The input has already passed default global pre-placement repair and its
+  # graph audit. Wire-dependent electrical closure remains a separate gate;
+  # do not silently alter protected native graphs during placement.
   global_placement -density $placement_density -routability_driven
   detailed_placement
   check_placement -verbose

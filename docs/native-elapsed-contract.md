@@ -89,6 +89,16 @@ complete capture path. The retained tables and logs are bound by
 
 ## Acceptance evidence
 
+The electrical-first correction makes owner and arithmetic-step timing separate
+constructor parameters. Its default step request guard is 100 ns in each native
+implementation; owner, data, storage, output and acknowledgment models retain
+their previous values. Arithmetic and iteration counts are unchanged. The first
+200 ns and 120 ns candidates starved BD's existing accelerated maintenance sleep
+test; their failure logs are retained. The 100 ns target passes that unchanged
+oracle and is still substantially longer than the original 11 ns request model.
+It is an implementation target, not a qualified physical envelope.
+See [the correction record](reviews/electrical-first-correction.md).
+
 `AsyncScalingSpec` retains independent wide-integer arithmetic, sample, stall
 and POR oracles. `AsyncElapsedLoopSpec` adds exact iteration/index counts,
 nibble boundaries, full-width wrap, fractional carries, early source reuse,

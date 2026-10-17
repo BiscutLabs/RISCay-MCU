@@ -1,0 +1,32 @@
+{
+  "schema": 1,
+  "status": "conditional-join-origin-only",
+  "rtl_commit": "6aa8033f5978dfde0a00432f82952f7999d93178",
+  "physical_qualification": false,
+  "whole_stage_setup_established": false,
+  "uncomposed_rf_bits_per_variant": 480,
+  "corner_slew_cases": 20,
+  "python_tests": 902,
+  "controls_per_variant": 16,
+  "control_regression": "All 20 cases identical, including every parsed row/path/slew/aperture/summary",
+  "receipts": {
+    "build/execute-join-corners-r1/bd/results.json": "159f960df96ab42f4fca282109beffbea30fea2401004743030b298b23290b73",
+    "build/execute-join-corners-r1/click/results.json": "5ce376b305cf1dd1019ae1a29584287116ec43967c895a34876ebe3d3758b1ee",
+    "build/execute-join-controls-r2/bd/controls.json": "fd0b8be66812db06d431411630f1619e7707fe6a0ef6655e1249bbf12a89d4ae",
+    "build/execute-join-controls-r2/click/controls.json": "4be2ff550a828965e1801cce6e74cfea2423e1a622430b1463690fe9c8871cb4",
+    "build/execute-join-control-regression-r1/bd/results.json": "1559858949a116ef9386ec165eb66d74e2330c536cded225f3f7b7f0e4fdd9fa",
+    "build/execute-join-control-regression-r1/click/results.json": "a9152a74b2a48b16740bb2acd3e69b8f644b6a2300b2724340736e889851f1fe",
+    "build/execute-join-review/independent-review.json": "2b8af1218cd69a0112352567946ed0092624e3999f5d5fa79b39ed6aa445ba76",
+    "build/execute-join-review/bd-control-regression.json": "c464782aaa1ed5500f6f2fc8a95e18b5c01e395bc555d9420e70be4f6755b834",
+    "build/execute-join-review/click-control-regression.json": "6cf8b395dd8c3378ee5cac5c619524015eee0730814225588cb73df5cae66a20",
+    "build/execute-join-python-r1.log": "28828e8d1f3cee0e7288ac2e859fa4f4c64a4d6baa176d7216b0a8f3668ad9f0"
+  },
+  "preserved_explorations": [
+    "build/execute-join-pilot-r1/bd",
+    "build/execute-join-controls-r1"
+  ],
+  "notes": [
+    "The r1 controls used an unsuffixed parent during negative mutations. Final r2 resolves the renamed actual parent for every fault.",
+    "An unqualified exploratory OpenROAD repair is retained at build/electrical-repair-explore-r1. It is not an accepted repair or input to these measurements."
+  ]
+}
