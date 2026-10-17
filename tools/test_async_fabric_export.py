@@ -21,13 +21,22 @@ class FrameHeadBackgroundTests(unittest.TestCase):
             rtl_path=top+'.store.guard', model='ChiselAsyncControlGate_v1',
             parameters=dict(WIDTH='4', OP='0', DELAY_FS='32000000', RESET_VALUE='0'),
             ports=[dict(name='q', width=4, direction='output')])])
+        banks = [dict(id=f'payload{i}' if click else 'payload', rtl_path=top+f'.store.bank{i}',
+                      model='ChiselAsyncEventRegister_v1' if click else 'ChiselAsyncClosingLatch_v1',
+                      ports=[dict(name='q', width=337, direction='output')]) for i in range(4)]
+        if click:
+            store['primitives'].extend(banks)
+        else:
+            store['children'] = [dict(id=f'storage{i}', contract=dict(primitives=[bank])) for i,bank in enumerate(banks)]
         heads = [dict(module=family+'FrameReceipt_'+str(i+1), rtl_path=top+'.head'+str(i)) for i in range(4)]
         manifest = dict(top=top, design=dict(children=[dict(id='i2c',contract=dict(children=[
             dict(id='frame_store',contract=store), *[dict(id=f'frame_head{i}_bridge',contract=h) for i,h in enumerate(heads)]]))]))
-        scopes = {top:dict(registers=dict(gate_enabled=1, fabric_hostFrames_count=2, fabric_hostFrames_first_bank=2)),
+        scopes = {top:dict(registers=dict(gate_enabled=1, fabric_hostFrames_count=2, fabric_hostFrames_first_bank=2,
+                                        fabric_hostRetiring=1, fabric_hostRetiringBank=2)),
             **{h['rtl_path']:dict(registers=dict(requestSync=1)) for h in heads}}
         drivers = {scope+'.'+name:width for scope,body in scopes.items() for name,width in body['registers'].items()}
         if not click: drivers[top+'.store.guard.q']=4
+        drivers.update({bank['rtl_path']+'.q':337 for bank in banks})
         source = 'initial begin\nforce '+top+".reset = 1'b1; #1;\n" + ''.join(
             f"force {path} = {width}'h0;\n" for path,width in drivers.items())
         source += '\n#1;\n#1; check;\nif (ones_0 !== 1\'h1) $fatal(1,"INACTIVE_ENDPOINT:sample");\n$display("CONTRACT_PROBES_PASS:1");\nend\n'
@@ -37,13 +46,15 @@ class FrameHeadBackgroundTests(unittest.TestCase):
         for click in (False, True):
             manifest, scopes, source, store, heads = self.fixture(click)
             result, count = frame_head_background(source,manifest,scopes,1)
-            self.assertEqual(count,5 if click else 6)
+            self.assertEqual(count,13 if click else 14)
             self.assertTrue(result.startswith(source[:source.index('if (ones_0')]))
             self.assertTrue(result.endswith(source[source.index('if (ones_0'):].replace(
                 'CONTRACT_PROBES_PASS:1',f'CONTRACT_PROBES_PASS:{count}')))
             for i, head in enumerate(heads):
                 self.assertIn(f"force {head['rtl_path']}.requestSync = 1'h1;",result)
                 self.assertIn(f"force {manifest['top']}.fabric_hostFrames_first_bank = 2'h{i:x};",result)
+                self.assertIn(f"force {manifest['top']}.fabric_hostRetiringBank = 2'h{i:x};",result)
+                self.assertIn(f"force {manifest['top']}.store.bank{i}.q = 337'h{(1<<337)-1:x};",result)
             guard = f"force {manifest['top']}.store.guard.q = 4'hf;"
             self.assertEqual(guard in result, not click)
             self.assertNotRegex(result,r'force [^;]*(?:out_ready|\.busy) =')
@@ -69,7 +80,7 @@ class FrameHeadBackgroundTests(unittest.TestCase):
             scopes[top]['registers'].pop('gate_enabled')
             source=source.replace(f"force {top}.gate_enabled = 1'h0;\n",'')
             result,count=frame_head_background(source,manifest,scopes,1)
-            self.assertEqual(count,5 if click else 6)
+            self.assertEqual(count,13 if click else 14)
             self.assertNotIn('gate_enabled',result)
             scopes[top]['registers']['gate_enabled']=2
             with self.assertRaisesRegex(ValueError,'FRAME_HEAD_PROBE_DRIVER'):
@@ -84,6 +95,14 @@ class FrameHeadBackgroundTests(unittest.TestCase):
                 elif fault=='width': scopes[head['rtl_path']]['registers']['requestSync']=2
                 else: source=source.replace(f"force {head['rtl_path']}.requestSync = 1'h0;\n",'')
                 with self.assertRaisesRegex(ValueError,'FRAME_HEAD_PROBE_'):
+                    frame_head_background(source,manifest,scopes,1)
+
+    def test_borrowed_bank_and_retirement_sources_must_be_catalogued(self):
+        for click in (False, True):
+            for net,width in (('fabric_hostRetiring',1),('fabric_hostRetiringBank',2),('store.bank3.q',337)):
+                manifest,scopes,source,_,_=self.fixture(click)
+                source=source.replace(f"force {manifest['top']}.{net} = {width}'h0;\n",'')
+                with self.subTest(click=click,net=net), self.assertRaisesRegex(ValueError,'FRAME_HEAD_PROBE_DRIVER'):
                     frame_head_background(source,manifest,scopes,1)
 
 

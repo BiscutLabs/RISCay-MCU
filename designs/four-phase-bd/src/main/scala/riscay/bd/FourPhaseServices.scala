@@ -495,10 +495,24 @@ class FourPhaseServices(p: SocParameters, boardFactory: SocParameters => BoardPr
   // Preserve the original source epoch until D. A complete watchdog episode
   // invalidates precisely older queued frames; a new explicit START stays fresh.
   private val hostHead=io.i2c.heads(hostFrames.io.deq.bits.bank)
-  private val hostHeadValid=hostFrames.io.deq.valid && hostHead.valid
+  // D frees the descriptor; R clears its tag after sender synchronization.
+  // The head accepts at D. A native C-join retains the bank through both
+  // actual returns, which can finish before R or trail it independently.
+  val hostRetiring = RegInit(false.B)
+  val hostRetiringBank = RegInit(0.U(2.W))
+  private val retiringHead = io.i2c.heads(hostRetiringBank)
+  io.controlFrame := retiringHead.bits.ingress.frame
+  io.controlFrameBank := hostRetiringBank
+  val hostRetire = hostRetiring && io.controlCommandIdle && io.clockRunning
+  private val hostHeadValid=hostFrames.io.deq.valid && hostHead.valid && (!hostRetiring || hostRetire)
   for(i <- 0 until 4) {
     io.i2c.heads(i).ready:=io.clockRunning && hostFrames.io.deq.ready &&
       hostFrames.io.deq.valid && hostFrames.io.deq.bits.bank === i.U
+  }
+  when(hostRetire) { hostRetiring := false.B }
+  when(hostFrames.io.deq.fire) {
+    hostRetiring := true.B
+    hostRetiringBank := hostFrames.io.deq.bits.bank
   }
   // Reserve a bounded CPU admission turn before starting more background work.
   // A stalled Control computation still permits independent timer maintenance.
@@ -506,7 +520,7 @@ class FourPhaseServices(p: SocParameters, boardFactory: SocParameters => BoardPr
     (!controlOutstanding || (mmioCurrent && io.controlReply.valid))
   // A queued Host retains priority while its native head receipt settles.
   val mmioLaunch = io.request.valid && nativeMmio && cpuAvailable && !hostFrames.io.deq.valid
-  controlBusy := controlOutstanding || io.programSource.stored.valid || mmioCommitPending || resetPending || haltPending || hostFrames.io.deq.valid
+  controlBusy := controlOutstanding || hostRetiring || io.programSource.stored.valid || mmioCommitPending || resetPending || haltPending || hostFrames.io.deq.valid
   io.controlCommand.valid := !controlOutstanding &&
     (io.programSource.stored.valid || mmioCommitPending || resetPending || (haltPending && !io.applicationCancel) || hostHeadValid || mmioLaunch)
   io.controlCommand.bits := 0.U.asTypeOf(new ControlCommand)

@@ -26,6 +26,13 @@ when no next item has been chosen. Both implementations remain active throughout
 PR10 is merged. This order supersedes the older pauses and repair-first work
 priorities retained below. It does not waive any functional or physical gate.
 
+The subsequent area review adds [A7/A8 guard and allowance work](native-area-reduction.md#current-area-priorities-11b1-2026-10-17)
+alongside ownership removal: current component counts and a complete first
+purpose inventory are recorded; select a bounded same-corner guard or passive
+allowance experiment now that 11b1 is digitally verified. Do this before further broad repair
+tuning. Removing reset/data gates or changing latch controllers requires its
+own semantics and hold proof; historical area estimates are not measured savings.
+
 1. **11b–14 first: remove clocked ownership and unnecessary crossings.** Address
    Services scheduling, receipts, queues/mailboxes, output/state replicas,
    I2C epochs/ring/ordinal, SPI playback and the SRAM boundary in verified steps.
@@ -962,6 +969,27 @@ physical reset qualification (R2b) remains mandatory under item 17a3.
   - [ ] **11b. Dispatch ownership.** Move Control outstanding, reset, HALT and
     MMIO-commit scheduling into native retained tokens; preserve completion-first
     priority and the offered-request event-clear window.
+    - [x] **11b1. Borrow native HostFrame at Control ingress, digitally verified.**
+      Final regressions, exact fault controls and strict exports pass. The sender's
+      271-bit periodic frame copy is replaced by a POR-owned two-bit bank identity
+      and pending flag retained until complete
+      native command acceptance and work-qualified tag retirement. BD overlaps
+      native/receipt returns with a per-bank C-element; Click accepts the head at R.
+      Logical dequeue/admission timing and dispatch-time epoch/busy context are preserved.
+      [Ownership contract](frame-admission-contract.md#11b1-borrow-the-retained-frame-through-native-control-acceptance).
+      [Matched cost and review](reviews/control-frame-borrow.md): 268 fewer mapped
+      periodic flip-flops per variant, repaired logic down 0.024174 / 0.028878 mm²,
+      with unchanged native-model firmware wake edges. Physical timing remains open.
+      This does not migrate the Services scheduler or remove its header crossing.
+    - [ ] **11b2. Borrow retained Housekeeping command storage.** Audit confirms
+      212 mapped sender payload flops per variant alongside an existing 211-bit
+      ordered bank. Reuse that bank for ordered, background and recovery commands;
+      keep it immutable until actual sender idle and backpressure the competing
+      Control period-update writer. Preserve the sender's settling/return cadence,
+      queued observations, publication-only consumedGray advancement and the
+      separate 33-bit in-flight projection. Verify stopped work, reset, overlapping
+      ordered/background traffic and overwrite/backpressure faults. Expected
+      210–211 net flops are an estimate, pending implementation and matched mapping.
   - [ ] **11c. Independent-request arbitration.** Implement and qualify the
     required arbitration or event scheduler, including simultaneous arrivals,
     bounded CPU/background fairness and permanent-supervisor independence.

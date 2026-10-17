@@ -211,16 +211,30 @@ abstract class ClickPlatform(p: SocParameters, board: SocParameters => BoardProf
   fabric.io.programSource.resetDebt:=programServiceDebt
   fabric.io.programSource.draining:=programServiceDebt || !programSourceEmpty
   val control = asyncChild("control")(d => new ClickControl(p, d, owners))
-  val controlCommandBridge = asyncChild("control_command_bridge")(d => new DecoupledToClick(new ControlCommand, d))
+  val controlCommandBridge = asyncChild("control_command_bridge")(d => new DecoupledToClick(new ControlCommandHeader, d))
   val controlReplyBridge = asyncChild("control_reply_bridge")(d => new ClickServiceReplyReceipt(new ControlReply(p.config.programBytes), d))
   controlCommandBridge.clock := workClock; controlReplyBridge.clock := workClock
   val controlStart = withClockAndReset(serviceClock, reset) {
     val stages = RegInit(0.U(2.W)); stages := Cat(stages(0), true.B); stages.andR
   }
   control.start := controlStart
-  chiselasync.protocol.TwoPhase.connect(control.command, controlCommandBridge.out)
+  // Borrow the immutable native bank; the periodic sender owns metadata only.
+  // Its full settling cycle precedes request, and idle follows native capture
+  // completion of the native Click request/acknowledgment phase.
+  control.command.req := controlCommandBridge.out.req
+  controlCommandBridge.out.ack := control.command.ack
+  controlCommandBridge.out.bits.elements.foreach { case (name, field) =>
+    control.command.bits.elements(name) := field
+  }
+  control.command.bits.frame := Mux(controlCommandBridge.out.bits.kind === ControlKind.Host.U,
+    fabric.io.controlFrame, 0.U.asTypeOf(new HostFrame))
   chiselasync.protocol.TwoPhase.connect(controlReplyBridge.in, control.reply)
-  controlCommandBridge.in <> fabric.io.controlCommand
+  controlCommandBridge.in.valid := fabric.io.controlCommand.valid
+  fabric.io.controlCommand.ready := controlCommandBridge.in.ready
+  controlCommandBridge.in.bits.elements.foreach { case (name, field) =>
+    field := fabric.io.controlCommand.bits.elements(name)
+  }
+  fabric.io.controlCommandIdle := controlCommandBridge.in.ready
   fabric.io.controlReply <> controlReplyBridge.out
   // Preserve the complete held native reply ABI, including profile-unused fields.
   dontTouch(controlReplyBridge.out)

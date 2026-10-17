@@ -17,6 +17,7 @@ claim that the clocked shell is minimal.
 | Six smaller grant/drain receivers | All ten copied bits survive in each accepted C1f map; seven lack functional mapped consumers, three retain program/publication roles. C1e2 remains unchanged and open. Preserve POR reservations, assertion identities, grant/drain retirement and actual work-clock capture. | C1e2 |
 | I2C reset history | Eight sampled-edge slots carry 512 clocked epoch bits, plus the 64-bit current epoch and native copies. A stale-history redesign must preserve every queued descriptor's reset history; truncating the epoch is insufficient. | R5, 11a2b |
 | Services queues, histories and coherent snapshots | Still clocked. Removing the crossing requires moving the corresponding scheduler and acceptance/order/freshness ownership together. | C3, 11–14 |
+| Control command's duplicate frame | 11b1 borrows the retained native bank through native acceptance, replacing 271 sender payload bits with three POR ownership bits. Matched maps remove 268 periodic flip-flops per variant; digital verification passes and physical timing remains open. The 108-bit header sender, descriptors and head receipts remain; see [evidence](reviews/control-frame-borrow.md). | 11b1 |
 
 C1e2's source/map audit is retained in
 `build/async-quiescing-small-receivers-audit-r1/REPORT.md`; it is an inventory,

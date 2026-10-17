@@ -42,6 +42,15 @@ class BdFrameAdmissionFixture(p: SocParameters) extends BdProgramSourceFixture(p
   observedBankFrames:=VecInit(host.host.heads.map(_.bits.asUInt)).asUInt
   val observedHeadValid=IO(Output(UInt(4.W))); observedHeadValid:=VecInit(host.host.heads.map(_.valid)).asUInt
   val observedHeadFire=IO(Output(UInt(4.W))); observedHeadFire:=VecInit(host.host.heads.map(_.fire)).asUInt
+  val observedBorrowRetire=IO(Output(Bool())); observedBorrowRetire:=BoringUtils.bore(fabric.hostRetire)
+  val observedBankRequest=IO(Output(UInt(4.W))); observedBankRequest:=VecInit(host.frameStore.banks.map(b => BoringUtils.bore(b.req))).asUInt
+  val observedBankAcknowledge=IO(Output(UInt(4.W))); observedBankAcknowledge:=VecInit(host.frameStore.banks.map(b => BoringUtils.bore(b.ack))).asUInt
+  val observedHeadAcknowledge=IO(Output(UInt(4.W))); observedHeadAcknowledge:=VecInit(host.frameHeads.map(h => BoringUtils.bore(h.in.ack))).asUInt
+  val commandSenderIdle=IO(Output(Bool())); commandSenderIdle:=controlCommandBridge.in.ready
+  val nativeCommandRequest=IO(Output(Bool())); nativeCommandRequest:=control.command.req
+  val nativeCommandAcknowledge=IO(Output(Bool())); nativeCommandAcknowledge:=control.command.ack
+  val nativeCommandKind=IO(Output(UInt(3.W))); nativeCommandKind:=control.command.bits.kind
+  val nativeCommandFrame=IO(Output(UInt(271.W))); nativeCommandFrame:=control.command.bits.frame.asUInt
   val currentReset=IO(Output(Bool())); currentReset:=fabric.io.cpuResetActive
   val currentBusy=IO(Output(Bool())); currentBusy:=host.host.programBusy
   val hostBusy=IO(Output(Bool())); hostBusy:=host.host.busy
@@ -87,6 +96,15 @@ class ClickFrameAdmissionFixture(p: SocParameters) extends ClickProgramSourceFix
   observedBankFrames:=VecInit(host.host.heads.map(_.bits.asUInt)).asUInt
   val observedHeadValid=IO(Output(UInt(4.W))); observedHeadValid:=VecInit(host.host.heads.map(_.valid)).asUInt
   val observedHeadFire=IO(Output(UInt(4.W))); observedHeadFire:=VecInit(host.host.heads.map(_.fire)).asUInt
+  val observedBorrowRetire=IO(Output(Bool())); observedBorrowRetire:=BoringUtils.bore(fabric.hostRetire)
+  val observedBankRequest=IO(Output(UInt(4.W))); observedBankRequest:=VecInit(host.frameStore.banks.map(b => BoringUtils.bore(b.req))).asUInt
+  val observedBankAcknowledge=IO(Output(UInt(4.W))); observedBankAcknowledge:=VecInit(host.frameStore.banks.map(b => BoringUtils.bore(b.ack))).asUInt
+  val observedHeadAcknowledge=IO(Output(UInt(4.W))); observedHeadAcknowledge:=VecInit(host.frameHeads.map(h => BoringUtils.bore(h.in.ack))).asUInt
+  val commandSenderIdle=IO(Output(Bool())); commandSenderIdle:=controlCommandBridge.in.ready
+  val nativeCommandRequest=IO(Output(Bool())); nativeCommandRequest:=control.command.req
+  val nativeCommandAcknowledge=IO(Output(Bool())); nativeCommandAcknowledge:=control.command.ack
+  val nativeCommandKind=IO(Output(UInt(3.W))); nativeCommandKind:=control.command.bits.kind
+  val nativeCommandFrame=IO(Output(UInt(271.W))); nativeCommandFrame:=control.command.bits.frame.asUInt
   val currentReset=IO(Output(Bool())); currentReset:=fabric.io.cpuResetActive
   val currentBusy=IO(Output(Bool())); currentBusy:=host.host.programBusy
   val hostBusy=IO(Output(Bool())); hostBusy:=host.host.busy
@@ -100,6 +118,16 @@ class ClickFrameAdmissionFixture(p: SocParameters) extends ClickProgramSourceFix
   dispatched.resetActive:=fabric.io.controlCommand.bits.cpuResetActive
   dispatched.programBusy:=fabric.io.controlCommand.bits.programBusy
   dispatchedFrame:=dispatched.asUInt
+}
+
+/** Stalls the native consumer before offer; does not replace retained payload. */
+class BdBorrowedControlFixture(p: SocParameters) extends BdFrameAdmissionFixture(p) {
+  val holdNativeCommand=IO(Input(Bool()))
+  control.command.req:=controlCommandBridge.out.req && !holdNativeCommand
+}
+class ClickBorrowedControlFixture(p: SocParameters) extends ClickFrameAdmissionFixture(p) {
+  val holdNativeCommand=IO(Input(Bool()))
+  control.command.req:=Mux(holdNativeCommand,control.command.ack,controlCommandBridge.out.req)
 }
 
 /** Context fault injection at the existing service boundary, with real native
@@ -140,7 +168,28 @@ class FrameAdmissionSpec extends AnyFunSuite {
     wire [272:0] mailboxFirst={nativeBanks[descriptorFirst[3:2]][336:66],descriptorFirst[1:0]};
     wire [272:0] mailboxSecond={nativeBanks[descriptorSecond[3:2]][336:66],descriptorSecond[1:0]};
     wire [1:0] mailboxCount=dut.fabric_hostFrames_count;
-    integer admissions=0,dispatches=0,firstCaptures=0,secondCaptures=0,simultaneous=0;
+    integer admissions=0,dispatches=0,retirements=0,nativeAcceptances=0,firstCaptures=0,secondCaptures=0,simultaneous=0;
+    reg retirementPending=0;
+    reg [1:0] retirementBank=0;
+    reg [270:0] retirementFrame=0;
+    reg [3:0] dispatchedBanks=0,capturedBanks=0,returnedCommands=0;
+    always @(negedge nativeCommandAcknowledge) if(!reset && !nativeClick && nativeCommandKind==0) begin
+      if(!retirementPending || !capturedBanks[retirementBank] || nativeCommandRequest)
+        $$fatal(1,"FRAME_BORROW_COMMAND_RETURN_ORDER");
+      returnedCommands[retirementBank]=1;
+    end
+    always @(nativeCommandAcknowledge) if(!reset && (nativeClick || nativeCommandAcknowledge) && nativeCommandKind==0) begin
+      if(!retirementPending || nativeCommandFrame!==retirementFrame)
+        $$fatal(1,"FRAME_BORROW_NATIVE_ACCEPTANCE_IDENTITY");
+      nativeAcceptances=nativeAcceptances+1;
+      capturedBanks[retirementBank]=1;
+    end
+    // BD's bank may finish its native return before the sender synchronizes
+    // that completion. Check the actual full command RTZ, not the later tag clear.
+    always @(nativeCommandFrame or nativeCommandRequest or nativeCommandAcknowledge)
+      if(!reset && !nativeClick && nativeCommandKind==0 && (nativeCommandRequest || nativeCommandAcknowledge))
+        if(!retirementPending || nativeCommandFrame!==retirementFrame)
+          $$fatal(1,"FRAME_BORROW_NATIVE_RTZ_PAYLOAD_CHANGED");
     integer mmioDispatches=0,hostsBeforeMmio=0;
     integer q=0,beforeAdmissions,beforeDispatches,n,j,storedEdges=0,replyEdges=0;
     reg [272:0] expectedFirst=0,expectedSecond=0,arrival;
@@ -149,6 +198,13 @@ class FrameAdmissionSpec extends AnyFunSuite {
     reg [3:0] liveBanks=0;
     reg [336:0] offerPayload[0:3];
     reg [3:0] copiedBanks=0;
+    for(genvar bank=0;bank<4;bank=bank+1) begin
+      always @(negedge observedBankAcknowledge[bank]) if(!reset && !nativeClick) begin
+        if(!liveBanks[bank] || !dispatchedBanks[bank] || !capturedBanks[bank] || !returnedCommands[bank] || observedHeadAcknowledge[bank] || observedBankRequest[bank])
+          $$fatal(1,"FRAME_BORROW_NATIVE_BANK_RETURN_ORDER");
+        liveBanks[bank]=0;dispatchedBanks[bank]=0;capturedBanks[bank]=0;returnedCommands[bank]=0;
+      end
+    end
     integer offers=0,copies=0,serviceEdges=0,stoppedEdges=0;
     always @(posedge serviceClock) if(!reset) serviceEdges=serviceEdges+1;
     always @(nativeRequest) if(!reset && (nativeClick || nativeRequest)) begin
@@ -173,8 +229,18 @@ class FrameAdmissionSpec extends AnyFunSuite {
     always @(posedge observedWorkClock) if(!reset) begin
       if(mailboxCount !== q) $$fatal(1,"FRAME_ADMISSION_PRE_COUNT");
       if(mmioDispatched) begin mmioDispatches=mmioDispatches+1;hostsBeforeMmio=dispatches;end
-      if(observedHeadFire !== (hostDispatched ? (4'b0001 << expectedDescriptorFirst[3:2]) : 4'b0000))
-        $$fatal(1,"FRAME_ADMISSION_HEAD_RETIRE_IDENTITY");
+      if(!nativeClick && observedHeadFire !== (hostDispatched ? (4'b0001 << descriptorFirst[3:2]) : 4'b0000))
+        $$fatal(1,"FRAME_ADMISSION_HEAD_CAPTURE_IDENTITY");
+      if(observedBorrowRetire) begin
+        if(!retirementPending || !commandSenderIdle || nativeAcceptances!=retirements+1 ||
+           (nativeClick && observedHeadFire !== (4'b0001 << retirementBank)) ||
+           (!nativeClick && (nativeCommandRequest || nativeCommandAcknowledge)))
+          $$fatal(1,"FRAME_ADMISSION_HEAD_RETIRE_IDENTITY");
+        if(nativeClick && nativeBanks[retirementBank][336:66]!==retirementFrame)
+          $$fatal(1,"FRAME_BORROW_RETIRED_PAYLOAD_CHANGED");
+        if(nativeClick) begin liveBanks[retirementBank]=0;dispatchedBanks[retirementBank]=0;capturedBanks[retirementBank]=0;end
+        retirementPending=0;retirements=retirements+1;
+      end
       if(hostDispatched) begin
         if(q==0 || !observedHeadValid[expectedDescriptorFirst[3:2]] || !copiedBanks[expectedDescriptorFirst[3:2]])
           $$fatal(1,"FRAME_ADMISSION_DISPATCH_WITHOUT_HEAD");
@@ -186,7 +252,10 @@ class FrameAdmissionSpec extends AnyFunSuite {
              expectedNativeFirst[63:0] != currentEpoch)) $$fatal(1,"FRAME_ADMISSION_DISPATCH_IDENTITY");
         if(nativeBanks[expectedDescriptorFirst[3:2]] !== expectedNativeFirst)
           $$fatal(1,"FRAME_ADMISSION_DISPATCH_NATIVE_IDENTITY");
-        liveBanks[expectedDescriptorFirst[3:2]]=0;
+        if(retirementPending) $$fatal(1,"FRAME_BORROW_RETIREMENT_TAG_OVERWRITTEN");
+        retirementPending=1;retirementBank=expectedDescriptorFirst[3:2];
+        dispatchedBanks[retirementBank]=1;
+        retirementFrame=expectedFirst[272:2];
         dispatches=dispatches+1;
       end
       if(injectedAccepted) begin
@@ -220,6 +289,9 @@ class FrameAdmissionSpec extends AnyFunSuite {
         q=q-1;
       end
       #0.1;
+      for(integer live=0;live<4;live=live+1)
+        if(liveBanks[live] && copiedBanks[live] && nativeBanks[live]!==offerPayload[live])
+          $$fatal(1,"FRAME_BORROW_LIVE_BANK_CHANGED");
       // Descriptor Q is checked even when unused. Only live descriptors own a
       // bank: an unused descriptor may point at a legitimately recycled payload.
       if(mailboxCount !== q || descriptorFirst !== expectedDescriptorFirst || descriptorSecond !== expectedDescriptorSecond ||
@@ -262,6 +334,39 @@ class FrameAdmissionSpec extends AnyFunSuite {
     val name=if(click) "click" else "bd"
     def fixture(hz: Int): SocTop=if(click) new ClickFrameAdmissionFixture(params(hz)) else new BdFrameAdmissionFixture(params(hz))
     val slowCopy=Map(("ca_child_i2c.ca_child_frame_store",if(click) "request_delay" else "request_guard") -> 8000000000L)
+    test(s"$name frame admission: borrowed bank survives native stall, stopped work and later descriptor changes") {
+      def borrowedFixture: SocTop=if(click) new ClickBorrowedControlFixture(params(20000000)) else new BdBorrowedControlFixture(params(20000000))
+      ClockedSimulation.run(borrowedFixture,name+"-frame-borrow-retention", """
+        control_done();holdHostCommands=1;
+        command(9);native_return();command(10);native_return();
+        if(mailboxCount!=2 || admissions!=2) $fatal(1,"FRAME_BORROW_TWO_BANK_PRECONDITION");
+        @(negedge serviceClock);#1;holdNativeCommand=1;holdHostCommands=0;
+        wait(dispatches==1);@(negedge serviceClock);#1;stopWorkClock=1;
+        repeat(3) @(negedge serviceClock);
+        if(workRunning || mailboxCount!=1 || retirementBank!=0 || retirements || nativeAcceptances)
+          $fatal(1,"FRAME_BORROW_STALL_PRECONDITION");
+        for(n=0;n<3;n=n+1) begin
+          applicationReset=1;repeat(12) @(negedge serviceClock);
+          applicationReset=0;repeat(12) @(negedge serviceClock);
+          if(!retirementPending || retirements || nativeAcceptances ||
+             nativeBanks[0]!==offerPayload[0] || mailboxCount!=1)
+            $fatal(1,"FRAME_BORROW_STOPPED_RESET_LOSS");
+        end
+        // Finish native capture while deliberately retaining the old head.
+        // BD's head accepts at D; stall its actual return ACK after acceptance.
+        if(!nativeClick) force dut.ca_child_i2c.ca_child_frame_head0_bridge.acknowledge=1'b1;
+        @(negedge serviceClock);#1;holdSelectedHead=1;stopWorkClock=0;holdNativeCommand=0;
+        wait(nativeAcceptances==1);wait(commandSenderIdle);
+        repeat(12) @(negedge serviceClock);
+        if(retirements!=(nativeClick?0:1) || dispatches!=1 || retirementPending!=nativeClick || nativeBanks[0]!==offerPayload[0])
+          $fatal(1,"FRAME_BORROW_HEAD_STALL_LOSS");
+        if(!nativeClick) release dut.ca_child_i2c.ca_child_frame_head0_bridge.acknowledge;
+        @(negedge serviceClock);#1;holdSelectedHead=0;
+        control_done();
+        if(dispatches!=2 || nativeAcceptances!=2 || retirements!=2 || liveBanks || mailboxCount)
+          $fatal(1,"FRAME_BORROW_COMPLETION_COUNTS");
+      """,monitors,serviceHalfPeriodNs=25,deadlineNs=2000000)
+    }
     test(s"$name frame admission: original acceptance context survives a later native copy") {
       def contextFixture: SocTop=if(click) new ClickFrameContextFixture(params(20000000)) else new BdFrameContextFixture(params(20000000))
       ClockedSimulation.run(contextFixture,name+"-frame-admission-late-context","""

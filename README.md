@@ -69,9 +69,10 @@ the addressed [I2C receive store](docs/native-i2c-byte-store-contract.md) remove
 another 513 native payload bits. CPU request receipts remove 70 duplicate
 clocked bits per variant. Capacity-sized loader metadata removes
 183 native payload bits and 40 periodic bits per variant.
-Current repaired logic area is **3.039160 / 3.824640 mm²** (BD / Click), excluding
-SRAM. Global repair adds **0.190638 / 0.209975 mm²** to the same current maps;
-see [area accounting](docs/gf180-estimates.md#electrical-repair-area).
+The digitally verified Control frame-borrow change removes 268 periodic flip-flops per
+variant. Repaired logic area is **3.014986 / 3.795762 mm²** (BD / Click), excluding
+SRAM; repair adds **0.189099 / 0.209872 mm²**. Physical timing remains open;
+see the [matched measurements and scope](docs/reviews/control-frame-borrow.md).
 The earlier A2b measurements were 2.830967 / 3.596523 mm² with 3,255 BD / 3,160
 Click work-clock edges for the 43-instruction firmware wake. Those activity and
 power figures are historical. The current native-model firmware wake uses
@@ -79,14 +80,17 @@ power figures are historical. The current native-model firmware wake uses
 separates accumulated guard waits from elapsed wake time and component energy.
 Mapped wake timing and whole-chip power remain unqualified.
 A2b functional and strict export checks pass; physical timing remains unqualified.
-Repaired stage and Join [leaf bindings](docs/reviews/repaired-leaf-timing.md) now
-resolve the previously blocked paths: all 160 selected standard-stage and 20
-Control Join cases have positive conditional margins in the fresh repaired maps.
-The revised [capture trees](docs/native-capture-distribution.md) pass all 1,320
-local zero-wire cases at unchanged budgets. [BD source-retention](docs/reviews/bd-hold-credit.md)
+The prior PR9/PR10 timing snapshots resolve the blocked stage and Join
+[leaf bindings](docs/reviews/repaired-leaf-timing.md): all 160 selected standard-stage
+and 20 Control Join cases have positive conditional margins. Their revised
+[capture trees](docs/native-capture-distribution.md) pass all 1,320 local zero-wire
+cases at unchanged budgets. These timing campaigns have not been rerun on 11b1.
+[BD source-retention](docs/reviews/bd-hold-credit.md)
 and complete electrical/routed timing remain open.
-The next priority is removing clocked service ownership and round trips under
-[checklist items 11b–14](docs/async-soc-migration.md#current-work-order-after-pr10-2026-10-17).
+The next priorities are removing clocked service ownership and round trips under
+[items 11b–14](docs/async-soc-migration.md#current-work-order-after-pr10-2026-10-17),
+and bounded guard/data-allowance experiments from the
+[current area inventory](docs/native-area-reduction.md#current-area-priorities-11b1-2026-10-17).
 The [A2b evidence](docs/reviews/loader-metadata-a2b-completion.md) records its
 checks and measured costs.
 An [opt-in Control buffer repair](docs/reviews/control-electrical-repair.md)

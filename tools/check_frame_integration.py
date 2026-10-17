@@ -111,6 +111,21 @@ def driver(rtl, name, expected):
     return name
 
 
+@lru_cache(maxsize=12)
+def frame_arrays(rtl):
+    """Resolve compiler temporaries by their complete independent field schema."""
+    fields = ["valid", "bits_ingress_frame_length", "bits_ingress_frame_overflow"] + [
+        f"bits_ingress_frame_bytes_{i}" for i in range(33)] + ["bits_resetEpoch"]
+    assignments = re.findall(r"\b(?:wire\s+(?:\[\d+:0\]\s*)*|assign\s+)(\w+)\s*=\s*([^;]+);", clean(rtl))
+    result = {}
+    for field in fields:
+        expected = "{" + ",".join("{" + f"_ca_child_i2c_host_heads_{i}_" + field + "}" for i in reversed(range(4))) + "}"
+        names = [name for name, rhs in assignments if compact(rhs) == expected]
+        require(len(names) == 1, "FRAME_ARRAY:" + field)
+        result[field] = driver(rtl, names[0], expected)
+    return result
+
+
 def no_other_writers(rtl, name, scalar=0):
     """An alias or child output cannot acquire a second/procedural/partial driver."""
     forbidden, counts, partial = writer_inventory(rtl)
@@ -217,7 +232,13 @@ def initial_policy(rtl, values, reset):
     require([compact(x) for x in directives] == ["`ifdefINIT_RANDOM_PROLOG_", "`INIT_RANDOM_PROLOG_",
             "`endif", "`ifdefRANDOMIZE_REG_INIT", "`endif"], "INITIAL_DIRECTIVES")
     body = re.sub(r"^\s*`[^\n]*", "", body, flags=re.M)
-    body, loops = re.subn(r"for\s*\(logic\s*\[\d+:0\]\s+i\s*=\s*\d+'h0;\s*i\s*<\s*\d+'h[0-9A-Fa-f]+;\s*i\s*\+=\s*\d+'h1\)\s*begin\s*_RANDOM\[i\]\s*=\s*`RANDOM;\s*end", "", body)
+    def random_loop(match):
+        # The narrowed header has exactly four random words. CIRCT slices the
+        # loop index at power-of-two lengths; prove that no iteration aliases.
+        if match[2] is not None:
+            require(int(match[1], 16) <= 1 << (int(match[2]) + 1), "INITIAL_RANDOM_INDEX_WRAP")
+        return ""
+    body, loops = re.subn(r"for\s*\(logic\s*\[\d+:0\]\s+i\s*=\s*\d+'h0;\s*i\s*<\s*\d+'h([0-9A-Fa-f]+);\s*i\s*\+=\s*\d+'h1\)\s*begin\s*_RANDOM\[i(?:\[(\d+):0\])?\]\s*=\s*`RANDOM;\s*end", random_loop, body)
     require(loops == 1, "INITIAL_RANDOM_LOOP")
     body = re.sub(r"\b(\w+)\s*=(?!=)", r"\1 <=", body)
     tree = statement_tree(body); assignments = {name: [] for name in values}
@@ -564,6 +585,108 @@ def _mailbox_policy(rtl, clock, source):
     return fields
 
 
+def retirement_policy(rtl, clock, retire):
+    """Prove the only retirement history is POR-owned, D-set and R-cleared."""
+    un = clean(rtl)
+    dispatch = re.findall(r"\bwire\s+(\w+)\s*=\s*fabric_hostFrames_io_deq_ready\s*&\s*fabric_hostFrames_io_deq_valid\s*;", un)
+    selected = re.findall(r"fabric_hostRetiring\s*<=\s*(\w+)\s*\|\s*~" + re.escape(retire) + r"\s*&\s*fabric_hostRetiring\s*;", un)
+    require(len(selected) == 1 and selected[0] in dispatch, "RETIRE_DISPATCH_ALIAS")
+    dispatch = selected
+    names = {"fabric_hostRetiring", "fabric_hostRetiringBank"}
+    owners = [b for b in always_blocks(rtl) if re.search(r"\bfabric_hostRetiring\s*<=", b)]
+    require(len(owners) == 1 and re.match(r"always\s*@\(posedge\s+" + re.escape(clock) + r"\s+or\s+posedge\s+reset\)", owners[0]), "RETIRE_CLOCK_RESET")
+    expected = ("begin if(reset) begin fabric_hostRetiring<=1'h0;fabric_hostRetiringBank<=2'h0;end else begin "
+                f"fabric_hostRetiring<={dispatch[0]}|~{retire}&fabric_hostRetiring;"
+                f"if({dispatch[0]}) fabric_hostRetiringBank<=fabric_hostFrames_first_bank;end end")
+    body = re.match(r"always\s*@\([^)]*\)\s*(.*)", owners[0], re.S)[1]
+    require(projected_tree(statement_tree(body), names) == projected_tree(statement_tree(expected), names), "RETIRE_STATE_POLICY")
+    forbidden, writers, partial = writer_inventory(rtl)
+    require(not forbidden and not names.intersection(partial), "RETIRE_EXTRA_WRITER")
+    for name, width in (("fabric_hostRetiring", 1), ("fabric_hostRetiringBank", 2)):
+        declarations = re.findall(r"\breg\s+(\[\d+:0\]\s+)?" + name + r"\s*;", un)
+        require(len(declarations) == 1 and (declarations[0].strip() or "[0:0]") == f"[{width-1}:0]", "RETIRE_WIDTH")
+        require(len(re.findall(r"\b" + name + r"\s*<=", un)) == 2, "RETIRE_WRITERS")
+    initial_policy(rtl, {"fabric_hostRetiring": "1'h0", "fabric_hostRetiringBank": "2'h0"}, "reset")
+
+
+def bank_completion_bindings(directory, target, tr, tp, sp, head_pins, command_pins, pairs=None):
+    """Prove the native BD receipt/Control join, including every gate and return."""
+    node=child(target,"bank_completion"); path=node["rtl_path"]
+    require(node["module"]=="FourPhaseFrameCompletion" and node["reset_domain"]=="root" and not node.get("children"),"BANK_COMPLETION_OWNER")
+    rtl=(Path(directory)/(node["module"]+".sv")).read_text(encoding="utf-8")
+    un=clean(rtl)
+    ports={"reset":("input",1),"bank":("input",2),"host":("input",1),"commandAck":("input",1)}
+    ports.update({f"receiptAck_{i}":("input",1) for i in range(4)})
+    ports.update({f"bankAck_{i}":("output",1) for i in range(4)})
+    header=re.search(r"\bmodule\s+FourPhaseFrameCompletion\s*\((.*?)\);",un,re.S)
+    expected_header=",".join(direction+(f"[{width-1}:0]" if width>1 else "")+name
+                             for name,(direction,width) in ports.items())
+    require(header is not None and compact(header[1])==expected_header,"BANK_COMPLETION_PORTS")
+    require(not re.search(r"\b(always\w*|initial|reg|logic)\b",clean(rtl)),"BANK_COMPLETION_CLOCKED_STATE")
+    require("`" not in clean(rtl) and not re.search(r"\b(generate|endgenerate|if|else|for|case|begin|end|function|task|alias|tran\w*|defparam|specify|endspecify|bind)\b",clean(rtl)),"BANK_COMPLETION_SCOPE")
+    cells={c["id"]:c for c in node["primitives"]}
+    expected={"host_ack"+s for s in ("_na","_nb","_or","")} | {f"bank{i}_ack"+s for i in range(4) for s in ("_na","_nb","_or","")} | {f"completion{i}" for i in range(4)}
+    require(len(cells)==len(node["primitives"]) and set(cells)==expected,"BANK_COMPLETION_INVENTORY")
+    instances=re.findall(r"\b(\w+)\s+#\s*\([^;]*?\)\s*(\w+)\s*\([^;]*?\);",clean(rtl),re.S)
+    expected_instances=[(c["model"],c["rtl_path"].rsplit(".",1)[1]) for c in cells.values()]
+    require(Counter(instances)==Counter(expected_instances) and len({n for _,n in instances})==24,
+            "BANK_COMPLETION_INSTANCES")
+    # Every child is parameterized here; no uncontracted plain child may add a driver.
+    plain=re.findall(r"\b(\w+)\s+(\w+)\s*\([^;]*?\);",clean(rtl),re.S)
+    require(plain==[("module",node["module"])],"BANK_COMPLETION_INSTANCES")
+    resolved={}; bindings=[]
+    def cell(identity,model,parameters,inputs,output_port=None):
+        c=cells[identity]
+        require(c["model"]==model and c["parameters"]==parameters and c["reset"]=="reset" and c["reset_domain"]=="root" and c["rtl_path"].startswith(path+"."),"BANK_COMPLETION_CELL:"+identity)
+        instance=c["rtl_path"].rsplit(".",1)[1]
+        p=pins(rtl,instance,model,parameters)
+        require(set(p)==set(inputs)|{"q"} and all(p[k]==compact(v) for k,v in inputs.items()) and re.fullmatch(r"\w+",p["q"]),"BANK_COMPLETION_PINS:"+identity)
+        # A final C-element may directly drive its own declared output port.
+        # Intermediate gates must be internal; no primitive can drive an input
+        # or another bank's output. FIRRTL may eliminate the final wire alias.
+        require((output_port is not None and p["q"]==output_port) or
+                (p["q"] not in ports and len(re.findall(r"\bwire\s+"+re.escape(p["q"])+r"\s*;",un))==1),
+                "BANK_COMPLETION_INTERNAL_OUTPUT:"+identity)
+        require(p["q"] not in resolved.values(),"BANK_COMPLETION_OUTPUT_ALIAS:"+identity)
+        no_other_writers(rtl,p["q"])
+        resolved[identity]=p["q"]
+        for k,v in inputs.items():
+            expression=re.sub(r"(?<![\w'])\b[A-Za-z_]\w*\b",lambda m:path+"."+m[0],v)
+            bindings.append((c["rtl_path"]+"."+k,"("+expression+")"))
+        bindings.append((c["rtl_path"]+".q",path+"."+p["q"]))
+        return p["q"]
+    def and_gate(identity,a,b):
+        def gate(name,op,rv,x,y="1'h0"):
+            return cell(name,"ChiselAsyncControlGate_v1",dict(WIDTH="1",OP=str(op),DELAY_FS="1000000",RESET_VALUE=str(rv)),dict(reset="reset",a=x,b=y))
+        na=gate(identity+"_na",1,1,a); nb=gate(identity+"_nb",1,1,b)
+        either=gate(identity+"_or",2,1,na,nb)
+        return gate(identity,1,0,either)
+    active=and_gate("host_ack","commandAck","host")
+    for i in range(4):
+        selected=and_gate(f"bank{i}_ack",active,f"bank==2'h{i}" if i<3 else "&bank")
+        q=cell(f"completion{i}","ChiselAsyncAsymmetricC_v1",
+               dict(COMMON="2",COMMON_INVERT="0",DELAY_FS="1000000",FALLING="0",FALLING_INVERT="0",RESET_VALUE="0",RISING="0",RISING_INVERT="0"),
+               dict(reset="reset",common="{"+f"receiptAck_{i},"+selected+"}",rising="1'h1",falling="1'h0"),output_port=f"bankAck_{i}")
+        if q!=f"bankAck_{i}": driver(rtl,f"bankAck_{i}",q)
+        bindings.append((path+f".bankAck_{i}",path+"."+q))
+    cp=pins(tr,path.rsplit(".",1)[1],node["module"])
+    expected_pins=dict(reset="reset",bank="frameCommandBank",host="frameCommandHost",commandAck="frameCommandAck")
+    for i,hp in enumerate(head_pins):
+        expected_pins[f"receiptAck_{i}"]=hp["in_ack"]
+        expected_pins[f"bankAck_{i}"]=sp[f"banks_{i}_ack"]
+    require(len({expected_pins[f"{kind}_{i}"] for kind in ("receiptAck","bankAck") for i in range(4)})==8,
+            "BANK_COMPLETION_PARENT_ALIAS")
+    require(cp==expected_pins,"BANK_COMPLETION_PARENT_PINS")
+    require(tp.get("frameCommandBank")=="fabric_hostRetiringBank" and
+            tp.get("frameCommandAck")==command_pins["out_ack"] and
+            tp.get("frameCommandHost")=="_ca_child_i2c_frameCommandHost_T","BANK_COMPLETION_SOURCE")
+    for p in cp.values(): no_other_writers(tr,p)
+    if pairs is not None:
+        pairs.extend(bindings)
+        pairs.extend((path+"."+k,target["rtl_path"]+"."+v) for k,v in cp.items())
+    return node
+
+
 def native_bank_integration(directory, root, target, store, heads, tr, sr, sp, rp, tp, gate, pairs, inline=False, coordinated=False):
     """Close borrowed input, physical bank heads and selected D command routing."""
     top = root["rtl_path"]; t = target["rtl_path"]; st = store["rtl_path"]
@@ -594,26 +717,40 @@ def native_bank_integration(directory, root, target, store, heads, tr, sr, sp, r
             cp.get("in_valid") == "fabric_io_controlCommand_valid" and
             cp.get("in_ready") == "_ca_child_control_command_bridge_in_ready" and
             cp.get("in_bits_kind") == "fabric_io_controlCommand_bits_kind", "COMMAND_CONTROL_PINS")
+    control = child(root, "control")
+    np = pins(sr, control["rtl_path"].rsplit(".", 1)[1], control["module"])
+    require(not any("frame" in name for name in cp), "COMMAND_DUPLICATE_FRAME")
+    for name in ("kind", "cpuResetActive", "programBusy", "memory_operation", "memory_address", "memory_data", "memory_mask", "peripheralData", "applicationWritable"):
+        require(cp.get("out_bits_" + name) == np.get("command_bits_" + name), "COMMAND_HEADER_ALIAS:" + name)
+        no_other_writers(sr, cp["out_bits_" + name])
+        pairs.append((command["rtl_path"] + ".out_bits_" + name, control["rtl_path"] + ".command_bits_" + name))
+    require(cp.get("out_req") == np.get("command_req") and cp.get("out_ack") == np.get("command_ack"), "COMMAND_NATIVE_HANDSHAKE")
+    arrays = frame_arrays(sr)
+    valid_array = arrays["valid"]
+    mask = "_ca_child_control_command_bits_frame_T" if click else "_ca_child_i2c_frameCommandHost_T"
     expected = {
         "fabric_mmioLaunch": "fabric__mmioLaunch_T&fabric_cpuAvailable&~fabric_hostFrames_io_deq_valid",
-        "fabric_hostHeadValid": "fabric_hostFrames_io_deq_valid&_GEN_12[fabric_hostFrames_first_bank]",
-        "fabric__io_i2c_heads_0_ready_T": gate + "&fabric_hostFrames_io_deq_ready" if gate != "1'h1" else "fabric_hostFrames_io_deq_ready",
-        "fabric_controlBusy": "fabric_controlOutstanding|_ca_child_program_stored_bridge_out_valid|fabric_mmioCommitPending|fabric_resetPending|fabric_haltPending|fabric_hostFrames_io_deq_valid",
+        "fabric_hostHeadValid": "fabric_hostFrames_io_deq_valid&" + valid_array + "[fabric_hostFrames_first_bank]&(~fabric_hostRetiring|fabric_hostRetire)",
+        "fabric__io_i2c_heads_0_ready_T": (gate + "&" if gate != "1'h1" else "") + ("fabric_hostRetiring" if click else "fabric_hostFrames_io_deq_ready"),
+        "fabric_controlBusy": "fabric_controlOutstanding|fabric_hostRetiring|_ca_child_program_stored_bridge_out_valid|fabric_mmioCommitPending|fabric_resetPending|fabric_haltPending|fabric_hostFrames_io_deq_valid",
         "fabric_io_controlCommand_valid": "~fabric_controlOutstanding&(_ca_child_program_stored_bridge_out_valid|fabric_mmioCommitPending|fabric_resetPending|" + halt + "|fabric_hostHeadValid|fabric_mmioLaunch)",
         "fabric__27": "fabric_mmioCommitPending&~_ca_child_program_stored_bridge_out_valid",
-        "_GEN_50": "fabric__27|~fabric_hostFrames_io_deq_valid",
+        "fabric_hostRetire": "fabric_hostRetiring&_ca_child_control_command_bridge_in_ready" + ("&" + gate if gate != "1'h1" else "") + ("&_GEN_13" if click else ""),
+        mask: "_ca_child_control_command_bridge_out_bits_kind==3'h0",
         "fabric_io_controlCommand_bits_kind": "fabric__27?3'h5:_ca_child_program_stored_bridge_out_valid?3'h1:fabric_mmioCommitPending?3'h5:fabric_resetPending?3'h2:" + halt + "?3'h3:{~fabric_hostHeadValid,2'h0}",
     }
+    if click: expected["_GEN_13"] = valid_array + "[fabric_hostRetiringBank]"
     for name, expression in expected.items():
         driver(sr, spell(name), spell(expression))
         pairs.append((top + "." + name, "(" + qualify(expression) + ")"))
-    banks = []
+    banks = []; head_pins = []
     for i, head in enumerate(heads):
         actual, _ = actual_receipt_rtl(head, directory, tr)
         hp = pins(tr, head["rtl_path"].rsplit(".", 1)[1], actual)
+        head_pins.append(hp)
         require(hp.get("clock") == "clock" and hp.get("reset") == "reset", "HEAD_CLOCK_RESET:" + str(i))
         pairs += [(head["rtl_path"] + ".clock", top + ".serviceClock"), (head["rtl_path"] + ".reset", top + ".reset")]
-        for suffix in ["req", "ack"] + ["bits_" + leaf(f) for f, _, _ in FIELDS]:
+        for suffix in (["req", "ack"] if click else ["req"]) + ["bits_" + leaf(f) for f, _, _ in FIELDS]:
             require(hp.get("in_" + suffix) == sp.get(f"banks_{i}_" + suffix) and
                     re.fullmatch(r"\w+", hp.get("in_" + suffix, "")), "BANK_HEAD_PIN:" + str(i) + ":" + suffix)
             no_other_writers(tr, hp["in_" + suffix])
@@ -623,8 +760,9 @@ def native_bank_integration(directory, root, target, store, heads, tr, sr, sp, r
             require(hp.get("out_" + suffix) == out_net, "HEAD_OUTPUT_PIN:" + str(i) + ":" + suffix)
             if suffix != "ready": no_other_writers(tr, out_net)
             if suffix == "ready":
-                selected = f"fabric_hostFrames_first_bank==2'h{i}" if i < 3 else "(&fabric_hostFrames_first_bank)"
-                expression = "fabric__io_i2c_heads_0_ready_T&fabric_hostFrames_io_deq_valid&" + selected
+                selector = "fabric_hostRetiringBank" if click else "fabric_hostFrames_first_bank"
+                selected = f"{selector}==2'h{i}" if i < 3 else f"(&{selector})"
+                expression = "fabric__io_i2c_heads_0_ready_T&" + ("_ca_child_control_command_bridge_in_ready&_GEN_13&" if click else "fabric_hostFrames_io_deq_valid&") + selected
             elif suffix in ("bits_ingress_resetActive", "bits_ingress_programBusy"):
                 # Context comes from the A descriptor, but the full receipt ABI
                 # remains present and directly bound through the target port.
@@ -648,23 +786,26 @@ def native_bank_integration(directory, root, target, store, heads, tr, sr, sp, r
                           data="{" + ",".join(fields) + "}", payload=payload, d=payload + ".d", q=payload + ".q",
                           capture=payload + (".trigger" if click else ".closed"), copy_ack=st + ".in_ack"))
     # Exact packed arrays feed one selected head; no byte/epoch truncation or permutation.
-    selected_fields = [("valid", 12)] + [("bits_ingress_frame_length", 13), ("bits_ingress_frame_overflow", 14)] + [
-        (f"bits_ingress_frame_bytes_{i}", 15 + i) for i in range(33)] + [("bits_resetEpoch", 48)]
-    for field, number in selected_fields:
+    if not click: bank_completion_bindings(directory, target, tr, tp, sp, head_pins, cp, pairs)
+    for field, name in arrays.items():
         expression = "{" + ",".join("{" + f"_ca_child_i2c_host_heads_{i}_" + field + "}" for i in reversed(range(4))) + "}"
-        driver(sr, f"_GEN_{number}", expression)
-        pairs.append((top + f"._GEN_{number}", qualify(expression)))
-    driver(sr, "fabric_io_controlCommand_bits_frame_bytes_0", "_GEN_50?8'h0:_GEN_15[fabric_hostFrames_first_bank]")
-    command_fields = [("length", 6, 13), ("overflow", 1, 14)] + [(f"bytes_{i}", 8, 15 + i) for i in range(33)]
-    for field, width, number in command_fields:
-        select = f"_GEN_{number}[fabric_hostFrames_first_bank]"
-        expression = ("fabric_io_controlCommand_bits_frame_bytes_0" if field == "bytes_0" else
-                      "~fabric__27&fabric_hostFrames_io_deq_valid&" + select if field == "overflow" else
-                      f"_GEN_50?{width}'h0:" + select)
-        require(cp.get("in_bits_frame_" + field) == spell(expression), "COMMAND_FRAME_PIN:" + field)
-        pairs.append((command["rtl_path"] + ".in_bits_frame_" + field, "(" + qualify(expression) + ")"))
+        pairs.append((top + "." + name, qualify(expression)))
+    driver(sr, "fabric_io_controlCommand_bits_frame_bytes_0", spell("fabric__27|~fabric_hostFrames_io_deq_valid?8'h0:" + arrays["bits_ingress_frame_bytes_0"] + "[fabric_hostFrames_first_bank]"))
+    command_fields = [("length", 6), ("overflow", 1)] + [(f"bytes_{i}", 8) for i in range(33)]
+    for field, width in command_fields:
+        select = arrays["bits_ingress_frame_" + field] + "[fabric_hostRetiringBank]"
+        expression = (mask + "&" + select if field == "overflow" else
+                      f"{mask}?{select}:{width}'h0")
+        require(np.get("command_bits_frame_" + field) == expression, "BORROWED_FRAME_PIN:" + field)
+        pairs.append((control["rtl_path"] + ".command_bits_frame_" + field, "(" + qualify(expression) + ")"))
+    # Portable exports retain the workClock alias at bridge pins while Services
+    # state uses fabric_clock. Prove the direct alias before auditing its owner.
+    owner_clock = spell("fabric_clock")
+    if cp["clock"] != owner_clock:
+        driver(sr, owner_clock, cp["clock"])
+    retirement_policy(sr, owner_clock, "fabric_hostRetire")
     for field, expression in {
-        "cpuResetActive": "~fabric__27&(" + context_reset + "|fabric_hostFrames_io_deq_valid&(fabric_hostFrames_first_resetActive|_GEN_48[fabric_hostFrames_first_bank]!=_ca_child_i2c_host_currentEpoch))",
+        "cpuResetActive": "~fabric__27&(" + context_reset + "|fabric_hostFrames_io_deq_valid&(fabric_hostFrames_first_resetActive|" + arrays["bits_resetEpoch"] + "[fabric_hostFrames_first_bank]!=_ca_child_i2c_host_currentEpoch))",
         "programBusy": "~fabric__27&(_ca_child_program_access_io_busy|fabric_hostFrames_io_deq_valid&fabric_hostFrames_first_programBusy)"}.items():
         require(cp.get("in_bits_" + field) == spell(expression), "COMMAND_CONTEXT_PIN:" + field)
         pairs.append((command["rtl_path"] + ".in_bits_" + field, "(" + qualify(expression) + ")"))
@@ -686,8 +827,9 @@ def validate_frame_integration(manifest, scopes, directory):
     store = child(target, "frame_store")
     heads = [child(target, f"frame_head{i}_bridge") for i in range(4)]
     ids = [c["id"] for c in target["children"]]
-    require(len(ids) == 8 and set(ids) == {"native", "frame_bridge", "frame_store", "snapshot_bridge"} |
-            {f"frame_head{i}_bridge" for i in range(4)}, "TARGET_INVENTORY")
+    click = validate_frame_receipt(receipt)
+    expected_children = {"native", "frame_bridge", "frame_store", "snapshot_bridge"} | {f"frame_head{i}_bridge" for i in range(4)} | (set() if click else {"bank_completion"})
+    require(len(ids) == len(expected_children) and set(ids) == expected_children, "TARGET_INVENTORY")
     publication = child(native, "publication"); snapshot = child(target, "snapshot_bridge")
     click = validate_frame_receipt(receipt); prefix = "Click" if click else "FourPhase"
     completion, completion_parameters = completion_metadata(target, click)

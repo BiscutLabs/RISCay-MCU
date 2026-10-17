@@ -23,7 +23,7 @@ from check_i2c_wiring_controls import hashes
 from check_program_return_fatals import fatal_sites, classify_fatal
 from check_admission_controls import replace_pin
 from check_frame_integration import (_mailbox_policy, child, pins, always_blocks, driver,
-    statement_tree, projected_tree, writer_inventory, initial_policy)
+    statement_tree, projected_tree, writer_inventory, initial_policy, retirement_policy, bank_completion_bindings)
 from check_frame_receipt import actual_receipt_rtl
 from check_frame_store import validate_frame_store
 
@@ -40,6 +40,7 @@ FIXTURES = {'reset3200000','reset20000000','slots3200000','slots20000000','store
             'latecopyrun20000000','latecopystop20000000'}
 LEAVES = [('frame_length', 6), ('frame_overflow', 1)] + [
     ('frame_bytes_' + str(i), 8) for i in range(33)] + [('resetActive', 1), ('programBusy', 1)]
+HEADER = [('kind',3),('cpuResetActive',1),('programBusy',1),('memory_operation',2),('memory_address',32),('memory_data',32),('memory_mask',4),('peripheralData',32),('applicationWritable',1)]
 DESCRIPTOR = [('bank', 2), ('resetActive', 1), ('programBusy', 1)]
 PERIODS_NS = tuple(sorted({50,312.5,1000,1000000} | {
     round(edge+epsilon,3) for edge in (55.5,57,57.5,60,111,114,115,120,125)
@@ -89,14 +90,15 @@ def actual_model(source, parent, node):
 
 
 def command_capture_policy(rtl, click):
-    """Close every final frame/context register's reset and sole dynamic load."""
+    """Close the metadata bank; no frame bit may remain in this sender."""
     text=clean(rtl)
-    fields=[(name if name!='resetActive' else 'cpuResetActive',width) for name,width in LEAVES]
+    fields=HEADER
+    require('frame_' not in text,'COMMAND_DUPLICATE_FRAME')
     # The complete enabled load block must capture all command fields together.
     load=r'if\s*\(_in_ready_T\s*&\s*_GEN\)\s*begin'
     loads=list(re.finditer(load+r'(.*?)\bend\b',text,re.S))
     require(len(loads)==1,'COMMAND_CAPTURE_ENABLE')
-    owners=[block for block in always_blocks(rtl) if re.search(r'\bdata_frame_length\s*<=',block)]
+    owners=[block for block in always_blocks(rtl) if re.search(r'\bdata_kind\s*<=',block)]
     require(len(owners)==1 and re.match(r'always\s*@\(posedge\s+clock\s+or\s+posedge\s+localReset_release_1\)',owners[0]),
             'COMMAND_CAPTURE_CLOCK_RESET')
     owner=owners[0]
@@ -126,13 +128,18 @@ def fixture_masks_policy(rtl, target_pins, command_pins):
     require(target_pins['frameAcceptEnable']=='enabled&~holdFrame','FIXTURE_A_ENABLE')
     require(command_pins['in_valid']=='fabric_io_controlCommand_valid&~holdHostCommands','FIXTURE_COMMAND_VALID')
     driver(rtl,'fabric_io_controlCommand_ready','_ca_child_control_command_bridge_in_ready & ~holdHostCommands')
-    driver(rtl,'fabric__io_i2c_heads_0_ready_T','enabled & fabric_hostFrames_io_deq_ready')
+    joined='frameCommandBank' in target_pins
+    driver(rtl,'fabric__io_i2c_heads_0_ready_T','enabled & '+('fabric_hostFrames_io_deq_ready' if joined else 'fabric_hostRetiring'))
+    if not joined: driver(rtl,'_GEN_16','_GEN_15[fabric_hostRetiringBank]')
+    driver(rtl,'fabric_hostRetire','fabric_hostRetiring & _ca_child_control_command_bridge_in_ready & enabled'+('' if joined else ' & _GEN_16'))
     for index in range(4):
         ready=f'ca_child_i2c_host_heads_{index}_ready'
         require(target_pins[f'host_heads_{index}_ready']==ready,'FIXTURE_HEAD_READY_PIN')
         driver(rtl,f'fabric_io_i2c_heads_{index}_valid',f'_ca_child_i2c_host_heads_{index}_valid & ~holdSelectedHead')
-        select=f"fabric_hostFrames_first_bank == 2'h{index}" if index<3 else '(&fabric_hostFrames_first_bank)'
-        driver(rtl,ready,'fabric__io_i2c_heads_0_ready_T & fabric_hostFrames_io_deq_valid & '+select+' & ~holdSelectedHead')
+        bank='fabric_hostFrames_first_bank' if joined else 'fabric_hostRetiringBank'
+        select=f"{bank} == 2'h{index}" if index<3 else f'(&{bank})'
+        condition='fabric_hostFrames_io_deq_valid' if joined else '_ca_child_control_command_bridge_in_ready & _GEN_16'
+        driver(rtl,ready,'fabric__io_i2c_heads_0_ready_T & '+condition+' & '+select+' & ~holdSelectedHead')
     require(len(re.findall(r'\bholdFrame\b',text))==2,'FIXTURE_A_EXTRA_MASK')
     require(len(re.findall(r'\bholdSelectedHead\b',text))==9,'FIXTURE_HEAD_EXTRA_MASK')
     require(len(re.findall(r'\bholdHostCommands\b',text))==3,'FIXTURE_COMMAND_EXTRA_MASK')
@@ -195,7 +202,17 @@ def bindings(source):
     require(tp['clock']=='serviceClock' and tp['reset']=='reset','ORIGINAL_RECEIPT_ACTUAL_CLOCK_RESET')
     command_fields=command_capture_policy(cr,variant=='click')
     initial_policy(cr,{'data_'+name:f"{width}'h0" for name,width in command_fields},'localReset_release_1')
-    fixture_masks_policy(rtl,tp,cp)
+    fixture_masks_policy((source / (top + ".sv")).read_text(encoding="utf-8"),tp,cp)
+    retirement_policy((source / (top + ".sv")).read_text(encoding="utf-8"),cp["clock"],"fabric_hostRetire")
+    if variant=='bd':
+        bank_completion_bindings(source,target,tr,tp,sp,[actual_model(source,tr,h)[2] for h in heads],cp)
+        driver(rtl,'_ca_child_i2c_frameCommandHost_T',cp['out_bits_kind']+"==3'h0")
+    control=child(manifest['design'],'control');join=child(control,'join');right=child(join,'right_storage' if variant=='click' else 'right')
+    capture=[p for p in right['primitives'] if p['id']=='payload']
+    require(len(capture)==1 and capture[0]['parameters']['WIDTH']=='379' and
+            capture[0]['model']==('ChiselAsyncEventRegister_v1' if variant=='click' else 'ChiselAsyncClosingLatch_v1'), 'NATIVE_COMMAND_STORAGE')
+    capture=capture[0]
+
     # Resolve physical bank payload primitives independently of fixture outputs.
     banks=[]
     available_endpoints=[e for e in store['endpoints'] if e['id']=='available' and e['width']==4]
@@ -208,7 +225,7 @@ def bindings(source):
         require(len(found)==1 and found[0]['parameters']['WIDTH']=='337','BANK_PAYLOAD:'+str(i))
         cell=found[0]; expected='ChiselAsyncEventRegister_v1' if variant=='click' else 'ChiselAsyncClosingLatch_v1'
         require(cell['model']==expected,'BANK_MODEL:'+str(i))
-        for leaf in ('req','ack'):
+        for leaf in (('req','ack') if variant=='click' else ('req',)):
             require(hp['in_'+leaf]==sp[f'banks_{i}_{leaf}'],'BANK_HEAD_PIN:'+str(i)+':'+leaf)
         banks.append(dict(index=i,node=owner,owner_model=owner_model,cell=cell,path=path(cell['rtl_path']),
                           q=path(cell['rtl_path'])+'.q',d=path(cell['rtl_path'])+'.d',
@@ -238,7 +255,7 @@ def bindings(source):
                 route_q=path(route[0]['rtl_path'])+'.q',route_d=path(route[0]['rtl_path'])+'.d',
                 route_capture=path(route[0]['rtl_path'])+'.trigger',
                 store=store,store_model=store_model,store_path=path(store['rtl_path']),banks=banks,
-                command=command,command_model=command_model,command_path=path(command['rtl_path']),command_fields=command_fields)
+                command=command,command_model=command_model,command_path=path(command['rtl_path']),command_fields=command_fields,control_path=path(control['rtl_path']),native_capture=path(capture['rtl_path'])+('.trigger' if variant=='click' else '.closed'),native_d=path(capture['rtl_path'])+'.d',native_q=path(capture['rtl_path'])+'.q',capture_node=capture,bank_completion=child(target,'bank_completion') if variant=='bd' else None)
 
 
 def monitors(b):
@@ -246,8 +263,10 @@ def monitors(b):
     store,command=b['store_path'],b['command_path']
     descriptor=lambda slot:'{'+','.join('Testbench.dut.fabric_hostFrames_'+slot+'_'+name for name,_ in DESCRIPTOR)+'}'
     incoming='{'+','.join(qualify(b['frame_d'][name]) for name,_ in DESCRIPTOR)+'}'
-    command_data=lambda prefix:'{'+','.join(command+'.'+prefix+(name if name!='resetActive' else 'cpuResetActive') for name in
-        ['frame_length','frame_overflow']+['frame_bytes_'+str(i) for i in reversed(range(33))]+['resetActive','programBusy'])+'}'
+    control=b['control_path']
+    # D observes the current descriptor. Native capture observes the separately
+    # retained retiring bank, with dispatch-time context from the header sender.
+    command_data=lambda prefix: ('{bank_q[first_q[3:2]][336:66],' + command + '.in_bits_cpuResetActive,' + command + '.in_bits_programBusy}') if prefix=='in_bits_' else ('{'+control+'.command_bits_frame_length,'+control+'.command_bits_frame_overflow,'+','.join(control+'.command_bits_frame_bytes_'+str(i) for i in reversed(range(33)))+','+command+'.data_cpuResetActive,'+command+'.data_programBusy}')
     bank_wires='\n'.join(f"wire [336:0] bank_q_{i}={v['q']};wire [336:0] bank_d_{i}={v['d']};" for i,v in enumerate(b['banks']))
     bank_select=lambda leaf:'{'+','.join(v[leaf] for v in reversed(b['banks']))+'}'
     native_phases=bank_select('phase') if b['variant']=='click' else "4'b0"
@@ -273,12 +292,13 @@ wire observed_reset_now=native_payload[65] || {target}.host_resetActive ||
 wire observed_busy_now=native_payload[64] || Testbench.dut.ca_child_program_access.io_busy ||
   Testbench.dut.fabric_loaderPending || Testbench.dut.fabric_loaderControlPending ||
   ({command}.in_valid && {command}.in_ready && {command}.in_bits_kind==0 &&
-   {command}.in_bits_frame_bytes_0>=1 && {command}.in_bits_frame_bytes_0<=6);
+   bank_q[first_q[3:2]][73:66]>=1 && bank_q[first_q[3:2]][73:66]<=6);
 // Context is sampled at original A; no copy-completion condition delays A.
 wire expected_reset=observed_reset_now;
 wire expected_busy=observed_busy_now;
 wire [272:0] independently_expected={{native_payload[336:66],expected_reset,expected_busy}};
 wire [272:0] command_d={command_data('in_bits_')},command_q={command_data('data_')};
+wire [107:0] header_d={{{','.join(command+'.in_bits_'+name for name,width in HEADER)}}};
 wire command_fire={command}.in_valid && {command}.in_ready && {command}.in_bits_kind==0;
 wire [63:0] epoch_now={target}.resetEpoch_epoch + ({target}.host_resetActive && !{target}.resetEpoch_previous);
 reg [336:0] expected_native[0:3];reg [272:0] expected_context[0:3];
@@ -291,6 +311,28 @@ integer copies=0,copy_before_accept=0,accept_before_copy=0;
 reg [3:0] expected_first,expected_second;
 reg [1:0] expected_count;
 reg [272:0] expected_command;
+reg command_pending=0;reg [1:0] command_bank=0;integer native_commands=0,retired_commands=0;
+reg [3:0] native_captured_banks=0,returned_command_banks=0;
+always @(negedge {command}.out_ack) if(!Testbench.reset && {"1'b0" if b['variant']=='click' else "1'b1"} && {command}.out_bits_kind==0) begin
+ if(!command_pending || !native_captured_banks[command_bank] || {command}.out_req)
+   $fatal(1,"{PREFIX}_COMMAND_RETURN_ORDER");
+ returned_command_banks[command_bank]=1;
+end
+wire [3:0] head_fire={{{','.join(v['receipt_path']+'.out_valid && '+v['receipt_path']+'.out_ready' for v in reversed(b['banks']))}}};
+reg [378:0] native_expected,expected_full;
+time native_changed_at=0,native_captured_at=0;
+reg native_captured=0;
+always @({b['native_d']}) if(!Testbench.reset) begin
+ if(native_captured && $time-native_captured_at<=100000) $fatal(1,"{PREFIX}_COMMAND_NATIVE_HOLD");
+ native_changed_at=$time;
+end
+always @(posedge {b['native_capture']}) if(!Testbench.reset && {b['native_d']}[378:376]==0) begin
+ if(!command_pending || $time-native_changed_at<=100000 || {b['native_d']}!==expected_full)
+   $fatal(1,"{PREFIX}_COMMAND_NATIVE_D_IDENTITY");
+ native_expected=expected_full;native_captured_at=$time;native_captured=1;native_commands=native_commands+1;
+ native_captured_banks[command_bank]=1;
+ #10000001;if({b['native_q']}!==native_expected) $fatal(1,"{PREFIX}_COMMAND_NATIVE_Q_CAPTURE");
+end
 reg expected_ack,had_enq,had_deq,expected_meta,expected_sync;
 integer accepts=0,dispatches=0,offers=0,first_writes=0,second_writes=0,shifts=0,simultaneous=0,stopped_edges=0;
 integer context_post_edge_changes=0,next_offer=0,next_accept=0,lifetime_accepts=0,lifetime_offers=0,third_next_checks=0,reuse_offer_checks=0,i;
@@ -305,7 +347,7 @@ time minimum_source_hold=64'hffffffffffffffff,minimum_payload_hold=64'hfffffffff
 time minimum_third_next_margin=64'hffffffffffffffff,minimum_reuse_offer_margin=64'hffffffffffffffff;
 reg source_seen=0,admission_seen=0,previous_ack=0;
 always @(posedge Testbench.reset) begin
- admission_seen=0;source_seen=0;previous_ack=0;live=0;offered_banks=0;copied_banks=0;copy_pending=0;route_generation=0;bank_retired=0;next_offer=0;next_accept=0;lifetime_accepts=0;lifetime_offers=0;
+ admission_seen=0;source_seen=0;previous_ack=0;live=0;offered_banks=0;copied_banks=0;copy_pending=0;route_generation=0;bank_retired=0;next_offer=0;next_accept=0;lifetime_accepts=0;lifetime_offers=0;command_pending=0;native_captured=0;native_commands=0;retired_commands=0;native_captured_banks=0;returned_command_banks=0;
  for(i=0;i<4;i=i+1) begin offered_generation[i]=0;captured_generation[i]=0;copied_generation[i]=0;end
 end
 initial for(i=0;i<4;i=i+1) begin bank_accepts[i]=0;bank_dispatches[i]=0;bank_ready_at[i]=0;bank_ones[i]=0;bank_zeroes[i]=0;end
@@ -380,7 +422,19 @@ always @(posedge {b['clock']}) if(!Testbench.reset) begin
  expected_ack={'~'+receipt+'.acknowledge' if b['variant']=='click' else "1'b1"};
  if(receipt_fire!==enq) $fatal(1,"{PREFIX}_ADMISSION_IDENTITY");
  if(command_fire!==deq) $fatal(1,"{PREFIX}_DISPATCH_IDENTITY");
+ if({"1'b1" if b['variant']=='bd' else "1'b0"} && head_fire!==(deq ? (4'b1 << first_q[3:2]) : 4'b0))
+  $fatal(1,"{PREFIX}_HEAD_CAPTURE_IDENTITY");
+ if(Testbench.dut.fabric_hostRetire) begin
+  if(!command_pending || !{command}.in_ready || ({"1'b1" if b['variant']=='click' else "1'b0"} && head_fire!==(4'b1 << command_bank)) || native_commands!=retired_commands+1)
+    $fatal(1,"{PREFIX}_COMMAND_EARLY_OR_WRONG_RETIRE");
+  if({"1'b1" if b['variant']=='click' else "1'b0"}) begin
+   live[command_bank]=0;offered_banks[command_bank]=0;bank_retired[command_bank]=1;bank_retired_at[command_bank]=$time;native_captured_banks[command_bank]=0;
+  end
+  command_pending=0;retired_commands=retired_commands+1;
+ end
  if(deq) begin
+  if(command_pending) $fatal(1,"{PREFIX}_COMMAND_RETIRE_TAG_OVERWRITE");
+  command_pending=1;command_bank=first_q[3:2];
   if(!live[first_q[3:2]]) $fatal(1,"{PREFIX}_DISPATCH_WITHOUT_LIVE_BANK");
   if(!copied_banks[first_q[3:2]] || copied_generation[first_q[3:2]]!=offered_generation[first_q[3:2]])
     $fatal(1,"{PREFIX}_DISPATCH_BEFORE_COPY_COMPLETION");
@@ -388,7 +442,7 @@ always @(posedge {b['clock']}) if(!Testbench.reset) begin
   expected_command[1]=expected_command[1] || Testbench.dut.cpuResetActive || expected_native[first_q[3:2]][63:0]!=epoch_now;
   expected_command[0]=expected_command[0] || Testbench.dut.ca_child_program_access.io_busy;
   if(command_d!==expected_command || bank_q[first_q[3:2]]!==expected_native[first_q[3:2]]) $fatal(1,"{PREFIX}_COMMAND_D_IDENTITY");
-  live[first_q[3:2]]=0;offered_banks[first_q[3:2]]=0;bank_retired[first_q[3:2]]=1;bank_retired_at[first_q[3:2]]=$time;
+  expected_full={{header_d[107:105],expected_command,header_d[102:0]}};
   dispatches=dispatches+1;bank_dispatches[first_q[3:2]]=bank_dispatches[first_q[3:2]]+1;
  end
  if(enq) begin
@@ -436,6 +490,15 @@ end
 '''
     for i,bank in enumerate(b['banks']):
         owned=f"({bank['req']} != {bank['ack']})" if b['variant']=='click' else f"({bank['req']} || {bank['ack']})"
+        if b['variant']=='bd':
+            result+=f'''
+always @(negedge {bank['ack']}) if(!Testbench.reset) begin
+ if(!live[{i}] || !native_captured_banks[{i}] || !returned_command_banks[{i}] || {bank['receipt_path']}.in_ack || {bank['req']})
+   $fatal(1,"{PREFIX}_BANK{i}_RETURN_BEFORE_CAPTURE");
+ live[{i}]=0;offered_banks[{i}]=0;native_captured_banks[{i}]=0;returned_command_banks[{i}]=0;
+ bank_retired[{i}]=1;bank_retired_at[{i}]=$time;
+end
+'''
         result+=f'''
 always @(posedge {bank['available']}) bank_ready_at[{i}]=$time;
 time bank_data_change_{i}=0,bank_capture_time_{i}=0;reg bank_captured_{i}=0;
@@ -464,7 +527,20 @@ always @({bank['q']}) if(!Testbench.reset) begin
 end
 always @(posedge Testbench.reset) bank_captured_{i}=0;
 '''
+    if b['variant']=='bd':
+        result+=f'''
+always @({b['native_d']} or {control}.command_req or {control}.command_ack)
+ if(!Testbench.reset && {control}.command_bits_kind==0 && ({control}.command_req || {control}.command_ack))
+  if(!command_pending || {b['native_d']}!==expected_full) $fatal(1,"{PREFIX}_COMMAND_FULL_RTZ_HOLD");
+'''
     result+=f'''
+task finish_drained;
+begin
+ if(native_commands!=dispatches || retired_commands!=dispatches || command_pending || live)
+   $fatal(1,"{PREFIX}_COMMAND_FINAL_RETIREMENT");
+ $display("{PREFIX}_COMMAND_COUNTS:%0d:%0d:%0d",dispatches,native_commands,retired_commands);
+end
+endtask
 task finish_checks;
 integer k;
 begin
@@ -557,6 +633,7 @@ def skew(test, b, profile):
     # Never change fixed request/output guards or the explicit 10 ns data
     # budget. Oppose variable storage propagation against control feedback.
     family=[('publisher',b['publisher'])]+[('bank',n) for n in nodes(b['store'])]
+    if b.get('bank_completion'): family.append(('bank',b['bank_completion']))
     for owner,p in [(owner,p) for owner,n in family for p in n['primitives']]:
         if p['parameters'].get('DELAY_FS') != '1000000':
             continue
@@ -798,6 +875,7 @@ endmodule
   release {b['target_path'].replace('Testbench.','')}.resetEpoch_epoch;
   if(frame_capture_checks.accepts!={frame_count} || frame_capture_checks.dispatches!={frame_count} || epoch_checks!={epoch_bits*4})
     $fatal(1,"FRAME_INPUT_CONTINUOUS_COUNTS");
+  frame_capture_checks.finish_drained();
   $display("FRAME_INPUT_CONTINUOUS:{walk_bits}:4:{walk_bits*2}:{epoch_bits*4}:{frame_count}");
   $display("RISCAY_SOC_PASS");$finish;
 end
@@ -831,12 +909,16 @@ endmodule
   wait(frame_capture_checks.accepts==32);ring_draining=1;holdHostCommands=0;
   wait(frame_capture_checks.dispatches==32);{native_return}
   wait(frame_capture_checks.bank_available==4'b1111);
+  // BD's joined native return may finish before the sender synchronizes it.
+  // Drain that existing bookkeeping as well; final D/capture/R equality stays required.
+  wait(!frame_capture_checks.command_pending);
   #2;
   if(ring_late_dispatches!=30 || ring_exact_frontiers!=30 || ring_offers!=32 || ring_accepts!=32 || ring_offer_pending)
     $fatal(1,"FRAME_INPUT_RING_FRONTIER_COUNT");
   for(bit_index=0;bit_index<4;bit_index=bit_index+1)
     if(frame_capture_checks.bank_accepts[bit_index]!=8 || frame_capture_checks.bank_dispatches[bit_index]!=8)
       $fatal(1,"FRAME_INPUT_RING_ROTATIONS");
+  frame_capture_checks.finish_drained();
   $display("FRAME_INPUT_RING:32:4:8:%0d:%0d",ring_late_dispatches,ring_exact_frontiers);
   $display("RISCAY_SOC_PASS");$finish;
 end
@@ -893,6 +975,18 @@ endmodule
     return result
 
 
+def return_fault_target(b, fault):
+    require(fault in ('bank-return-stuck','bank-unavailable-at-o'),'MUTATION_RETURN_KIND')
+    if b['variant']=='bd' and fault=='bank-unavailable-at-o':
+        # Receipt ACK alone no longer returns the bank. Corrupt the actual
+        # native completion state, leaving the distinct receipt-stall fault intact.
+        completion=[p for p in b['bank_completion']['primitives'] if p['id']=='completion0']
+        require(len(completion)==1 and completion[0]['model']=='ChiselAsyncAsymmetricC_v1',
+                'MUTATION_COMPLETION_STATE')
+        return 'Testbench.dut.'+completion[0]['rtl_path'].split('.',1)[1]+'.q'
+    return b['banks'][0]['receipt_path']+'.acknowledge'
+
+
 def mutate(case, b, fault):
     """An isolated real RTL defect; monitors and original oracles are unchanged."""
     top = case / (b['top'] + '.sv')
@@ -934,7 +1028,7 @@ def mutate(case, b, fault):
     if fault in ('bank-return-stuck','bank-unavailable-at-o'):
         bench=case/'testbench.sv';text=bench.read_text(encoding='utf-8')
         marker='endmodule';position=text.rfind(marker)
-        acknowledge=b['banks'][0]['receipt_path']+'.acknowledge'
+        acknowledge=return_fault_target(b,fault)
         value="1'b0" if b['variant']=='click' else "1'b1"
         wait_for="bank_dispatches[0]==1" if fault=="bank-return-stuck" else "lifetime_accepts==4"
         injected=f"initial begin wait({wait_for});#1;force {acknowledge}={value};end\n"
@@ -1024,12 +1118,18 @@ def mutate(case, b, fault):
         text=omit_same_edge_busy(text,b['context_busy'])
         top.write_text(text,encoding='utf-8')
         return PREFIX+'_CONTEXT_OR_DATA'
-    if fault=='command-capture':
-        path=case/(b['command_model']+'.sv');text=path.read_text(encoding='utf-8')
-        old='data_frame_bytes_0 <= in_bits_frame_bytes_0;'
-        require(text.count(old)==1,'MUTATION_COMMAND_CAPTURE')
-        path.write_text(text.replace(old,"data_frame_bytes_0 <= in_bits_frame_bytes_0 ^ 8'h1;"),encoding='utf-8')
-        return PREFIX+'_COMMAND_Q_CAPTURE'
+    if fault in ('command-capture','command-header-capture'):
+        cell=b['capture_node'];owner=cell['rtl_path'].rsplit('.',1)[0]
+        node=child(child(child(b['manifest']['design'],'control'),'join'),'right_storage' if b['variant']=='click' else 'right')
+        path=case/(node['module']+'.sv');text=path.read_text(encoding='utf-8')
+        instance=cell['rtl_path'].rsplit('.',1)[1]
+        pin=pins(text,instance,cell['model'],cell['parameters'])['d']
+        text=replace_pin(text,instance,'d',f"({pin}) ^ (379'h1 << {105 if fault=='command-capture' else 1})")
+        path.write_text(text,encoding='utf-8')
+        # BD's complete-RTZ monitor observes the corrupt D as soon as REQ rises,
+        # before the delayed capture event. Keep one exact expected assertion;
+        # Click checks the same injected D corruption at its capture event.
+        return PREFIX+('_COMMAND_FULL_RTZ_HOLD' if b['variant']=='bd' else '_COMMAND_NATIVE_D_IDENTITY')
     if fault=='dispatch-epoch-bit63':
         text=top.read_text(encoding='utf-8')
         pattern=r'(_GEN_\d+\[fabric_hostFrames_first_bank\])\s*!=\s*(_ca_child_i2c_host_currentEpoch)'
@@ -1096,7 +1196,12 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--sources', type=Path, required=True)
     parser.add_argument('--out', type=Path, required=True)
+    parser.add_argument('--variant', choices=('bd', 'click'),
+                        help='Run one complete variant shard; both shards are required for the full campaign.')
+    parser.add_argument('--process-timeout', type=int, default=300,
+                        help='Wall-clock resource bound per compiler/simulator; does not change RTL time or stimulus.')
     args = parser.parse_args()
+    require(args.process_timeout > 0, 'PROCESS_TIMEOUT_ARGUMENT')
     sources = json.loads(args.sources.read_text(encoding='utf-8'))
     require(set(sources) == {'bd', 'click'} and all(isinstance(x, dict) and set(x)==FIXTURES for x in sources.values()), 'SOURCES')
     loaded = {}
@@ -1144,7 +1249,7 @@ def main():
     def run(argv, case, logname):
         commands.append(dict(cwd=str(case), argv=argv, log=logname)); start = time.monotonic()
         try:
-            result = subprocess.run(argv, cwd=case, text=True, capture_output=True, timeout=60)
+            result = subprocess.run(argv, cwd=case, text=True, capture_output=True, timeout=args.process_timeout)
             log = result.stdout + result.stderr
             record = dict(exit_code=result.returncode, timed_out=False)
         except subprocess.TimeoutExpired as error:
@@ -1171,7 +1276,7 @@ def main():
                      continuous_native_banks=continuous,ring_last_legal_D=ring,period_ns=period_ns,
                      synthetic_ring_budget_ns=ring_budget_ns(period_ns) if ring and period_ns is not None else None,
                      forced_epoch_source=(b['target_path']+'.resetEpoch_epoch') if continuous and period_ns is None else None,
-                     forced_return_receipt=(b['banks'][0]['receipt_path']+'.acknowledge') if fault in ('bank-return-stuck','bank-unavailable-at-o') else None,
+                     forced_return_source=return_fault_target(b,fault) if fault in ('bank-return-stuck','bank-unavailable-at-o') else None,
                      actual_epoch_wrap_control=wrap, expected=expected,
                      source_sha256={f: sha(case / f) for f in fixture['files']},
                      exact_fatal_sites=[wrap_sites(case,b)] if wrap else assertion_sites(test, expected) if expected else [])
@@ -1190,11 +1295,15 @@ def main():
         require(all(sha(case / f)==digest for f,digest in entry['source_sha256'].items()),'COMPILED_INPUT_CHANGED')
         entry['status'] = 'PASS'; save(); print(name, 'PASS', flush=True)
     try:
+        records['process_timeout_seconds'] = args.process_timeout
         save()
         records['compiler_versions']={name:run([str(path),'-V'],out,name+'-version.log')[0] for name,path in executables.items()}
         require(all(r['exit_code']==0 for r in records['compiler_versions'].values()),'COMPILER_VERSION')
         save()
+        records['variant_selection'] = args.variant or 'both'
         for variant, group in loaded.items():
+            if args.variant is not None and variant != args.variant:
+                continue
             for label in group:
                 for profile in PROFILES:
                     simulate(variant, label, profile)
@@ -1219,6 +1328,7 @@ def main():
                 simulate(variant,reset_labels[0],'original','work-enable-bypass')
             simulate(variant,slot_label,'original',wrap=True)
             simulate(variant,'slots20000000','original','command-capture',continuous=True)
+            simulate(variant,'slots20000000','original','command-header-capture',continuous=True)
             simulate(variant,'slots20000000','original','dispatch-epoch-bit63',continuous=True)
             for fault in ('bank-return-stuck','bank-unavailable-at-o'):
                 simulate(variant,'slots20000000','original',fault,ring=True)
@@ -1228,7 +1338,8 @@ def main():
         require(all(hashes(Path(p)) == h for p, h in originals.items()), 'ORIGINAL_CHANGED')
         require(all(sha(p)==value for p,value in helper_hashes.items()),'HELPER_CHANGED')
         require(all(sha(p)==value for p,value in compiler_hashes.items()),'COMPILER_CHANGED')
-        require(len(records['cases'])==344 and all(e.get('status')=='PASS' for e in records['cases'].values()),'COMPLETE_CASE_CATALOGUE')
+        require(len(records['cases'])==(173 if args.variant else 346) and
+                all(e.get('status')=='PASS' for e in records['cases'].values()),'COMPLETE_CASE_CATALOGUE')
         records.update(status='PASS', positives=sum(not e['expected'] for e in records['cases'].values()),
                        negatives=sum(bool(e['expected']) for e in records['cases'].values()), originals_preserved=True)
     except BaseException as error:

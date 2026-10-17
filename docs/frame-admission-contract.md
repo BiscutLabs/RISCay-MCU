@@ -13,6 +13,66 @@ measurements pass; fresh independent review is recorded under `review-r1/`.
 R3's original digital evidence and failed physical copy assumption remain recorded
 below; neither qualifies the current change or complete physical implementation.
 
+## 11b1: borrow the retained frame through native Control acceptance
+
+Digitally verified on 2026-10-17. Affected regressions, fault controls and all
+four strict exports pass; [matched cost and review](reviews/control-frame-borrow.md)
+record the evidence. Physical timing of the new borrowed-data path remains open.
+This supersedes the earlier D-time physical head retirement described below.
+
+D remains `ControlCommand.fire`: it frees exactly one logical descriptor and
+captures the existing dispatch-time kind/reset/busy/MMIO metadata. A, Q=A-D,
+full-queue rejection (including A+D at Q=2), Stored precedence and epoch
+classification at D are unchanged. The current descriptor's frame still feeds
+loader classification at D and same-edge admission busy history.
+
+The periodic sender now stores only a 108-bit `ControlCommandHeader`. A separate
+POR-owned two-bit retiring-bank identity selects the immutable native frame for
+Control's existing native Join input. A one-bit pending flag owns that bank.
+The native `ControlCommand` schema remains 379 bits; neither native payload
+storage nor a new acknowledgment synchronizer is added. Non-Host commands mask
+the borrowed frame to zero. Never use the live descriptor selector for this
+borrowed view: the logical queue can advance on D.
+
+R is retirement of the clocked tag: the sender has returned to `in.ready`
+and the work clock is enabled. Sender idle proves synchronized native acceptance;
+BD includes full command return-to-zero, and Click retains its phase protocol.
+Another Host cannot replace the tag before R; simultaneous R/new D is permitted
+with the new D assignment winning. Non-Host dispatch cannot overwrite the tag.
+Pending participates in `controlBusy` and work-clock demand until R.
+
+The physical return differs by protocol. Click accepts its head receipt at R,
+with the selected head valid. BD accepts its head receipt at the original D,
+then joins that receipt's ACK with the selected native Control ACK in a native
+C-element for each bank. The join rises after both accept and falls only after
+both return; their returns overlap. The existing clocked receipt ACK feeds the
+join directly alongside native Control ACK, without an added observation stage.
+Consequently a BD bank can finish before R, or remain held after R if its receipt
+ACK is stalled. The retained per-bank C-element safely outlives a selector change
+and an independently proceeding newer command. Do not substitute a combinational
+AND for this retained return state.
+
+Application cancellation resets neither the tag, pending flag, frame bank nor
+sender; POR ends their shared lifetime. Loader completion bypasses controlBusy
+as before, so a borrowed frame cannot block its own accepted program write.
+
+At most one command borrows a bank at a time. Older BD banks can remain in
+return while two logical descriptors and a publisher offer advance. The four-bank ring does not grant any extra logical credit.
+The historical D-to-return arithmetic below must not be reused as a bound on
+D-to-R: native acceptance can be stalled. Actual bank return, the unchanged
+ready-by-third-next-A deadline and reuse at O remain checked independently; the clocked sender is still a temporary boundary.
+
+The new physical path is native bank Q through the retiring-selector mux and
+Host mask to actual Control Join capture. D gives the existing sender's full
+settling cycle before its native request. This is a digital ordering argument,
+not a physical timing waiver. Qualify selector/mask maximum delay, bank-Q setup,
+source hold through the latest Join capture and earliest R/mask removal at all
+corners with routed RC. Prior clocked-snapshot or Control-local timing results
+do not qualify this new input path. BD also requires its native ACK qualification
+chain to settle low before bank/kind can change after synchronized sender idle.
+Measure this complete return envelope; the 1–10 ns digital gate sweep does not
+qualify its mapped maximum delay.
+
 ## Events, retention and acceptance
 
 The sampled-wire front observes a 15-bit native projection: headGray (4),

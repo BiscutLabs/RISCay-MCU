@@ -521,6 +521,28 @@
       "data_delay": "whole-transform-allowance",
       "output_guard": "matched-control-delay",
       "request_delay": "matched-control-delay"
+    },
+    "FourPhaseFrameCompletion": {
+      "host_ack_na": "matched-control-delay",
+      "host_ack_nb": "matched-control-delay",
+      "host_ack_or": "matched-control-delay",
+      "host_ack": "matched-control-delay",
+      "bank0_ack_na": "matched-control-delay",
+      "bank0_ack_nb": "matched-control-delay",
+      "bank0_ack_or": "matched-control-delay",
+      "bank0_ack": "matched-control-delay",
+      "bank1_ack_na": "matched-control-delay",
+      "bank1_ack_nb": "matched-control-delay",
+      "bank1_ack_or": "matched-control-delay",
+      "bank1_ack": "matched-control-delay",
+      "bank2_ack_na": "matched-control-delay",
+      "bank2_ack_nb": "matched-control-delay",
+      "bank2_ack_or": "matched-control-delay",
+      "bank2_ack": "matched-control-delay",
+      "bank3_ack_na": "matched-control-delay",
+      "bank3_ack_nb": "matched-control-delay",
+      "bank3_ack_or": "matched-control-delay",
+      "bank3_ack": "matched-control-delay"
     }
   },
   "schema": "riscay-controlgate-roles-v1",
