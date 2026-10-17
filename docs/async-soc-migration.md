@@ -1184,8 +1184,10 @@ physical reset qualification (R2b) remains mandatory under item 17a3.
         - [x] Publish total before/after repair area, including writer-workaround
           buffers, ties and resizing; see [accounting](gf180-estimates.md#electrical-repair-area).
           A flat repair or writer fix remains a separately proved optimization.
-        - [ ] Count the two-edge ACK guard in wake latency and energy, and
-          document Click's capture-to-ACK ordering independently.
+        - [x] Count both ACK-guard edges in the native-model wake workload and
+          explicit representative guard energy; document Click's existing native
+          guard and physical ordering obligation. See [activity evidence](reviews/ack-guard-activity.md).
+          Mapped wake timing, actual energy and complete Click capture/ACK closure remain open.
       - [ ] **Execute RF and elapsed seeded-owner composition.** Follow
         electrical repair and the rerun campaigns. Measure actual register-bank launch,
         forwarding/Fork/Join ordering and all 15 banks. Preserve elapsed's

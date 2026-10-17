@@ -74,7 +74,10 @@ SRAM. Global repair adds **0.190388 / 0.209668 mm²** to the same current maps;
 see [area accounting](docs/gf180-estimates.md#electrical-repair-area).
 The earlier A2b measurements were 2.830967 / 3.596523 mm² with 3,255 BD / 3,160
 Click work-clock edges for the 43-instruction firmware wake. Those activity and
-power figures have not been refreshed for the longer guards and repaired graph.
+power figures are historical. The current native-model firmware wake uses
+3,257 BD / 3,212 Click work edges; [ACK guard accounting](docs/reviews/ack-guard-activity.md)
+separates accumulated guard waits from elapsed wake time and component energy.
+Mapped wake timing and whole-chip power remain unqualified.
 A2b functional and strict export checks pass; physical timing remains unqualified.
 Repaired stage and Join [leaf bindings](docs/reviews/repaired-leaf-timing.md) now
 resolve the previously blocked paths with nominal fault controls. Full corner

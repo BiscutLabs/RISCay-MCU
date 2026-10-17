@@ -32,6 +32,45 @@ class PhysicalEstimateSpec extends AnyFunSuite {
       val program=setup ++ park ++ work ++ Seq(jal(0,-4*(park.size+work.size)))
       val crc=new CRC32
       program.foreach(w => (0 until 4).foreach(b => crc.update(((w >>> (8*b)) & 255).toInt)))
+      // A diagnostic comparison only: the 1 ps run must never qualify removal
+      // of the physical ACK guard. Production RTL keeps the reviewed policy.
+      val ackBypass=sys.env.get("RISCAY_ACK_ACTIVITY_BYPASS").contains("1") && !click
+      val ackGuardNs=if(ackBypass) 0.001 else 32.0
+      val ackMonitor=if(click) "" else s"""
+        integer ackRiseEdges=0, ackFallEdges=0;
+        integer ackSourceRises=0, ackSourceFalls=0;
+        real ackRiseAt=0, ackFallAt=0, ackWaitNs=0;
+        reg ackRisePending=0, ackFallPending=0;
+        always @(posedge dut.soc.ca_child_control.ca_primitive_acknowledge_guard.a[0]) if(measured>0) begin
+          if(!serviceClockEnable || ackRisePending) $$fatal(1,"ACK_ACTIVITY_UNACCOUNTED_SOURCE_RISE");
+          ackSourceRises=ackSourceRises+1;
+          ackRiseAt=$$realtime; ackRisePending=1;
+        end
+        always @(negedge dut.soc.ca_child_control.ca_primitive_acknowledge_guard.a[0]) if(measured>0) begin
+          if(!serviceClockEnable || ackFallPending) $$fatal(1,"ACK_ACTIVITY_UNACCOUNTED_SOURCE_FALL");
+          ackSourceFalls=ackSourceFalls+1;
+          ackFallAt=$$realtime; ackFallPending=1;
+        end
+        always @(posedge dut.soc.ca_child_control.ca_primitive_acknowledge_guard.q[0]) if(measured>0) begin
+          if(!ackRisePending || $$realtime-ackRiseAt < $ackGuardNs-0.0005 || $$realtime-ackRiseAt > $ackGuardNs+0.0005)
+            $$fatal(1,"ACK_ACTIVITY_RISE_DELAY");
+          ackRisePending=0; ackRiseEdges=ackRiseEdges+1; ackWaitNs=ackWaitNs+($$realtime-ackRiseAt);
+        end
+        always @(negedge dut.soc.ca_child_control.ca_primitive_acknowledge_guard.q[0]) if(measured>0) begin
+          if(!ackFallPending || $$realtime-ackFallAt < $ackGuardNs-0.0005 || $$realtime-ackFallAt > $ackGuardNs+0.0005)
+            $$fatal(1,"ACK_ACTIVITY_FALL_DELAY");
+          ackFallPending=0; ackFallEdges=ackFallEdges+1; ackWaitNs=ackWaitNs+($$realtime-ackFallAt);
+        end
+        always @(posedge serviceClockEnable) begin
+          ackRiseEdges=0; ackFallEdges=0; ackSourceRises=0; ackSourceFalls=0; ackWaitNs=0;
+          ackRisePending=0; ackFallPending=0;
+        end
+        always @(negedge serviceClockEnable) if(measured>0) begin
+          if(ackRiseEdges != ackFallEdges || ackSourceRises!=ackRiseEdges || ackSourceFalls!=ackFallEdges ||
+             ackRisePending || ackFallPending) $$fatal(1,"ACK_ACTIVITY_INCOMPLETE_RETURN");
+          $$display("ACK_GUARD,%0d,%0d,%0.3f,%0.3f",ackRiseEdges,ackFallEdges,ackWaitNs,$ackGuardNs);
+        end
+      """
       val body=s"""
         #1000000; wait(!serviceClockEnable); phase=1;
         // Ten actual LF ticks cover maintenance-only and autonomous ADC wakes.
@@ -76,9 +115,10 @@ class PhysicalEstimateSpec extends AnyFunSuite {
           $$display("WAKE,%0d,%0d,%0d,%0d,%0d,%0.3f",measured,fastEdges,workEdges,retired,conversions,$$realtime-wakeAt);
         end
       """
-      val dir=ClockedSimulation.run(top(),s"$name-physical-estimate",body,monitor,
+      val dir=ClockedSimulation.run(top(),s"$name-physical-estimate",body,monitor+ackMonitor,
         referenceHalfPeriodNs=64677286,onChipOscillator=true,chipParameters=p.lowPower.get,
-        serviceStartupNs=64,serviceModelHz=12000000,deadlineNs=6000000000L,processTimeoutSeconds=300)
+        serviceStartupNs=64,serviceModelHz=12000000,deadlineNs=6000000000L,processTimeoutSeconds=300,
+        primitiveDelayOverrides=if(ackBypass) Map(("ca_child_control","acknowledge_guard") -> 1000L) else Map.empty)
       val log=Files.readString(dir.resolve("simulation.log"))
       assert(log.contains("ESTIMATE_ACTIVITY_COMPLETE"))
       Files.createDirectories(Paths.get("build/gf180-estimate"))

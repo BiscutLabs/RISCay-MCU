@@ -515,6 +515,11 @@
   elapsed seeded-owner/admission composition. Safe-direction guard lengthening
   and timing parameterization may proceed concurrently; shortening waits for
   the measured complete envelope. Keep elapsed step and owner policies separate.
+  ACK activity follows docs/reviews/ack-guard-activity.md: count both source and
+  output edges, require no pending edge at shutdown, and compare exact generated
+  exports before attributing latency/energy changes. On-chip fixture overrides
+  bind beneath dut.soc; direct SoC fixtures bind beneath dut. Native-model wait
+  sums are not additive wall time or mapped/whole-chip energy evidence.
   Default elapsed requests are 100 ns, execute requests 80 ns and the BD Control
   source ACK guard 32 ns on both edges. Keep that guard's recognized
   `acknowledge_guard` ID so AsyncTest does not randomize away its fixed delay.
