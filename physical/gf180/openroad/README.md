@@ -47,3 +47,13 @@ unchanged connectivity audit. Full checkpoint results are tracked in the
 `RSZ-0170` plus a completed run is safe termination, not electrical closure.
 Native cell and graph proofs, all five-corner reports and original violation
 evidence remain mandatory.
+
+Upstream follow-through (2026-10-17): the progress fix was already merged in
+[OpenROAD #10514](https://github.com/The-OpenROAD-Project/OpenROAD/pull/10514),
+with the sub-DBU correction in
+[#11106](https://github.com/The-OpenROAD-Project/OpenROAD/pull/11106).
+We sent [downstream validation evidence](https://github.com/The-OpenROAD-Project/OpenROAD/pull/10514#issuecomment-6235806466)
+to the original PR, including the preserved timeout, useful-buffer controls and
+packaged test results. This is an upstream backport and integration report,
+not a new MCU-authored fix. Our controls do not independently isolate the
+fractional-DBU case covered by the later upstream correction.

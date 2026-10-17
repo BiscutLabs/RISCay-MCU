@@ -84,9 +84,42 @@ class PhysicalControls(unittest.TestCase):
             c,r=adapter(primitive('ControlGate',OP=0,WIDTH=width,RESET_VALUE=0,DELAY_FS=1000000),.1,role=DATA)
             self.assertLessEqual(distribution_profile(c.cells,data_reset=True)['maximum_input_fanout'],16)
 
+    def test_only_wide_event_capture_root_and_trunks_change(self):
+        # Frozen whole-recipe hashes avoid requiring Git history in test runs.
+        import hashlib
+        baseline=json.loads(Path(__file__).with_name('capture-recipe-baseline.json').read_text())['recipes']
+        for model in ('EventRegister','ClosingLatch','PhaseRegister','ControlGate'):
+            for width in (1,16,256,257,337,379,397,425,992):
+                params=dict(DELAY_FS=1000000)
+                if model!='PhaseRegister':params['WIDTH']=width
+                if model!='ClosingLatch':params['RESET_VALUE']=0
+                role=None
+                if model=='ControlGate':params['OP']=0;role=DATA
+                p=primitive(model,**params)
+                b,br=adapter(p,.1,role=role)
+                original=deepcopy(b.cells)
+                changed=[]
+                for cell in original:
+                    if cell['cell']==SC+'buf_12':
+                        changed.append(cell)
+                        cell['cell']=SC+'buf_8'
+                digest=hashlib.sha256(json.dumps([original,br],sort_keys=True).encode()).hexdigest()
+                self.assertEqual(digest,baseline[model+':'+str(width)])
+                if model=='EventRegister' and width>256:
+                    expected={'trigger'}
+                    capture_drivers=set()
+                    for cell in b.cells:
+                        if cell['pins'].get('I') in expected and cell['cell'] in (SC+'buf_8',SC+'buf_12'):
+                            self.assertEqual(cell['cell'],SC+'buf_12')
+                            expected.add(cell['pins']['Z'])
+                            capture_drivers.add(cell['name'])
+                    self.assertGreaterEqual(len(changed),3)
+                    self.assertEqual({c['name'] for c in changed},capture_drivers)
+                else:self.assertEqual(changed,[])
+
     def test_overloaded_root_and_unbalanced_branch_rejected(self):
         c,_=adapter(primitive('EventRegister',WIDTH=992,RESET_VALUE=0,DELAY_FS=1000000),.1)
-        root=next(x['pins']['Z'] for x in c.cells if x['cell']==SC+'buf_8' and x['pins']['I']=='trigger')
+        root=next(x['pins']['Z'] for x in c.cells if x['pins'].get('I')=='trigger')
         bad=deepcopy(c.cells)
         for x in bad:
             if x['cell']==SC+'buf_4':x['pins']['I']=root

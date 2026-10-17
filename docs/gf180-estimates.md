@@ -57,6 +57,21 @@ These are cell totals before placement, excluding routing, fillers, analog and
 pads. They do not establish leakage, wake energy or timing closure. The older
 activity and leakage tables below do **not** describe these repaired maps.
 
+### Wide capture-driver correction
+
+The subsequent `capture-drive-{bd,click}-r1` maps use stronger wide
+EventRegister capture roots/trunks. Standard-cell area after repair becomes
+**3.0391600064 mm² BD / 3.8246398848 mm² Click**, increases of
+0.0001580544 / 0.0014224896 mm². Before repair it is 2.8485222528 /
+3.6146646144 mm². Repair-added area, resize deltas, cell counts and SRAM area
+remain unchanged; these changes replace existing buffer masters only.
+
+The corresponding LEF totals including SRAM are 3.5054006654 /
+4.2908805438 mm². Evidence is `build/capture-drive-{bd,click}-area-r1.json`.
+The [capture contract](native-capture-distribution.md#capture-driver-correction-after-pr9)
+records local timing and its limits. This correction does not update leakage,
+wake activity or routed-area estimates.
+
 ## Earlier A2b comparison
 
 The A2b retained-loader-metadata comparison against accepted C1e1 `64e6211`

@@ -54,6 +54,17 @@ class PnrBindings(unittest.TestCase):
         for side in (0,1400,float('inf'),float('nan')):
             with self.assertRaisesRegex(ValueError,'INVALID_COMMON_OUTLINE'):pnr.geometry(side)
         self.assertEqual(pnr.geometry(3250)['core_um'],[30,30,3220,3220])
+
+    def test_density_sweep_does_not_change_common_outline_or_macro_placement(self):
+        baseline=pnr.geometry(3250)
+        for density in (.6,.7):
+            candidate=pnr.geometry(3250,density)
+            self.assertEqual(candidate['placement_density'],density)
+            self.assertEqual({k:v for k,v in candidate.items() if k!='placement_density'},
+                             {k:v for k,v in baseline.items() if k!='placement_density'})
+        for density in (0,1,-.1,float('inf'),float('nan')):
+            with self.assertRaisesRegex(ValueError,'INVALID_PLACEMENT_DENSITY'):
+                pnr.geometry(3250,density)
     def test_aliased_ports_resolve_to_real_leaf_driver(self):
         # Two output aliases with different parent bit IDs must be unioned,
         # including the alias visited last, rather than overwriting the first.
@@ -131,6 +142,12 @@ class PnrProvenance(unittest.TestCase):
                     protected_nets_sha256=pnr.sha(self.out/(stage+'-native-protected-nets.txt')),
                     inputs_sha256={str((self.out/(stage+'-repair-'+side+'.tsv')).resolve()):pnr.sha(self.out/(stage+'-repair-'+side+'.tsv')) for side in ('before','after')})
         self.meta['checkpoints']['extract']['spef_sha256']=pnr.sha(self.out/'routed.spef')
+        paths=[self.out/(name+'.tsv') for name in ('clock-repair-before','clock-repair-after','clock-sinks-before','clock-sinks-after')]
+        for path in paths:path.write_text('clock evidence')
+        (self.out/'clock-coverage-proof.json').write_text('proved clock inventory')
+        self.meta['checkpoints']['clock']['clock_coverage']=dict(
+            proof_sha256=pnr.sha(self.out/'clock-coverage-proof.json'),
+            inputs_sha256={str(p.resolve()):pnr.sha(p) for p in paths})
         self.save()
 
     def save(self): (self.out/'run.json').write_text(json.dumps(self.meta))
@@ -255,6 +272,22 @@ class PnrProvenance(unittest.TestCase):
                 pnr.run(self.mapping,self.out,'place','place',8)
             assets.assert_not_called(); launch.assert_not_called()
         self.assertTrue(all(p.read_bytes()==b for p,b in before.items()))
+
+    def test_resume_rejects_density_change_before_writing_or_launching(self):
+        self.meta['geometry']=pnr.geometry(3250,.6); self.save()
+        before={p:p.read_bytes() for p in self.out.rglob('*') if p.is_file()}
+        with patch.object(pnr,'ROOT',self.root),patch.object(pnr,'assets') as assets,patch.object(pnr.subprocess,'run') as launch:
+            with self.assertRaisesRegex(ValueError,'PNR_GEOMETRY_CHANGED'):
+                pnr.run(self.mapping,self.out,'place','place',8,side=3250,density=.7)
+            assets.assert_not_called(); launch.assert_not_called()
+        self.assertTrue(all(p.read_bytes()==b for p,b in before.items()))
+
+    def test_clock_coverage_is_required_for_every_downstream_checkpoint(self):
+        for name in ('clock-coverage-proof.json','clock-repair-after.tsv','clock-sinks-before.tsv'):
+            path=self.out/name;old=path.read_bytes();path.write_text('changed')
+            with self.assertRaisesRegex(ValueError,'PNR_CLOCK_'):
+                pnr.validate_provenance(self.mapping,self.out,'extract')
+            path.write_bytes(old)
 
     def test_missing_repair_receipt_stops_before_output_or_launch(self):
         self.receipt.side_effect=ValueError('REPAIR_RECEIPT_REQUIRED')

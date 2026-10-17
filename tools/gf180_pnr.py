@@ -25,22 +25,24 @@ ASSETS = {
     "rcx.min": "libs.tech/librelane/rules.openrcx.gf180mcuD.min",
     "rcx.max": "libs.tech/librelane/rules.openrcx.gf180mcuD.max",
 }
-PROVENANCE_SCHEMA = "riscay-pnr-inputs-v3"
+PROVENANCE_SCHEMA = "riscay-pnr-inputs-v4"
 MAPPING_INPUTS = ("mapping.json", "netlist.v", "netlist.json", "base.sdc", "clocked.sdc",
                   "feedback-cuts.tcl", "async.sdc", "preserve-mapped.tcl", "constraints-bound.json",
                   "electrical-repair/receipt.json")
-FLOW_INPUTS = ("pnr.tcl", "pnr-pdn.tcl", "power.tcl", "pnr-repair.tcl")
-REPAIR_AUDIT_SOURCES = ('check_pnr_repair.py','repair_gf180_design.py','gf180_physical.py',
+FLOW_INPUTS = ("pnr.tcl", "pnr-pdn.tcl", "power.tcl", "pnr-repair.tcl", "pnr-clock.tcl")
+REPAIR_AUDIT_SOURCES = ('check_pnr_repair.py','check_pnr_clock.py','repair_gf180_design.py','gf180_physical.py',
                       'gf180_estimate.py','repair_gf180_control.py','characterize_gf180_liberty.py','gf180_constraints.py','gf180_pnr.py')
 GENERATED_INPUTS = ("config.tcl", "async-pnr.sdc", "async-electrical.sdc", "async-context.json", "protected.tcl")
 RC_CORNERS = ("nom", "min", "max")
 
 
-def geometry(side):
+def geometry(side, density=0.50):
     if not math.isfinite(side) or side < 1440:
         raise ValueError("INVALID_COMMON_OUTLINE")
+    if not math.isfinite(density) or not 0 < density < 1:
+        raise ValueError("INVALID_PLACEMENT_DENSITY")
     return dict(die_um=[0,0,side,side], core_um=[30,30,side-30,side-30],
-        placement_density=0.50,
+        placement_density=density,
         macro_locations=[["soc/fabric_"+name, x, side-576]
             for name,x in zip(("program_macros_0","program_macros_1","ram_macros_0"),
                              (100, (side-301.3)/2, side-400))])
@@ -157,6 +159,14 @@ def validate_provenance(mapping,out,stage,flow_sources=None):
             raise ValueError('PNR_REPAIR_GRAPH_CHANGED')
         if proof.get('protected_nets_sha256')!=sha(out/(repaired+'-native-protected-nets.txt')):
             raise ValueError('PNR_REPAIR_PROTECTION_CHANGED')
+    if STAGES.index(stage)>=STAGES.index('clock'):
+        proof=meta['checkpoints']['clock'].get('clock_coverage',{})
+        if proof.get('proof_sha256')!=sha(out/'clock-coverage-proof.json'):
+            raise ValueError('PNR_CLOCK_PROOF_CHANGED')
+        expected={str((out/(name+'.tsv')).resolve()) for name in
+                  ('clock-repair-before','clock-repair-after','clock-sinks-before','clock-sinks-after')}
+        if set(proof.get('inputs_sha256',{}))!=expected or any(sha(Path(p))!=h for p,h in proof['inputs_sha256'].items()):
+            raise ValueError('PNR_CLOCK_GRAPH_CHANGED')
     if stage=="extract" and checkpoint.get("spef_sha256")!=sha(out/"routed.spef"):
         raise ValueError("PNR_SPEF_CHANGED")
     if stage=="extract" and meta.get("wire_corners"):
@@ -191,7 +201,7 @@ def assets():
                                 source_files=ASSETS,files=observed))
     return dest
 
-def configuration(mapping,out,routing,threads,side=1440):
+def configuration(mapping,out,routing,threads,side=1440,density=0.50):
     from repair_gf180_design import validate_receipt
     validate_receipt(mapping)
     accepted=json.loads((mapping/'netlist-audit.json').read_text())
@@ -202,7 +212,7 @@ def configuration(mapping,out,routing,threads,side=1440):
                           sram=ROOT/".tools/gf180-sram",source=ROOT/"physical/gf180").items():
         lines.append(f'set {name} {brace(linux(path))}')
     lines.extend([f'set threads {threads}',f'set sc {SC}',f'set sram_cell {SRAM}'])
-    g=geometry(side)
+    g=geometry(side,density)
     lines += ['set die_area {'+' '.join(map(str,g['die_um']))+'}',
               'set core_area {'+' '.join(map(str,g['core_um']))+'}',
               'set placement_density '+str(g['placement_density']),
@@ -297,12 +307,12 @@ def bind_flat_interfaces(modules,sdc):
         return '[concat '+" ".join('[rp '+brace(p)+']' for p in sorted(set(selected)))+']'
     return re.sub(r'\[rbus \{([^}]+)\} (\d+)\]',bind,sdc)
 
-def run(mapping,out,from_stage,to_stage,threads,side=1440,openroad=None):
+def run(mapping,out,from_stage,to_stage,threads,side=1440,openroad=None,density=0.50):
     mapping=mapping.resolve(); out=out.resolve()
     from repair_gf180_design import validate_receipt
     validate_receipt(mapping)
     begin,end=STAGES.index(from_stage),STAGES.index(to_stage)
-    g=geometry(side)
+    g=geometry(side,density)
     if begin>end: raise ValueError("STAGE_ORDER")
     files=[ROOT/"physical/gf180"/n for n in FLOW_INPUTS]
     hashes={file.name:sha(file) for file in files}
@@ -321,7 +331,7 @@ def run(mapping,out,from_stage,to_stage,threads,side=1440,openroad=None):
     routing=assets()
     snapshot,hashes=snapshot_flow(out,files)
     if not begin:
-        configuration(mapping,out,routing,threads,side)
+        configuration(mapping,out,routing,threads,side,density)
         with (out/"config.tcl").open("a") as config: config.write('set source '+brace(linux(snapshot))+'\n')
         meta=dict(status="running-unqualified",source_commit=subprocess.check_output(
         ["git","rev-parse","HEAD"],cwd=ROOT,text=True).strip(),mapping_sha256=sha(mapping/"mapping.json"),
@@ -381,6 +391,14 @@ def run(mapping,out,from_stage,to_stage,threads,side=1440,openroad=None):
                 meta.update(status='stopped-unqualified',failed_stage=stage+'-repair-proof')
                 write_json(out/'run.json',meta)
                 raise
+        if stage=='clock':
+            from check_pnr_clock import check as check_clock
+            try:meta['checkpoints'][stage]['clock_coverage']=check_clock(mapping,out)
+            except BaseException:
+                meta['checkpoints'].pop(stage,None)
+                meta.update(status='stopped-unqualified',failed_stage='clock-coverage-proof')
+                write_json(out/'run.json',meta)
+                raise
         if stage=="extract":
             meta["checkpoints"][stage]["spef_sha256"]=sha(out/"routed.spef")
             # Independent fresh OpenROAD processes read the identical routed
@@ -413,5 +431,7 @@ if __name__=="__main__":
     p.add_argument("--to-stage",choices=STAGES,default="extract")
     p.add_argument("--threads",type=int,default=8)
     p.add_argument("--die-side-um",type=float,default=1440)
+    p.add_argument("--placement-density",type=float,default=0.50,
+                   help="Placement target; comparison variants must retain the same die outline")
     p.add_argument("--openroad",help="P&R-only executable override; mapper runtime and evidence stay unchanged")
-    a=p.parse_args(); run(a.mapping,a.output,a.from_stage,a.to_stage,a.threads,a.die_side_um,a.openroad)
+    a=p.parse_args(); run(a.mapping,a.output,a.from_stage,a.to_stage,a.threads,a.die_side_um,a.openroad,a.placement_density)

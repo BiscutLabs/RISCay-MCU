@@ -29,7 +29,7 @@ include the upstream root driver, pulse width, storage setup/hold, reset, ACK
 ordering, mismatch and wire RC. A native request remains the capture event;
 analysis clocks add no hardware clock or periodic storage.
 
-## Loaded, zero-wire measurements
+## Historical PR9 measurements: loaded, zero-wire
 
 `measure_capture_distribution.py` measures the complete accepted repaired netlist,
 with actual loads and retained native leaf pins. It covers all 15 RV32E register
@@ -45,7 +45,7 @@ unexpected path cells, reversed bounds or incomplete coverage reject the run.
 | Frame banks | 3.734330 | 0.696061 | 2.500529 | 0.328016 |
 | I2C publication stores | 2.500529 | 0.328016 | 2.500529 | 0.328016 |
 
-**The budgets do not all pass.** One BD row (I2C frame publication) and five
+**The PR9 baseline did not pass every budget.** One BD row (I2C frame publication) and five
 Click rows (the same publication and four frame banks) reach 2.5005290768 ns
 against the 2.5 ns limit. Three further Click rows reach 2.5248165384 ns
 (Control Join right), 2.5491042221 ns (Housekeeping update) and 2.5733916837 ns
@@ -81,3 +81,54 @@ before/after totals, including three SRAM drivers and all writer-workaround
 buffers, are in [the area report](gf180-estimates.md#electrical-repair-area).
 Slew limits, post-placement/routing repair, reset distribution and the complete
 capture/ACK envelopes remain acceptance gates.
+
+## Capture-driver correction after PR9
+
+The revised binding changes only the capture root and intermediate trunks of
+EventRegisters wider than 256 bits from `buf_8` to `buf_12`. Final `buf_4` leaves,
+16-load branching, storage, cell names/order and every reset connection stay
+unchanged. ClosingLatch, PhaseRegister and data-allowance recipes are unchanged.
+Frozen complete-recipe hashes and explicit capture-branch checks reject changes
+outside that scope or a partially upgraded wide tree.
+
+Fresh repaired maps measure all 33 trees and every leaf at both input slews,
+both edges and all five corners: **660 cases per variant, zero budget failures**.
+The previous nine failing rows remain in the historical evidence above.
+
+| New maximum propagation, ns | BD | Click |
+| --- | ---: | ---: |
+| EventRegister trees (2.5 ns budget) | 2.416549 | 2.474408 |
+| ClosingLatch trees (4 ns budget) | 3.840845 | none |
+
+The smallest local budget margin is 83.45 ps BD and 25.59 ps Click. This is a
+loaded, zero-wire result at the specified root slews, **not routed capture closure**.
+No budget or parser tolerance changed. Actual wire load, mismatch, reset,
+upstream root slew, pulse width and complete capture/ACK ordering still need
+qualification. In particular, stronger root drivers increase upstream input
+capacitance; passing the local tree cannot waive that path.
+
+The selected standard-stage and Control Join reruns do not compose every
+resized owner's handshake. Both changed BD owners are custom I2C publication
+stores (`receive_all` and `frame_payload`). In Click, the selected campaigns
+directly cover four changed stage payloads and both Control Join operands;
+custom publication/frame banks, three state FIFOs and the Housekeeping and
+Supervisor Join operands retain separate launch/capture/ACK obligations.
+Using the whole loaded graph preserves their loads, not proof of those
+unmeasured sequences.
+
+Repaired standard-cell area increases by 0.0001580544 mm² BD and
+0.0014224896 mm² Click against the prior bounded-distribution maps. Every added
+cell and resize remains in the report; SRAM area is unchanged. Evidence is
+`build/capture-drive-{bd,click}-r1`, `build/capture-drive-{bd,click}-timing-r1`
+and `build/capture-drive-{bd,click}-area-r1.json`. The existing physical test
+suite passes five tests. The fresh repaired maps pass all 160 selected
+standard-stage cases (70 per variant plus 20 additional wide Click stage cases)
+and all 20 Control Join cases with positive conditional margins. These reruns
+retain the complete loaded graph, including the increased driver input
+capacitance, with the custom-owner scope gaps listed above.
+
+Both actual-arc control campaigns pass: period changes move zero paths; a
+100 ns final-branch mutation moves exactly 16 leaves / 64 min/max-edge rows
+and fails the unchanged budget. Four distribution controls and fourteen
+mapping/monitor tests pass. The [compact evidence](reviews/capture-drive-evidence.json)
+binds the maps, measurements, controls, upstream reruns and area reports.

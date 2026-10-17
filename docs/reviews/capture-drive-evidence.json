@@ -1,0 +1,302 @@
+{
+  "status": "local-capture-budgets-pass-physical-qualification-open",
+  "physical_qualification": false,
+  "cases": [
+    {
+      "variant": "bd",
+      "mapping": "build\\capture-drive-bd-r1",
+      "capture_output": "build\\capture-drive-bd-timing-r1",
+      "cases": 660,
+      "budget_failures": 0,
+      "maximum_event_propagation_ns": 2.4165486962151053,
+      "minimum_budget_margin_ns": 0.08345130378489474,
+      "controls": [
+        {
+          "control": "period",
+          "status": "pass",
+          "changed_rows": 0
+        },
+        {
+          "control": "late-branch",
+          "status": "pass",
+          "changed_rows": 64
+        }
+      ],
+      "area": {
+        "scope": "LEF footprints and separate Liberty area totals; pre-placement; timing-unqualified",
+        "variant": "bd",
+        "lef_total_before_mm2": 3.3147629118,
+        "lef_total_after_mm2": 3.5054006654,
+        "liberty_total_before_mm2": 3.4767230831999996,
+        "liberty_total_after_mm2": 3.6673608368,
+        "macro_lef_area_mm2": 0.466240659,
+        "macro_liberty_area_mm2": 0.6282008304,
+        "original_cells": 102219,
+        "repaired_cells": 106431,
+        "logic_before_mm2": 2.8485222528,
+        "logic_after_mm2": 3.0391600064,
+        "logic_delta_mm2": 0.19063775359999993,
+        "new_cell_area_mm2": 0.15523576320000002,
+        "resize_delta_mm2": 0.03540199039999999,
+        "buffers": {
+          "native_reset": {
+            "count": 1167,
+            "area_mm2": 0.015370790399999999
+          },
+          "sram_clock": {
+            "count": 3,
+            "area_mm2": 0.0002502528
+          },
+          "writer_feedback": {
+            "count": 890,
+            "area_mm2": 0.011722367999999999
+          },
+          "openroad_other": {
+            "count": 1958,
+            "area_mm2": 0.12618887680000002
+          }
+        },
+        "new_ties": {
+          "count": 194,
+          "area_mm2": 0.0017034752000000004
+        },
+        "inputs_sha256": {
+          "P:\\Personal\\RISCay-MCU\\build\\capture-drive-bd-r1\\netlist.json": "a3f7a859836f8ad48f7f751a6a4638371b50ad607329fe589ed8fa8f655eb624",
+          "P:\\Personal\\RISCay-MCU\\build\\capture-drive-bd-r1\\electrical-repair\\reference\\netlist.json": "2939230ad7df8dd48c141c8f4ac0ed52b788d62d7311bc30871dc33b161ad33f",
+          "P:\\Personal\\RISCay-MCU\\build\\capture-drive-bd-r1\\electrical-repair\\receipt.json": "76db478a65d0b9649652d27b82839d3346874a47c44e17bd6b50a405bd06b097",
+          "P:\\Personal\\RISCay-MCU\\build\\capture-drive-bd-r1\\electrical-repair\\proof.json": "43b451c4db72f1a4a6872da1badbd525712d9ad8afd6ddd6d42fe38c498022eb",
+          "P:\\Personal\\RISCay-MCU\\build\\capture-drive-bd-r1\\electrical-repair\\preparation.json": "ec8d694311bd4d1328fad10858c415fa4a9f60a3e3a72ba85aaff2b53e9e6fc6",
+          "P:\\Personal\\RISCay-MCU\\tools\\report_repair_area.py": "ea9c50fc1cef5ea53b9f7185b2635123e7eaf8e2caf5f7169c3cce6d0d49e9e7",
+          "P:\\Personal\\RISCay-MCU\\.tools\\physical\\pdk\\gf180mcu_fd_sc_mcu7t5v0__tt_025C_3v30.lib": "f9dee07cf158324934b0c59144d970a2e8313f43533ede6283ec3c136f82fe53",
+          "P:\\Personal\\RISCay-MCU\\.tools\\gf180-sram\\gf180mcu_ocd_ip_sram__sram1024x8m8wm1__tt_025C_3v30.lib": "c2f7e0957e3e7f08845df9b511aa2c64236f2d4b34cf763ef0be59618c047d2e",
+          "P:\\Personal\\RISCay-MCU\\.tools\\physical\\pdk\\gf180mcu_fd_sc_mcu7t5v0.lef": "47dadf84c21b20f558d043c36271632f07b1c2c2a595b118e2e1050ebb74349b",
+          "P:\\Personal\\RISCay-MCU\\.tools\\gf180-sram\\gf180mcu_ocd_ip_sram__sram1024x8m8wm1.lef": "35bcf13111ab5029860ca7a2ef473fbf21b4938d6c6244b53b4480bd35f2776a"
+        }
+      },
+      "evidence_sha256": {
+        "build\\capture-drive-bd-r1\\mapping.json": "37307a2a2808ad50489130ef369c6095a2361b8246db53f0cffc8cee77924ffa",
+        "build\\capture-drive-bd-r1\\netlist-audit.json": "1eaa48e20e784c413fb8be7a6a25124c5d53ea42b7701364025bfeb39cdaf049",
+        "build\\capture-drive-bd-r1\\electrical-repair\\receipt.json": "76db478a65d0b9649652d27b82839d3346874a47c44e17bd6b50a405bd06b097",
+        "build\\capture-drive-bd-timing-r1\\results.json": "85c57415e96b5921d8834992c8b1075a7a4240ece8346dffbebdc9d81679815a",
+        "build\\capture-drive-bd-controls-r1\\results.json": "88142e020f65add04f9be4b10bcd0a25f971f2d83a83009a0771e7320af2844c",
+        "build\\capture-drive-bd-area-r1.json": "036b04f9818561d84eb2267965defbc2a8f7f535d0e126c421777a1677dc203e",
+        "build\\capture-drive-bd-stages-r1\\results.json": "fc9109b9803bb77fb506b8862b73a3cf56d7c9262be6af2db429afeba592adfb",
+        "build\\capture-drive-bd-join-r1\\results.json": "7da8fca0e9167b07f14afe48ab79577b7fc1b961c99788d09034d1c95cc5f08f"
+      },
+      "stage_campaign": {
+        "cases": 70,
+        "unresolved": 0,
+        "negative_local_margins": 0,
+        "physical_qualification": false,
+        "stages": [
+          {
+            "instance": "FourPhaseSoc.ca_child_core.ca_child_execute",
+            "minimum_input_data_lag_ns": 114.11516505952626,
+            "minimum_zero_reuse_hold_ns": 1.0971773682362298,
+            "minimum_ack_after_capture_ns": 1.2911773682362297
+          },
+          {
+            "instance": "FourPhaseSoc.ca_child_elapsed_scaler.ca_child_native.ca_child_step",
+            "minimum_input_data_lag_ns": 127.40945643690118,
+            "minimum_zero_reuse_hold_ns": 1.1539102104882997,
+            "minimum_ack_after_capture_ns": 1.3479102104882996
+          },
+          {
+            "instance": "FourPhaseSoc.ca_child_ram_access.ca_child_native.ca_child_prepare",
+            "minimum_input_data_lag_ns": 19.725713466417254,
+            "minimum_zero_reuse_hold_ns": 1.2859520916546865,
+            "minimum_ack_after_capture_ns": 1.4799520916546864
+          },
+          {
+            "instance": "FourPhaseSoc.ca_child_ram_access.ca_child_native.ca_child_lane_0_issue",
+            "minimum_input_data_lag_ns": 19.579332110792713,
+            "minimum_zero_reuse_hold_ns": 1.2479531532499726,
+            "minimum_ack_after_capture_ns": 1.4419531532499725
+          },
+          {
+            "instance": "FourPhaseSoc.ca_child_ram_access.ca_child_native.ca_child_lane_0_capture",
+            "minimum_input_data_lag_ns": 19.286397759059174,
+            "minimum_zero_reuse_hold_ns": 1.2859520916546865,
+            "minimum_ack_after_capture_ns": 1.4799520916546864
+          },
+          {
+            "instance": "FourPhaseSoc.ca_child_i2c.ca_child_native.ca_child_update",
+            "minimum_input_data_lag_ns": 16.908392121568536,
+            "minimum_zero_reuse_hold_ns": 1.1871750467598199,
+            "minimum_ack_after_capture_ns": 1.3811750467598198
+          },
+          {
+            "instance": "FourPhaseSoc.ca_child_control.ca_child_update",
+            "minimum_input_data_lag_ns": 15.235341931381775,
+            "minimum_zero_reuse_hold_ns": 0.9871038037463145,
+            "minimum_ack_after_capture_ns": 1.1811038037463144
+          }
+        ]
+      },
+      "control_join_campaign": {
+        "cases": 10,
+        "unresolved": 0,
+        "negative_conditional_margins": 0,
+        "minimum_conditional_setup_margin_ns": 64.05856966288853,
+        "physical_qualification": false
+      }
+    },
+    {
+      "variant": "click",
+      "mapping": "build\\capture-drive-click-r1",
+      "capture_output": "build\\capture-drive-click-timing-r1",
+      "cases": 660,
+      "budget_failures": 0,
+      "maximum_event_propagation_ns": 2.4744079707798172,
+      "minimum_budget_margin_ns": 0.025592029220182777,
+      "controls": [
+        {
+          "control": "period",
+          "status": "pass",
+          "changed_rows": 0
+        },
+        {
+          "control": "late-branch",
+          "status": "pass",
+          "changed_rows": 64
+        }
+      ],
+      "area": {
+        "scope": "LEF footprints and separate Liberty area totals; pre-placement; timing-unqualified",
+        "variant": "click",
+        "lef_total_before_mm2": 4.0809052734,
+        "lef_total_after_mm2": 4.2908805438,
+        "liberty_total_before_mm2": 4.2428654448,
+        "liberty_total_after_mm2": 4.4528407152,
+        "macro_lef_area_mm2": 0.466240659,
+        "macro_liberty_area_mm2": 0.6282008304,
+        "original_cells": 104399,
+        "repaired_cells": 110145,
+        "logic_before_mm2": 3.6146646143999996,
+        "logic_after_mm2": 3.8246398848000003,
+        "logic_delta_mm2": 0.20997527040000027,
+        "new_cell_area_mm2": 0.17365349119999998,
+        "resize_delta_mm2": 0.036321779199999994,
+        "buffers": {
+          "native_reset": {
+            "count": 1427,
+            "area_mm2": 0.018795302399999998
+          },
+          "sram_clock": {
+            "count": 3,
+            "area_mm2": 0.0002502528
+          },
+          "writer_feedback": {
+            "count": 2216,
+            "area_mm2": 0.029187379199999995
+          },
+          "openroad_other": {
+            "count": 1931,
+            "area_mm2": 0.12393660160000002
+          }
+        },
+        "new_ties": {
+          "count": 169,
+          "area_mm2": 0.0014839552000000002
+        },
+        "inputs_sha256": {
+          "P:\\Personal\\RISCay-MCU\\build\\capture-drive-click-r1\\netlist.json": "20103e50cba49306563aea175a1832c7f6996337caf0cca459325d34e9e406a1",
+          "P:\\Personal\\RISCay-MCU\\build\\capture-drive-click-r1\\electrical-repair\\reference\\netlist.json": "04fff50164336c438c8760dbdee04e196d790cdd6300a762353565392d3887f1",
+          "P:\\Personal\\RISCay-MCU\\build\\capture-drive-click-r1\\electrical-repair\\receipt.json": "a770e24d441e7f3b5fa25aaa9dbeee6ca1b9d8801321e0fb378b7fa1d38f49ea",
+          "P:\\Personal\\RISCay-MCU\\build\\capture-drive-click-r1\\electrical-repair\\proof.json": "8195178362813cd984cb2b9ce76465cfc35961829d96aeed36d26084fab1288a",
+          "P:\\Personal\\RISCay-MCU\\build\\capture-drive-click-r1\\electrical-repair\\preparation.json": "20e5c86eb66d2eb715a673cd3c4d79b5871d3c1078c1b1e5996bcf212df387a8",
+          "P:\\Personal\\RISCay-MCU\\tools\\report_repair_area.py": "ea9c50fc1cef5ea53b9f7185b2635123e7eaf8e2caf5f7169c3cce6d0d49e9e7",
+          "P:\\Personal\\RISCay-MCU\\.tools\\physical\\pdk\\gf180mcu_fd_sc_mcu7t5v0__tt_025C_3v30.lib": "f9dee07cf158324934b0c59144d970a2e8313f43533ede6283ec3c136f82fe53",
+          "P:\\Personal\\RISCay-MCU\\.tools\\gf180-sram\\gf180mcu_ocd_ip_sram__sram1024x8m8wm1__tt_025C_3v30.lib": "c2f7e0957e3e7f08845df9b511aa2c64236f2d4b34cf763ef0be59618c047d2e",
+          "P:\\Personal\\RISCay-MCU\\.tools\\physical\\pdk\\gf180mcu_fd_sc_mcu7t5v0.lef": "47dadf84c21b20f558d043c36271632f07b1c2c2a595b118e2e1050ebb74349b",
+          "P:\\Personal\\RISCay-MCU\\.tools\\gf180-sram\\gf180mcu_ocd_ip_sram__sram1024x8m8wm1.lef": "35bcf13111ab5029860ca7a2ef473fbf21b4938d6c6244b53b4480bd35f2776a"
+        }
+      },
+      "evidence_sha256": {
+        "build\\capture-drive-click-r1\\mapping.json": "ad8f52ddcf3e5d4ee6a3a1f0d3fac70b975daf914ac09be2aa55c5b1c37f5c3b",
+        "build\\capture-drive-click-r1\\netlist-audit.json": "113bd5038b231865d721832e78b1bd2b3e25a731931f8f460d6af56527334af9",
+        "build\\capture-drive-click-r1\\electrical-repair\\receipt.json": "a770e24d441e7f3b5fa25aaa9dbeee6ca1b9d8801321e0fb378b7fa1d38f49ea",
+        "build\\capture-drive-click-timing-r1\\results.json": "c90ea88a33b1ac6254a17a17dad6d452bad853019017b9838b8ed8beb5e4e1fd",
+        "build\\capture-drive-click-controls-r1\\results.json": "7328200f6e12031bf965ca1b972d72b06a2868d8a66fc34e360b1d583091f64f",
+        "build\\capture-drive-click-area-r1.json": "7390999bfab8d74806ad721c4cc91b3212287005824f0a67c80a317ba9ea293c",
+        "build\\capture-drive-click-stages-r1\\results.json": "9d5c695b127a2e32e28ce11c3fc8d14cbb04b9c468b413eee7394b2c6d715660",
+        "build\\capture-drive-click-wide-stages-r1\\results.json": "5f545e8e84bdc3a4116f4419318df8d10316b91aee22ec6f2f34cab7413bd69e",
+        "build\\capture-drive-click-join-r1\\results.json": "22092f230b37b68938a8ff7e7f12b6489475f5b97a6f4ca617e22eea0abec9ec"
+      },
+      "stage_campaign": {
+        "cases": 90,
+        "unresolved": 0,
+        "negative_local_margins": 0,
+        "physical_qualification": false,
+        "stages": [
+          {
+            "instance": "ClickSoc.ca_child_core.ca_child_execute",
+            "minimum_input_data_lag_ns": 114.65382541420479,
+            "minimum_zero_reuse_hold_ns": 52.86144545468574,
+            "minimum_ack_after_capture_ns": 53.09944545468574
+          },
+          {
+            "instance": "ClickSoc.ca_child_elapsed_scaler.ca_child_native.ca_child_step",
+            "minimum_input_data_lag_ns": 129.049368357133,
+            "minimum_zero_reuse_hold_ns": 52.943434372661244,
+            "minimum_ack_after_capture_ns": 53.18143437266124
+          },
+          {
+            "instance": "ClickSoc.ca_child_ram_access.ca_child_native.ca_child_prepare",
+            "minimum_input_data_lag_ns": 21.127040672355523,
+            "minimum_zero_reuse_hold_ns": 53.00902268707509,
+            "minimum_ack_after_capture_ns": 53.24702268707509
+          },
+          {
+            "instance": "ClickSoc.ca_child_ram_access.ca_child_native.ca_child_lane_0_issue",
+            "minimum_input_data_lag_ns": 20.944606821388092,
+            "minimum_zero_reuse_hold_ns": 52.98163942397631,
+            "minimum_ack_after_capture_ns": 53.21963942397631
+          },
+          {
+            "instance": "ClickSoc.ca_child_ram_access.ca_child_native.ca_child_lane_0_capture",
+            "minimum_input_data_lag_ns": 20.663153286276902,
+            "minimum_zero_reuse_hold_ns": 53.00902268707509,
+            "minimum_ack_after_capture_ns": 53.24702268707509
+          },
+          {
+            "instance": "ClickSoc.ca_child_i2c.ca_child_native.ca_child_update",
+            "minimum_input_data_lag_ns": 18.29456567097052,
+            "minimum_zero_reuse_hold_ns": 52.92573830532666,
+            "minimum_ack_after_capture_ns": 53.16373830532666
+          },
+          {
+            "instance": "ClickSoc.ca_child_control.ca_child_update",
+            "minimum_input_data_lag_ns": 16.589726686065223,
+            "minimum_zero_reuse_hold_ns": 52.852989218734926,
+            "minimum_ack_after_capture_ns": 53.090989218734926
+          },
+          {
+            "instance": "ClickSoc.ca_child_housekeeping.ca_child_update",
+            "minimum_input_data_lag_ns": 10.816955372807906,
+            "minimum_zero_reuse_hold_ns": 52.82762056639361,
+            "minimum_ack_after_capture_ns": 53.06562056639361
+          },
+          {
+            "instance": "ClickSoc.ca_child_supervisor.ca_child_update",
+            "minimum_input_data_lag_ns": 7.203135804704658,
+            "minimum_zero_reuse_hold_ns": 52.852989218734926,
+            "minimum_ack_after_capture_ns": 53.090989218734926
+          }
+        ]
+      },
+      "control_join_campaign": {
+        "cases": 10,
+        "unresolved": 0,
+        "negative_conditional_margins": 0,
+        "minimum_conditional_setup_margin_ns": 71.22710030243587,
+        "physical_qualification": false
+      }
+    }
+  ],
+  "test_logs_sha256": {
+    "build\\capture-drive-physical-tests.log": "56522ef1d612abace3932d194a54ff060cad265a5f7d59a6a6039ad4ff1f464c",
+    "build\\capture-drive-mapping-tests-r2.log": "b84b8719549886d1e9d528f1c0a507dec7f57ddecf55e0cfc56f1323236ca19b",
+    "build\\capture-drive-distribution-tests.log": "72f5595d3b7def0aedf14601dce26d3ce3ed29eee815fe930e26ed611dc705ec"
+  }
+}

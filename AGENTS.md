@@ -464,6 +464,10 @@
   Retain budget failures, including small excesses; zero-wire equal delays are
   not routed skew evidence. Each of the three SRAM clocks needs a distinct,
   exclusive immediate parent driver in the final repaired graph.
+  Wide EventRegister capture trees (>256 bits) use buf_12 roots/trunks with
+  unchanged buf_4 leaves; reset, ClosingLatch and PhaseRegister drivers stay
+  unchanged. Preserve complete recipe/topology controls and rerun loaded
+  upstream request/ACK checks when changing driver input capacitance.
   The native Control SPICE harness preserves uncut controller feedback and all
   315 payload cells. Follow docs/reviews/control-native-characterization.md:
   reject changed adapter specializations and unexplained cut loads, verify both
@@ -560,6 +564,14 @@
   Standalone PhysicalTiming core tests do not authorize that policy for every
   controller. Constraint coverage and complete physical envelopes remain open.
   The first P&R flow and its open violations are in `docs/gf180-first-pnr.md`.
+  Periodic CTS follows docs/reviews/remaining-clock-trees.md: use automatic
+  clock-net discovery through existing repair buffers, excluding the external
+  SDA event from construction but retaining its timing constraint. Independently
+  enumerate actual sequential Liberty pins and nearest clock roots; never rely
+  only on equal before/after STA inventories. Reject missing work sinks, changed
+  source/division/waveforms, functional gate clones and periodic native storage.
+  Every periodic sink needs construction evidence, with exact SRAM drivers and
+  polarity preserved. Construction coverage is not skew/pulse/electrical closure.
   Verify supplies even on protected cells; keep SPEF and the extracted ODB names
   consistent. A zero router-violation count is not full DRC/LVS or async signoff.
 - Keep generated RTL, tools, simulator logs and test evidence under ignored
