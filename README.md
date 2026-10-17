@@ -80,8 +80,9 @@ separates accumulated guard waits from elapsed wake time and component energy.
 Mapped wake timing and whole-chip power remain unqualified.
 A2b functional and strict export checks pass; physical timing remains unqualified.
 Repaired stage and Join [leaf bindings](docs/reviews/repaired-leaf-timing.md) now
-resolve the previously blocked paths with nominal fault controls. Full corner
-campaigns and the remaining electrical/distribution repairs are still required.
+resolve the previously blocked paths: all 140 standard-stage and 20 Control
+Join corner/slew cases have positive conditional margins. Distribution-budget
+failures, small BD hold margins and complete electrical/routed timing remain open.
 The [A2b evidence](docs/reviews/loader-metadata-a2b-completion.md) records its
 checks and measured costs.
 An [opt-in Control buffer repair](docs/reviews/control-electrical-repair.md)

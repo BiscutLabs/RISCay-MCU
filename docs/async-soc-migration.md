@@ -1175,8 +1175,12 @@ physical reset qualification (R2b) remains mandatory under item 17a3.
         - [x] Anchor repaired stage/Join queries on preserved native leaf pins,
           including elapsed mode fanout and the actual BD Control ACK guard;
           see [binding evidence and limits](reviews/repaired-leaf-timing.md).
-        - [ ] Repeat the full corner/slew campaigns on the final repaired graph;
-          nominal binding/fault evidence does not qualify the guards.
+        - [x] Repeat the seven-stage and Control Join corner/slew campaigns on
+          the final mapped/repaired graph: 140 stage cases and 20 Join cases
+          resolve with positive conditional margins. See
+          [results and limits](reviews/repaired-leaf-timing.md#final-mapped-graph-corner-sweeps).
+          Small BD hold/ACK margins, RF/elapsed source composition and routed
+          measurements remain open; this is not full-chip guard qualification.
         - [x] Provide separate parent drivers for all three SRAM clocks and
           structurally bounded native capture distribution for RF, frame banks
           and I2C publication. Maximum branch fanout is 16. The full local

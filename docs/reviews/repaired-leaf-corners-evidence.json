@@ -1,0 +1,172 @@
+{
+  "physical_qualification": false,
+  "scope": "complete repaired graph; conditional source alignment; zero wire RC; no RF or elapsed owner launch/retention composition",
+  "variants": {
+    "bd": {
+      "stages": [
+        {
+          "instance": "FourPhaseSoc.ca_child_core.ca_child_execute",
+          "cases": 10,
+          "minima": {
+            "minimum_input_data_lag_ns": 114.11516505952626,
+            "minimum_zero_reuse_hold_ns": 1.0971773682362298,
+            "minimum_ack_after_capture_ns": 1.2911773682362297
+          }
+        },
+        {
+          "instance": "FourPhaseSoc.ca_child_elapsed_scaler.ca_child_native.ca_child_step",
+          "cases": 10,
+          "minima": {
+            "minimum_input_data_lag_ns": 127.40945643690118,
+            "minimum_zero_reuse_hold_ns": 1.1539102104882997,
+            "minimum_ack_after_capture_ns": 1.3479102104882996
+          }
+        },
+        {
+          "instance": "FourPhaseSoc.ca_child_ram_access.ca_child_native.ca_child_prepare",
+          "cases": 10,
+          "minima": {
+            "minimum_input_data_lag_ns": 19.725713466417254,
+            "minimum_zero_reuse_hold_ns": 1.2859520916546865,
+            "minimum_ack_after_capture_ns": 1.4799520916546864
+          }
+        },
+        {
+          "instance": "FourPhaseSoc.ca_child_ram_access.ca_child_native.ca_child_lane_0_issue",
+          "cases": 10,
+          "minima": {
+            "minimum_input_data_lag_ns": 19.579332110792713,
+            "minimum_zero_reuse_hold_ns": 1.2479531532499726,
+            "minimum_ack_after_capture_ns": 1.4419531532499725
+          }
+        },
+        {
+          "instance": "FourPhaseSoc.ca_child_ram_access.ca_child_native.ca_child_lane_0_capture",
+          "cases": 10,
+          "minima": {
+            "minimum_input_data_lag_ns": 19.286397759059174,
+            "minimum_zero_reuse_hold_ns": 1.2859520916546865,
+            "minimum_ack_after_capture_ns": 1.4799520916546864
+          }
+        },
+        {
+          "instance": "FourPhaseSoc.ca_child_i2c.ca_child_native.ca_child_update",
+          "cases": 10,
+          "minima": {
+            "minimum_input_data_lag_ns": 16.908392121568536,
+            "minimum_zero_reuse_hold_ns": 1.1871750467598199,
+            "minimum_ack_after_capture_ns": 1.3811750467598198
+          }
+        },
+        {
+          "instance": "FourPhaseSoc.ca_child_control.ca_child_update",
+          "cases": 10,
+          "minima": {
+            "minimum_input_data_lag_ns": 15.235341931381775,
+            "minimum_zero_reuse_hold_ns": 0.9871038037463145,
+            "minimum_ack_after_capture_ns": 1.1811038037463144
+          }
+        }
+      ],
+      "join_cases": 10,
+      "join_minima": {
+        "minimum_conditional_setup_margin_ns": 64.05856966288853,
+        "maximum_input_data_lag_ns": 19.903430867798082,
+        "return_after_source_close_ns": 123.85460296813692
+      },
+      "retained_evidence": [
+        {
+          "path": "build/bounded-stage-bd-r1/results.json",
+          "sha256": "1024d933fd8e729d17335bc89b5e0f619584e4621c68087f7eaa0ae9ca79f674"
+        },
+        {
+          "path": "build/bounded-join-bd-control-r1/results.json",
+          "sha256": "5ee17dcc588bccaaf5754f3a2e1308d5fd0073395c59c1ff15ee9716177666a9"
+        }
+      ]
+    },
+    "click": {
+      "stages": [
+        {
+          "instance": "ClickSoc.ca_child_core.ca_child_execute",
+          "cases": 10,
+          "minima": {
+            "minimum_input_data_lag_ns": 114.60809488243794,
+            "minimum_zero_reuse_hold_ns": 52.82733651582473,
+            "minimum_ack_after_capture_ns": 53.06533651582473
+          }
+        },
+        {
+          "instance": "ClickSoc.ca_child_elapsed_scaler.ca_child_native.ca_child_step",
+          "cases": 10,
+          "minima": {
+            "minimum_input_data_lag_ns": 129.049368357133,
+            "minimum_zero_reuse_hold_ns": 52.943434372661244,
+            "minimum_ack_after_capture_ns": 53.18143437266124
+          }
+        },
+        {
+          "instance": "ClickSoc.ca_child_ram_access.ca_child_native.ca_child_prepare",
+          "cases": 10,
+          "minima": {
+            "minimum_input_data_lag_ns": 21.127040672355523,
+            "minimum_zero_reuse_hold_ns": 53.00902268707509,
+            "minimum_ack_after_capture_ns": 53.24702268707509
+          }
+        },
+        {
+          "instance": "ClickSoc.ca_child_ram_access.ca_child_native.ca_child_lane_0_issue",
+          "cases": 10,
+          "minima": {
+            "minimum_input_data_lag_ns": 20.944606821388092,
+            "minimum_zero_reuse_hold_ns": 52.98163942397631,
+            "minimum_ack_after_capture_ns": 53.21963942397631
+          }
+        },
+        {
+          "instance": "ClickSoc.ca_child_ram_access.ca_child_native.ca_child_lane_0_capture",
+          "cases": 10,
+          "minima": {
+            "minimum_input_data_lag_ns": 20.663153286276902,
+            "minimum_zero_reuse_hold_ns": 53.00902268707509,
+            "minimum_ack_after_capture_ns": 53.24702268707509
+          }
+        },
+        {
+          "instance": "ClickSoc.ca_child_i2c.ca_child_native.ca_child_update",
+          "cases": 10,
+          "minima": {
+            "minimum_input_data_lag_ns": 18.29456567097052,
+            "minimum_zero_reuse_hold_ns": 52.92573830532666,
+            "minimum_ack_after_capture_ns": 53.16373830532666
+          }
+        },
+        {
+          "instance": "ClickSoc.ca_child_control.ca_child_update",
+          "cases": 10,
+          "minima": {
+            "minimum_input_data_lag_ns": 16.546651807848367,
+            "minimum_zero_reuse_hold_ns": 52.81621008240187,
+            "minimum_ack_after_capture_ns": 53.054210082401866
+          }
+        }
+      ],
+      "join_cases": 10,
+      "join_minima": {
+        "minimum_conditional_setup_margin_ns": 71.141902673295,
+        "maximum_input_data_lag_ns": 21.301855506578683,
+        "return_after_source_close_ns": null
+      },
+      "retained_evidence": [
+        {
+          "path": "build/bounded-stage-click-r1/results.json",
+          "sha256": "a253c41910e37624b68bc501e67ba643d0160676de5aef08bd2b26716cd7b0ff"
+        },
+        {
+          "path": "build/bounded-join-click-control-r1/results.json",
+          "sha256": "bb27e8934aed9b10e8ab2673633faae61e018eb7b11437fbe8cb7f2c7bcc5602"
+        }
+      ]
+    }
+  }
+}

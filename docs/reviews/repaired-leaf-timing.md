@@ -76,6 +76,40 @@ the complete tools suite passes 1,016 tests. Two independent review rounds found
 and closed hold-credit, proof-read custody, parent-path control and full-chip
 storage/RC-validation gaps. See the [evidence manifest](repaired-leaf-timing-evidence.json).
 
-The next full corner/slew campaigns must use the final graph after the outstanding
-SRAM-clock and wide-capture repairs. This nominal binding evidence does not
-replace them, RF/elapsed source composition, or extracted min/max RC checks.
+## Final mapped-graph corner sweeps
+
+The campaigns now use `bounded-distribution-{bd,click}-r2`, after the exclusive
+SRAM-clock drivers and bounded native capture trees. Seven standard stages per
+variant resolve in all five corners and both 0.02/2 ns input slews: **140 cases**.
+All reported local metrics are positive. The table gives the minimum over each
+stage's ten cases; these remain conditional on input alignment and zero wire RC.
+
+| Stage | BD input lag, ns | Click input lag, ns | BD zero-credit hold, ns | Click zero-credit hold, ns |
+|---|---:|---:|---:|---:|
+| CPU execute | 114.115 | 114.608 | 1.097 | 52.827 |
+| Elapsed step | 127.409 | 129.049 | 1.154 | 52.943 |
+| RAM prepare | 19.726 | 21.127 | 1.286 | 53.009 |
+| RAM lane 0 issue | 19.579 | 20.945 | 1.248 | 52.982 |
+| RAM lane 0 capture | 19.286 | 20.663 | 1.286 | 53.009 |
+| I2C protocol update | 16.908 | 18.295 | 1.187 | 52.926 |
+| Control update | 15.235 | 16.547 | 0.987 | 52.816 |
+
+Minimum ACK-after-capture is 1.181 ns BD and 53.054 ns Click. **BD's small hold
+and ACK margins still require mismatch and wire analysis.** The 80/100 ns
+execute/elapsed policies no longer have negative local data allowances on this
+repaired graph. This does not measure the RF or elapsed owner launch/retention.
+
+The Control Join campaign also resolves all **20 corner/slew cases**, including
+both Click phases. Minimum conditional setup is 64.059 ns BD / 71.142 ns Click;
+allowed source-input data lag is 19.903 / 21.302 ns. BD's parent 32 ns ACK guard
+is present in the actual returning path: minimum return-driver ordering after
+source closure is 123.855 ns. Conditional contexts and the separate graph-arrival
+limitation described above still apply.
+
+Evidence is `build/bounded-stage-{bd,click}-r1` and
+`build/bounded-join-{bd,click}-control-r1`; see the
+[corner-sweep manifest](repaired-leaf-corners-evidence.json). The earlier nominal
+actual-arc controls validate the same measurement templates; the new capture-tree
+period/branch controls are recorded in the [distribution contract](../native-capture-distribution.md).
+That contract retains nine propagation-budget failures. Electrical limits,
+RF/elapsed composition, full reset, mismatch and extracted min/max RC remain open.
