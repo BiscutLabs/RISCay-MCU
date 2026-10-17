@@ -1222,8 +1222,10 @@ physical reset qualification (R2b) remains mandatory under item 17a3.
         - [ ] Measure BD source/transform contamination credit. If the complete
           hold envelope remains inadequate, add a short native stage ACK guard.
           Click already has its 32 ns stage ACK guard.
-        - [ ] Close all nine native capture-tree budget failures through driver,
-          branch-load or measured-slew corrections; retain the 2.5 ns budget.
+        - [x] Close the nine **local, zero-wire** capture-tree budget failures
+          with stronger wide EventRegister capture roots/trunks; 660 cases per
+          variant pass the unchanged budgets. Routed capture/ACK closure and
+          mismatch remain open; see [the capture contract](native-capture-distribution.md).
         - [x] Send the OpenROAD progress findings upstream. Both fixes were
           already merged; [our integration report](https://github.com/The-OpenROAD-Project/OpenROAD/pull/10514#issuecomment-6235806466)
           supplies downstream controls and test evidence, with upstream attribution.

@@ -100,7 +100,7 @@ class Circuit:
         return "\n".join(body)+"\nendmodule\n"
 
 
-def distribution_parents(circuit, roots, groups, fanout=16):
+def distribution_parents(circuit, roots, groups, fanout=16, trunk_kinds=None):
     """Equal-depth, bounded-fanout parents for interleaved final leaf buffers.
 
     Small trees retain their exact existing recipe and cell numbering. Wider
@@ -108,6 +108,9 @@ def distribution_parents(circuit, roots, groups, fanout=16):
     loaded skew, capture/ACK and reset characterization.
     """
     if not roots or groups<1 or fanout<2:raise ValueError('INVALID_DISTRIBUTION_TREE')
+    trunk_kinds=tuple(trunk_kinds or ('buf_8',)*len(roots))
+    if len(trunk_kinds)!=len(roots) or any(k not in ('buf_8','buf_12') for k in trunk_kinds):
+        raise ValueError('INVALID_DISTRIBUTION_DRIVER')
     depth=0;capacity=fanout
     while groups>capacity:depth+=1;capacity*=fanout
     def descend(parents,count,level):
@@ -116,7 +119,7 @@ def distribution_parents(circuit, roots, groups, fanout=16):
         sizes=[count//branches+(i<count%branches) for i in range(branches)]
         result=[]
         for size in sizes:
-            child=tuple(circuit.gate('buf_8',dict(I=p)) for p in parents)
+            child=tuple(circuit.gate(k,dict(I=p)) for p,k in zip(parents,trunk_kinds))
             result.extend(descend(child,size,level-1))
         return result
     return descend(tuple(roots),groups,depth),depth+1
@@ -217,9 +220,13 @@ def adapter(p, guard_min_ns, *, role=None):
         enable=c.inv("closed") if model=="ClosingLatch" else "trigger"
         # Small balanced local tree, including reset, avoids a single cell
         # driving hundreds of clock/reset pins. Bound every leaf after routing.
-        root=c.gate("buf_8",dict(I=enable)); reset_root=c.gate("buf_8",dict(I=nr))
+        # Wide event trees need more drive ahead of the unchanged final leaves.
+        # Reset, ClosingLatch and PhaseRegister recipes retain their drivers.
+        capture_driver='buf_12' if model=='EventRegister' and width>256 else 'buf_8'
+        root=c.gate(capture_driver,dict(I=enable)); reset_root=c.gate("buf_8",dict(I=nr))
         clocks={}; resets={}
-        parents,levels=distribution_parents(c,(root,reset_root),math.ceil(width/16))
+        parents,levels=distribution_parents(c,(root,reset_root),math.ceil(width/16),
+                                           trunk_kinds=(capture_driver,'buf_8'))
         for group,(clock_parent,reset_parent) in enumerate(parents):
             clocks[group]=c.gate("buf_4",dict(I=clock_parent))
             resets[group]=c.gate("buf_4",dict(I=reset_parent))

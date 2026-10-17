@@ -1,7 +1,7 @@
 # Repair efficiency and retained electrical failures
 
 Status: the matched density comparison, initial slew-policy experiment and failure classification are complete;
-electrical closure remains open. These runs use the same PR9 RTL/mapping,
+electrical closure remains open. The density runs use the same PR9 RTL/mapping,
 patched OpenROAD executable, 3,250 µm square outline, macro positions and corrected
 periodic CTS flow. Only placement density differs. The default remains 0.50;
 neither experiment authorizes a timing or power claim.

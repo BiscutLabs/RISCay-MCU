@@ -464,6 +464,10 @@
   Retain budget failures, including small excesses; zero-wire equal delays are
   not routed skew evidence. Each of the three SRAM clocks needs a distinct,
   exclusive immediate parent driver in the final repaired graph.
+  Wide EventRegister capture trees (>256 bits) use buf_12 roots/trunks with
+  unchanged buf_4 leaves; reset, ClosingLatch and PhaseRegister drivers stay
+  unchanged. Preserve complete recipe/topology controls and rerun loaded
+  upstream request/ACK checks when changing driver input capacitance.
   The native Control SPICE harness preserves uncut controller feedback and all
   315 payload cells. Follow docs/reviews/control-native-characterization.md:
   reject changed adapter specializations and unexplained cut loads, verify both
