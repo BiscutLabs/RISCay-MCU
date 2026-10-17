@@ -101,9 +101,14 @@ if {$stage eq "place"} {
   estimate_parasitics -placement
 }
 if {$stage eq "clock"} {
-  # Explicit roots exclude SDA and all self-timed capture networks. The service
-  # tree follows the related gated work branch; async local trees stay intact.
-  clock_tree_synthesis -clk_nets {serviceClock soc/gate_io_clockOut watchdogClock} \
+  source $source/pnr-clock.tcl
+  periodic_clock_inventory $out/clock-sinks-before.tsv
+  repair_graph $out/clock-repair-before.tsv
+  # In pinned OpenROAD, explicit -clk_nets bypasses the clock-net discovery
+  # needed to recurse through existing repair buffers. Keep the four exact SDC
+  # clocks, but exclude SDA's event tree from construction, not from timing.
+  set_cts_config -skip_nets {sda}
+  clock_tree_synthesis \
     -root_buf ${sc}clkbuf_16 -buf_list [list ${sc}clkbuf_2 ${sc}clkbuf_4 ${sc}clkbuf_8] \
     -sink_clustering_enable -sink_clustering_size 16 -sink_clustering_max_diameter 100 \
     -obstruction_aware -dont_use_dummy_load
@@ -111,6 +116,8 @@ if {$stage eq "clock"} {
   check_placement -verbose
   set_propagated_clock [get_clocks {service work lf}]
   estimate_parasitics -placement
+  periodic_clock_inventory $out/clock-sinks-after.tsv
+  repair_graph $out/clock-repair-after.tsv
   report_cts -out_file $out/cts.rpt
 }
 if {$stage eq "global"} {

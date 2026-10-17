@@ -560,6 +560,14 @@
   Standalone PhysicalTiming core tests do not authorize that policy for every
   controller. Constraint coverage and complete physical envelopes remain open.
   The first P&R flow and its open violations are in `docs/gf180-first-pnr.md`.
+  Periodic CTS follows docs/reviews/remaining-clock-trees.md: use automatic
+  clock-net discovery through existing repair buffers, excluding the external
+  SDA event from construction but retaining its timing constraint. Independently
+  enumerate actual sequential Liberty pins and nearest clock roots; never rely
+  only on equal before/after STA inventories. Reject missing work sinks, changed
+  source/division/waveforms, functional gate clones and periodic native storage.
+  Every periodic sink needs construction evidence, with exact SRAM drivers and
+  polarity preserved. Construction coverage is not skew/pulse/electrical closure.
   Verify supplies even on protected cells; keep SPEF and the extracted ODB names
   consistent. A zero router-violation count is not full DRC/LVS or async signoff.
 - Keep generated RTL, tools, simulator logs and test evidence under ignored

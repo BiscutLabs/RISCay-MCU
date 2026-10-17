@@ -25,12 +25,12 @@ ASSETS = {
     "rcx.min": "libs.tech/librelane/rules.openrcx.gf180mcuD.min",
     "rcx.max": "libs.tech/librelane/rules.openrcx.gf180mcuD.max",
 }
-PROVENANCE_SCHEMA = "riscay-pnr-inputs-v3"
+PROVENANCE_SCHEMA = "riscay-pnr-inputs-v4"
 MAPPING_INPUTS = ("mapping.json", "netlist.v", "netlist.json", "base.sdc", "clocked.sdc",
                   "feedback-cuts.tcl", "async.sdc", "preserve-mapped.tcl", "constraints-bound.json",
                   "electrical-repair/receipt.json")
-FLOW_INPUTS = ("pnr.tcl", "pnr-pdn.tcl", "power.tcl", "pnr-repair.tcl")
-REPAIR_AUDIT_SOURCES = ('check_pnr_repair.py','repair_gf180_design.py','gf180_physical.py',
+FLOW_INPUTS = ("pnr.tcl", "pnr-pdn.tcl", "power.tcl", "pnr-repair.tcl", "pnr-clock.tcl")
+REPAIR_AUDIT_SOURCES = ('check_pnr_repair.py','check_pnr_clock.py','repair_gf180_design.py','gf180_physical.py',
                       'gf180_estimate.py','repair_gf180_control.py','characterize_gf180_liberty.py','gf180_constraints.py','gf180_pnr.py')
 GENERATED_INPUTS = ("config.tcl", "async-pnr.sdc", "async-electrical.sdc", "async-context.json", "protected.tcl")
 RC_CORNERS = ("nom", "min", "max")
@@ -159,6 +159,14 @@ def validate_provenance(mapping,out,stage,flow_sources=None):
             raise ValueError('PNR_REPAIR_GRAPH_CHANGED')
         if proof.get('protected_nets_sha256')!=sha(out/(repaired+'-native-protected-nets.txt')):
             raise ValueError('PNR_REPAIR_PROTECTION_CHANGED')
+    if STAGES.index(stage)>=STAGES.index('clock'):
+        proof=meta['checkpoints']['clock'].get('clock_coverage',{})
+        if proof.get('proof_sha256')!=sha(out/'clock-coverage-proof.json'):
+            raise ValueError('PNR_CLOCK_PROOF_CHANGED')
+        expected={str((out/(name+'.tsv')).resolve()) for name in
+                  ('clock-repair-before','clock-repair-after','clock-sinks-before','clock-sinks-after')}
+        if set(proof.get('inputs_sha256',{}))!=expected or any(sha(Path(p))!=h for p,h in proof['inputs_sha256'].items()):
+            raise ValueError('PNR_CLOCK_GRAPH_CHANGED')
     if stage=="extract" and checkpoint.get("spef_sha256")!=sha(out/"routed.spef"):
         raise ValueError("PNR_SPEF_CHANGED")
     if stage=="extract" and meta.get("wire_corners"):
@@ -381,6 +389,14 @@ def run(mapping,out,from_stage,to_stage,threads,side=1440,openroad=None,density=
             except BaseException:
                 meta['checkpoints'].pop(stage,None)
                 meta.update(status='stopped-unqualified',failed_stage=stage+'-repair-proof')
+                write_json(out/'run.json',meta)
+                raise
+        if stage=='clock':
+            from check_pnr_clock import check as check_clock
+            try:meta['checkpoints'][stage]['clock_coverage']=check_clock(mapping,out)
+            except BaseException:
+                meta['checkpoints'].pop(stage,None)
+                meta.update(status='stopped-unqualified',failed_stage='clock-coverage-proof')
                 write_json(out/'run.json',meta)
                 raise
         if stage=="extract":

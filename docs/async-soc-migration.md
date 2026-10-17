@@ -1222,11 +1222,14 @@ physical reset qualification (R2b) remains mandatory under item 17a3.
         - [x] Audit remaining periodic clocks against native ownership. The
           [clock audit](reviews/remaining-clock-trees.md) distinguishes physical
           sampling/time obligations from removable Services/transport state.
-        - [ ] Correct the newly found gated-work CTS coverage gap and verify
+        - [x] Correct the newly found gated-work CTS construction gap and verify
           every periodic sink, including falling-edge launch and three SRAMs.
-          Current CTS skips a repair-buffer-hidden tree of 4,009 BD/4,060 Click
-          clock pins. Existing buffers and propagated STA are not proof that CTS
-          balanced that tree. Keep native capture events and SDA out of CTS.
+          Automatic discovery now covers the repair-buffer-hidden tree of
+          4,009 BD/4,060 Click clock pins. Independent Liberty/graph inventory,
+          actual clock relationships, whole-graph proof and fresh review pass.
+          See the [construction evidence](reviews/remaining-clock-trees.md).
+          CTS balancing warnings, skew, pulse and electrical closure stay open;
+          keep native capture events and SDA out of CTS.
       - [ ] **Execute RF and elapsed seeded-owner composition.** Follow
         electrical repair and the rerun campaigns. Measure actual register-bank launch,
         forwarding/Fork/Join ordering and all 15 banks. Preserve elapsed's
