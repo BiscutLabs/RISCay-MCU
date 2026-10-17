@@ -1144,6 +1144,16 @@ physical reset qualification (R2b) remains mandatory under item 17a3.
         review has no remaining blocking finding in this scope. See
         [the scoped evidence](reviews/control-join-timing.md). Full source reuse,
         pending/return/pulse, simultaneous rendezvous and mismatch remain open.
+      - [x] **Conditional Control capture retention.** Extend the sealed loaded
+        Join slice with common-event capture-to-ACK hold, allowing zero source-Q
+        and transform contamination delay. Measure the BD hold fork only under
+        its proved settled-B Boolean cofactor; retain loaded cell/wire arcs and
+        exact slew handoff instead of an automatically cut STA path. Verify
+        both operands, both Click phases, five corners and actual-arc controls.
+        All 20 cases resolve, eight physical fault/period controls and 922 Python
+        tests pass, and fresh independent review has no blocking findings.
+        See [scope and evidence](reviews/control-retention-timing.md).
+        B-before-ACK, overlapping transitions and complete source reuse stay open.
       - [x] **Reusable Join binding and conditional execute composition.**
         Reuse the Control measurement template with exact operand-field mapping
         and a separate source-input ledger. Keep all 480 RF bits symbolic and
@@ -1177,7 +1187,8 @@ physical reset qualification (R2b) remains mandatory under item 17a3.
         the remaining legacy synthesis/P&R/SPICE launchers to configuration.
       - [ ] **Complete paired Control capture/hold analysis.** The conditional
         pilot resolves local E/CLK/ACK paths; Control Join initial setup is now
-        composed, but source retention/reuse, BD pending
+        composed; the local zero-contamination hold and settled-B fork checks
+        remain conditional. Full source retention/reuse, BD pending
         admission/returns and Click pulse/feedback remain open. Bound full
         source reuse without blind cuts or periodic staging, repair residual
         electrical violations, then include routed min/max RC. Global mapper

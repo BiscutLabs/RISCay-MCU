@@ -1,0 +1,120 @@
+{
+  "schema": 1,
+  "status": "CONDITIONAL_MEASUREMENTS_VERIFIED",
+  "physical_qualification": false,
+  "rtl_revision": "6aa8033f5978dfde0a00432f82952f7999d93178",
+  "implementation_base": "02a43f21c6d2b1e3f616e56e5faed18572e7b7d9",
+  "hardware_changes": false,
+  "scope": [
+    "Control local capture-to-ACK permission with zero source/transform contamination delay",
+    "BD first ACK-rise fork with B already settled high, A keeper high and reset inactive"
+  ],
+  "variants": {
+    "bd": {
+      "corner_slew_cases": 10,
+      "path_rows": 38380,
+      "loaded_cell_arc_records": 520,
+      "wire_arc_records": 600,
+      "minimum_zero_contamination_hold_ns": 1.1748468523899607,
+      "minimum_ack_after_capture_ns": 1.3688468523899606,
+      "minimum_settled_b_fork_ns": 2.463761466,
+      "electrical_violation_rows_per_context": {
+        "minimum": 557,
+        "maximum": 1505
+      },
+      "campaign_receipt": {
+        "path": "build/control-retention-corners-r1/bd/results.json",
+        "sha256": "294956f15e593dcbe13235cf216b0393c1c568d6fc17f0f765451f5279056f6e"
+      },
+      "controls_receipt": {
+        "path": "build/control-retention-controls-r1/bd/controls.json",
+        "sha256": "294e7441ed979aaa540a562f23dab09766a697338263ffb0a0af967c3fe16fea"
+      },
+      "controls": [
+        {
+          "fault": "period",
+          "status": "EXPECTED",
+          "arc_count": 0
+        },
+        {
+          "fault": "late_capture",
+          "status": "EXPECTED",
+          "arc_count": 1
+        },
+        {
+          "fault": "early_ack",
+          "status": "EXPECTED",
+          "arc_count": 19
+        },
+        {
+          "fault": "late_fork",
+          "status": "EXPECTED",
+          "arc_count": 1
+        },
+        {
+          "fault": "zero_fork",
+          "status": "EXPECTED",
+          "arc_count": 13
+        }
+      ]
+    },
+    "click": {
+      "corner_slew_cases": 10,
+      "path_rows": 51480,
+      "loaded_cell_arc_records": 0,
+      "wire_arc_records": 0,
+      "minimum_zero_contamination_hold_ns": 52.864412303758364,
+      "minimum_ack_after_capture_ns": 53.10241230375836,
+      "minimum_settled_b_fork_ns": null,
+      "electrical_violation_rows_per_context": {
+        "minimum": 481,
+        "maximum": 1504
+      },
+      "campaign_receipt": {
+        "path": "build/control-retention-corners-r1/click/results.json",
+        "sha256": "04df486b7992a9e9707b3af3a4b53e0e212431e2f73d63284bcc382112042842"
+      },
+      "controls_receipt": {
+        "path": "build/control-retention-controls-r1/click/controls.json",
+        "sha256": "fb0e9ee30596e4c95c6e03edf586677245801350e32a7209de1451723d518b44"
+      },
+      "controls": [
+        {
+          "fault": "period",
+          "status": "EXPECTED",
+          "arc_count": 0
+        },
+        {
+          "fault": "late_capture",
+          "status": "EXPECTED",
+          "arc_count": 1
+        },
+        {
+          "fault": "early_ack",
+          "status": "EXPECTED",
+          "arc_count": 47
+        }
+      ]
+    }
+  },
+  "tests": {
+    "count": 922,
+    "focused_count": 28,
+    "result": "PASS",
+    "log": {
+      "path": "build/control-retention-python-r1.log",
+      "sha256": "5ed9d98ede470d233f04709ace6858b9bf3796498b1f6824fae1bc72118a3913"
+    }
+  },
+  "review": {
+    "path": "build/control-retention-review/independent-review.json",
+    "sha256": "2194fcf3f44a9b988820ad4e20e924ebf9320301b242e74a37ff3b2396a613b4"
+  },
+  "limitations": [
+    "Source stable through ACK and legal single captures are assumptions",
+    "BD B-before-ACK, overlapping B/ACK, pending, return and reopening histories remain open",
+    "Click pulse width, extra capture and phase self-hold remain open",
+    "No mismatch, routed min/max RC, electrical or reset-distribution qualification",
+    "No guard shortening or area/power improvement claimed"
+  ]
+}
