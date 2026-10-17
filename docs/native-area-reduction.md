@@ -165,6 +165,12 @@ this requires 0.525888 mm² (18.61%) more reduction; it is not a measured saving
     masks where reset isolation requires them. Run unknown-payload/reset and
     immediate-source-reuse controls, then remap with any required hold repair.
     This needs matching library/model semantics, not a mapper-only bypass.
+    The [isolated RAM prepare pilot](reviews/a8b-passive-stage.md) compares a
+    separately named passive model with its matching physical alias in both
+    variants. It removes 0.003398 mm² locally per variant, including one reset
+    repair buffer, without local hold repair. Existing library/production
+    semantics remain unchanged; source launch, invalid-data fanout and complete
+    physical qualification still gate adoption. See the [ledger](area-ledger.md).
 - [ ] **A9: reset-free payload storage, by owner.** Separate seeded state,
   phase/control, architectural reset values and payload whose consumers are
   valid-qualified. Prove read-before-write exclusion and both reset lifetimes

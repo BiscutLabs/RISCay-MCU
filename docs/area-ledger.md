@@ -66,18 +66,26 @@ subtracted from the accepted totals above.
 | Item | Component change | Guard / allowance / DLYD area delta, mm² | Clock sink delta | Evidence |
 | --- | --- | ---: | ---: | --- |
 | A7b | BD elapsed request chain: 86 → 25 DLYD cells | −0.004552845 / 0 / −0.004552845 | 0 | [Ten corner/slew cases and four exact controls](reviews/a7b-elapsed-guard.md) |
+| A8b | One 101-bit RAM prepare allowance per variant, BD and Click | 0 / −0.003384998 each / 0 | 0 | [Passive model and physical comparison](reviews/a8b-passive-stage.md) |
 
 A7b's minimum setup margin under 15% two-sided sensitivity is +4.579 ns;
 that sensitivity is not a qualified mismatch bound. Hold and ACK timing are
 unchanged. Complete source launch, return/reset/pulse envelopes, electrical
 closure and extracted RC remain open. No production guard is shortened.
 
+A8b also removes one 0.000013171 mm² reset-repair buffer per variant, for a total
+local repaired-graph delta of **−0.003398170 mm² each**. It needs no local hold
+repair under the tested zero-wire conditions. This is a proposed new passive
+model's behavior; the existing library primitive and production mapper retain
+their reset semantics. Full launch/reset/electrical/routed qualification and
+production adoption remain open.
+
 ## In progress
 
 | Item | Scope | Acceptance still required |
 | --- | --- | --- |
 | A7b | Independently reviewed isolated BD elapsed request guard candidate above | Complete launch/return/reset and routed qualification before production shortening |
-| A8b | RAM prepare standard-stage passive allowance, BD and Click | Matching model semantics, reset/reuse controls, max/min capture and ACK checks, exact graph delta and review |
+| A8b | Independently reviewed RAM prepare passive-allowance candidates above | Supported library API, fanout isolation audit and physical qualification before adoption |
 | 11b2 + 11b3 | Borrow Housekeeping ordered payload and Telemetry commit fields | Focused ownership/reset/stall faults, shared regressions, strict exports, matched map/activity and review |
 
 Replace these rows with measured pilot/batch evidence when complete. Keep
