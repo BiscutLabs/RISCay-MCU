@@ -29,7 +29,7 @@ object ConstantScaling {
   * Digital timing is explicit; complete physical closure remains separate.
   */
 class FourPhaseElapsed(micros: Seq[Int], domain: ResetDomain,
-    ownerTiming: BundledTiming = BundledTiming.Simulation,
+    ownerTiming: BundledTiming = OwnerTiming.base,
     stepTiming: BundledTiming = OwnerTiming.elapsedStep) extends AsyncModule(domain) {
   OwnerTiming.check(ownerTiming); OwnerTiming.check(stepTiming)
   require(micros.nonEmpty && micros.forall(_ > 0))
@@ -41,7 +41,7 @@ class FourPhaseElapsed(micros: Seq[Int], domain: ResetDomain,
   private val returnMode = 3.U(modeWidth.W)
   val command = fourPhaseInput("command", UInt(32.W))
   val reply = fourPhaseOutput("reply", new ElapsedResult(lanes))
-  private val timing = ownerTiming
+  private val timing = OwnerTiming.passive(ownerTiming)
   private val cell = ModelTime.ps(1000)
   private val resetRef = contract.endpoint("reset", reset)
   private val owner = asyncChild("owner")(d => new FourPhaseFifo(
@@ -85,7 +85,7 @@ class FourPhaseElapsed(micros: Seq[Int], domain: ResetDomain,
         r.mode := idleMode; r.commandPhase := false.B
       }
       r
-    }, stepTiming, d))
+    }, OwnerTiming.passive(stepTiming), d))
 
   // Four-phase source data is held through complete REQ/ACK return. Qualify it
   // only on admission; feedback turns use the retained target and delta.
@@ -129,7 +129,7 @@ class FourPhaseElapsed(micros: Seq[Int], domain: ResetDomain,
 class FourPhaseSample(numerator: Int, denominator: Int, domain: ResetDomain) extends AsyncModule(domain) {
   require(numerator > 0 && denominator > 0)
   private val width = log2Ceil(denominator).max(1)
-  private val timing = BundledTiming.Simulation
+  private val timing = OwnerTiming.base
   private val cell = ModelTime.ps(1000)
   val command = fourPhaseInput("command", UInt(12.W))
   val reply = fourPhaseOutput("reply", UInt(32.W))
@@ -156,7 +156,7 @@ class FourPhaseSample(numerator: Int, denominator: Int, domain: ResetDomain) ext
   * running through request and response bridge drainage, even with zero elapsed.
   */
 class ElapsedTicks(micros: Seq[Int], domain: ResetDomain,
-    ownerTiming: BundledTiming = BundledTiming.Simulation,
+    ownerTiming: BundledTiming = OwnerTiming.base,
     stepTiming: BundledTiming = OwnerTiming.elapsedStep) extends ClockedBridge(domain, 2) {
   val io = IO(new ElapsedScalingPort(micros.size))
   dontTouch(io) // Profiles may ignore observation flags or duplicate elapsed lanes.

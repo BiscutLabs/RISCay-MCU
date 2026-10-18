@@ -16,7 +16,7 @@ import riscay.soc._
 class FourPhaseTelemetry(p: SocParameters, words: Vector[Int], domain: ResetDomain) extends AsyncModule(domain) {
   val command = fourPhaseInput("command", new TelemetryCommand(p.config.measurements.size))
   val reply = fourPhaseOutput("reply", new TelemetryReply(p.config.measurements.size, words.size))
-  private val timing = BundledTiming.Simulation
+  private val timing = OwnerTiming.base
   private val cell = ModelTime.ps(1000)
   private val state = asyncChild("state")(d => new FourPhaseFifo(new TelemetryState(p.config.measurements.size, words.size), 1,
     timing, Seq(TelemetryState.initial(p, words.size)), cell, d))

@@ -17,7 +17,7 @@ class ClickHousekeeping(p: SocParameters,domain: ResetDomain) extends AsyncModul
   val command=twoPhaseInput("command",new HousekeepingCommand)
   val reply=twoPhaseOutput("reply",new HousekeepingReply)
   val start=IO(Input(Bool()))
-  private val timing=ClickTiming.Simulation
+  private val timing=OwnerTiming.base
   private val cell=ModelTime.ps(1000)
   private val state=asyncChild("state")(d => new PhaseDecoupledClickBuffer(new HousekeepingState,timing,Some(HousekeepingState.initial(p)),d))
   private val join=asyncChild("join")(d => new ClickJoin(new HousekeepingState,new HousekeepingCommand,timing,d))

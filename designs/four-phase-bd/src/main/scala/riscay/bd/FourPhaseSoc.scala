@@ -11,7 +11,7 @@ import riscay.soc._
 import riscay.profiles._
 
 class FourPhaseSoc(p: SocParameters, board: SocParameters => BoardProfile = p => new GenericBoard(p),
-    timing: BundledTiming = BundledTiming.Simulation,
+    timing: BundledTiming = OwnerTiming.base,
     executeTiming: BundledTiming = OwnerTiming.execute, owners: OwnerTiming = OwnerTiming())
     extends FourPhasePlatform(p, board, clockedCpuResponse=false, owners=owners) {
   require(Seq(timing,executeTiming).forall(t =>

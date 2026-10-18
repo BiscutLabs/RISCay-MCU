@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Adapted from BiscutLabs/chisel-async tools/sbt.py (Apache-2.0).
-"""Portable pinned sbt launcher. Requires JDK 21 and the chisel-async RC1 JAR."""
+"""Portable pinned sbt launcher. Requires JDK 21 and the pinned chisel-async JAR."""
 from __future__ import annotations
 
 import hashlib

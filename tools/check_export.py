@@ -25,6 +25,7 @@ from check_completion_integration import completion_background, completion_const
 from check_admission_export import validate_admission, literal_nets, admission_probe
 from check_ram_return_contract import PATHS as RAM_RETURN_PATHS, validate_ram_return, ram_return_bindings, policy as ram_return_policy
 from check_ram_return_integration import ram_return_probe, apply_return_literal_obligations
+from check_sram_fusion_literals import sram_fusion_literal_probe
 from check_program_return_contract import (PATHS as PROGRAM_RETURN_PATHS, validate_program_return,
                                          program_return_bindings, policy as program_return_policy)
 from check_program_return_integration import program_return_probe
@@ -38,6 +39,7 @@ from check_native_clock_inventory import native_clock_inventory
 from check_quiescing_receipt import native_request_source, pack_request, request_receipt_probe
 from check_probe_budget import require_paired_probe_budget
 from check_command_borrow import telemetry_borrow_background
+from passive_allowance_policy import PASSIVE
 from check_program_address import prove_program_address, program_address_probe
 from check_ram_source_export import ARM_PATH, RETIRE_PATH, validate_ram_source, ram_source_bindings, ram_source_probe
 from check_program_source_export import PROGRAM_PATHS, validate_program_source, program_source_bindings, program_source_probe, validate_program_receipts
@@ -903,12 +905,15 @@ def validate_i2c_publication(node):
     if set(cells)!=set(expected):raise ValueError("MCU_I2C_CELL_INVENTORY")
     for name,(model,w) in expected.items():
         c=cells[name];p=c["parameters"]
+        if name in ("data_delay","byte_data_delay") and c["model"] == PASSIVE:
+            model = "PassiveDataAllowance"
+            if set(p) != {"WIDTH", "DELAY_FS"}: raise ValueError("MCU_I2C_PASSIVE_PARAMETERS")
         if c["model"]!="ChiselAsync"+model+"_v1" or (w is not None and p.get("WIDTH")!=str(w)):
             raise ValueError("MCU_I2C_CELL_POLICY")
         delay=110000000 if name in ("acknowledge_guard","output_guard","return_guard") else (
             11000000 if name=="request_delay" else 10000000 if name in ("data_delay","byte_data_delay") else 1000000)
         if p.get("DELAY_FS")!=str(delay):raise ValueError("MCU_I2C_GUARD_POLICY")
-        if model not in ("Xor","ControlGate","AsymmetricC") and p.get("RESET_VALUE")!="0":
+        if model not in ("Xor","ControlGate","PassiveDataAllowance","AsymmetricC") and p.get("RESET_VALUE")!="0":
             raise ValueError("MCU_I2C_RESET_POLICY")
         if model=="ControlGate":
             op=1 if name.endswith(("_na","_nb")) or name in prefixes or name=="byte_idle_gate" else (
@@ -1573,6 +1578,7 @@ def main() -> None:
         source = ram_return_probe(source, manifest, scopes, args.directory,literal_obligations=literal_obligations)
         source = program_return_probe(source, manifest, scopes, args.directory,literal_obligations=literal_obligations)
         source = apply_return_literal_obligations(source,literal_obligations)
+        source = sram_fusion_literal_probe(source, manifest, args.directory)
         source = program_source_probe(source, manifest, scopes)
         source = publication_source_probe(source, manifest, scopes)
         source = frame_receipt_probe(source, manifest, scopes, args.directory)

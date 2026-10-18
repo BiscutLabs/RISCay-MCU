@@ -1,14 +1,17 @@
 // SPDX-License-Identifier: Apache-2.0
 package riscay.click
 
-import chiselasync.metadata.{ClickTiming, DelayBounds, ModelTime}
+import chiselasync.metadata.{DataAllowance, ClickTiming, DelayBounds, ModelTime}
 import riscay.soc.ApplicationResetContract
 
 /** Native Click policy; no four-phase conversion or periodic staging. */
 object OwnerTiming {
-  val elapsedStep: ClickTiming = ClickTiming.Simulation.copy(requestDelay=ModelTime.ps(100000))
+  // Unmasked whole-transform annotation; capture storage owns reset.
+  val base: ClickTiming = ClickTiming.Simulation.copy(dataAllowance=DataAllowance.Passive)
+  def passive(t: ClickTiming): ClickTiming = t.copy(dataAllowance=DataAllowance.Passive)
+  val elapsedStep: ClickTiming = OwnerTiming.base.copy(requestDelay=ModelTime.ps(100000))
   def execute(base: ClickTiming, data: ModelTime): ClickTiming = base.copy(
-    data=DelayBounds.fixed(data),
+    data=DelayBounds.fixed(data),dataAllowance=DataAllowance.Passive,
     requestDelay=ModelTime((data.fs + base.requestDelay.fs - base.data.max.fs).max(80000000L)))
   def check(t: ClickTiming): Unit = require(
     (Seq(t.requestDelay.fs,t.acknowledgeDelay.fs,t.outputDelay.fs,t.data.max.fs,t.payload.max.fs) ++
@@ -17,9 +20,9 @@ object OwnerTiming {
 }
 
 case class OwnerTiming(
-    controlOwner: ClickTiming = ClickTiming.Simulation,
-    controlUpdate: ClickTiming = ClickTiming.Simulation,
-    elapsedOwner: ClickTiming = ClickTiming.Simulation,
+    controlOwner: ClickTiming = OwnerTiming.base,
+    controlUpdate: ClickTiming = OwnerTiming.base,
+    elapsedOwner: ClickTiming = OwnerTiming.base,
     elapsedStep: ClickTiming = OwnerTiming.elapsedStep) {
   Seq(controlOwner,controlUpdate,elapsedOwner,elapsedStep).foreach(OwnerTiming.check)
 }

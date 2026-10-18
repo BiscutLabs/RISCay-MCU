@@ -32,5 +32,5 @@ object FourPhaseCrc32 {
       val folded = x.crc ^ x.word
       val computed = Cat(rows.reverse.map(mask => (folded & mask.U(32.W)).xorR))
       Mux(x.pending, computed, x.crc)
-    }, BundledTiming.Simulation, domain)
+    }, OwnerTiming.base, domain)
 }

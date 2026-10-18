@@ -16,7 +16,7 @@ import riscay.profiles.PowerPolicy
 class ClickSupervisor(p: SocParameters, policy: PowerPolicy, domain: ResetDomain) extends AsyncModule(domain) {
   val command = twoPhaseInput("command", new SupervisorCommand)
   val reply = twoPhaseOutput("reply", new SupervisorState)
-  private val timing = ClickTiming.Simulation
+  private val timing = OwnerTiming.base
   private val cell = ModelTime.ps(1000)
   private val state = asyncChild("state")(d => new PhaseDecoupledClickBuffer(new SupervisorState, timing, Some(SupervisorState.initial), d))
   private val join = asyncChild("join")(d => new ClickJoin(new SupervisorState, new SupervisorCommand, timing, d))

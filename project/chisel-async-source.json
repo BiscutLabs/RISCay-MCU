@@ -1,0 +1,11 @@
+{
+  "repository": "https://github.com/BiscutLabs/chisel-async",
+  "commit": "06b1216493032c1fbb1a923aed82815b9cd7944e",
+  "coordinate": "io.github.biscutlabs:chisel-async_2.13:0.1.0-RC2-06b1216-SNAPSHOT",
+  "publish_tasks": [
+    "set ThisBuild / version := \"0.1.0-RC2-06b1216-SNAPSHOT\"",
+    "publishLocal"
+  ],
+  "verified_jar_sha256": "fb9c1b8f80bfbc22620354c3d5c68ce9d824380d0f004ebddd5bfa4611484b9d",
+  "artifact_scope": "Exact local JAR used by the adoption verification; source builds must record their own resolved artifact hash."
+}

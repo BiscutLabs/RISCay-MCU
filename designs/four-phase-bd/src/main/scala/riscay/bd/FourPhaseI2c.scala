@@ -7,7 +7,7 @@ import chiselasync.bundled._
 import chiselasync.clocked._
 import chiselasync.core.{AsyncModule, ResetDomain}
 import chiselasync.metadata.{BundledTiming, ClickTiming, ModelTime}
-import chiselasync.primitives.{AsymmetricCElement, ControlGate, EventRegister, GateOperation, PhaseRegister, XorGate}
+import chiselasync.primitives.{PassiveDataAllowance,AsymmetricCElement, ControlGate, EventRegister, GateOperation, PhaseRegister, XorGate}
 import chiselasync.protocol.FourPhase
 import riscay.soc._
 
@@ -20,7 +20,7 @@ class FourPhaseI2c(address: Int, domain: ResetDomain) extends AsyncModule(domain
   val frame=fourPhaseOutput("frame",new I2cFrame)
   val snapshot=fourPhaseOutput("snapshot",UInt(8.W))
   val observed=IO(Output(new I2cObservation)); dontTouch(observed)
-  private val timing=BundledTiming.Simulation
+  private val timing=OwnerTiming.base
   private val state=asyncChild("state")(d => new FourPhaseFifo(new I2cState,1,timing,
     Seq(I2cState.initial),ModelTime.ps(1000),d))
   private val update=asyncChild("update")(d => new FourPhaseStage(new I2cWork,new I2cResult,
@@ -128,6 +128,9 @@ class I2cPublication(domain: ResetDomain) extends AsyncModule(domain) {
   private val guard = ModelTime.ps(110000)
   private def gate(id: String, op: GateOperation.Value, a: UInt, b: UInt = 0.U,
       width: Int = 1, delay: ModelTime = cell, initial: BigInt = 0): UInt = {
+    if (Set("byte_data_delay","data_delay")(id)) {
+      return PassiveDataAllowance(this,id,a,delay,resetRef)
+    }
     val g=Module(new ControlGate(width,op,delay,initial)); g.reset:=reset; g.a:=a; g.b:=b
     contract.primitive(id,g,Map("WIDTH"->BigInt(width),"OP"->BigInt(op.id),
       "DELAY_FS"->BigInt(delay.fs),"RESET_VALUE"->initial),resetRef,
@@ -223,7 +226,7 @@ class I2cPublication(domain: ResetDomain) extends AsyncModule(domain) {
   private val observedBits=WireDefault(UInt((new I2cObservation).getWidth.W),observed.asUInt); dontTouch(observedBits)
   contract.endpoint("observed",observedBits)
   contract.endpoint("sources",sources); contract.endpoint("captured",capturedData)
-  contract.dataPathTiming("projection","sources","register_data",BundledTiming.Simulation,
+  contract.dataPathTiming("projection","sources","register_data",OwnerTiming.base,
     "complete I2C projection and retained-effect muxes; digital bound only")
   contract.setupHold("projection_aperture","in_request","in_data","register_data","capture","captured",
     ModelTime.ps(100),ModelTime.ps(100))
@@ -234,7 +237,7 @@ class I2cPublication(domain: ResetDomain) extends AsyncModule(domain) {
   contract.endpoint("byte_sources",byteSources); contract.endpoint("byte_register_data",byteRegisterData)
   private val writeLegalProbe=WireDefault(writeLegal); dontTouch(writeLegalProbe)
   contract.endpoint("receive_bytes",receiveProbe); contract.endpoint("write_legal",writeLegalProbe)
-  contract.dataPathTiming("byte_write_transform","byte_sources","byte_register_data",BundledTiming.Simulation,
+  contract.dataPathTiming("byte_write_transform","byte_sources","byte_register_data",OwnerTiming.base,
     "complete addressed receive-byte transform; digital budget only",delayCell="byte_data_delay")
   contract.setupHold("byte_aperture","in_request","in_data","byte_register_data","capture","receive_bytes",
     ModelTime.ps(100),ModelTime.ps(100))

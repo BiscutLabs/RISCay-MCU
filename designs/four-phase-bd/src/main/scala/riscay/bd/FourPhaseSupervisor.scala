@@ -16,7 +16,7 @@ import riscay.profiles.PowerPolicy
 class FourPhaseSupervisor(p: SocParameters, policy: PowerPolicy, domain: ResetDomain) extends AsyncModule(domain) {
   val command = fourPhaseInput("command", new SupervisorCommand)
   val reply = fourPhaseOutput("reply", new SupervisorState)
-  private val timing = BundledTiming.Simulation
+  private val timing = OwnerTiming.base
   private val cell = ModelTime.ps(1000)
   private val state = asyncChild("state")(d => new FourPhaseFifo(new SupervisorState, 1, timing, Seq(SupervisorState.initial), cell, d))
   private val join = asyncChild("join")(d => new FourPhaseJoin(new SupervisorState, new SupervisorCommand, timing, cell, d))

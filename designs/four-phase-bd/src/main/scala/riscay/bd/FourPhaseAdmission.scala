@@ -15,7 +15,7 @@ class FourPhaseAdmission(domain: ResetDomain) extends AsyncModule(domain) {
   val returned=fourPhaseInput("returned",Bool())
   val grant=fourPhaseOutput("grant",Bool())
   val responseIdle=IO(Input(Bool()))
-  private val timing=BundledTiming.Simulation
+  private val timing=OwnerTiming.base
   private val cell=ModelTime.ps(1000)
   private val resetRef=contract.endpoint("reset",reset)
   private val pending=asyncChild("pending")(d => new LongHoldBuffer(Bool(),timing,d))

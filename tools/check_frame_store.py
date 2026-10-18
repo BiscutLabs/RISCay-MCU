@@ -10,6 +10,7 @@ Runtime capture/fault controls independently qualify the reviewed implementation
 """
 import hashlib
 import re
+from passive_allowance_policy import data_specs
 from pathlib import Path
 
 from check_frame_receipt import FIELDS
@@ -20,13 +21,18 @@ RTL_FINGERPRINTS = {
     "bd": {
         "b7fcdfca1b128b2b47016f92fb6d3ef09999a33a252e6bfb9bf29d5b8e5814a6",  # native-route standalone
         "698146e39df32073c727a73f2d746a24bd2c4f0e6dbb6ac8872fa79317a5e4df",  # native-route embedded
+        "50f33c5c597d4a913b53627bb34e051c0317144ac2f0c432e5234859f5ced2e8",  # passive route allowance, embedded
     },
     "click": {
         "bd52959bc583156c1fdb574194be37871a5ed584cf4497c7bd2e35ce7275ba47",  # native-route standalone
         "196b8ce59027e515521ac43ca6ec41fe90fed3a78cf4e0bcd4a9aebf20c02d1d",  # native-route embedded
+        "4274af33388987753d70fbea5721655ca91c88f1050602ccd5a765ca829742de",  # passive bank allowance, embedded
     },
 }
-BD_BUFFER_FINGERPRINT = "d776db42fe7986486ecefa402db6f48b0f594e6f4dd40d1735116842380d2f45"
+BD_BUFFER_FINGERPRINTS = {
+    "d776db42fe7986486ecefa402db6f48b0f594e6f4dd40d1735116842380d2f45",  # resettable allowance
+    "2d92b93f7a96efc9a0f4acf585dc12dd8f7caa2038ff9ea531ef0ae725468e70",  # passive allowance; data probe alias only
+}
 
 
 def require(value, detail):
@@ -104,7 +110,7 @@ def validate_frame_store_metadata(node, resolved=False):
                        "binary inputs; coordinated reset; data held through return to idle")
         require(c.get("phases") == ["00","10","11","01","00"] and c.get("environment") == environment,
                 "CHANNEL_ENVIRONMENT:"+name)
-    spec = primitive_spec(click)
+    spec = data_specs(node, primitive_spec(click))
     actual = [p for p in node.get("primitives", []) if p.get("model") != "ChiselAsyncTimingMarker_v1"]
     require(len(actual) == len(spec) and {p.get("id") for p in actual} == set(spec), "PRIMITIVE_INVENTORY")
     for p in actual:
@@ -183,7 +189,7 @@ def validate_frame_store(node, directory, resolved=False):
             require(len(models) == 1, "BD_BUFFER_INSTANCE:"+name)
             body = directory / (models[0]+".sv")
             require(body.is_file(), "BD_BUFFER_FILE:"+name)
-            require(rtl_fingerprint(body.read_text(encoding="utf-8")) == BD_BUFFER_FINGERPRINT, "BD_BUFFER_RTL:"+name)
+            require(rtl_fingerprint(body.read_text(encoding="utf-8")) in BD_BUFFER_FINGERPRINTS, "BD_BUFFER_RTL:"+name)
             files[body.name] = hashlib.sha256(body.read_bytes()).hexdigest()
     return dict(variant=variant, node=node["rtl_path"], fingerprint=fingerprint, files_sha256=files)
 

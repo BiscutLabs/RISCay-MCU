@@ -6,7 +6,7 @@ import chisel3.util.Cat
 import chiselasync.bundled.ClickBuffer
 import chiselasync.core.{AsyncModule,ResetDomain}
 import chiselasync.metadata.{BundledTiming,ClickTiming,ModelTime}
-import chiselasync.primitives.{ControlGate,EventRegister,GateOperation,XorGate}
+import chiselasync.primitives.{PassiveDataAllowance,ControlGate,EventRegister,GateOperation,XorGate}
 
 /** One native phase reservation, retained through committed publication or
   * uncommitted cancellation. Application reset never resets POR channel phases.
@@ -23,7 +23,7 @@ class ClickProgramSource(domain: ResetDomain) extends AsyncModule(domain) {
   val applicationReset=IO(Input(AsyncReset()))
   val eligible=IO(Output(Bool())); val idle=IO(Output(Bool()))
   Seq(reserve,grant,decision,publication,stored).foreach(dontTouch(_))
-  private val timing=ClickTiming.Simulation
+  private val timing=OwnerTiming.base
   private val cell=timing.controls.fire.model
   private val guard=ModelTime(timing.controls.inputPhase.max.fs+timing.requestDelay.fs+
     22*timing.controls.fire.max.fs+timing.clockSkew.fs+math.max(timing.hold.fs,timing.pulseLow.fs)+1)
@@ -33,6 +33,9 @@ class ClickProgramSource(domain: ResetDomain) extends AsyncModule(domain) {
   private val eligibilityResetRef=contract.endpoint("eligibility_reset",eligibilityReset)
   private def gate(id: String,op: GateOperation.Value,d: UInt,b: UInt=0.U,
       width: Int=1,delay: ModelTime=cell,initial: Int=0): UInt = {
+    if (Set("arm_data_delay","data_delay","stored_data_delay")(id)) {
+      return PassiveDataAllowance(this,id,d,delay,resetRef)
+    }
     val g=Module(new ControlGate(width,op,delay,initial)); g.reset:=reset; g.a:=d; g.b:=b
     contract.primitive(id,g,Map("WIDTH"->BigInt(width),"OP"->BigInt(op.id),"DELAY_FS"->BigInt(delay.fs),
       "RESET_VALUE"->BigInt(initial)),resetRef,"native program source guard; qualify capture and phase feedback")

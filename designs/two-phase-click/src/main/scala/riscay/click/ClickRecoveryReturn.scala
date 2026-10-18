@@ -4,7 +4,7 @@ package riscay.click
 import chisel3._
 import chiselasync.core.{AsyncModule,ResetDomain}
 import chiselasync.metadata.{BundledTiming,ClickTiming,ModelTime}
-import chiselasync.primitives.{ControlGate,EventRegister,GateOperation,XorGate}
+import chiselasync.primitives.{PassiveDataAllowance,ControlGate,EventRegister,GateOperation,XorGate}
 
 /** Native phase proof transport and input exclusion, with independent history.
   * No four-phase conversion. Digital bounds still need physical qualification.
@@ -16,12 +16,15 @@ class ClickRecoveryReturn(domain: ResetDomain) extends AsyncModule(domain) {
   val finalRequest=IO(Output(Bool()));val finalAcknowledge=IO(Input(Bool()))
   val clear=IO(Output(Bool()));val quiet=IO(Output(Bool()))
   val admitting=IO(Output(Bool()))
-  private val timing=ClickTiming.Simulation
+  private val timing=OwnerTiming.base
   private val cell=timing.controls.fire.model
   private val cleanup=ModelTime.ps(200000)
   private val resetRef=contract.endpoint("reset",reset)
   private def gate(id: String,op: GateOperation.Value,a: Bool,b: Bool=false.B,
       delay: ModelTime=cell,initial: Int=0): Bool = {
+    if (Set("target_data_delay","issue_data_delay","complete_data_delay","admission_data_delay")(id)) {
+      return PassiveDataAllowance(this,id,a,delay,resetRef)
+    }
     val g=Module(new ControlGate(1,op,delay,initial));g.reset:=reset;g.a:=a;g.b:=b
     contract.primitive(id,g,Map("WIDTH"->BigInt(1),"OP"->BigInt(op.id),"DELAY_FS"->BigInt(delay.fs),
       "RESET_VALUE"->BigInt(initial)),resetRef,"native phase proof selection and feedback; qualify complete paths")

@@ -17,7 +17,7 @@ class FourPhaseHousekeeping(p: SocParameters,domain: ResetDomain) extends AsyncM
   val command=fourPhaseInput("command",new HousekeepingCommand)
   val reply=fourPhaseOutput("reply",new HousekeepingReply)
 
-  private val timing=BundledTiming.Simulation
+  private val timing=OwnerTiming.base
   private val cell=ModelTime.ps(1000)
   private val state=asyncChild("state")(d => new FourPhaseFifo(new HousekeepingState,1,timing,Seq(HousekeepingState.initial(p)),cell,d))
   private val join=asyncChild("join")(d => new FourPhaseJoin(new HousekeepingState,new HousekeepingCommand,timing,cell,d))

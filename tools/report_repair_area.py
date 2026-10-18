@@ -52,11 +52,11 @@ def summarize(a,b,proof,prep,liberty,areas):
         new_ties=dict(count=len(ties),area_mm2=area(b[n] for n in ties)/1e6))
 
 
-def adapter_costs(cells, mapping, audit, areas):
+def adapter_costs(cells, mapping, audit, areas, purposes=None):
     """Disjoint adapter costs, with DLYD reported as an overlapping subset."""
     result=dict(matched_control_mm2=0.0, functional_control_mm2=0.0,
                 guards_mm2=0.0, allowances_mm2=0.0)
-    seen=set()
+    seen=set(); dlyd_purposes={}
     for binding in mapping['bindings']:
         role=binding['requirements'].get('role',binding['model'])
         for instance in binding['instances']:
@@ -66,6 +66,10 @@ def adapter_costs(cells, mapping, audit, areas):
                 require(path not in seen and path in cells and
                         cells[path]['type']==leaf['cell'],'AREA_LEDGER_ADAPTER_LEAF')
                 seen.add(path); total+=areas[leaf['cell']]/1e6
+                if leaf['cell'].startswith(SC+'dlyd_'):
+                    purpose=(purposes or {}).get(instance,'unclassified')
+                    category=dlyd_purposes.setdefault(purpose,dict(cells=0,area_mm2=0.0))
+                    category['cells']+=1;category['area_mm2']+=areas[leaf['cell']]/1e6
             if role=='matched-control-delay':
                 result['matched_control_mm2']+=total
                 key='functional_control_mm2' if int(binding['parameters']['DELAY_FS'])<=1000000 else 'guards_mm2'
@@ -75,6 +79,10 @@ def adapter_costs(cells, mapping, audit, areas):
     result['dlyd_cells']=sum(c['type'].startswith(SC+'dlyd_') for c in cells.values())
     result['dlyd_mm2']=math.fsum(areas[c['type']] for c in cells.values()
                                if c['type'].startswith(SC+'dlyd_'))/1e6
+    require(sum(v['cells'] for v in dlyd_purposes.values())==result['dlyd_cells'],
+            'AREA_LEDGER_DLYD_PURPOSE_COVERAGE')
+    if purposes is not None:require('unclassified' not in dlyd_purposes,'AREA_LEDGER_DLYD_UNCLASSIFIED')
+    result['dlyd_by_purpose']=dlyd_purposes
     return result
 
 
@@ -88,6 +96,7 @@ def report(mapping, output):
            mapping/'electrical-repair/receipt.json',mapping/'electrical-repair/proof.json',
            mapping/'electrical-repair/preparation.json',Path(__file__),*libpaths,*lefpaths,
            mapping/'mapping.json',mapping/'netlist-audit.json',ROOT/'tools/gf180_netgraph.py']
+    files.append(ROOT/'tools/size_ordering_guards.py')
     frozen={str(p.resolve()):sha(p) for p in files}
     # This report reads geometry only; SRAM and standard cells use different
     # Liberty power units, so the energy estimator's unit checks do not apply.
@@ -100,8 +109,11 @@ def report(mapping, output):
     result=dict(scope='LEF footprints and separate Liberty area totals; pre-placement; timing-unqualified',
         variant=json.loads((mapping/'mapping.json').read_text())['variant'],
         **summarize(a,b,proof,prep,liberty,lef_areas(lefpaths)),inputs_sha256=frozen)
+    from size_ordering_guards import inventory
+    purpose_rows,_,_=inventory(mapping)
     result['components']=adapter_costs(b,json.loads((mapping/'mapping.json').read_text()),
-                                     json.loads((mapping/'netlist-audit.json').read_text()),lef_areas(lefpaths))
+                                     json.loads((mapping/'netlist-audit.json').read_text()),lef_areas(lefpaths),
+                                     {r['instance']:r['purpose'] for r in purpose_rows})
     result['clock_domains']=periodic_loads(json.loads(files[0].read_text())['modules'],library)
     result['periodic_clock_sinks']=sum(result['clock_domains'][domain]['storage_cells']
                                        for domain in ('service','work','lf'))

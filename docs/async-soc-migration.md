@@ -28,12 +28,26 @@ when no next item has been chosen. Both implementations remain active throughout
 PR10 is merged. This order supersedes the older pauses and repair-first work
 priorities retained below. It does not waive any functional or physical gate.
 
-The subsequent area review adds [A7/A8 guard and allowance work](native-area-reduction.md#current-area-priorities-11b1-2026-10-17)
+The latest follow-up advances the completed pilots into one A7b/A8b/A10
+production batch: supported passive data allowances across both implementations,
+the complete BD ordering-guard disposition with measured canonical-family sizing, Click ACK sizing
+including pulse/rearm bounds, and removal of the pure-copy SRAM prepare stages.
+Use the [uploaded skill](../.agents/skills/async-circuit-design/SKILL.md),
+[guard policy](gf180-guard-sizing.md), [passive contract](passive-allowance-contract.md)
+and [fusion contract](native-sram-prepare-fusion.md). Local digital/timing checks
+and independent review permit reversible adoption before item 17; no claim of
+full physical closure follows. Record measured production costs in the ledger,
+including DLYD by purpose. The batch is locally accepted: 808 distinct Scala
+cases, 1,198 Python controls, four strict exports and 1,630 guard cases pass with
+independent review. Mapped logic is 2.229395 / 3.048424 mm² BD / Click; see
+[the evidence and remaining obligations](reviews/native-area-adoption.md).
+
+The earlier area review added [A7/A8 guard and allowance work](native-area-reduction.md#current-area-priorities-11b1-2026-10-17)
 alongside ownership removal: run A7b's BD elapsed guard and A8b's standard-stage
 passive allowance experiments in parallel with the 11b2/11b3 ownership batch.
 Use the [single area ledger](area-ledger.md) for mapped/repaired logic, guards,
-allowances, DLYD and periodic sinks. The next milestone is **BD mapped logic
-below 2.3 mm² excluding SRAM**; this is a target, not a result. Full physical
+allowances, DLYD and periodic sinks. The **BD mapped-logic milestone below
+2.3 mm² excluding SRAM is achieved** by the production batch above. Full physical
 requalification remains item 17. Removing reset/data gates or changing latch controllers requires its
 own semantics and hold proof; historical area estimates are not measured savings.
 

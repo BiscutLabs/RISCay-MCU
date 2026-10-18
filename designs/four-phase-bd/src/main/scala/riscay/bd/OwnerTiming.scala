@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 package riscay.bd
 
-import chiselasync.metadata.{BundledTiming, ModelTime}
+import chiselasync.metadata.{DataAllowance, BundledTiming, ModelTime}
 import riscay.RegisterTiming
 import riscay.soc.ApplicationResetContract
 
@@ -9,9 +9,15 @@ import riscay.soc.ApplicationResetContract
   * Only request/ACK guards grow; arithmetic and storage models stay unchanged.
   */
 object OwnerTiming {
+  // Unmasked whole-transform annotation; capture storage owns reset.
+  val base: BundledTiming.Digital = BundledTiming.Simulation.copy(dataAllowance=DataAllowance.Passive)
+  def passive(t: BundledTiming): BundledTiming = t match {
+    case digital: BundledTiming.Digital => digital.copy(dataAllowance=DataAllowance.Passive)
+    case BundledTiming.FunctionalOnly => t // historical zero-delay corpus only
+  }
   val execute: BundledTiming = BundledTiming.simulation(dataMax=RegisterTiming.executeData)
-    .copy(matchedDelay=ModelTime.ps(80000))
-  val elapsedStep: BundledTiming = BundledTiming.Simulation.copy(matchedDelay=ModelTime.ps(100000))
+    .copy(matchedDelay=ModelTime.ps(80000),dataAllowance=DataAllowance.Passive)
+  val elapsedStep: BundledTiming = OwnerTiming.base.copy(matchedDelay=ModelTime.ps(100000))
   val controlAck: ModelTime = ModelTime.ps(32000)
   def check(t: BundledTiming): Unit = require(
     (Seq(t.matchedDelay.fs,t.outputDelay.fs,t.dataDelay.max.fs,t.latchDelay.max.fs) ++
@@ -20,9 +26,9 @@ object OwnerTiming {
 }
 
 case class OwnerTiming(
-    controlOwner: BundledTiming = BundledTiming.Simulation,
-    controlUpdate: BundledTiming = BundledTiming.Simulation,
-    elapsedOwner: BundledTiming = BundledTiming.Simulation,
+    controlOwner: BundledTiming = OwnerTiming.base,
+    controlUpdate: BundledTiming = OwnerTiming.base,
+    elapsedOwner: BundledTiming = OwnerTiming.base,
     elapsedStep: BundledTiming = OwnerTiming.elapsedStep,
     controlAck: ModelTime = OwnerTiming.controlAck) {
   Seq(controlOwner,controlUpdate,elapsedOwner,elapsedStep).foreach(OwnerTiming.check)

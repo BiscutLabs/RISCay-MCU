@@ -24,7 +24,7 @@ class ClickSpiAdc(p: AdcParameters,domain: ResetDomain) extends AsyncModule(doma
   // release shares the final falling edge, after its complete high half-phase.
   program.initialCsN:=false.B; program.initialSclk:=false.B
   program.occupied:="hffffffff".U; program.csN:="h80000000".U; program.sclk:="h55555555".U
-  private val timing=ClickTiming.Simulation
+  private val timing=OwnerTiming.base
   private val cell=ModelTime.ps(1000)
   private val state=asyncChild("state")(d => new PhaseDecoupledClickBuffer(Bool(),timing,Some(false.B),d))
   val start=IO(Input(Bool())); state.start.get:=start; contract.endpoint("start",start)

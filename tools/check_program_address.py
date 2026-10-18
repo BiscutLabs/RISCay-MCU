@@ -29,7 +29,7 @@ SAT_CELLS = frozenset(('$and', '$or', '$xor', '$xnor', '$not', '$logic_not',
     '$reduce_or', '$reduce_and', '$reduce_bool', '$reduce_xor', '$reduce_xnor', '$add', '$sub'))
 BOUNDARIES = frozenset(('$adff', '$dff', 'ChiselAsyncAsymmetricC_v1',
     'ChiselAsyncClosingLatch_v1', 'ChiselAsyncEventRegister_v1',
-    'ChiselAsyncPhaseRegister_v1', 'ChiselAsyncControlGate_v1',
+    'ChiselAsyncPhaseRegister_v1', 'ChiselAsyncControlGate_v1', 'ChiselAsyncPassiveDataAllowance_v1',
     'ChiselAsyncAnd_v1', 'ChiselAsyncXor_v1'))
 TOP = 'ProgramAddressProof'
 MAX_CELLS = 1024

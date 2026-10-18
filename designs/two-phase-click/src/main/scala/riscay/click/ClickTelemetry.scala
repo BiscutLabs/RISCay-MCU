@@ -17,7 +17,7 @@ class ClickTelemetry(p: SocParameters, words: Vector[Int], domain: ResetDomain) 
   val command = twoPhaseInput("command", new TelemetryCommand(p.config.measurements.size))
   val reply = twoPhaseOutput("reply", new TelemetryReply(p.config.measurements.size, words.size))
   val start = IO(Input(Bool()))
-  private val timing = ClickTiming.Simulation
+  private val timing = OwnerTiming.base
   private val state = asyncChild("state")(d => new PhaseDecoupledClickBuffer(new TelemetryState(p.config.measurements.size, words.size),
     timing, Some(TelemetryState.initial(p, words.size)), d))
   private val join = asyncChild("join")(d => new ClickJoin(new TelemetryState(p.config.measurements.size, words.size), new TelemetryCommand(p.config.measurements.size), timing, d))

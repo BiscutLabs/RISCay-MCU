@@ -28,6 +28,11 @@ class RepairAreaTest(unittest.TestCase):
         self.assertAlmostEqual(result['allowances_mm2'],13/1e6)
         self.assertAlmostEqual(result['dlyd_mm2'],75/1e6)
         self.assertEqual(result['dlyd_cells'],1)
+        purposes=adapter_costs(cells,mapping,audit,areas,{'guard':'ordering-publication'})
+        self.assertEqual(purposes['dlyd_by_purpose'],
+                         {'ordering-publication':dict(cells=1,area_mm2=75/1e6)})
+        with self.assertRaisesRegex(ValueError,'AREA_LEDGER_DLYD_UNCLASSIFIED'):
+            adapter_costs(cells,mapping,audit,areas,{})
         for changed in (dict(audit,preserved_async_cells=4),
                         dict(audit,adapter_instances=dict(guard='logic',logic='logic',data='data'))):
             with self.assertRaisesRegex(ValueError,'AREA_LEDGER_'):

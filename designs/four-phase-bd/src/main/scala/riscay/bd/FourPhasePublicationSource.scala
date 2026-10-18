@@ -25,7 +25,7 @@ class FourPhasePublicationSource(domain: ResetDomain, splitRecoveryReset: Boolea
   val finalRequest=IO(Output(Bool())); val finalAcknowledge=IO(Input(Bool()))
   val recoveryReturning=IO(Output(Bool()))
   Seq(reserve,grant,decision,publication,drain).foreach(dontTouch(_))
-  private val timing=BundledTiming.Simulation
+  private val timing=OwnerTiming.base
   private val cell=ModelTime.ps(1000)
   private val guard=ModelTime.ps(200000)
   private val resetRef=contract.endpoint("reset",reset)

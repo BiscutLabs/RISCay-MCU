@@ -50,7 +50,8 @@ def producer_package(root):
     for p in tools.values():p.write_text('fake helper tool bytes; never executed')
     lock=root/'tools/gf180-estimate-inputs.json';lock.parent.mkdir();lock.write_text(json.dumps({'tools':{n:{'sha256':controls.sha(p)} for n,p in tools.items()}}))
     linux=lambda p:'/mnt/'+str(p.resolve())[0].lower()+str(p.resolve())[2:].replace('\\','/')
-    script=f'read_verilog -sv {linux(folder/"converted.v")}\nhierarchy -check -top FourPhaseSoc\nproc\nflatten\nopt_clean\nwrite_json {linux(folder/"netlist.json")}\n'
+    script=(f'read_verilog -sv {linux(folder/"converted.v")}\nhierarchy -check -top FourPhaseSoc\nproc\nflatten\n'
+            +controls.NATIVE_KEEP+f'opt_clean\nwrite_json {linux(folder/"netlist.json")}\n')
     (folder/'graph.ys').write_text(script);(folder/'converted.v').write_text('synthetic helper text only')
     (folder/'netlist.json').write_text('{"synthetic_helper_only":true}')
     (folder/'sv2v.log').write_text('');(folder/'yosys.log').write_text('Executing JSON backend.\nEnd of script.\n')

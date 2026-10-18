@@ -55,6 +55,20 @@ def fixture(variant):
 
 
 class MetadataTests(unittest.TestCase):
+    def test_passive_allowance_has_exact_unmasked_ports(self):
+        for variant in ('bd','click'):
+            values=list(fixture(variant));manifest,netlist,record=values[:3]
+            primitive=next(p for p in manifest['design']['primitives'] if p['id']=='data_delay')
+            primitive.update(model='ChiselAsyncPassiveDataAllowance_v1',parameters=dict(WIDTH=2,DELAY_FS=1234))
+            binding=next(b for b in record['bindings'] if primitive['rtl_path'] in b['instances'])
+            binding.update(model=primitive['model'],parameters=deepcopy(primitive['parameters']))
+            body=netlist['modules']['FourPhaseStage' if variant=='bd' else 'ClickStage']
+            pins=body['cells']['ca_primitive_data_delay']['connections']
+            pins.clear();pins.update(a=[3,4],q=[5,6])
+            self.assertEqual(n.descriptor(*values)['payload_width'],2)
+            pins['reset']=[2]
+            with self.assertRaisesRegex(ValueError,'STAGE_PASSIVE_DATA_PORTS'):n.descriptor(*values)
+
     def test_reference_read_is_bound_to_receipt_bytes(self):
         with TemporaryDirectory() as directory:
             mapping=Path(directory);p=mapping/'electrical-repair/reference/netlist.json'

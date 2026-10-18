@@ -15,7 +15,7 @@ import re
 import shutil
 import subprocess
 
-from gf180_physical import ROOT, SC, SRAM, sha, write_json, pdk_verify
+from gf180_physical import ROOT, SC, SRAM, sha, write_json, pdk_verify, audit_alias_binding
 from gf180_estimate import library, direct_groups
 from physical_tools import tool
 from repair_gf180_control import require
@@ -305,19 +305,41 @@ def instance_locations(netlist,top):
     return result
 
 
-def buffer_native_resets(netlist,top,adapter_instances):
+def buffer_native_resets(netlist,top,adapter_instances,*,bindings=None,reset_free_aliases=None):
     """Put an ordinary distribution sink outside each exact native reset port.
 
     Native cells and their owner-local reset partitions stay untouched. The
     parent-side buffers are real cells, counted in preparation and subsequent
     mapping/timing; OpenROAD may size or distribute their unprotected inputs.
+    A reset-free passive allowance has no reset load. Its exact mapped identity,
+    complete alias body and instance ports must all be proved before omitting it.
     """
     locations=instance_locations(netlist,top);edited={};evidence=[]
     require(len(set(adapter_instances.values()))==len(adapter_instances),'REPAIR_RESET_ADAPTER_DUPLICATE')
-    for owner in sorted(adapter_instances.values()):
+    by_instance={}
+    if bindings is not None:
+        for binding in bindings:
+            for instance in binding['instances']:
+                require(instance not in by_instance,'REPAIR_RESET_BINDING_DUPLICATE')
+                by_instance[instance]=binding
+        require(set(adapter_instances)<=set(by_instance),'REPAIR_RESET_BINDING_MISSING')
+    for instance,owner in sorted(adapter_instances.items(),key=lambda item:item[1]):
         require(owner in locations,'REPAIR_RESET_ADAPTER_MISSING')
         kind,key=locations[owner];body=netlist['modules'][kind];c=body['cells'][key]
-        ports=netlist['modules'][c['type']]['ports']
+        module=netlist['modules'][c['type']];ports=module['ports']
+        binding=by_instance.get(instance)
+        if binding is not None and binding['model']=='ChiselAsyncPassiveDataAllowance_v1':
+            require(c['type']==binding['module'],'REPAIR_RESET_ALIAS_IDENTITY')
+            audit_alias_binding(binding,module)
+            width=binding['parameters']['WIDTH']
+            require(c['port_directions']=={'a':'input','q':'output'} and
+                set(c['connections'])=={'a','q'} and
+                all(len(c['connections'][port])==width for port in ('a','q')),
+                'REPAIR_RESET_ALIAS_INSTANCE_PORTS')
+            if reset_free_aliases is not None:
+                reset_free_aliases.append(dict(instance=instance,owner=owner,model=binding['model'],
+                    width=width,reason='proved-cell-free-data-alias-with-no-reset-load'))
+            continue
         require('reset' in ports and ports['reset']['direction']=='input' and len(ports['reset']['bits'])==1 and
             c['port_directions'].get('reset')=='input' and len(c['connections'].get('reset',[]))==1,
             'REPAIR_RESET_BOUNDARY_SHAPE')
@@ -562,8 +584,11 @@ def repair(mapping,*,timeout=600):
     tied=read_verilog_json(reference/'netlist.v',out/'tied.json','RiscayMcuDigital',yosys,pdk,before,tie_verilog=out/'tied.v')
     tie_proof=graph_proof(before,tied,'RiscayMcuDigital',protected,libs)
     require(not tie_proof['added_buffers'] and not tie_proof['resized'],'REPAIR_TIE_PREPARATION_CHANGED_GRAPH')
+    reset_free_aliases=[]
     reset_preparation=buffer_native_resets(tied,'RiscayMcuDigital',
-        json.loads((reference/'netlist-audit.json').read_text())['adapter_instances'])
+        json.loads((reference/'netlist-audit.json').read_text())['adapter_instances'],
+        bindings=json.loads((mapping/'mapping.json').read_text())['bindings'],
+        reset_free_aliases=reset_free_aliases)
     sram_preparation=buffer_sram_clocks(tied,'RiscayMcuDigital')
     skipped_feedback=[]
     preparation=split_output_feedback(tied,'RiscayMcuDigital',skipped=skipped_feedback)
@@ -571,7 +596,7 @@ def repair(mapping,*,timeout=600):
     require(not prepared_proof['resized'],'REPAIR_PREPARATION_CHANGED_MASTER')
     write_json(out/'prepared.json',tied)
     write_json(out/'preparation.json',dict(buffers=preparation,skipped_feedback_buffers=skipped_feedback,reset_buffers=reset_preparation,
-        sram_clock_buffers=sram_preparation,
+        reset_free_data_aliases=reset_free_aliases,sram_clock_buffers=sram_preparation,
         added_buffer_cells=dict(reset_distribution=len(reset_preparation),
             sram_clocks=len(sram_preparation),
             hierarchy_output_feedback=len(prepared_proof['added_buffers'])-len(reset_preparation)-len(sram_preparation)),proof=prepared_proof))

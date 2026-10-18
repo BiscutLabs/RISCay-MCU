@@ -25,7 +25,7 @@ class FourPhaseCompletion(domain: ResetDomain) extends AsyncModule(domain) {
   // Keep the full declared channel ABI even when a particular endpoint always
   // publishes error=false or an effect token has no architectural payload.
   Seq(plan,memory,ram,telemetry,housekeeping,response,creditReturn).foreach(dontTouch(_))
-  private val timing=BundledTiming.Simulation
+  private val timing=OwnerTiming.base
   private val cell=ModelTime.ps(1000)
   private val resetRef=contract.endpoint("reset",reset)
   private def gate(id: String,op: GateOperation.Value,a: Bool,b: Bool=false.B,

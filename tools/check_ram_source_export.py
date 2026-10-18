@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
 """Closed digital policy for native RAM reservations; no physical signoff claim."""
 import re
+from passive_allowance_policy import PASSIVE, data_specs
 from check_application_reset import presentation_reset
 
 ARM_PATH = "RAM reservation phase before eligibility arm"
@@ -69,6 +70,7 @@ def validate_ram_source(node):
     markers={t["marker"] for t in node["timing"]}
     if len(cells)!=len(node["primitives"]) or set(cells)!=set(expected)|markers:
         raise ValueError("RAM_SOURCE_CELL_INVENTORY")
+    expected = data_specs(node, expected)
     for name,(model,params) in expected.items():
         actual=cells[name]
         if actual["model"]!=model or actual["parameters"]!=params:

@@ -5,7 +5,7 @@ import chisel3._
 import chisel3.util._
 import chiselasync.core.{AsyncModule, ResetDomain}
 import chiselasync.metadata.{BundledTiming, ClickTiming, ModelTime}
-import chiselasync.primitives.{AsymmetricCElement, ControlGate, EventRegister, GateOperation, PhaseRegister, XorGate}
+import chiselasync.primitives.{PassiveDataAllowance,AsymmetricCElement, ControlGate, EventRegister, GateOperation, PhaseRegister, XorGate}
 import riscay._
 import riscay.soc.MemoryMap
 
@@ -19,7 +19,7 @@ class ClickFabric(config: McuConfiguration, timing: ClickTiming, domain: ResetDo
   // This composed controller has a separately checked digital envelope. Do not
   // accept arbitrary stage policies until their cell bounds/pulse distribution
   // can be exported and exercised as a fabric contract in their own right.
-  require(timing == ClickTiming.Simulation, "CLICK_FABRIC_REQUIRES_SIMULATION_POLICY")
+  require(OwnerTiming.passive(timing) == OwnerTiming.base, "CLICK_FABRIC_REQUIRES_SIMULATION_POLICY")
   val request = twoPhaseInput("request", new MemoryRequest)
   val response = twoPhaseOutput("response", new MemoryResponse)
   val serviceRequest = twoPhaseOutput("service_request", new MemoryRequest)
@@ -36,6 +36,9 @@ class ClickFabric(config: McuConfiguration, timing: ClickTiming, domain: ResetDo
   private val outputGuard = ModelTime(math.max(timing.outputDelay.fs, drain))
   private def gate(id: String, op: GateOperation.Value, a: UInt, b: UInt = 0.U,
       width: Int = 1, delay: chiselasync.metadata.ModelTime = cell, resetValue: Int = 0): UInt = {
+    if (Set("data_delay")(id)) {
+      return PassiveDataAllowance(this,id,a,delay,resetRef)
+    }
     val g = Module(new ControlGate(width, op, delay, resetValue))
     g.reset := reset; g.a := a; g.b := b
     contract.primitive(id, g, Map("WIDTH"->BigInt(width), "OP"->BigInt(op.id),

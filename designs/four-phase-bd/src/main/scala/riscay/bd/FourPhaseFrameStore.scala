@@ -6,7 +6,7 @@ import chisel3.util._
 import chiselasync.bundled.LongHoldBuffer
 import chiselasync.core.{AsyncModule, ResetDomain}
 import chiselasync.metadata.{BundledTiming, ModelTime}
-import chiselasync.primitives.{ControlGate, EventRegister, GateOperation}
+import chiselasync.primitives.{PassiveDataAllowance,ControlGate, EventRegister, GateOperation}
 import chiselasync.protocol.FourPhase
 import riscay.soc.I2cFrame
 
@@ -34,6 +34,9 @@ class FourPhaseFrameStore(domain: ResetDomain) extends AsyncModule(domain) {
   private val resetRef=contract.endpoint("reset",reset)
   private val cell=ModelTime.ps(1000)
   private def gate(id: String, data: UInt, width: Int, delay: ModelTime): UInt = {
+    if (Set("data_delay")(id)) {
+      return PassiveDataAllowance(this,id,data,delay,resetRef)
+    }
     val g=Module(new ControlGate(width,GateOperation.Buffer,delay)); g.reset:=reset; g.a:=data; g.b:=0.U
     contract.primitive(id,g,Map("WIDTH"->BigInt(width),"OP"->BigInt(0),
       "DELAY_FS"->BigInt(delay.fs),"RESET_VALUE"->BigInt(0)),resetRef,
@@ -54,7 +57,7 @@ class FourPhaseFrameStore(domain: ResetDomain) extends AsyncModule(domain) {
   private val selection=gate("route_decode",UIntToOH(tag.q,4),4,cell)
   private val offered=gate("request_guard",in.req.asUInt,1,ModelTime.ps(32000)).asBool
   private val storage=Seq.tabulate(4)(i => asyncChild(s"storage$i")(d =>
-    new LongHoldBuffer(new I2cFrame,BundledTiming.Simulation,d)))
+    new LongHoldBuffer(new I2cFrame,OwnerTiming.base,d)))
   private val idleBanks=Wire(Vec(4,Bool()))
   private val settledBanks=gate("return_guard",idleBanks.asUInt,4,ModelTime.ps(32000))
   for(i <- 0 until 4) {
@@ -76,7 +79,7 @@ class FourPhaseFrameStore(domain: ResetDomain) extends AsyncModule(domain) {
   contract.endpoint("next_bank",nextBank); contract.endpoint("available",available)
   contract.endpoint("busy",busy); contract.endpoint("route_data",routeDataProbe)
   contract.endpoint("route_capture",tagCapture); contract.endpoint("route_value",routeValueProbe)
-  contract.dataPathTiming("route_path","route_value","route_data",BundledTiming.Simulation,
+  contract.dataPathTiming("route_path","route_value","route_data",OwnerTiming.base,
     "native modulo-four increment feedback; 10 ns complete data budget")
   contract.setupHold("route_aperture","in_request","route_value","route_data","route_capture","route_value",
     ModelTime.ps(100),ModelTime.ps(100))

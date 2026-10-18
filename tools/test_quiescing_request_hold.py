@@ -50,6 +50,20 @@ class NativeHoldTopologyTest(unittest.TestCase):
             port_directions=dict(reset='input',trigger='input',q='output'),connections=dict(reset=[2],trigger=[3],q=[8]))
         self.assertNotEqual(self.signature(d)['sha256'],before['sha256'])
 
+    def test_passive_allowance_has_complete_pin_and_parameter_binding(self):
+        d=self.fixture();cells=d['modules']['Top']['cells']
+        cells['owner.allowance']=dict(type='ChiselAsyncPassiveDataAllowance_v1',
+            parameters=dict(WIDTH='1',DELAY_FS='101'),
+            port_directions=dict(a='input',q='output'),connections=dict(a=[3],q=[8]))
+        cells['owner.payload']['connections']['d']=[8]
+        before=self.signature(d)
+        for change in ('a','delay','width'):
+            changed=copy.deepcopy(d);allowance=changed['modules']['Top']['cells']['owner.allowance']
+            if change=='a':allowance['connections']['a']=['0']
+            elif change=='delay':allowance['parameters']['DELAY_FS']='110'
+            else:allowance['parameters']['WIDTH']='10'
+            self.assertNotEqual(self.signature(changed)['sha256'],before['sha256'])
+
     def test_unbound_or_periodic_owner_is_not_a_native_lifetime_proof(self):
         for change in ('input','periodic','cycle'):
             d=self.fixture();m=d['modules']['Top']

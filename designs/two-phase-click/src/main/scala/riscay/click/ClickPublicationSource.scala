@@ -6,7 +6,7 @@ import chisel3.util.Cat
 import chiselasync.bundled.ClickBuffer
 import chiselasync.core.{AsyncModule,ResetDomain}
 import chiselasync.metadata.{BundledTiming,ClickTiming,ModelTime}
-import chiselasync.primitives.{ControlGate,EventRegister,GateOperation,XorGate}
+import chiselasync.primitives.{PassiveDataAllowance,ControlGate,EventRegister,GateOperation,XorGate}
 import riscay.soc.PublicationReservation
 
 /** Native exclusive publication receipt; physical timing remains unqualified. */
@@ -25,7 +25,7 @@ class ClickPublicationSource(domain: ResetDomain, splitRecoveryReset: Boolean=fa
   val finalRequest=IO(Output(Bool())); val finalAcknowledge=IO(Input(Bool()))
   val recoveryReturning=IO(Output(Bool()))
   Seq(reserve,grant,decision,publication,drain).foreach(dontTouch(_))
-  private val timing=ClickTiming.Simulation
+  private val timing=OwnerTiming.base
   private val cell=timing.controls.fire.model
   private val guard=ModelTime(timing.controls.inputPhase.max.fs+timing.requestDelay.fs+
     22*timing.controls.fire.max.fs+timing.clockSkew.fs+math.max(timing.hold.fs,timing.pulseLow.fs)+1)
@@ -38,6 +38,9 @@ class ClickPublicationSource(domain: ResetDomain, splitRecoveryReset: Boolean=fa
   private val eligibilityResetRef=contract.endpoint("eligibility_reset",eligibilityReset)
   private def gate(id: String,op: GateOperation.Value,d: UInt,b: UInt=0.U,
       width: Int=1,delay: ModelTime=cell,initial: Int=0): UInt = {
+    if (Set("arm_data_delay","data_delay","drain_data_delay","publication_data_delay")(id)) {
+      return PassiveDataAllowance(this,id,d,delay,resetRef)
+    }
     val g=Module(new ControlGate(width,op,delay,initial)); g.reset:=reset; g.a:=d; g.b:=b
     contract.primitive(id,g,Map("WIDTH"->BigInt(width),"OP"->BigInt(op.id),"DELAY_FS"->BigInt(delay.fs),
       "RESET_VALUE"->BigInt(initial)),resetRef,"native publication receipt; qualify capture, selection and feedback")

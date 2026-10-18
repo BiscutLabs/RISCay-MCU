@@ -1,0 +1,3971 @@
+{
+  "schema": "riscay-gf180-ordering-guards-v1",
+  "status": "locally-measured",
+  "engineering_derate": 0.2,
+  "residual_ns": 2.0,
+  "statistical_qualification": false,
+  "variants": {
+    "bd": [
+      {
+        "instance": "FourPhaseSoc.ca_child_completion.ca_child_reply.ca_primitive_output_delay",
+        "owner": "FourPhaseSoc.ca_child_completion.ca_child_reply",
+        "owner_module": "FourPhaseStage",
+        "owner_metadata_module": "FourPhaseStage",
+        "primitive_id": "output_delay",
+        "original_parameters": {
+          "DELAY_FS": 31000000,
+          "OP": 0,
+          "RESET_VALUE": 0,
+          "WIDTH": 1
+        },
+        "stages": 8,
+        "purpose": "ordering-publication",
+        "classification": "ordering",
+        "disposition": "measure-canonical-stage",
+        "previous_stages": 27
+      },
+      {
+        "instance": "FourPhaseSoc.ca_child_admission.ca_child_pending.ca_primitive_output_delay",
+        "owner": "FourPhaseSoc.ca_child_admission.ca_child_pending",
+        "owner_module": "LongHoldBuffer",
+        "owner_metadata_module": "LongHoldBuffer",
+        "primitive_id": "output_delay",
+        "original_parameters": {
+          "DELAY_FS": 31000000,
+          "OP": 0,
+          "RESET_VALUE": 0,
+          "WIDTH": 1
+        },
+        "stages": 8,
+        "purpose": "ordering-publication",
+        "classification": "ordering",
+        "disposition": "measure-canonical-stage",
+        "previous_stages": 27
+      },
+      {
+        "instance": "FourPhaseSoc.ca_child_admission.ca_child_credit.head_ca_child_stage0.ca_child_storage.ca_primitive_output_delay",
+        "owner": "FourPhaseSoc.ca_child_admission.ca_child_credit.head_ca_child_stage0.ca_child_storage",
+        "owner_module": "LongHoldBuffer",
+        "owner_metadata_module": "LongHoldBuffer_1",
+        "primitive_id": "output_delay",
+        "original_parameters": {
+          "DELAY_FS": 31000000,
+          "OP": 0,
+          "RESET_VALUE": 0,
+          "WIDTH": 1
+        },
+        "stages": 8,
+        "purpose": "ordering-publication",
+        "classification": "ordering",
+        "disposition": "measure-canonical-stage",
+        "previous_stages": 27
+      },
+      {
+        "instance": "FourPhaseSoc.ca_child_i2c.ca_child_native.ca_child_state.head_ca_child_stage0.ca_child_storage.ca_primitive_output_delay",
+        "owner": "FourPhaseSoc.ca_child_i2c.ca_child_native.ca_child_state.head_ca_child_stage0.ca_child_storage",
+        "owner_module": "LongHoldBuffer",
+        "owner_metadata_module": "LongHoldBuffer_2",
+        "primitive_id": "output_delay",
+        "original_parameters": {
+          "DELAY_FS": 31000000,
+          "OP": 0,
+          "RESET_VALUE": 0,
+          "WIDTH": 1
+        },
+        "stages": 8,
+        "purpose": "ordering-publication",
+        "classification": "ordering",
+        "disposition": "measure-canonical-stage",
+        "previous_stages": 27
+      },
+      {
+        "instance": "FourPhaseSoc.ca_child_i2c.ca_child_native.ca_child_update.ca_primitive_output_delay",
+        "owner": "FourPhaseSoc.ca_child_i2c.ca_child_native.ca_child_update",
+        "owner_module": "FourPhaseStage",
+        "owner_metadata_module": "FourPhaseStage_1",
+        "primitive_id": "output_delay",
+        "original_parameters": {
+          "DELAY_FS": 31000000,
+          "OP": 0,
+          "RESET_VALUE": 0,
+          "WIDTH": 1
+        },
+        "stages": 8,
+        "purpose": "ordering-publication",
+        "classification": "ordering",
+        "disposition": "measure-canonical-stage",
+        "previous_stages": 27
+      },
+      {
+        "instance": "FourPhaseSoc.ca_child_i2c.ca_child_frame_store.ca_child_storage0.ca_primitive_output_delay",
+        "owner": "FourPhaseSoc.ca_child_i2c.ca_child_frame_store.ca_child_storage0",
+        "owner_module": "LongHoldBuffer",
+        "owner_metadata_module": "LongHoldBuffer_3",
+        "primitive_id": "output_delay",
+        "original_parameters": {
+          "DELAY_FS": 31000000,
+          "OP": 0,
+          "RESET_VALUE": 0,
+          "WIDTH": 1
+        },
+        "stages": 8,
+        "purpose": "ordering-publication",
+        "classification": "ordering",
+        "disposition": "measure-canonical-stage",
+        "previous_stages": 27
+      },
+      {
+        "instance": "FourPhaseSoc.ca_child_i2c.ca_child_frame_store.ca_child_storage1.ca_primitive_output_delay",
+        "owner": "FourPhaseSoc.ca_child_i2c.ca_child_frame_store.ca_child_storage1",
+        "owner_module": "LongHoldBuffer",
+        "owner_metadata_module": "LongHoldBuffer_4",
+        "primitive_id": "output_delay",
+        "original_parameters": {
+          "DELAY_FS": 31000000,
+          "OP": 0,
+          "RESET_VALUE": 0,
+          "WIDTH": 1
+        },
+        "stages": 8,
+        "purpose": "ordering-publication",
+        "classification": "ordering",
+        "disposition": "measure-canonical-stage",
+        "previous_stages": 27
+      },
+      {
+        "instance": "FourPhaseSoc.ca_child_i2c.ca_child_frame_store.ca_child_storage2.ca_primitive_output_delay",
+        "owner": "FourPhaseSoc.ca_child_i2c.ca_child_frame_store.ca_child_storage2",
+        "owner_module": "LongHoldBuffer",
+        "owner_metadata_module": "LongHoldBuffer_5",
+        "primitive_id": "output_delay",
+        "original_parameters": {
+          "DELAY_FS": 31000000,
+          "OP": 0,
+          "RESET_VALUE": 0,
+          "WIDTH": 1
+        },
+        "stages": 8,
+        "purpose": "ordering-publication",
+        "classification": "ordering",
+        "disposition": "measure-canonical-stage",
+        "previous_stages": 27
+      },
+      {
+        "instance": "FourPhaseSoc.ca_child_i2c.ca_child_frame_store.ca_child_storage3.ca_primitive_output_delay",
+        "owner": "FourPhaseSoc.ca_child_i2c.ca_child_frame_store.ca_child_storage3",
+        "owner_module": "LongHoldBuffer",
+        "owner_metadata_module": "LongHoldBuffer_6",
+        "primitive_id": "output_delay",
+        "original_parameters": {
+          "DELAY_FS": 31000000,
+          "OP": 0,
+          "RESET_VALUE": 0,
+          "WIDTH": 1
+        },
+        "stages": 8,
+        "purpose": "ordering-publication",
+        "classification": "ordering",
+        "disposition": "measure-canonical-stage",
+        "previous_stages": 27
+      },
+      {
+        "instance": "FourPhaseSoc.ca_child_program_access.ca_child_native.ca_child_credit.head_ca_child_stage0.ca_child_storage.ca_primitive_output_delay",
+        "owner": "FourPhaseSoc.ca_child_program_access.ca_child_native.ca_child_credit.head_ca_child_stage0.ca_child_storage",
+        "owner_module": "LongHoldBuffer",
+        "owner_metadata_module": "LongHoldBuffer_7",
+        "primitive_id": "output_delay",
+        "original_parameters": {
+          "DELAY_FS": 31000000,
+          "OP": 0,
+          "RESET_VALUE": 0,
+          "WIDTH": 1
+        },
+        "stages": 8,
+        "purpose": "ordering-publication",
+        "classification": "ordering",
+        "disposition": "measure-canonical-stage",
+        "previous_stages": 27
+      },
+      {
+        "instance": "FourPhaseSoc.ca_child_program_access.ca_child_native.ca_child_owner.ca_child_left.ca_primitive_output_delay",
+        "owner": "FourPhaseSoc.ca_child_program_access.ca_child_native.ca_child_owner.ca_child_left",
+        "owner_module": "LongHoldBuffer",
+        "owner_metadata_module": "LongHoldBuffer_8",
+        "primitive_id": "output_delay",
+        "original_parameters": {
+          "DELAY_FS": 31000000,
+          "OP": 0,
+          "RESET_VALUE": 0,
+          "WIDTH": 1
+        },
+        "stages": 8,
+        "purpose": "ordering-publication",
+        "classification": "ordering",
+        "disposition": "measure-canonical-stage",
+        "previous_stages": 27
+      },
+      {
+        "instance": "FourPhaseSoc.ca_child_program_access.ca_child_native.ca_child_owner.ca_child_right.ca_primitive_output_delay",
+        "owner": "FourPhaseSoc.ca_child_program_access.ca_child_native.ca_child_owner.ca_child_right",
+        "owner_module": "LongHoldBuffer",
+        "owner_metadata_module": "LongHoldBuffer_9",
+        "primitive_id": "output_delay",
+        "original_parameters": {
+          "DELAY_FS": 31000000,
+          "OP": 0,
+          "RESET_VALUE": 0,
+          "WIDTH": 1
+        },
+        "stages": 8,
+        "purpose": "ordering-publication",
+        "classification": "ordering",
+        "disposition": "measure-canonical-stage",
+        "previous_stages": 27
+      },
+      {
+        "instance": "FourPhaseSoc.ca_child_program_access.ca_child_native.ca_child_lane_0_issue.ca_primitive_output_delay",
+        "owner": "FourPhaseSoc.ca_child_program_access.ca_child_native.ca_child_lane_0_issue",
+        "owner_module": "FourPhaseStage",
+        "owner_metadata_module": "FourPhaseStage_2",
+        "primitive_id": "output_delay",
+        "original_parameters": {
+          "DELAY_FS": 31000000,
+          "OP": 0,
+          "RESET_VALUE": 0,
+          "WIDTH": 1
+        },
+        "stages": 8,
+        "purpose": "ordering-publication",
+        "classification": "ordering",
+        "disposition": "measure-canonical-stage",
+        "previous_stages": 27,
+        "baseline_owner_metadata_module": "FourPhaseStage_3"
+      },
+      {
+        "instance": "FourPhaseSoc.ca_child_program_access.ca_child_native.ca_child_lane_0_join.ca_child_left.ca_primitive_output_delay",
+        "owner": "FourPhaseSoc.ca_child_program_access.ca_child_native.ca_child_lane_0_join.ca_child_left",
+        "owner_module": "LongHoldBuffer",
+        "owner_metadata_module": "LongHoldBuffer_10",
+        "primitive_id": "output_delay",
+        "original_parameters": {
+          "DELAY_FS": 31000000,
+          "OP": 0,
+          "RESET_VALUE": 0,
+          "WIDTH": 1
+        },
+        "stages": 8,
+        "purpose": "ordering-publication",
+        "classification": "ordering",
+        "disposition": "measure-canonical-stage",
+        "previous_stages": 27
+      },
+      {
+        "instance": "FourPhaseSoc.ca_child_program_access.ca_child_native.ca_child_lane_0_join.ca_child_right.ca_primitive_output_delay",
+        "owner": "FourPhaseSoc.ca_child_program_access.ca_child_native.ca_child_lane_0_join.ca_child_right",
+        "owner_module": "LongHoldBuffer",
+        "owner_metadata_module": "LongHoldBuffer_11",
+        "primitive_id": "output_delay",
+        "original_parameters": {
+          "DELAY_FS": 31000000,
+          "OP": 0,
+          "RESET_VALUE": 0,
+          "WIDTH": 1
+        },
+        "stages": 8,
+        "purpose": "ordering-publication",
+        "classification": "ordering",
+        "disposition": "measure-canonical-stage",
+        "previous_stages": 27
+      },
+      {
+        "instance": "FourPhaseSoc.ca_child_program_access.ca_child_native.ca_child_lane_0_capture.ca_primitive_output_delay",
+        "owner": "FourPhaseSoc.ca_child_program_access.ca_child_native.ca_child_lane_0_capture",
+        "owner_module": "FourPhaseStage",
+        "owner_metadata_module": "FourPhaseStage_3",
+        "primitive_id": "output_delay",
+        "original_parameters": {
+          "DELAY_FS": 31000000,
+          "OP": 0,
+          "RESET_VALUE": 0,
+          "WIDTH": 1
+        },
+        "stages": 8,
+        "purpose": "ordering-publication",
+        "classification": "ordering",
+        "disposition": "measure-canonical-stage",
+        "previous_stages": 27,
+        "baseline_owner_metadata_module": "FourPhaseStage_4"
+      },
+      {
+        "instance": "FourPhaseSoc.ca_child_program_access.ca_child_native.ca_child_lane_1_issue.ca_primitive_output_delay",
+        "owner": "FourPhaseSoc.ca_child_program_access.ca_child_native.ca_child_lane_1_issue",
+        "owner_module": "FourPhaseStage",
+        "owner_metadata_module": "FourPhaseStage_4",
+        "primitive_id": "output_delay",
+        "original_parameters": {
+          "DELAY_FS": 31000000,
+          "OP": 0,
+          "RESET_VALUE": 0,
+          "WIDTH": 1
+        },
+        "stages": 8,
+        "purpose": "ordering-publication",
+        "classification": "ordering",
+        "disposition": "measure-canonical-stage",
+        "previous_stages": 27,
+        "baseline_owner_metadata_module": "FourPhaseStage_5"
+      },
+      {
+        "instance": "FourPhaseSoc.ca_child_program_access.ca_child_native.ca_child_lane_1_join.ca_child_left.ca_primitive_output_delay",
+        "owner": "FourPhaseSoc.ca_child_program_access.ca_child_native.ca_child_lane_1_join.ca_child_left",
+        "owner_module": "LongHoldBuffer",
+        "owner_metadata_module": "LongHoldBuffer_12",
+        "primitive_id": "output_delay",
+        "original_parameters": {
+          "DELAY_FS": 31000000,
+          "OP": 0,
+          "RESET_VALUE": 0,
+          "WIDTH": 1
+        },
+        "stages": 8,
+        "purpose": "ordering-publication",
+        "classification": "ordering",
+        "disposition": "measure-canonical-stage",
+        "previous_stages": 27
+      },
+      {
+        "instance": "FourPhaseSoc.ca_child_program_access.ca_child_native.ca_child_lane_1_join.ca_child_right.ca_primitive_output_delay",
+        "owner": "FourPhaseSoc.ca_child_program_access.ca_child_native.ca_child_lane_1_join.ca_child_right",
+        "owner_module": "LongHoldBuffer",
+        "owner_metadata_module": "LongHoldBuffer_13",
+        "primitive_id": "output_delay",
+        "original_parameters": {
+          "DELAY_FS": 31000000,
+          "OP": 0,
+          "RESET_VALUE": 0,
+          "WIDTH": 1
+        },
+        "stages": 8,
+        "purpose": "ordering-publication",
+        "classification": "ordering",
+        "disposition": "measure-canonical-stage",
+        "previous_stages": 27
+      },
+      {
+        "instance": "FourPhaseSoc.ca_child_program_access.ca_child_native.ca_child_lane_1_capture.ca_primitive_output_delay",
+        "owner": "FourPhaseSoc.ca_child_program_access.ca_child_native.ca_child_lane_1_capture",
+        "owner_module": "FourPhaseStage",
+        "owner_metadata_module": "FourPhaseStage_5",
+        "primitive_id": "output_delay",
+        "original_parameters": {
+          "DELAY_FS": 31000000,
+          "OP": 0,
+          "RESET_VALUE": 0,
+          "WIDTH": 1
+        },
+        "stages": 8,
+        "purpose": "ordering-publication",
+        "classification": "ordering",
+        "disposition": "measure-canonical-stage",
+        "previous_stages": 27,
+        "baseline_owner_metadata_module": "FourPhaseStage_6"
+      },
+      {
+        "instance": "FourPhaseSoc.ca_child_program_access.ca_child_native.ca_child_lane_2_issue.ca_primitive_output_delay",
+        "owner": "FourPhaseSoc.ca_child_program_access.ca_child_native.ca_child_lane_2_issue",
+        "owner_module": "FourPhaseStage",
+        "owner_metadata_module": "FourPhaseStage_6",
+        "primitive_id": "output_delay",
+        "original_parameters": {
+          "DELAY_FS": 31000000,
+          "OP": 0,
+          "RESET_VALUE": 0,
+          "WIDTH": 1
+        },
+        "stages": 8,
+        "purpose": "ordering-publication",
+        "classification": "ordering",
+        "disposition": "measure-canonical-stage",
+        "previous_stages": 27,
+        "baseline_owner_metadata_module": "FourPhaseStage_7"
+      },
+      {
+        "instance": "FourPhaseSoc.ca_child_program_access.ca_child_native.ca_child_lane_2_join.ca_child_left.ca_primitive_output_delay",
+        "owner": "FourPhaseSoc.ca_child_program_access.ca_child_native.ca_child_lane_2_join.ca_child_left",
+        "owner_module": "LongHoldBuffer",
+        "owner_metadata_module": "LongHoldBuffer_14",
+        "primitive_id": "output_delay",
+        "original_parameters": {
+          "DELAY_FS": 31000000,
+          "OP": 0,
+          "RESET_VALUE": 0,
+          "WIDTH": 1
+        },
+        "stages": 8,
+        "purpose": "ordering-publication",
+        "classification": "ordering",
+        "disposition": "measure-canonical-stage",
+        "previous_stages": 27
+      },
+      {
+        "instance": "FourPhaseSoc.ca_child_program_access.ca_child_native.ca_child_lane_2_join.ca_child_right.ca_primitive_output_delay",
+        "owner": "FourPhaseSoc.ca_child_program_access.ca_child_native.ca_child_lane_2_join.ca_child_right",
+        "owner_module": "LongHoldBuffer",
+        "owner_metadata_module": "LongHoldBuffer_15",
+        "primitive_id": "output_delay",
+        "original_parameters": {
+          "DELAY_FS": 31000000,
+          "OP": 0,
+          "RESET_VALUE": 0,
+          "WIDTH": 1
+        },
+        "stages": 8,
+        "purpose": "ordering-publication",
+        "classification": "ordering",
+        "disposition": "measure-canonical-stage",
+        "previous_stages": 27
+      },
+      {
+        "instance": "FourPhaseSoc.ca_child_program_access.ca_child_native.ca_child_lane_2_capture.ca_primitive_output_delay",
+        "owner": "FourPhaseSoc.ca_child_program_access.ca_child_native.ca_child_lane_2_capture",
+        "owner_module": "FourPhaseStage",
+        "owner_metadata_module": "FourPhaseStage_7",
+        "primitive_id": "output_delay",
+        "original_parameters": {
+          "DELAY_FS": 31000000,
+          "OP": 0,
+          "RESET_VALUE": 0,
+          "WIDTH": 1
+        },
+        "stages": 8,
+        "purpose": "ordering-publication",
+        "classification": "ordering",
+        "disposition": "measure-canonical-stage",
+        "previous_stages": 27,
+        "baseline_owner_metadata_module": "FourPhaseStage_8"
+      },
+      {
+        "instance": "FourPhaseSoc.ca_child_program_access.ca_child_native.ca_child_lane_3_issue.ca_primitive_output_delay",
+        "owner": "FourPhaseSoc.ca_child_program_access.ca_child_native.ca_child_lane_3_issue",
+        "owner_module": "FourPhaseStage",
+        "owner_metadata_module": "FourPhaseStage_8",
+        "primitive_id": "output_delay",
+        "original_parameters": {
+          "DELAY_FS": 31000000,
+          "OP": 0,
+          "RESET_VALUE": 0,
+          "WIDTH": 1
+        },
+        "stages": 8,
+        "purpose": "ordering-publication",
+        "classification": "ordering",
+        "disposition": "measure-canonical-stage",
+        "previous_stages": 27,
+        "baseline_owner_metadata_module": "FourPhaseStage_9"
+      },
+      {
+        "instance": "FourPhaseSoc.ca_child_program_access.ca_child_native.ca_child_lane_3_join.ca_child_left.ca_primitive_output_delay",
+        "owner": "FourPhaseSoc.ca_child_program_access.ca_child_native.ca_child_lane_3_join.ca_child_left",
+        "owner_module": "LongHoldBuffer",
+        "owner_metadata_module": "LongHoldBuffer_16",
+        "primitive_id": "output_delay",
+        "original_parameters": {
+          "DELAY_FS": 31000000,
+          "OP": 0,
+          "RESET_VALUE": 0,
+          "WIDTH": 1
+        },
+        "stages": 8,
+        "purpose": "ordering-publication",
+        "classification": "ordering",
+        "disposition": "measure-canonical-stage",
+        "previous_stages": 27
+      },
+      {
+        "instance": "FourPhaseSoc.ca_child_program_access.ca_child_native.ca_child_lane_3_join.ca_child_right.ca_primitive_output_delay",
+        "owner": "FourPhaseSoc.ca_child_program_access.ca_child_native.ca_child_lane_3_join.ca_child_right",
+        "owner_module": "LongHoldBuffer",
+        "owner_metadata_module": "LongHoldBuffer_17",
+        "primitive_id": "output_delay",
+        "original_parameters": {
+          "DELAY_FS": 31000000,
+          "OP": 0,
+          "RESET_VALUE": 0,
+          "WIDTH": 1
+        },
+        "stages": 8,
+        "purpose": "ordering-publication",
+        "classification": "ordering",
+        "disposition": "measure-canonical-stage",
+        "previous_stages": 27
+      },
+      {
+        "instance": "FourPhaseSoc.ca_child_program_access.ca_child_native.ca_child_lane_3_capture.ca_primitive_output_delay",
+        "owner": "FourPhaseSoc.ca_child_program_access.ca_child_native.ca_child_lane_3_capture",
+        "owner_module": "FourPhaseStage",
+        "owner_metadata_module": "FourPhaseStage_9",
+        "primitive_id": "output_delay",
+        "original_parameters": {
+          "DELAY_FS": 31000000,
+          "OP": 0,
+          "RESET_VALUE": 0,
+          "WIDTH": 1
+        },
+        "stages": 8,
+        "purpose": "ordering-publication",
+        "classification": "ordering",
+        "disposition": "measure-canonical-stage",
+        "previous_stages": 27,
+        "baseline_owner_metadata_module": "FourPhaseStage_10"
+      },
+      {
+        "instance": "FourPhaseSoc.ca_child_ram_access.ca_child_native.ca_child_credit.head_ca_child_stage0.ca_child_storage.ca_primitive_output_delay",
+        "owner": "FourPhaseSoc.ca_child_ram_access.ca_child_native.ca_child_credit.head_ca_child_stage0.ca_child_storage",
+        "owner_module": "LongHoldBuffer",
+        "owner_metadata_module": "LongHoldBuffer_18",
+        "primitive_id": "output_delay",
+        "original_parameters": {
+          "DELAY_FS": 31000000,
+          "OP": 0,
+          "RESET_VALUE": 0,
+          "WIDTH": 1
+        },
+        "stages": 8,
+        "purpose": "ordering-publication",
+        "classification": "ordering",
+        "disposition": "measure-canonical-stage",
+        "previous_stages": 27
+      },
+      {
+        "instance": "FourPhaseSoc.ca_child_ram_access.ca_child_native.ca_child_owner.ca_child_left.ca_primitive_output_delay",
+        "owner": "FourPhaseSoc.ca_child_ram_access.ca_child_native.ca_child_owner.ca_child_left",
+        "owner_module": "LongHoldBuffer",
+        "owner_metadata_module": "LongHoldBuffer_19",
+        "primitive_id": "output_delay",
+        "original_parameters": {
+          "DELAY_FS": 31000000,
+          "OP": 0,
+          "RESET_VALUE": 0,
+          "WIDTH": 1
+        },
+        "stages": 8,
+        "purpose": "ordering-publication",
+        "classification": "ordering",
+        "disposition": "measure-canonical-stage",
+        "previous_stages": 27
+      },
+      {
+        "instance": "FourPhaseSoc.ca_child_ram_access.ca_child_native.ca_child_owner.ca_child_right.ca_primitive_output_delay",
+        "owner": "FourPhaseSoc.ca_child_ram_access.ca_child_native.ca_child_owner.ca_child_right",
+        "owner_module": "LongHoldBuffer",
+        "owner_metadata_module": "LongHoldBuffer_20",
+        "primitive_id": "output_delay",
+        "original_parameters": {
+          "DELAY_FS": 31000000,
+          "OP": 0,
+          "RESET_VALUE": 0,
+          "WIDTH": 1
+        },
+        "stages": 8,
+        "purpose": "ordering-publication",
+        "classification": "ordering",
+        "disposition": "measure-canonical-stage",
+        "previous_stages": 27
+      },
+      {
+        "instance": "FourPhaseSoc.ca_child_ram_access.ca_child_native.ca_child_lane_0_issue.ca_primitive_output_delay",
+        "owner": "FourPhaseSoc.ca_child_ram_access.ca_child_native.ca_child_lane_0_issue",
+        "owner_module": "FourPhaseStage",
+        "owner_metadata_module": "FourPhaseStage_10",
+        "primitive_id": "output_delay",
+        "original_parameters": {
+          "DELAY_FS": 31000000,
+          "OP": 0,
+          "RESET_VALUE": 0,
+          "WIDTH": 1
+        },
+        "stages": 8,
+        "purpose": "ordering-publication",
+        "classification": "ordering",
+        "disposition": "measure-canonical-stage",
+        "previous_stages": 27,
+        "baseline_owner_metadata_module": "FourPhaseStage_12"
+      },
+      {
+        "instance": "FourPhaseSoc.ca_child_ram_access.ca_child_native.ca_child_lane_0_join.ca_child_left.ca_primitive_output_delay",
+        "owner": "FourPhaseSoc.ca_child_ram_access.ca_child_native.ca_child_lane_0_join.ca_child_left",
+        "owner_module": "LongHoldBuffer",
+        "owner_metadata_module": "LongHoldBuffer_21",
+        "primitive_id": "output_delay",
+        "original_parameters": {
+          "DELAY_FS": 31000000,
+          "OP": 0,
+          "RESET_VALUE": 0,
+          "WIDTH": 1
+        },
+        "stages": 8,
+        "purpose": "ordering-publication",
+        "classification": "ordering",
+        "disposition": "measure-canonical-stage",
+        "previous_stages": 27
+      },
+      {
+        "instance": "FourPhaseSoc.ca_child_ram_access.ca_child_native.ca_child_lane_0_join.ca_child_right.ca_primitive_output_delay",
+        "owner": "FourPhaseSoc.ca_child_ram_access.ca_child_native.ca_child_lane_0_join.ca_child_right",
+        "owner_module": "LongHoldBuffer",
+        "owner_metadata_module": "LongHoldBuffer_22",
+        "primitive_id": "output_delay",
+        "original_parameters": {
+          "DELAY_FS": 31000000,
+          "OP": 0,
+          "RESET_VALUE": 0,
+          "WIDTH": 1
+        },
+        "stages": 8,
+        "purpose": "ordering-publication",
+        "classification": "ordering",
+        "disposition": "measure-canonical-stage",
+        "previous_stages": 27
+      },
+      {
+        "instance": "FourPhaseSoc.ca_child_ram_access.ca_child_native.ca_child_lane_0_capture.ca_primitive_output_delay",
+        "owner": "FourPhaseSoc.ca_child_ram_access.ca_child_native.ca_child_lane_0_capture",
+        "owner_module": "FourPhaseStage",
+        "owner_metadata_module": "FourPhaseStage_11",
+        "primitive_id": "output_delay",
+        "original_parameters": {
+          "DELAY_FS": 31000000,
+          "OP": 0,
+          "RESET_VALUE": 0,
+          "WIDTH": 1
+        },
+        "stages": 8,
+        "purpose": "ordering-publication",
+        "classification": "ordering",
+        "disposition": "measure-canonical-stage",
+        "previous_stages": 27,
+        "baseline_owner_metadata_module": "FourPhaseStage_13"
+      },
+      {
+        "instance": "FourPhaseSoc.ca_child_ram_access.ca_child_native.ca_child_lane_1_issue.ca_primitive_output_delay",
+        "owner": "FourPhaseSoc.ca_child_ram_access.ca_child_native.ca_child_lane_1_issue",
+        "owner_module": "FourPhaseStage",
+        "owner_metadata_module": "FourPhaseStage_12",
+        "primitive_id": "output_delay",
+        "original_parameters": {
+          "DELAY_FS": 31000000,
+          "OP": 0,
+          "RESET_VALUE": 0,
+          "WIDTH": 1
+        },
+        "stages": 8,
+        "purpose": "ordering-publication",
+        "classification": "ordering",
+        "disposition": "measure-canonical-stage",
+        "previous_stages": 27,
+        "baseline_owner_metadata_module": "FourPhaseStage_14"
+      },
+      {
+        "instance": "FourPhaseSoc.ca_child_ram_access.ca_child_native.ca_child_lane_1_join.ca_child_left.ca_primitive_output_delay",
+        "owner": "FourPhaseSoc.ca_child_ram_access.ca_child_native.ca_child_lane_1_join.ca_child_left",
+        "owner_module": "LongHoldBuffer",
+        "owner_metadata_module": "LongHoldBuffer_23",
+        "primitive_id": "output_delay",
+        "original_parameters": {
+          "DELAY_FS": 31000000,
+          "OP": 0,
+          "RESET_VALUE": 0,
+          "WIDTH": 1
+        },
+        "stages": 8,
+        "purpose": "ordering-publication",
+        "classification": "ordering",
+        "disposition": "measure-canonical-stage",
+        "previous_stages": 27
+      },
+      {
+        "instance": "FourPhaseSoc.ca_child_ram_access.ca_child_native.ca_child_lane_1_join.ca_child_right.ca_primitive_output_delay",
+        "owner": "FourPhaseSoc.ca_child_ram_access.ca_child_native.ca_child_lane_1_join.ca_child_right",
+        "owner_module": "LongHoldBuffer",
+        "owner_metadata_module": "LongHoldBuffer_24",
+        "primitive_id": "output_delay",
+        "original_parameters": {
+          "DELAY_FS": 31000000,
+          "OP": 0,
+          "RESET_VALUE": 0,
+          "WIDTH": 1
+        },
+        "stages": 8,
+        "purpose": "ordering-publication",
+        "classification": "ordering",
+        "disposition": "measure-canonical-stage",
+        "previous_stages": 27
+      },
+      {
+        "instance": "FourPhaseSoc.ca_child_ram_access.ca_child_native.ca_child_lane_1_capture.ca_primitive_output_delay",
+        "owner": "FourPhaseSoc.ca_child_ram_access.ca_child_native.ca_child_lane_1_capture",
+        "owner_module": "FourPhaseStage",
+        "owner_metadata_module": "FourPhaseStage_13",
+        "primitive_id": "output_delay",
+        "original_parameters": {
+          "DELAY_FS": 31000000,
+          "OP": 0,
+          "RESET_VALUE": 0,
+          "WIDTH": 1
+        },
+        "stages": 8,
+        "purpose": "ordering-publication",
+        "classification": "ordering",
+        "disposition": "measure-canonical-stage",
+        "previous_stages": 27,
+        "baseline_owner_metadata_module": "FourPhaseStage_15"
+      },
+      {
+        "instance": "FourPhaseSoc.ca_child_ram_access.ca_child_native.ca_child_lane_2_issue.ca_primitive_output_delay",
+        "owner": "FourPhaseSoc.ca_child_ram_access.ca_child_native.ca_child_lane_2_issue",
+        "owner_module": "FourPhaseStage",
+        "owner_metadata_module": "FourPhaseStage_14",
+        "primitive_id": "output_delay",
+        "original_parameters": {
+          "DELAY_FS": 31000000,
+          "OP": 0,
+          "RESET_VALUE": 0,
+          "WIDTH": 1
+        },
+        "stages": 8,
+        "purpose": "ordering-publication",
+        "classification": "ordering",
+        "disposition": "measure-canonical-stage",
+        "previous_stages": 27,
+        "baseline_owner_metadata_module": "FourPhaseStage_16"
+      },
+      {
+        "instance": "FourPhaseSoc.ca_child_ram_access.ca_child_native.ca_child_lane_2_join.ca_child_left.ca_primitive_output_delay",
+        "owner": "FourPhaseSoc.ca_child_ram_access.ca_child_native.ca_child_lane_2_join.ca_child_left",
+        "owner_module": "LongHoldBuffer",
+        "owner_metadata_module": "LongHoldBuffer_25",
+        "primitive_id": "output_delay",
+        "original_parameters": {
+          "DELAY_FS": 31000000,
+          "OP": 0,
+          "RESET_VALUE": 0,
+          "WIDTH": 1
+        },
+        "stages": 8,
+        "purpose": "ordering-publication",
+        "classification": "ordering",
+        "disposition": "measure-canonical-stage",
+        "previous_stages": 27
+      },
+      {
+        "instance": "FourPhaseSoc.ca_child_ram_access.ca_child_native.ca_child_lane_2_join.ca_child_right.ca_primitive_output_delay",
+        "owner": "FourPhaseSoc.ca_child_ram_access.ca_child_native.ca_child_lane_2_join.ca_child_right",
+        "owner_module": "LongHoldBuffer",
+        "owner_metadata_module": "LongHoldBuffer_26",
+        "primitive_id": "output_delay",
+        "original_parameters": {
+          "DELAY_FS": 31000000,
+          "OP": 0,
+          "RESET_VALUE": 0,
+          "WIDTH": 1
+        },
+        "stages": 8,
+        "purpose": "ordering-publication",
+        "classification": "ordering",
+        "disposition": "measure-canonical-stage",
+        "previous_stages": 27
+      },
+      {
+        "instance": "FourPhaseSoc.ca_child_ram_access.ca_child_native.ca_child_lane_2_capture.ca_primitive_output_delay",
+        "owner": "FourPhaseSoc.ca_child_ram_access.ca_child_native.ca_child_lane_2_capture",
+        "owner_module": "FourPhaseStage",
+        "owner_metadata_module": "FourPhaseStage_15",
+        "primitive_id": "output_delay",
+        "original_parameters": {
+          "DELAY_FS": 31000000,
+          "OP": 0,
+          "RESET_VALUE": 0,
+          "WIDTH": 1
+        },
+        "stages": 8,
+        "purpose": "ordering-publication",
+        "classification": "ordering",
+        "disposition": "measure-canonical-stage",
+        "previous_stages": 27,
+        "baseline_owner_metadata_module": "FourPhaseStage_17"
+      },
+      {
+        "instance": "FourPhaseSoc.ca_child_ram_access.ca_child_native.ca_child_lane_3_issue.ca_primitive_output_delay",
+        "owner": "FourPhaseSoc.ca_child_ram_access.ca_child_native.ca_child_lane_3_issue",
+        "owner_module": "FourPhaseStage",
+        "owner_metadata_module": "FourPhaseStage_16",
+        "primitive_id": "output_delay",
+        "original_parameters": {
+          "DELAY_FS": 31000000,
+          "OP": 0,
+          "RESET_VALUE": 0,
+          "WIDTH": 1
+        },
+        "stages": 8,
+        "purpose": "ordering-publication",
+        "classification": "ordering",
+        "disposition": "measure-canonical-stage",
+        "previous_stages": 27,
+        "baseline_owner_metadata_module": "FourPhaseStage_18"
+      },
+      {
+        "instance": "FourPhaseSoc.ca_child_ram_access.ca_child_native.ca_child_lane_3_join.ca_child_left.ca_primitive_output_delay",
+        "owner": "FourPhaseSoc.ca_child_ram_access.ca_child_native.ca_child_lane_3_join.ca_child_left",
+        "owner_module": "LongHoldBuffer",
+        "owner_metadata_module": "LongHoldBuffer_27",
+        "primitive_id": "output_delay",
+        "original_parameters": {
+          "DELAY_FS": 31000000,
+          "OP": 0,
+          "RESET_VALUE": 0,
+          "WIDTH": 1
+        },
+        "stages": 8,
+        "purpose": "ordering-publication",
+        "classification": "ordering",
+        "disposition": "measure-canonical-stage",
+        "previous_stages": 27
+      },
+      {
+        "instance": "FourPhaseSoc.ca_child_ram_access.ca_child_native.ca_child_lane_3_join.ca_child_right.ca_primitive_output_delay",
+        "owner": "FourPhaseSoc.ca_child_ram_access.ca_child_native.ca_child_lane_3_join.ca_child_right",
+        "owner_module": "LongHoldBuffer",
+        "owner_metadata_module": "LongHoldBuffer_28",
+        "primitive_id": "output_delay",
+        "original_parameters": {
+          "DELAY_FS": 31000000,
+          "OP": 0,
+          "RESET_VALUE": 0,
+          "WIDTH": 1
+        },
+        "stages": 8,
+        "purpose": "ordering-publication",
+        "classification": "ordering",
+        "disposition": "measure-canonical-stage",
+        "previous_stages": 27
+      },
+      {
+        "instance": "FourPhaseSoc.ca_child_ram_access.ca_child_native.ca_child_lane_3_capture.ca_primitive_output_delay",
+        "owner": "FourPhaseSoc.ca_child_ram_access.ca_child_native.ca_child_lane_3_capture",
+        "owner_module": "FourPhaseStage",
+        "owner_metadata_module": "FourPhaseStage_17",
+        "primitive_id": "output_delay",
+        "original_parameters": {
+          "DELAY_FS": 31000000,
+          "OP": 0,
+          "RESET_VALUE": 0,
+          "WIDTH": 1
+        },
+        "stages": 8,
+        "purpose": "ordering-publication",
+        "classification": "ordering",
+        "disposition": "measure-canonical-stage",
+        "previous_stages": 27,
+        "baseline_owner_metadata_module": "FourPhaseStage_19"
+      },
+      {
+        "instance": "FourPhaseSoc.ca_child_ram_source.ca_child_reservation.ca_primitive_output_delay",
+        "owner": "FourPhaseSoc.ca_child_ram_source.ca_child_reservation",
+        "owner_module": "LongHoldBuffer",
+        "owner_metadata_module": "LongHoldBuffer_29",
+        "primitive_id": "output_delay",
+        "original_parameters": {
+          "DELAY_FS": 31000000,
+          "OP": 0,
+          "RESET_VALUE": 0,
+          "WIDTH": 1
+        },
+        "stages": 8,
+        "purpose": "ordering-publication",
+        "classification": "ordering",
+        "disposition": "measure-canonical-stage",
+        "previous_stages": 27
+      },
+      {
+        "instance": "FourPhaseSoc.ca_child_program_source.ca_child_reservation.ca_primitive_output_delay",
+        "owner": "FourPhaseSoc.ca_child_program_source.ca_child_reservation",
+        "owner_module": "LongHoldBuffer",
+        "owner_metadata_module": "LongHoldBuffer_30",
+        "primitive_id": "output_delay",
+        "original_parameters": {
+          "DELAY_FS": 31000000,
+          "OP": 0,
+          "RESET_VALUE": 0,
+          "WIDTH": 1
+        },
+        "stages": 8,
+        "purpose": "ordering-publication",
+        "classification": "ordering",
+        "disposition": "measure-canonical-stage",
+        "previous_stages": 27
+      },
+      {
+        "instance": "FourPhaseSoc.ca_child_program_source.ca_child_stored_buffer.ca_primitive_output_delay",
+        "owner": "FourPhaseSoc.ca_child_program_source.ca_child_stored_buffer",
+        "owner_module": "LongHoldBuffer",
+        "owner_metadata_module": "LongHoldBuffer_31",
+        "primitive_id": "output_delay",
+        "original_parameters": {
+          "DELAY_FS": 31000000,
+          "OP": 0,
+          "RESET_VALUE": 0,
+          "WIDTH": 1
+        },
+        "stages": 8,
+        "purpose": "ordering-publication",
+        "classification": "ordering",
+        "disposition": "measure-canonical-stage",
+        "previous_stages": 27
+      },
+      {
+        "instance": "FourPhaseSoc.ca_child_control.ca_child_state.head_ca_child_stage0.ca_child_storage.ca_primitive_output_delay",
+        "owner": "FourPhaseSoc.ca_child_control.ca_child_state.head_ca_child_stage0.ca_child_storage",
+        "owner_module": "LongHoldBuffer",
+        "owner_metadata_module": "LongHoldBuffer_32",
+        "primitive_id": "output_delay",
+        "original_parameters": {
+          "DELAY_FS": 31000000,
+          "OP": 0,
+          "RESET_VALUE": 0,
+          "WIDTH": 1
+        },
+        "stages": 8,
+        "purpose": "ordering-publication",
+        "classification": "ordering",
+        "disposition": "measure-canonical-stage",
+        "previous_stages": 27
+      },
+      {
+        "instance": "FourPhaseSoc.ca_child_control.ca_child_join.ca_child_left.ca_primitive_output_delay",
+        "owner": "FourPhaseSoc.ca_child_control.ca_child_join.ca_child_left",
+        "owner_module": "LongHoldBuffer",
+        "owner_metadata_module": "LongHoldBuffer_33",
+        "primitive_id": "output_delay",
+        "original_parameters": {
+          "DELAY_FS": 31000000,
+          "OP": 0,
+          "RESET_VALUE": 0,
+          "WIDTH": 1
+        },
+        "stages": 8,
+        "purpose": "ordering-publication",
+        "classification": "ordering",
+        "disposition": "measure-canonical-stage",
+        "previous_stages": 27
+      },
+      {
+        "instance": "FourPhaseSoc.ca_child_control.ca_child_join.ca_child_right.ca_primitive_output_delay",
+        "owner": "FourPhaseSoc.ca_child_control.ca_child_join.ca_child_right",
+        "owner_module": "LongHoldBuffer",
+        "owner_metadata_module": "LongHoldBuffer_34",
+        "primitive_id": "output_delay",
+        "original_parameters": {
+          "DELAY_FS": 31000000,
+          "OP": 0,
+          "RESET_VALUE": 0,
+          "WIDTH": 1
+        },
+        "stages": 8,
+        "purpose": "ordering-publication",
+        "classification": "ordering",
+        "disposition": "measure-canonical-stage",
+        "previous_stages": 27
+      },
+      {
+        "instance": "FourPhaseSoc.ca_child_control.ca_child_update.ca_primitive_output_delay",
+        "owner": "FourPhaseSoc.ca_child_control.ca_child_update",
+        "owner_module": "FourPhaseStage",
+        "owner_metadata_module": "FourPhaseStage_18",
+        "primitive_id": "output_delay",
+        "original_parameters": {
+          "DELAY_FS": 31000000,
+          "OP": 0,
+          "RESET_VALUE": 0,
+          "WIDTH": 1
+        },
+        "stages": 8,
+        "purpose": "ordering-publication",
+        "classification": "ordering",
+        "disposition": "measure-canonical-stage",
+        "previous_stages": 27,
+        "baseline_owner_metadata_module": "FourPhaseStage_20"
+      },
+      {
+        "instance": "FourPhaseSoc.ca_child_control.ca_child_crc.ca_primitive_output_delay",
+        "owner": "FourPhaseSoc.ca_child_control.ca_child_crc",
+        "owner_module": "FourPhaseStage",
+        "owner_metadata_module": "FourPhaseStage_19",
+        "primitive_id": "output_delay",
+        "original_parameters": {
+          "DELAY_FS": 31000000,
+          "OP": 0,
+          "RESET_VALUE": 0,
+          "WIDTH": 1
+        },
+        "stages": 8,
+        "purpose": "ordering-publication",
+        "classification": "ordering",
+        "disposition": "measure-canonical-stage",
+        "previous_stages": 27,
+        "baseline_owner_metadata_module": "FourPhaseStage_21"
+      },
+      {
+        "instance": "FourPhaseSoc.ca_child_housekeeping.ca_child_state.head_ca_child_stage0.ca_child_storage.ca_primitive_output_delay",
+        "owner": "FourPhaseSoc.ca_child_housekeeping.ca_child_state.head_ca_child_stage0.ca_child_storage",
+        "owner_module": "LongHoldBuffer",
+        "owner_metadata_module": "LongHoldBuffer_35",
+        "primitive_id": "output_delay",
+        "original_parameters": {
+          "DELAY_FS": 31000000,
+          "OP": 0,
+          "RESET_VALUE": 0,
+          "WIDTH": 1
+        },
+        "stages": 8,
+        "purpose": "ordering-publication",
+        "classification": "ordering",
+        "disposition": "measure-canonical-stage",
+        "previous_stages": 27
+      },
+      {
+        "instance": "FourPhaseSoc.ca_child_housekeeping.ca_child_join.ca_child_left.ca_primitive_output_delay",
+        "owner": "FourPhaseSoc.ca_child_housekeeping.ca_child_join.ca_child_left",
+        "owner_module": "LongHoldBuffer",
+        "owner_metadata_module": "LongHoldBuffer_36",
+        "primitive_id": "output_delay",
+        "original_parameters": {
+          "DELAY_FS": 31000000,
+          "OP": 0,
+          "RESET_VALUE": 0,
+          "WIDTH": 1
+        },
+        "stages": 8,
+        "purpose": "ordering-publication",
+        "classification": "ordering",
+        "disposition": "measure-canonical-stage",
+        "previous_stages": 27
+      },
+      {
+        "instance": "FourPhaseSoc.ca_child_housekeeping.ca_child_join.ca_child_right.ca_primitive_output_delay",
+        "owner": "FourPhaseSoc.ca_child_housekeeping.ca_child_join.ca_child_right",
+        "owner_module": "LongHoldBuffer",
+        "owner_metadata_module": "LongHoldBuffer_37",
+        "primitive_id": "output_delay",
+        "original_parameters": {
+          "DELAY_FS": 31000000,
+          "OP": 0,
+          "RESET_VALUE": 0,
+          "WIDTH": 1
+        },
+        "stages": 8,
+        "purpose": "ordering-publication",
+        "classification": "ordering",
+        "disposition": "measure-canonical-stage",
+        "previous_stages": 27
+      },
+      {
+        "instance": "FourPhaseSoc.ca_child_housekeeping.ca_child_update.ca_primitive_output_delay",
+        "owner": "FourPhaseSoc.ca_child_housekeeping.ca_child_update",
+        "owner_module": "FourPhaseStage",
+        "owner_metadata_module": "FourPhaseStage_20",
+        "primitive_id": "output_delay",
+        "original_parameters": {
+          "DELAY_FS": 31000000,
+          "OP": 0,
+          "RESET_VALUE": 0,
+          "WIDTH": 1
+        },
+        "stages": 8,
+        "purpose": "ordering-publication",
+        "classification": "ordering",
+        "disposition": "measure-canonical-stage",
+        "previous_stages": 27,
+        "baseline_owner_metadata_module": "FourPhaseStage_22"
+      },
+      {
+        "instance": "FourPhaseSoc.ca_child_telemetry.ca_child_state.head_ca_child_stage0.ca_child_storage.ca_primitive_output_delay",
+        "owner": "FourPhaseSoc.ca_child_telemetry.ca_child_state.head_ca_child_stage0.ca_child_storage",
+        "owner_module": "LongHoldBuffer",
+        "owner_metadata_module": "LongHoldBuffer_38",
+        "primitive_id": "output_delay",
+        "original_parameters": {
+          "DELAY_FS": 31000000,
+          "OP": 0,
+          "RESET_VALUE": 0,
+          "WIDTH": 1
+        },
+        "stages": 8,
+        "purpose": "ordering-publication",
+        "classification": "ordering",
+        "disposition": "measure-canonical-stage",
+        "previous_stages": 27
+      },
+      {
+        "instance": "FourPhaseSoc.ca_child_telemetry.ca_child_join.ca_child_left.ca_primitive_output_delay",
+        "owner": "FourPhaseSoc.ca_child_telemetry.ca_child_join.ca_child_left",
+        "owner_module": "LongHoldBuffer",
+        "owner_metadata_module": "LongHoldBuffer_39",
+        "primitive_id": "output_delay",
+        "original_parameters": {
+          "DELAY_FS": 31000000,
+          "OP": 0,
+          "RESET_VALUE": 0,
+          "WIDTH": 1
+        },
+        "stages": 8,
+        "purpose": "ordering-publication",
+        "classification": "ordering",
+        "disposition": "measure-canonical-stage",
+        "previous_stages": 27
+      },
+      {
+        "instance": "FourPhaseSoc.ca_child_telemetry.ca_child_join.ca_child_right.ca_primitive_output_delay",
+        "owner": "FourPhaseSoc.ca_child_telemetry.ca_child_join.ca_child_right",
+        "owner_module": "LongHoldBuffer",
+        "owner_metadata_module": "LongHoldBuffer_40",
+        "primitive_id": "output_delay",
+        "original_parameters": {
+          "DELAY_FS": 31000000,
+          "OP": 0,
+          "RESET_VALUE": 0,
+          "WIDTH": 1
+        },
+        "stages": 8,
+        "purpose": "ordering-publication",
+        "classification": "ordering",
+        "disposition": "measure-canonical-stage",
+        "previous_stages": 27
+      },
+      {
+        "instance": "FourPhaseSoc.ca_child_telemetry.ca_child_update.ca_primitive_output_delay",
+        "owner": "FourPhaseSoc.ca_child_telemetry.ca_child_update",
+        "owner_module": "FourPhaseStage",
+        "owner_metadata_module": "FourPhaseStage_21",
+        "primitive_id": "output_delay",
+        "original_parameters": {
+          "DELAY_FS": 31000000,
+          "OP": 0,
+          "RESET_VALUE": 0,
+          "WIDTH": 1
+        },
+        "stages": 8,
+        "purpose": "ordering-publication",
+        "classification": "ordering",
+        "disposition": "measure-canonical-stage",
+        "previous_stages": 27,
+        "baseline_owner_metadata_module": "FourPhaseStage_23"
+      },
+      {
+        "instance": "FourPhaseSoc.ca_child_telemetry_source.ca_child_reservation.ca_primitive_output_delay",
+        "owner": "FourPhaseSoc.ca_child_telemetry_source.ca_child_reservation",
+        "owner_module": "LongHoldBuffer",
+        "owner_metadata_module": "LongHoldBuffer_41",
+        "primitive_id": "output_delay",
+        "original_parameters": {
+          "DELAY_FS": 31000000,
+          "OP": 0,
+          "RESET_VALUE": 0,
+          "WIDTH": 1
+        },
+        "stages": 8,
+        "purpose": "ordering-publication",
+        "classification": "ordering",
+        "disposition": "measure-canonical-stage",
+        "previous_stages": 27
+      },
+      {
+        "instance": "FourPhaseSoc.ca_child_housekeeping_source.ca_child_reservation.ca_primitive_output_delay",
+        "owner": "FourPhaseSoc.ca_child_housekeeping_source.ca_child_reservation",
+        "owner_module": "LongHoldBuffer",
+        "owner_metadata_module": "LongHoldBuffer_42",
+        "primitive_id": "output_delay",
+        "original_parameters": {
+          "DELAY_FS": 31000000,
+          "OP": 0,
+          "RESET_VALUE": 0,
+          "WIDTH": 1
+        },
+        "stages": 8,
+        "purpose": "ordering-publication",
+        "classification": "ordering",
+        "disposition": "measure-canonical-stage",
+        "previous_stages": 27
+      },
+      {
+        "instance": "FourPhaseSoc.ca_child_supervisor.ca_child_state.head_ca_child_stage0.ca_child_storage.ca_primitive_output_delay",
+        "owner": "FourPhaseSoc.ca_child_supervisor.ca_child_state.head_ca_child_stage0.ca_child_storage",
+        "owner_module": "LongHoldBuffer",
+        "owner_metadata_module": "LongHoldBuffer_43",
+        "primitive_id": "output_delay",
+        "original_parameters": {
+          "DELAY_FS": 31000000,
+          "OP": 0,
+          "RESET_VALUE": 0,
+          "WIDTH": 1
+        },
+        "stages": 8,
+        "purpose": "ordering-publication",
+        "classification": "ordering",
+        "disposition": "measure-canonical-stage",
+        "previous_stages": 27
+      },
+      {
+        "instance": "FourPhaseSoc.ca_child_supervisor.ca_child_join.ca_child_left.ca_primitive_output_delay",
+        "owner": "FourPhaseSoc.ca_child_supervisor.ca_child_join.ca_child_left",
+        "owner_module": "LongHoldBuffer",
+        "owner_metadata_module": "LongHoldBuffer_44",
+        "primitive_id": "output_delay",
+        "original_parameters": {
+          "DELAY_FS": 31000000,
+          "OP": 0,
+          "RESET_VALUE": 0,
+          "WIDTH": 1
+        },
+        "stages": 8,
+        "purpose": "ordering-publication",
+        "classification": "ordering",
+        "disposition": "measure-canonical-stage",
+        "previous_stages": 27
+      },
+      {
+        "instance": "FourPhaseSoc.ca_child_supervisor.ca_child_join.ca_child_right.ca_primitive_output_delay",
+        "owner": "FourPhaseSoc.ca_child_supervisor.ca_child_join.ca_child_right",
+        "owner_module": "LongHoldBuffer",
+        "owner_metadata_module": "LongHoldBuffer_45",
+        "primitive_id": "output_delay",
+        "original_parameters": {
+          "DELAY_FS": 31000000,
+          "OP": 0,
+          "RESET_VALUE": 0,
+          "WIDTH": 1
+        },
+        "stages": 8,
+        "purpose": "ordering-publication",
+        "classification": "ordering",
+        "disposition": "measure-canonical-stage",
+        "previous_stages": 27
+      },
+      {
+        "instance": "FourPhaseSoc.ca_child_supervisor.ca_child_update.ca_primitive_output_delay",
+        "owner": "FourPhaseSoc.ca_child_supervisor.ca_child_update",
+        "owner_module": "FourPhaseStage",
+        "owner_metadata_module": "FourPhaseStage_22",
+        "primitive_id": "output_delay",
+        "original_parameters": {
+          "DELAY_FS": 31000000,
+          "OP": 0,
+          "RESET_VALUE": 0,
+          "WIDTH": 1
+        },
+        "stages": 8,
+        "purpose": "ordering-publication",
+        "classification": "ordering",
+        "disposition": "measure-canonical-stage",
+        "previous_stages": 27,
+        "baseline_owner_metadata_module": "FourPhaseStage_24"
+      },
+      {
+        "instance": "FourPhaseSoc.ca_child_elapsed_scaler.ca_child_native.ca_child_owner.head_ca_child_stage0.ca_child_storage.ca_primitive_output_delay",
+        "owner": "FourPhaseSoc.ca_child_elapsed_scaler.ca_child_native.ca_child_owner.head_ca_child_stage0.ca_child_storage",
+        "owner_module": "LongHoldBuffer",
+        "owner_metadata_module": "LongHoldBuffer_46",
+        "primitive_id": "output_delay",
+        "original_parameters": {
+          "DELAY_FS": 31000000,
+          "OP": 0,
+          "RESET_VALUE": 0,
+          "WIDTH": 1
+        },
+        "stages": 8,
+        "purpose": "ordering-publication",
+        "classification": "ordering",
+        "disposition": "measure-canonical-stage",
+        "previous_stages": 27
+      },
+      {
+        "instance": "FourPhaseSoc.ca_child_elapsed_scaler.ca_child_native.ca_child_step.ca_primitive_output_delay",
+        "owner": "FourPhaseSoc.ca_child_elapsed_scaler.ca_child_native.ca_child_step",
+        "owner_module": "FourPhaseStage",
+        "owner_metadata_module": "FourPhaseStage_23",
+        "primitive_id": "output_delay",
+        "original_parameters": {
+          "DELAY_FS": 31000000,
+          "OP": 0,
+          "RESET_VALUE": 0,
+          "WIDTH": 1
+        },
+        "stages": 8,
+        "purpose": "ordering-publication",
+        "classification": "ordering",
+        "disposition": "measure-canonical-stage",
+        "previous_stages": 27,
+        "baseline_owner_metadata_module": "FourPhaseStage_25"
+      },
+      {
+        "instance": "FourPhaseSoc.ca_child_spi_adc.ca_child_native.ca_child_state.head_ca_child_stage0.ca_child_storage.ca_primitive_output_delay",
+        "owner": "FourPhaseSoc.ca_child_spi_adc.ca_child_native.ca_child_state.head_ca_child_stage0.ca_child_storage",
+        "owner_module": "LongHoldBuffer",
+        "owner_metadata_module": "LongHoldBuffer_47",
+        "primitive_id": "output_delay",
+        "original_parameters": {
+          "DELAY_FS": 31000000,
+          "OP": 0,
+          "RESET_VALUE": 0,
+          "WIDTH": 1
+        },
+        "stages": 8,
+        "purpose": "ordering-publication",
+        "classification": "ordering",
+        "disposition": "measure-canonical-stage",
+        "previous_stages": 27
+      },
+      {
+        "instance": "FourPhaseSoc.ca_child_spi_adc.ca_child_native.ca_child_owner.ca_child_left.ca_primitive_output_delay",
+        "owner": "FourPhaseSoc.ca_child_spi_adc.ca_child_native.ca_child_owner.ca_child_left",
+        "owner_module": "LongHoldBuffer",
+        "owner_metadata_module": "LongHoldBuffer_48",
+        "primitive_id": "output_delay",
+        "original_parameters": {
+          "DELAY_FS": 31000000,
+          "OP": 0,
+          "RESET_VALUE": 0,
+          "WIDTH": 1
+        },
+        "stages": 8,
+        "purpose": "ordering-publication",
+        "classification": "ordering",
+        "disposition": "measure-canonical-stage",
+        "previous_stages": 27
+      },
+      {
+        "instance": "FourPhaseSoc.ca_child_spi_adc.ca_child_native.ca_child_owner.ca_child_right.ca_primitive_output_delay",
+        "owner": "FourPhaseSoc.ca_child_spi_adc.ca_child_native.ca_child_owner.ca_child_right",
+        "owner_module": "LongHoldBuffer",
+        "owner_metadata_module": "LongHoldBuffer_49",
+        "primitive_id": "output_delay",
+        "original_parameters": {
+          "DELAY_FS": 31000000,
+          "OP": 0,
+          "RESET_VALUE": 0,
+          "WIDTH": 1
+        },
+        "stages": 8,
+        "purpose": "ordering-publication",
+        "classification": "ordering",
+        "disposition": "measure-canonical-stage",
+        "previous_stages": 27
+      },
+      {
+        "instance": "FourPhaseSoc.ca_child_spi_adc.ca_child_native.ca_child_captured.ca_child_left.ca_primitive_output_delay",
+        "owner": "FourPhaseSoc.ca_child_spi_adc.ca_child_native.ca_child_captured.ca_child_left",
+        "owner_module": "LongHoldBuffer",
+        "owner_metadata_module": "LongHoldBuffer_50",
+        "primitive_id": "output_delay",
+        "original_parameters": {
+          "DELAY_FS": 31000000,
+          "OP": 0,
+          "RESET_VALUE": 0,
+          "WIDTH": 1
+        },
+        "stages": 8,
+        "purpose": "ordering-publication",
+        "classification": "ordering",
+        "disposition": "measure-canonical-stage",
+        "previous_stages": 27
+      },
+      {
+        "instance": "FourPhaseSoc.ca_child_spi_adc.ca_child_native.ca_child_captured.ca_child_right.ca_primitive_output_delay",
+        "owner": "FourPhaseSoc.ca_child_spi_adc.ca_child_native.ca_child_captured.ca_child_right",
+        "owner_module": "LongHoldBuffer",
+        "owner_metadata_module": "LongHoldBuffer_51",
+        "primitive_id": "output_delay",
+        "original_parameters": {
+          "DELAY_FS": 31000000,
+          "OP": 0,
+          "RESET_VALUE": 0,
+          "WIDTH": 1
+        },
+        "stages": 8,
+        "purpose": "ordering-publication",
+        "classification": "ordering",
+        "disposition": "measure-canonical-stage",
+        "previous_stages": 27
+      },
+      {
+        "instance": "FourPhaseSoc.ca_child_spi_adc.ca_child_native.ca_child_assemble.ca_primitive_output_delay",
+        "owner": "FourPhaseSoc.ca_child_spi_adc.ca_child_native.ca_child_assemble",
+        "owner_module": "FourPhaseStage",
+        "owner_metadata_module": "FourPhaseStage_24",
+        "primitive_id": "output_delay",
+        "original_parameters": {
+          "DELAY_FS": 31000000,
+          "OP": 0,
+          "RESET_VALUE": 0,
+          "WIDTH": 1
+        },
+        "stages": 8,
+        "purpose": "ordering-publication",
+        "classification": "ordering",
+        "disposition": "measure-canonical-stage",
+        "previous_stages": 27,
+        "baseline_owner_metadata_module": "FourPhaseStage_26"
+      },
+      {
+        "instance": "FourPhaseSoc.ca_child_spi_adc.ca_child_native.ca_child_scale.ca_child_prepare.ca_primitive_output_delay",
+        "owner": "FourPhaseSoc.ca_child_spi_adc.ca_child_native.ca_child_scale.ca_child_prepare",
+        "owner_module": "FourPhaseStage",
+        "owner_metadata_module": "FourPhaseStage_25",
+        "primitive_id": "output_delay",
+        "original_parameters": {
+          "DELAY_FS": 31000000,
+          "OP": 0,
+          "RESET_VALUE": 0,
+          "WIDTH": 1
+        },
+        "stages": 8,
+        "purpose": "ordering-publication",
+        "classification": "ordering",
+        "disposition": "measure-canonical-stage",
+        "previous_stages": 27,
+        "baseline_owner_metadata_module": "FourPhaseStage_27"
+      },
+      {
+        "instance": "FourPhaseSoc.ca_child_spi_adc.ca_child_native.ca_child_scale.ca_child_radix_0.ca_primitive_output_delay",
+        "owner": "FourPhaseSoc.ca_child_spi_adc.ca_child_native.ca_child_scale.ca_child_radix_0",
+        "owner_module": "FourPhaseStage",
+        "owner_metadata_module": "FourPhaseStage_26",
+        "primitive_id": "output_delay",
+        "original_parameters": {
+          "DELAY_FS": 31000000,
+          "OP": 0,
+          "RESET_VALUE": 0,
+          "WIDTH": 1
+        },
+        "stages": 8,
+        "purpose": "ordering-publication",
+        "classification": "ordering",
+        "disposition": "measure-canonical-stage",
+        "previous_stages": 27,
+        "baseline_owner_metadata_module": "FourPhaseStage_28"
+      },
+      {
+        "instance": "FourPhaseSoc.ca_child_spi_adc.ca_child_native.ca_child_scale.ca_child_radix_1.ca_primitive_output_delay",
+        "owner": "FourPhaseSoc.ca_child_spi_adc.ca_child_native.ca_child_scale.ca_child_radix_1",
+        "owner_module": "FourPhaseStage",
+        "owner_metadata_module": "FourPhaseStage_27",
+        "primitive_id": "output_delay",
+        "original_parameters": {
+          "DELAY_FS": 31000000,
+          "OP": 0,
+          "RESET_VALUE": 0,
+          "WIDTH": 1
+        },
+        "stages": 8,
+        "purpose": "ordering-publication",
+        "classification": "ordering",
+        "disposition": "measure-canonical-stage",
+        "previous_stages": 27,
+        "baseline_owner_metadata_module": "FourPhaseStage_29"
+      },
+      {
+        "instance": "FourPhaseSoc.ca_child_spi_adc.ca_child_native.ca_child_scale.ca_child_radix_2.ca_primitive_output_delay",
+        "owner": "FourPhaseSoc.ca_child_spi_adc.ca_child_native.ca_child_scale.ca_child_radix_2",
+        "owner_module": "FourPhaseStage",
+        "owner_metadata_module": "FourPhaseStage_28",
+        "primitive_id": "output_delay",
+        "original_parameters": {
+          "DELAY_FS": 31000000,
+          "OP": 0,
+          "RESET_VALUE": 0,
+          "WIDTH": 1
+        },
+        "stages": 8,
+        "purpose": "ordering-publication",
+        "classification": "ordering",
+        "disposition": "measure-canonical-stage",
+        "previous_stages": 27,
+        "baseline_owner_metadata_module": "FourPhaseStage_30"
+      },
+      {
+        "instance": "FourPhaseSoc.ca_child_spi_adc.ca_child_native.ca_child_scaled.ca_child_left.ca_primitive_output_delay",
+        "owner": "FourPhaseSoc.ca_child_spi_adc.ca_child_native.ca_child_scaled.ca_child_left",
+        "owner_module": "LongHoldBuffer",
+        "owner_metadata_module": "LongHoldBuffer_52",
+        "primitive_id": "output_delay",
+        "original_parameters": {
+          "DELAY_FS": 31000000,
+          "OP": 0,
+          "RESET_VALUE": 0,
+          "WIDTH": 1
+        },
+        "stages": 8,
+        "purpose": "ordering-publication",
+        "classification": "ordering",
+        "disposition": "measure-canonical-stage",
+        "previous_stages": 27
+      },
+      {
+        "instance": "FourPhaseSoc.ca_child_spi_adc.ca_child_native.ca_child_scaled.ca_child_right.ca_primitive_output_delay",
+        "owner": "FourPhaseSoc.ca_child_spi_adc.ca_child_native.ca_child_scaled.ca_child_right",
+        "owner_module": "LongHoldBuffer",
+        "owner_metadata_module": "LongHoldBuffer_53",
+        "primitive_id": "output_delay",
+        "original_parameters": {
+          "DELAY_FS": 31000000,
+          "OP": 0,
+          "RESET_VALUE": 0,
+          "WIDTH": 1
+        },
+        "stages": 8,
+        "purpose": "ordering-publication",
+        "classification": "ordering",
+        "disposition": "measure-canonical-stage",
+        "previous_stages": 27
+      },
+      {
+        "instance": "FourPhaseSoc.ca_child_spi_adc.ca_child_native.ca_child_finish.ca_primitive_output_delay",
+        "owner": "FourPhaseSoc.ca_child_spi_adc.ca_child_native.ca_child_finish",
+        "owner_module": "FourPhaseStage",
+        "owner_metadata_module": "FourPhaseStage_29",
+        "primitive_id": "output_delay",
+        "original_parameters": {
+          "DELAY_FS": 31000000,
+          "OP": 0,
+          "RESET_VALUE": 0,
+          "WIDTH": 1
+        },
+        "stages": 8,
+        "purpose": "ordering-publication",
+        "classification": "ordering",
+        "disposition": "measure-canonical-stage",
+        "previous_stages": 27,
+        "baseline_owner_metadata_module": "FourPhaseStage_31"
+      },
+      {
+        "instance": "FourPhaseSoc.ca_child_core.ca_child_state.head_ca_child_stage0.ca_child_storage.ca_primitive_output_delay",
+        "owner": "FourPhaseSoc.ca_child_core.ca_child_state.head_ca_child_stage0.ca_child_storage",
+        "owner_module": "LongHoldBuffer",
+        "owner_metadata_module": "LongHoldBuffer_54",
+        "primitive_id": "output_delay",
+        "original_parameters": {
+          "DELAY_FS": 31000000,
+          "OP": 0,
+          "RESET_VALUE": 0,
+          "WIDTH": 1
+        },
+        "stages": 8,
+        "purpose": "ordering-publication",
+        "classification": "ordering",
+        "disposition": "measure-canonical-stage",
+        "previous_stages": 27
+      },
+      {
+        "instance": "FourPhaseSoc.ca_child_core.ca_child_address.ca_primitive_output_delay",
+        "owner": "FourPhaseSoc.ca_child_core.ca_child_address",
+        "owner_module": "FourPhaseStage",
+        "owner_metadata_module": "FourPhaseStage_30",
+        "primitive_id": "output_delay",
+        "original_parameters": {
+          "DELAY_FS": 31000000,
+          "OP": 0,
+          "RESET_VALUE": 0,
+          "WIDTH": 1
+        },
+        "stages": 8,
+        "purpose": "ordering-publication",
+        "classification": "ordering",
+        "disposition": "measure-canonical-stage",
+        "previous_stages": 27,
+        "baseline_owner_metadata_module": "FourPhaseStage_32"
+      },
+      {
+        "instance": "FourPhaseSoc.ca_child_core.ca_child_join.ca_child_left.ca_primitive_output_delay",
+        "owner": "FourPhaseSoc.ca_child_core.ca_child_join.ca_child_left",
+        "owner_module": "LongHoldBuffer",
+        "owner_metadata_module": "LongHoldBuffer_55",
+        "primitive_id": "output_delay",
+        "original_parameters": {
+          "DELAY_FS": 31000000,
+          "OP": 0,
+          "RESET_VALUE": 0,
+          "WIDTH": 1
+        },
+        "stages": 8,
+        "purpose": "ordering-publication",
+        "classification": "ordering",
+        "disposition": "measure-canonical-stage",
+        "previous_stages": 27
+      },
+      {
+        "instance": "FourPhaseSoc.ca_child_core.ca_child_join.ca_child_right.ca_primitive_output_delay",
+        "owner": "FourPhaseSoc.ca_child_core.ca_child_join.ca_child_right",
+        "owner_module": "LongHoldBuffer",
+        "owner_metadata_module": "LongHoldBuffer_56",
+        "primitive_id": "output_delay",
+        "original_parameters": {
+          "DELAY_FS": 31000000,
+          "OP": 0,
+          "RESET_VALUE": 0,
+          "WIDTH": 1
+        },
+        "stages": 8,
+        "purpose": "ordering-publication",
+        "classification": "ordering",
+        "disposition": "measure-canonical-stage",
+        "previous_stages": 27
+      },
+      {
+        "instance": "FourPhaseSoc.ca_child_core.ca_child_execute.ca_primitive_output_delay",
+        "owner": "FourPhaseSoc.ca_child_core.ca_child_execute",
+        "owner_module": "FourPhaseStage",
+        "owner_metadata_module": "FourPhaseStage_31",
+        "primitive_id": "output_delay",
+        "original_parameters": {
+          "DELAY_FS": 31000000,
+          "OP": 0,
+          "RESET_VALUE": 0,
+          "WIDTH": 1
+        },
+        "stages": 8,
+        "purpose": "ordering-publication",
+        "classification": "ordering",
+        "disposition": "measure-canonical-stage",
+        "previous_stages": 27,
+        "baseline_owner_metadata_module": "FourPhaseStage_33"
+      },
+      {
+        "instance": "FourPhaseSoc.ca_child_transactions.ca_child_reply.ca_primitive_output_delay",
+        "owner": "FourPhaseSoc.ca_child_transactions.ca_child_reply",
+        "owner_module": "FourPhaseStage",
+        "owner_metadata_module": "FourPhaseStage_32",
+        "primitive_id": "output_delay",
+        "original_parameters": {
+          "DELAY_FS": 31000000,
+          "OP": 0,
+          "RESET_VALUE": 0,
+          "WIDTH": 1
+        },
+        "stages": 8,
+        "purpose": "ordering-publication",
+        "classification": "ordering",
+        "disposition": "measure-canonical-stage",
+        "previous_stages": 27,
+        "baseline_owner_metadata_module": "FourPhaseStage_34"
+      },
+      {
+        "instance": "FourPhaseSoc.ca_child_elapsed_scaler.ca_child_native.ca_child_step.ca_primitive_request_delay",
+        "owner": "FourPhaseSoc.ca_child_elapsed_scaler.ca_child_native.ca_child_step",
+        "owner_module": "FourPhaseStage",
+        "owner_metadata_module": "FourPhaseStage_23",
+        "primitive_id": "request_delay",
+        "original_parameters": {
+          "DELAY_FS": 100000000,
+          "OP": 0,
+          "RESET_VALUE": 0,
+          "WIDTH": 1
+        },
+        "stages": 28,
+        "purpose": "ordering-bundling",
+        "classification": "ordering",
+        "disposition": "measure-canonical-stage",
+        "previous_stages": 86,
+        "baseline_owner_metadata_module": "FourPhaseStage_25"
+      }
+    ],
+    "click": [
+      {
+        "instance": "ClickSoc.ca_child_admission.ca_child_pending.ca_primitive_acknowledge_guard",
+        "owner": "ClickSoc.ca_child_admission.ca_child_pending",
+        "owner_module": "ClickBuffer",
+        "owner_metadata_module": "ClickBuffer",
+        "primitive_id": "acknowledge_guard",
+        "original_parameters": {
+          "DELAY_FS": 32000000,
+          "OP": 0,
+          "RESET_VALUE": 0,
+          "WIDTH": 1
+        },
+        "stages": 8,
+        "purpose": "ordering-and-pulse-acknowledge_guard",
+        "classification": "mixed-ordering-and-pulse/reset",
+        "disposition": "measure-canonical-stage",
+        "previous_stages": 28
+      },
+      {
+        "instance": "ClickSoc.ca_child_i2c.ca_child_native.ca_child_update.ca_primitive_acknowledge_guard",
+        "owner": "ClickSoc.ca_child_i2c.ca_child_native.ca_child_update",
+        "owner_module": "ClickStage",
+        "owner_metadata_module": "ClickStage",
+        "primitive_id": "acknowledge_guard",
+        "original_parameters": {
+          "DELAY_FS": 32000000,
+          "OP": 0,
+          "RESET_VALUE": 0,
+          "WIDTH": 1
+        },
+        "stages": 8,
+        "purpose": "ordering-and-pulse-acknowledge_guard",
+        "classification": "mixed-ordering-and-pulse/reset",
+        "disposition": "measure-canonical-stage",
+        "previous_stages": 28
+      },
+      {
+        "instance": "ClickSoc.ca_child_program_access.ca_child_native.ca_child_owner.ca_child_left_storage.ca_primitive_acknowledge_guard",
+        "owner": "ClickSoc.ca_child_program_access.ca_child_native.ca_child_owner.ca_child_left_storage",
+        "owner_module": "ClickBuffer",
+        "owner_metadata_module": "ClickBuffer_1",
+        "primitive_id": "acknowledge_guard",
+        "original_parameters": {
+          "DELAY_FS": 32000000,
+          "OP": 0,
+          "RESET_VALUE": 0,
+          "WIDTH": 1
+        },
+        "stages": 8,
+        "purpose": "ordering-and-pulse-acknowledge_guard",
+        "classification": "mixed-ordering-and-pulse/reset",
+        "disposition": "measure-canonical-stage",
+        "previous_stages": 28
+      },
+      {
+        "instance": "ClickSoc.ca_child_program_access.ca_child_native.ca_child_owner.ca_child_right_storage.ca_primitive_acknowledge_guard",
+        "owner": "ClickSoc.ca_child_program_access.ca_child_native.ca_child_owner.ca_child_right_storage",
+        "owner_module": "ClickBuffer",
+        "owner_metadata_module": "ClickBuffer_2",
+        "primitive_id": "acknowledge_guard",
+        "original_parameters": {
+          "DELAY_FS": 32000000,
+          "OP": 0,
+          "RESET_VALUE": 0,
+          "WIDTH": 1
+        },
+        "stages": 8,
+        "purpose": "ordering-and-pulse-acknowledge_guard",
+        "classification": "mixed-ordering-and-pulse/reset",
+        "disposition": "measure-canonical-stage",
+        "previous_stages": 28
+      },
+      {
+        "instance": "ClickSoc.ca_child_program_access.ca_child_native.ca_child_lane_0_issue.ca_primitive_acknowledge_guard",
+        "owner": "ClickSoc.ca_child_program_access.ca_child_native.ca_child_lane_0_issue",
+        "owner_module": "ClickStage",
+        "owner_metadata_module": "ClickStage_1",
+        "primitive_id": "acknowledge_guard",
+        "original_parameters": {
+          "DELAY_FS": 32000000,
+          "OP": 0,
+          "RESET_VALUE": 0,
+          "WIDTH": 1
+        },
+        "stages": 8,
+        "purpose": "ordering-and-pulse-acknowledge_guard",
+        "classification": "mixed-ordering-and-pulse/reset",
+        "disposition": "measure-canonical-stage",
+        "previous_stages": 28,
+        "baseline_owner_metadata_module": "ClickStage_2"
+      },
+      {
+        "instance": "ClickSoc.ca_child_program_access.ca_child_native.ca_child_lane_0_join.ca_child_left_storage.ca_primitive_acknowledge_guard",
+        "owner": "ClickSoc.ca_child_program_access.ca_child_native.ca_child_lane_0_join.ca_child_left_storage",
+        "owner_module": "ClickBuffer",
+        "owner_metadata_module": "ClickBuffer_3",
+        "primitive_id": "acknowledge_guard",
+        "original_parameters": {
+          "DELAY_FS": 32000000,
+          "OP": 0,
+          "RESET_VALUE": 0,
+          "WIDTH": 1
+        },
+        "stages": 8,
+        "purpose": "ordering-and-pulse-acknowledge_guard",
+        "classification": "mixed-ordering-and-pulse/reset",
+        "disposition": "measure-canonical-stage",
+        "previous_stages": 28
+      },
+      {
+        "instance": "ClickSoc.ca_child_program_access.ca_child_native.ca_child_lane_0_join.ca_child_right_storage.ca_primitive_acknowledge_guard",
+        "owner": "ClickSoc.ca_child_program_access.ca_child_native.ca_child_lane_0_join.ca_child_right_storage",
+        "owner_module": "ClickBuffer",
+        "owner_metadata_module": "ClickBuffer_4",
+        "primitive_id": "acknowledge_guard",
+        "original_parameters": {
+          "DELAY_FS": 32000000,
+          "OP": 0,
+          "RESET_VALUE": 0,
+          "WIDTH": 1
+        },
+        "stages": 8,
+        "purpose": "ordering-and-pulse-acknowledge_guard",
+        "classification": "mixed-ordering-and-pulse/reset",
+        "disposition": "measure-canonical-stage",
+        "previous_stages": 28
+      },
+      {
+        "instance": "ClickSoc.ca_child_program_access.ca_child_native.ca_child_lane_0_capture.ca_primitive_acknowledge_guard",
+        "owner": "ClickSoc.ca_child_program_access.ca_child_native.ca_child_lane_0_capture",
+        "owner_module": "ClickStage",
+        "owner_metadata_module": "ClickStage_2",
+        "primitive_id": "acknowledge_guard",
+        "original_parameters": {
+          "DELAY_FS": 32000000,
+          "OP": 0,
+          "RESET_VALUE": 0,
+          "WIDTH": 1
+        },
+        "stages": 8,
+        "purpose": "ordering-and-pulse-acknowledge_guard",
+        "classification": "mixed-ordering-and-pulse/reset",
+        "disposition": "measure-canonical-stage",
+        "previous_stages": 28,
+        "baseline_owner_metadata_module": "ClickStage_3"
+      },
+      {
+        "instance": "ClickSoc.ca_child_program_access.ca_child_native.ca_child_lane_1_issue.ca_primitive_acknowledge_guard",
+        "owner": "ClickSoc.ca_child_program_access.ca_child_native.ca_child_lane_1_issue",
+        "owner_module": "ClickStage",
+        "owner_metadata_module": "ClickStage_3",
+        "primitive_id": "acknowledge_guard",
+        "original_parameters": {
+          "DELAY_FS": 32000000,
+          "OP": 0,
+          "RESET_VALUE": 0,
+          "WIDTH": 1
+        },
+        "stages": 8,
+        "purpose": "ordering-and-pulse-acknowledge_guard",
+        "classification": "mixed-ordering-and-pulse/reset",
+        "disposition": "measure-canonical-stage",
+        "previous_stages": 28,
+        "baseline_owner_metadata_module": "ClickStage_4"
+      },
+      {
+        "instance": "ClickSoc.ca_child_program_access.ca_child_native.ca_child_lane_1_join.ca_child_left_storage.ca_primitive_acknowledge_guard",
+        "owner": "ClickSoc.ca_child_program_access.ca_child_native.ca_child_lane_1_join.ca_child_left_storage",
+        "owner_module": "ClickBuffer",
+        "owner_metadata_module": "ClickBuffer_5",
+        "primitive_id": "acknowledge_guard",
+        "original_parameters": {
+          "DELAY_FS": 32000000,
+          "OP": 0,
+          "RESET_VALUE": 0,
+          "WIDTH": 1
+        },
+        "stages": 8,
+        "purpose": "ordering-and-pulse-acknowledge_guard",
+        "classification": "mixed-ordering-and-pulse/reset",
+        "disposition": "measure-canonical-stage",
+        "previous_stages": 28
+      },
+      {
+        "instance": "ClickSoc.ca_child_program_access.ca_child_native.ca_child_lane_1_join.ca_child_right_storage.ca_primitive_acknowledge_guard",
+        "owner": "ClickSoc.ca_child_program_access.ca_child_native.ca_child_lane_1_join.ca_child_right_storage",
+        "owner_module": "ClickBuffer",
+        "owner_metadata_module": "ClickBuffer_6",
+        "primitive_id": "acknowledge_guard",
+        "original_parameters": {
+          "DELAY_FS": 32000000,
+          "OP": 0,
+          "RESET_VALUE": 0,
+          "WIDTH": 1
+        },
+        "stages": 8,
+        "purpose": "ordering-and-pulse-acknowledge_guard",
+        "classification": "mixed-ordering-and-pulse/reset",
+        "disposition": "measure-canonical-stage",
+        "previous_stages": 28
+      },
+      {
+        "instance": "ClickSoc.ca_child_program_access.ca_child_native.ca_child_lane_1_capture.ca_primitive_acknowledge_guard",
+        "owner": "ClickSoc.ca_child_program_access.ca_child_native.ca_child_lane_1_capture",
+        "owner_module": "ClickStage",
+        "owner_metadata_module": "ClickStage_4",
+        "primitive_id": "acknowledge_guard",
+        "original_parameters": {
+          "DELAY_FS": 32000000,
+          "OP": 0,
+          "RESET_VALUE": 0,
+          "WIDTH": 1
+        },
+        "stages": 8,
+        "purpose": "ordering-and-pulse-acknowledge_guard",
+        "classification": "mixed-ordering-and-pulse/reset",
+        "disposition": "measure-canonical-stage",
+        "previous_stages": 28,
+        "baseline_owner_metadata_module": "ClickStage_5"
+      },
+      {
+        "instance": "ClickSoc.ca_child_program_access.ca_child_native.ca_child_lane_2_issue.ca_primitive_acknowledge_guard",
+        "owner": "ClickSoc.ca_child_program_access.ca_child_native.ca_child_lane_2_issue",
+        "owner_module": "ClickStage",
+        "owner_metadata_module": "ClickStage_5",
+        "primitive_id": "acknowledge_guard",
+        "original_parameters": {
+          "DELAY_FS": 32000000,
+          "OP": 0,
+          "RESET_VALUE": 0,
+          "WIDTH": 1
+        },
+        "stages": 8,
+        "purpose": "ordering-and-pulse-acknowledge_guard",
+        "classification": "mixed-ordering-and-pulse/reset",
+        "disposition": "measure-canonical-stage",
+        "previous_stages": 28,
+        "baseline_owner_metadata_module": "ClickStage_6"
+      },
+      {
+        "instance": "ClickSoc.ca_child_program_access.ca_child_native.ca_child_lane_2_join.ca_child_left_storage.ca_primitive_acknowledge_guard",
+        "owner": "ClickSoc.ca_child_program_access.ca_child_native.ca_child_lane_2_join.ca_child_left_storage",
+        "owner_module": "ClickBuffer",
+        "owner_metadata_module": "ClickBuffer_7",
+        "primitive_id": "acknowledge_guard",
+        "original_parameters": {
+          "DELAY_FS": 32000000,
+          "OP": 0,
+          "RESET_VALUE": 0,
+          "WIDTH": 1
+        },
+        "stages": 8,
+        "purpose": "ordering-and-pulse-acknowledge_guard",
+        "classification": "mixed-ordering-and-pulse/reset",
+        "disposition": "measure-canonical-stage",
+        "previous_stages": 28
+      },
+      {
+        "instance": "ClickSoc.ca_child_program_access.ca_child_native.ca_child_lane_2_join.ca_child_right_storage.ca_primitive_acknowledge_guard",
+        "owner": "ClickSoc.ca_child_program_access.ca_child_native.ca_child_lane_2_join.ca_child_right_storage",
+        "owner_module": "ClickBuffer",
+        "owner_metadata_module": "ClickBuffer_8",
+        "primitive_id": "acknowledge_guard",
+        "original_parameters": {
+          "DELAY_FS": 32000000,
+          "OP": 0,
+          "RESET_VALUE": 0,
+          "WIDTH": 1
+        },
+        "stages": 8,
+        "purpose": "ordering-and-pulse-acknowledge_guard",
+        "classification": "mixed-ordering-and-pulse/reset",
+        "disposition": "measure-canonical-stage",
+        "previous_stages": 28
+      },
+      {
+        "instance": "ClickSoc.ca_child_program_access.ca_child_native.ca_child_lane_2_capture.ca_primitive_acknowledge_guard",
+        "owner": "ClickSoc.ca_child_program_access.ca_child_native.ca_child_lane_2_capture",
+        "owner_module": "ClickStage",
+        "owner_metadata_module": "ClickStage_6",
+        "primitive_id": "acknowledge_guard",
+        "original_parameters": {
+          "DELAY_FS": 32000000,
+          "OP": 0,
+          "RESET_VALUE": 0,
+          "WIDTH": 1
+        },
+        "stages": 8,
+        "purpose": "ordering-and-pulse-acknowledge_guard",
+        "classification": "mixed-ordering-and-pulse/reset",
+        "disposition": "measure-canonical-stage",
+        "previous_stages": 28,
+        "baseline_owner_metadata_module": "ClickStage_7"
+      },
+      {
+        "instance": "ClickSoc.ca_child_program_access.ca_child_native.ca_child_lane_3_issue.ca_primitive_acknowledge_guard",
+        "owner": "ClickSoc.ca_child_program_access.ca_child_native.ca_child_lane_3_issue",
+        "owner_module": "ClickStage",
+        "owner_metadata_module": "ClickStage_7",
+        "primitive_id": "acknowledge_guard",
+        "original_parameters": {
+          "DELAY_FS": 32000000,
+          "OP": 0,
+          "RESET_VALUE": 0,
+          "WIDTH": 1
+        },
+        "stages": 8,
+        "purpose": "ordering-and-pulse-acknowledge_guard",
+        "classification": "mixed-ordering-and-pulse/reset",
+        "disposition": "measure-canonical-stage",
+        "previous_stages": 28,
+        "baseline_owner_metadata_module": "ClickStage_8"
+      },
+      {
+        "instance": "ClickSoc.ca_child_program_access.ca_child_native.ca_child_lane_3_join.ca_child_left_storage.ca_primitive_acknowledge_guard",
+        "owner": "ClickSoc.ca_child_program_access.ca_child_native.ca_child_lane_3_join.ca_child_left_storage",
+        "owner_module": "ClickBuffer",
+        "owner_metadata_module": "ClickBuffer_9",
+        "primitive_id": "acknowledge_guard",
+        "original_parameters": {
+          "DELAY_FS": 32000000,
+          "OP": 0,
+          "RESET_VALUE": 0,
+          "WIDTH": 1
+        },
+        "stages": 8,
+        "purpose": "ordering-and-pulse-acknowledge_guard",
+        "classification": "mixed-ordering-and-pulse/reset",
+        "disposition": "measure-canonical-stage",
+        "previous_stages": 28
+      },
+      {
+        "instance": "ClickSoc.ca_child_program_access.ca_child_native.ca_child_lane_3_join.ca_child_right_storage.ca_primitive_acknowledge_guard",
+        "owner": "ClickSoc.ca_child_program_access.ca_child_native.ca_child_lane_3_join.ca_child_right_storage",
+        "owner_module": "ClickBuffer",
+        "owner_metadata_module": "ClickBuffer_10",
+        "primitive_id": "acknowledge_guard",
+        "original_parameters": {
+          "DELAY_FS": 32000000,
+          "OP": 0,
+          "RESET_VALUE": 0,
+          "WIDTH": 1
+        },
+        "stages": 8,
+        "purpose": "ordering-and-pulse-acknowledge_guard",
+        "classification": "mixed-ordering-and-pulse/reset",
+        "disposition": "measure-canonical-stage",
+        "previous_stages": 28
+      },
+      {
+        "instance": "ClickSoc.ca_child_program_access.ca_child_native.ca_child_lane_3_capture.ca_primitive_acknowledge_guard",
+        "owner": "ClickSoc.ca_child_program_access.ca_child_native.ca_child_lane_3_capture",
+        "owner_module": "ClickStage",
+        "owner_metadata_module": "ClickStage_8",
+        "primitive_id": "acknowledge_guard",
+        "original_parameters": {
+          "DELAY_FS": 32000000,
+          "OP": 0,
+          "RESET_VALUE": 0,
+          "WIDTH": 1
+        },
+        "stages": 8,
+        "purpose": "ordering-and-pulse-acknowledge_guard",
+        "classification": "mixed-ordering-and-pulse/reset",
+        "disposition": "measure-canonical-stage",
+        "previous_stages": 28,
+        "baseline_owner_metadata_module": "ClickStage_9"
+      },
+      {
+        "instance": "ClickSoc.ca_child_ram_access.ca_child_native.ca_child_owner.ca_child_left_storage.ca_primitive_acknowledge_guard",
+        "owner": "ClickSoc.ca_child_ram_access.ca_child_native.ca_child_owner.ca_child_left_storage",
+        "owner_module": "ClickBuffer",
+        "owner_metadata_module": "ClickBuffer_11",
+        "primitive_id": "acknowledge_guard",
+        "original_parameters": {
+          "DELAY_FS": 32000000,
+          "OP": 0,
+          "RESET_VALUE": 0,
+          "WIDTH": 1
+        },
+        "stages": 8,
+        "purpose": "ordering-and-pulse-acknowledge_guard",
+        "classification": "mixed-ordering-and-pulse/reset",
+        "disposition": "measure-canonical-stage",
+        "previous_stages": 28
+      },
+      {
+        "instance": "ClickSoc.ca_child_ram_access.ca_child_native.ca_child_owner.ca_child_right_storage.ca_primitive_acknowledge_guard",
+        "owner": "ClickSoc.ca_child_ram_access.ca_child_native.ca_child_owner.ca_child_right_storage",
+        "owner_module": "ClickBuffer",
+        "owner_metadata_module": "ClickBuffer_12",
+        "primitive_id": "acknowledge_guard",
+        "original_parameters": {
+          "DELAY_FS": 32000000,
+          "OP": 0,
+          "RESET_VALUE": 0,
+          "WIDTH": 1
+        },
+        "stages": 8,
+        "purpose": "ordering-and-pulse-acknowledge_guard",
+        "classification": "mixed-ordering-and-pulse/reset",
+        "disposition": "measure-canonical-stage",
+        "previous_stages": 28
+      },
+      {
+        "instance": "ClickSoc.ca_child_ram_access.ca_child_native.ca_child_lane_0_issue.ca_primitive_acknowledge_guard",
+        "owner": "ClickSoc.ca_child_ram_access.ca_child_native.ca_child_lane_0_issue",
+        "owner_module": "ClickStage",
+        "owner_metadata_module": "ClickStage_9",
+        "primitive_id": "acknowledge_guard",
+        "original_parameters": {
+          "DELAY_FS": 32000000,
+          "OP": 0,
+          "RESET_VALUE": 0,
+          "WIDTH": 1
+        },
+        "stages": 8,
+        "purpose": "ordering-and-pulse-acknowledge_guard",
+        "classification": "mixed-ordering-and-pulse/reset",
+        "disposition": "measure-canonical-stage",
+        "previous_stages": 28,
+        "baseline_owner_metadata_module": "ClickStage_11"
+      },
+      {
+        "instance": "ClickSoc.ca_child_ram_access.ca_child_native.ca_child_lane_0_join.ca_child_left_storage.ca_primitive_acknowledge_guard",
+        "owner": "ClickSoc.ca_child_ram_access.ca_child_native.ca_child_lane_0_join.ca_child_left_storage",
+        "owner_module": "ClickBuffer",
+        "owner_metadata_module": "ClickBuffer_13",
+        "primitive_id": "acknowledge_guard",
+        "original_parameters": {
+          "DELAY_FS": 32000000,
+          "OP": 0,
+          "RESET_VALUE": 0,
+          "WIDTH": 1
+        },
+        "stages": 8,
+        "purpose": "ordering-and-pulse-acknowledge_guard",
+        "classification": "mixed-ordering-and-pulse/reset",
+        "disposition": "measure-canonical-stage",
+        "previous_stages": 28
+      },
+      {
+        "instance": "ClickSoc.ca_child_ram_access.ca_child_native.ca_child_lane_0_join.ca_child_right_storage.ca_primitive_acknowledge_guard",
+        "owner": "ClickSoc.ca_child_ram_access.ca_child_native.ca_child_lane_0_join.ca_child_right_storage",
+        "owner_module": "ClickBuffer",
+        "owner_metadata_module": "ClickBuffer_14",
+        "primitive_id": "acknowledge_guard",
+        "original_parameters": {
+          "DELAY_FS": 32000000,
+          "OP": 0,
+          "RESET_VALUE": 0,
+          "WIDTH": 1
+        },
+        "stages": 8,
+        "purpose": "ordering-and-pulse-acknowledge_guard",
+        "classification": "mixed-ordering-and-pulse/reset",
+        "disposition": "measure-canonical-stage",
+        "previous_stages": 28
+      },
+      {
+        "instance": "ClickSoc.ca_child_ram_access.ca_child_native.ca_child_lane_0_capture.ca_primitive_acknowledge_guard",
+        "owner": "ClickSoc.ca_child_ram_access.ca_child_native.ca_child_lane_0_capture",
+        "owner_module": "ClickStage",
+        "owner_metadata_module": "ClickStage_10",
+        "primitive_id": "acknowledge_guard",
+        "original_parameters": {
+          "DELAY_FS": 32000000,
+          "OP": 0,
+          "RESET_VALUE": 0,
+          "WIDTH": 1
+        },
+        "stages": 8,
+        "purpose": "ordering-and-pulse-acknowledge_guard",
+        "classification": "mixed-ordering-and-pulse/reset",
+        "disposition": "measure-canonical-stage",
+        "previous_stages": 28,
+        "baseline_owner_metadata_module": "ClickStage_12"
+      },
+      {
+        "instance": "ClickSoc.ca_child_ram_access.ca_child_native.ca_child_lane_1_issue.ca_primitive_acknowledge_guard",
+        "owner": "ClickSoc.ca_child_ram_access.ca_child_native.ca_child_lane_1_issue",
+        "owner_module": "ClickStage",
+        "owner_metadata_module": "ClickStage_11",
+        "primitive_id": "acknowledge_guard",
+        "original_parameters": {
+          "DELAY_FS": 32000000,
+          "OP": 0,
+          "RESET_VALUE": 0,
+          "WIDTH": 1
+        },
+        "stages": 8,
+        "purpose": "ordering-and-pulse-acknowledge_guard",
+        "classification": "mixed-ordering-and-pulse/reset",
+        "disposition": "measure-canonical-stage",
+        "previous_stages": 28,
+        "baseline_owner_metadata_module": "ClickStage_13"
+      },
+      {
+        "instance": "ClickSoc.ca_child_ram_access.ca_child_native.ca_child_lane_1_join.ca_child_left_storage.ca_primitive_acknowledge_guard",
+        "owner": "ClickSoc.ca_child_ram_access.ca_child_native.ca_child_lane_1_join.ca_child_left_storage",
+        "owner_module": "ClickBuffer",
+        "owner_metadata_module": "ClickBuffer_15",
+        "primitive_id": "acknowledge_guard",
+        "original_parameters": {
+          "DELAY_FS": 32000000,
+          "OP": 0,
+          "RESET_VALUE": 0,
+          "WIDTH": 1
+        },
+        "stages": 8,
+        "purpose": "ordering-and-pulse-acknowledge_guard",
+        "classification": "mixed-ordering-and-pulse/reset",
+        "disposition": "measure-canonical-stage",
+        "previous_stages": 28
+      },
+      {
+        "instance": "ClickSoc.ca_child_ram_access.ca_child_native.ca_child_lane_1_join.ca_child_right_storage.ca_primitive_acknowledge_guard",
+        "owner": "ClickSoc.ca_child_ram_access.ca_child_native.ca_child_lane_1_join.ca_child_right_storage",
+        "owner_module": "ClickBuffer",
+        "owner_metadata_module": "ClickBuffer_16",
+        "primitive_id": "acknowledge_guard",
+        "original_parameters": {
+          "DELAY_FS": 32000000,
+          "OP": 0,
+          "RESET_VALUE": 0,
+          "WIDTH": 1
+        },
+        "stages": 8,
+        "purpose": "ordering-and-pulse-acknowledge_guard",
+        "classification": "mixed-ordering-and-pulse/reset",
+        "disposition": "measure-canonical-stage",
+        "previous_stages": 28
+      },
+      {
+        "instance": "ClickSoc.ca_child_ram_access.ca_child_native.ca_child_lane_1_capture.ca_primitive_acknowledge_guard",
+        "owner": "ClickSoc.ca_child_ram_access.ca_child_native.ca_child_lane_1_capture",
+        "owner_module": "ClickStage",
+        "owner_metadata_module": "ClickStage_12",
+        "primitive_id": "acknowledge_guard",
+        "original_parameters": {
+          "DELAY_FS": 32000000,
+          "OP": 0,
+          "RESET_VALUE": 0,
+          "WIDTH": 1
+        },
+        "stages": 8,
+        "purpose": "ordering-and-pulse-acknowledge_guard",
+        "classification": "mixed-ordering-and-pulse/reset",
+        "disposition": "measure-canonical-stage",
+        "previous_stages": 28,
+        "baseline_owner_metadata_module": "ClickStage_14"
+      },
+      {
+        "instance": "ClickSoc.ca_child_ram_access.ca_child_native.ca_child_lane_2_issue.ca_primitive_acknowledge_guard",
+        "owner": "ClickSoc.ca_child_ram_access.ca_child_native.ca_child_lane_2_issue",
+        "owner_module": "ClickStage",
+        "owner_metadata_module": "ClickStage_13",
+        "primitive_id": "acknowledge_guard",
+        "original_parameters": {
+          "DELAY_FS": 32000000,
+          "OP": 0,
+          "RESET_VALUE": 0,
+          "WIDTH": 1
+        },
+        "stages": 8,
+        "purpose": "ordering-and-pulse-acknowledge_guard",
+        "classification": "mixed-ordering-and-pulse/reset",
+        "disposition": "measure-canonical-stage",
+        "previous_stages": 28,
+        "baseline_owner_metadata_module": "ClickStage_15"
+      },
+      {
+        "instance": "ClickSoc.ca_child_ram_access.ca_child_native.ca_child_lane_2_join.ca_child_left_storage.ca_primitive_acknowledge_guard",
+        "owner": "ClickSoc.ca_child_ram_access.ca_child_native.ca_child_lane_2_join.ca_child_left_storage",
+        "owner_module": "ClickBuffer",
+        "owner_metadata_module": "ClickBuffer_17",
+        "primitive_id": "acknowledge_guard",
+        "original_parameters": {
+          "DELAY_FS": 32000000,
+          "OP": 0,
+          "RESET_VALUE": 0,
+          "WIDTH": 1
+        },
+        "stages": 8,
+        "purpose": "ordering-and-pulse-acknowledge_guard",
+        "classification": "mixed-ordering-and-pulse/reset",
+        "disposition": "measure-canonical-stage",
+        "previous_stages": 28
+      },
+      {
+        "instance": "ClickSoc.ca_child_ram_access.ca_child_native.ca_child_lane_2_join.ca_child_right_storage.ca_primitive_acknowledge_guard",
+        "owner": "ClickSoc.ca_child_ram_access.ca_child_native.ca_child_lane_2_join.ca_child_right_storage",
+        "owner_module": "ClickBuffer",
+        "owner_metadata_module": "ClickBuffer_18",
+        "primitive_id": "acknowledge_guard",
+        "original_parameters": {
+          "DELAY_FS": 32000000,
+          "OP": 0,
+          "RESET_VALUE": 0,
+          "WIDTH": 1
+        },
+        "stages": 8,
+        "purpose": "ordering-and-pulse-acknowledge_guard",
+        "classification": "mixed-ordering-and-pulse/reset",
+        "disposition": "measure-canonical-stage",
+        "previous_stages": 28
+      },
+      {
+        "instance": "ClickSoc.ca_child_ram_access.ca_child_native.ca_child_lane_2_capture.ca_primitive_acknowledge_guard",
+        "owner": "ClickSoc.ca_child_ram_access.ca_child_native.ca_child_lane_2_capture",
+        "owner_module": "ClickStage",
+        "owner_metadata_module": "ClickStage_14",
+        "primitive_id": "acknowledge_guard",
+        "original_parameters": {
+          "DELAY_FS": 32000000,
+          "OP": 0,
+          "RESET_VALUE": 0,
+          "WIDTH": 1
+        },
+        "stages": 8,
+        "purpose": "ordering-and-pulse-acknowledge_guard",
+        "classification": "mixed-ordering-and-pulse/reset",
+        "disposition": "measure-canonical-stage",
+        "previous_stages": 28,
+        "baseline_owner_metadata_module": "ClickStage_16"
+      },
+      {
+        "instance": "ClickSoc.ca_child_ram_access.ca_child_native.ca_child_lane_3_issue.ca_primitive_acknowledge_guard",
+        "owner": "ClickSoc.ca_child_ram_access.ca_child_native.ca_child_lane_3_issue",
+        "owner_module": "ClickStage",
+        "owner_metadata_module": "ClickStage_15",
+        "primitive_id": "acknowledge_guard",
+        "original_parameters": {
+          "DELAY_FS": 32000000,
+          "OP": 0,
+          "RESET_VALUE": 0,
+          "WIDTH": 1
+        },
+        "stages": 8,
+        "purpose": "ordering-and-pulse-acknowledge_guard",
+        "classification": "mixed-ordering-and-pulse/reset",
+        "disposition": "measure-canonical-stage",
+        "previous_stages": 28,
+        "baseline_owner_metadata_module": "ClickStage_17"
+      },
+      {
+        "instance": "ClickSoc.ca_child_ram_access.ca_child_native.ca_child_lane_3_join.ca_child_left_storage.ca_primitive_acknowledge_guard",
+        "owner": "ClickSoc.ca_child_ram_access.ca_child_native.ca_child_lane_3_join.ca_child_left_storage",
+        "owner_module": "ClickBuffer",
+        "owner_metadata_module": "ClickBuffer_19",
+        "primitive_id": "acknowledge_guard",
+        "original_parameters": {
+          "DELAY_FS": 32000000,
+          "OP": 0,
+          "RESET_VALUE": 0,
+          "WIDTH": 1
+        },
+        "stages": 8,
+        "purpose": "ordering-and-pulse-acknowledge_guard",
+        "classification": "mixed-ordering-and-pulse/reset",
+        "disposition": "measure-canonical-stage",
+        "previous_stages": 28
+      },
+      {
+        "instance": "ClickSoc.ca_child_ram_access.ca_child_native.ca_child_lane_3_join.ca_child_right_storage.ca_primitive_acknowledge_guard",
+        "owner": "ClickSoc.ca_child_ram_access.ca_child_native.ca_child_lane_3_join.ca_child_right_storage",
+        "owner_module": "ClickBuffer",
+        "owner_metadata_module": "ClickBuffer_20",
+        "primitive_id": "acknowledge_guard",
+        "original_parameters": {
+          "DELAY_FS": 32000000,
+          "OP": 0,
+          "RESET_VALUE": 0,
+          "WIDTH": 1
+        },
+        "stages": 8,
+        "purpose": "ordering-and-pulse-acknowledge_guard",
+        "classification": "mixed-ordering-and-pulse/reset",
+        "disposition": "measure-canonical-stage",
+        "previous_stages": 28
+      },
+      {
+        "instance": "ClickSoc.ca_child_ram_access.ca_child_native.ca_child_lane_3_capture.ca_primitive_acknowledge_guard",
+        "owner": "ClickSoc.ca_child_ram_access.ca_child_native.ca_child_lane_3_capture",
+        "owner_module": "ClickStage",
+        "owner_metadata_module": "ClickStage_16",
+        "primitive_id": "acknowledge_guard",
+        "original_parameters": {
+          "DELAY_FS": 32000000,
+          "OP": 0,
+          "RESET_VALUE": 0,
+          "WIDTH": 1
+        },
+        "stages": 8,
+        "purpose": "ordering-and-pulse-acknowledge_guard",
+        "classification": "mixed-ordering-and-pulse/reset",
+        "disposition": "measure-canonical-stage",
+        "previous_stages": 28,
+        "baseline_owner_metadata_module": "ClickStage_18"
+      },
+      {
+        "instance": "ClickSoc.ca_child_ram_source.ca_child_reservation.ca_primitive_acknowledge_guard",
+        "owner": "ClickSoc.ca_child_ram_source.ca_child_reservation",
+        "owner_module": "ClickBuffer",
+        "owner_metadata_module": "ClickBuffer_21",
+        "primitive_id": "acknowledge_guard",
+        "original_parameters": {
+          "DELAY_FS": 32000000,
+          "OP": 0,
+          "RESET_VALUE": 0,
+          "WIDTH": 1
+        },
+        "stages": 8,
+        "purpose": "ordering-and-pulse-acknowledge_guard",
+        "classification": "mixed-ordering-and-pulse/reset",
+        "disposition": "measure-canonical-stage",
+        "previous_stages": 28
+      },
+      {
+        "instance": "ClickSoc.ca_child_program_source.ca_child_reservation.ca_primitive_acknowledge_guard",
+        "owner": "ClickSoc.ca_child_program_source.ca_child_reservation",
+        "owner_module": "ClickBuffer",
+        "owner_metadata_module": "ClickBuffer_22",
+        "primitive_id": "acknowledge_guard",
+        "original_parameters": {
+          "DELAY_FS": 32000000,
+          "OP": 0,
+          "RESET_VALUE": 0,
+          "WIDTH": 1
+        },
+        "stages": 8,
+        "purpose": "ordering-and-pulse-acknowledge_guard",
+        "classification": "mixed-ordering-and-pulse/reset",
+        "disposition": "measure-canonical-stage",
+        "previous_stages": 28
+      },
+      {
+        "instance": "ClickSoc.ca_child_program_source.ca_child_stored_buffer.ca_primitive_acknowledge_guard",
+        "owner": "ClickSoc.ca_child_program_source.ca_child_stored_buffer",
+        "owner_module": "ClickBuffer",
+        "owner_metadata_module": "ClickBuffer_23",
+        "primitive_id": "acknowledge_guard",
+        "original_parameters": {
+          "DELAY_FS": 32000000,
+          "OP": 0,
+          "RESET_VALUE": 0,
+          "WIDTH": 1
+        },
+        "stages": 8,
+        "purpose": "ordering-and-pulse-acknowledge_guard",
+        "classification": "mixed-ordering-and-pulse/reset",
+        "disposition": "measure-canonical-stage",
+        "previous_stages": 28
+      },
+      {
+        "instance": "ClickSoc.ca_child_control.ca_child_join.ca_child_left_storage.ca_primitive_acknowledge_guard",
+        "owner": "ClickSoc.ca_child_control.ca_child_join.ca_child_left_storage",
+        "owner_module": "ClickBuffer",
+        "owner_metadata_module": "ClickBuffer_24",
+        "primitive_id": "acknowledge_guard",
+        "original_parameters": {
+          "DELAY_FS": 32000000,
+          "OP": 0,
+          "RESET_VALUE": 0,
+          "WIDTH": 1
+        },
+        "stages": 8,
+        "purpose": "ordering-and-pulse-acknowledge_guard",
+        "classification": "mixed-ordering-and-pulse/reset",
+        "disposition": "measure-canonical-stage",
+        "previous_stages": 28
+      },
+      {
+        "instance": "ClickSoc.ca_child_control.ca_child_join.ca_child_right_storage.ca_primitive_acknowledge_guard",
+        "owner": "ClickSoc.ca_child_control.ca_child_join.ca_child_right_storage",
+        "owner_module": "ClickBuffer",
+        "owner_metadata_module": "ClickBuffer_25",
+        "primitive_id": "acknowledge_guard",
+        "original_parameters": {
+          "DELAY_FS": 32000000,
+          "OP": 0,
+          "RESET_VALUE": 0,
+          "WIDTH": 1
+        },
+        "stages": 8,
+        "purpose": "ordering-and-pulse-acknowledge_guard",
+        "classification": "mixed-ordering-and-pulse/reset",
+        "disposition": "measure-canonical-stage",
+        "previous_stages": 28
+      },
+      {
+        "instance": "ClickSoc.ca_child_control.ca_child_update.ca_primitive_acknowledge_guard",
+        "owner": "ClickSoc.ca_child_control.ca_child_update",
+        "owner_module": "ClickStage",
+        "owner_metadata_module": "ClickStage_17",
+        "primitive_id": "acknowledge_guard",
+        "original_parameters": {
+          "DELAY_FS": 32000000,
+          "OP": 0,
+          "RESET_VALUE": 0,
+          "WIDTH": 1
+        },
+        "stages": 8,
+        "purpose": "ordering-and-pulse-acknowledge_guard",
+        "classification": "mixed-ordering-and-pulse/reset",
+        "disposition": "measure-canonical-stage",
+        "previous_stages": 28,
+        "baseline_owner_metadata_module": "ClickStage_19"
+      },
+      {
+        "instance": "ClickSoc.ca_child_control.ca_child_crc.ca_primitive_acknowledge_guard",
+        "owner": "ClickSoc.ca_child_control.ca_child_crc",
+        "owner_module": "ClickStage",
+        "owner_metadata_module": "ClickStage_18",
+        "primitive_id": "acknowledge_guard",
+        "original_parameters": {
+          "DELAY_FS": 32000000,
+          "OP": 0,
+          "RESET_VALUE": 0,
+          "WIDTH": 1
+        },
+        "stages": 8,
+        "purpose": "ordering-and-pulse-acknowledge_guard",
+        "classification": "mixed-ordering-and-pulse/reset",
+        "disposition": "measure-canonical-stage",
+        "previous_stages": 28,
+        "baseline_owner_metadata_module": "ClickStage_20"
+      },
+      {
+        "instance": "ClickSoc.ca_child_housekeeping.ca_child_join.ca_child_left_storage.ca_primitive_acknowledge_guard",
+        "owner": "ClickSoc.ca_child_housekeeping.ca_child_join.ca_child_left_storage",
+        "owner_module": "ClickBuffer",
+        "owner_metadata_module": "ClickBuffer_26",
+        "primitive_id": "acknowledge_guard",
+        "original_parameters": {
+          "DELAY_FS": 32000000,
+          "OP": 0,
+          "RESET_VALUE": 0,
+          "WIDTH": 1
+        },
+        "stages": 8,
+        "purpose": "ordering-and-pulse-acknowledge_guard",
+        "classification": "mixed-ordering-and-pulse/reset",
+        "disposition": "measure-canonical-stage",
+        "previous_stages": 28
+      },
+      {
+        "instance": "ClickSoc.ca_child_housekeeping.ca_child_join.ca_child_right_storage.ca_primitive_acknowledge_guard",
+        "owner": "ClickSoc.ca_child_housekeeping.ca_child_join.ca_child_right_storage",
+        "owner_module": "ClickBuffer",
+        "owner_metadata_module": "ClickBuffer_27",
+        "primitive_id": "acknowledge_guard",
+        "original_parameters": {
+          "DELAY_FS": 32000000,
+          "OP": 0,
+          "RESET_VALUE": 0,
+          "WIDTH": 1
+        },
+        "stages": 8,
+        "purpose": "ordering-and-pulse-acknowledge_guard",
+        "classification": "mixed-ordering-and-pulse/reset",
+        "disposition": "measure-canonical-stage",
+        "previous_stages": 28
+      },
+      {
+        "instance": "ClickSoc.ca_child_housekeeping.ca_child_update.ca_primitive_acknowledge_guard",
+        "owner": "ClickSoc.ca_child_housekeeping.ca_child_update",
+        "owner_module": "ClickStage",
+        "owner_metadata_module": "ClickStage_19",
+        "primitive_id": "acknowledge_guard",
+        "original_parameters": {
+          "DELAY_FS": 32000000,
+          "OP": 0,
+          "RESET_VALUE": 0,
+          "WIDTH": 1
+        },
+        "stages": 8,
+        "purpose": "ordering-and-pulse-acknowledge_guard",
+        "classification": "mixed-ordering-and-pulse/reset",
+        "disposition": "measure-canonical-stage",
+        "previous_stages": 28,
+        "baseline_owner_metadata_module": "ClickStage_21"
+      },
+      {
+        "instance": "ClickSoc.ca_child_telemetry.ca_child_join.ca_child_left_storage.ca_primitive_acknowledge_guard",
+        "owner": "ClickSoc.ca_child_telemetry.ca_child_join.ca_child_left_storage",
+        "owner_module": "ClickBuffer",
+        "owner_metadata_module": "ClickBuffer_28",
+        "primitive_id": "acknowledge_guard",
+        "original_parameters": {
+          "DELAY_FS": 32000000,
+          "OP": 0,
+          "RESET_VALUE": 0,
+          "WIDTH": 1
+        },
+        "stages": 8,
+        "purpose": "ordering-and-pulse-acknowledge_guard",
+        "classification": "mixed-ordering-and-pulse/reset",
+        "disposition": "measure-canonical-stage",
+        "previous_stages": 28
+      },
+      {
+        "instance": "ClickSoc.ca_child_telemetry.ca_child_join.ca_child_right_storage.ca_primitive_acknowledge_guard",
+        "owner": "ClickSoc.ca_child_telemetry.ca_child_join.ca_child_right_storage",
+        "owner_module": "ClickBuffer",
+        "owner_metadata_module": "ClickBuffer_29",
+        "primitive_id": "acknowledge_guard",
+        "original_parameters": {
+          "DELAY_FS": 32000000,
+          "OP": 0,
+          "RESET_VALUE": 0,
+          "WIDTH": 1
+        },
+        "stages": 8,
+        "purpose": "ordering-and-pulse-acknowledge_guard",
+        "classification": "mixed-ordering-and-pulse/reset",
+        "disposition": "measure-canonical-stage",
+        "previous_stages": 28
+      },
+      {
+        "instance": "ClickSoc.ca_child_telemetry.ca_child_update.ca_primitive_acknowledge_guard",
+        "owner": "ClickSoc.ca_child_telemetry.ca_child_update",
+        "owner_module": "ClickStage",
+        "owner_metadata_module": "ClickStage_20",
+        "primitive_id": "acknowledge_guard",
+        "original_parameters": {
+          "DELAY_FS": 32000000,
+          "OP": 0,
+          "RESET_VALUE": 0,
+          "WIDTH": 1
+        },
+        "stages": 8,
+        "purpose": "ordering-and-pulse-acknowledge_guard",
+        "classification": "mixed-ordering-and-pulse/reset",
+        "disposition": "measure-canonical-stage",
+        "previous_stages": 28,
+        "baseline_owner_metadata_module": "ClickStage_22"
+      },
+      {
+        "instance": "ClickSoc.ca_child_telemetry_source.ca_child_reservation.ca_primitive_acknowledge_guard",
+        "owner": "ClickSoc.ca_child_telemetry_source.ca_child_reservation",
+        "owner_module": "ClickBuffer",
+        "owner_metadata_module": "ClickBuffer_30",
+        "primitive_id": "acknowledge_guard",
+        "original_parameters": {
+          "DELAY_FS": 32000000,
+          "OP": 0,
+          "RESET_VALUE": 0,
+          "WIDTH": 1
+        },
+        "stages": 8,
+        "purpose": "ordering-and-pulse-acknowledge_guard",
+        "classification": "mixed-ordering-and-pulse/reset",
+        "disposition": "measure-canonical-stage",
+        "previous_stages": 28
+      },
+      {
+        "instance": "ClickSoc.ca_child_housekeeping_source.ca_child_reservation.ca_primitive_acknowledge_guard",
+        "owner": "ClickSoc.ca_child_housekeeping_source.ca_child_reservation",
+        "owner_module": "ClickBuffer",
+        "owner_metadata_module": "ClickBuffer_31",
+        "primitive_id": "acknowledge_guard",
+        "original_parameters": {
+          "DELAY_FS": 32000000,
+          "OP": 0,
+          "RESET_VALUE": 0,
+          "WIDTH": 1
+        },
+        "stages": 8,
+        "purpose": "ordering-and-pulse-acknowledge_guard",
+        "classification": "mixed-ordering-and-pulse/reset",
+        "disposition": "measure-canonical-stage",
+        "previous_stages": 28
+      },
+      {
+        "instance": "ClickSoc.ca_child_supervisor.ca_child_join.ca_child_left_storage.ca_primitive_acknowledge_guard",
+        "owner": "ClickSoc.ca_child_supervisor.ca_child_join.ca_child_left_storage",
+        "owner_module": "ClickBuffer",
+        "owner_metadata_module": "ClickBuffer_32",
+        "primitive_id": "acknowledge_guard",
+        "original_parameters": {
+          "DELAY_FS": 32000000,
+          "OP": 0,
+          "RESET_VALUE": 0,
+          "WIDTH": 1
+        },
+        "stages": 8,
+        "purpose": "ordering-and-pulse-acknowledge_guard",
+        "classification": "mixed-ordering-and-pulse/reset",
+        "disposition": "measure-canonical-stage",
+        "previous_stages": 28
+      },
+      {
+        "instance": "ClickSoc.ca_child_supervisor.ca_child_join.ca_child_right_storage.ca_primitive_acknowledge_guard",
+        "owner": "ClickSoc.ca_child_supervisor.ca_child_join.ca_child_right_storage",
+        "owner_module": "ClickBuffer",
+        "owner_metadata_module": "ClickBuffer_33",
+        "primitive_id": "acknowledge_guard",
+        "original_parameters": {
+          "DELAY_FS": 32000000,
+          "OP": 0,
+          "RESET_VALUE": 0,
+          "WIDTH": 1
+        },
+        "stages": 8,
+        "purpose": "ordering-and-pulse-acknowledge_guard",
+        "classification": "mixed-ordering-and-pulse/reset",
+        "disposition": "measure-canonical-stage",
+        "previous_stages": 28
+      },
+      {
+        "instance": "ClickSoc.ca_child_supervisor.ca_child_update.ca_primitive_acknowledge_guard",
+        "owner": "ClickSoc.ca_child_supervisor.ca_child_update",
+        "owner_module": "ClickStage",
+        "owner_metadata_module": "ClickStage_21",
+        "primitive_id": "acknowledge_guard",
+        "original_parameters": {
+          "DELAY_FS": 32000000,
+          "OP": 0,
+          "RESET_VALUE": 0,
+          "WIDTH": 1
+        },
+        "stages": 8,
+        "purpose": "ordering-and-pulse-acknowledge_guard",
+        "classification": "mixed-ordering-and-pulse/reset",
+        "disposition": "measure-canonical-stage",
+        "previous_stages": 28,
+        "baseline_owner_metadata_module": "ClickStage_23"
+      },
+      {
+        "instance": "ClickSoc.ca_child_elapsed_scaler.ca_child_native.ca_child_step.ca_primitive_acknowledge_guard",
+        "owner": "ClickSoc.ca_child_elapsed_scaler.ca_child_native.ca_child_step",
+        "owner_module": "ClickStage",
+        "owner_metadata_module": "ClickStage_22",
+        "primitive_id": "acknowledge_guard",
+        "original_parameters": {
+          "DELAY_FS": 32000000,
+          "OP": 0,
+          "RESET_VALUE": 0,
+          "WIDTH": 1
+        },
+        "stages": 8,
+        "purpose": "ordering-and-pulse-acknowledge_guard",
+        "classification": "mixed-ordering-and-pulse/reset",
+        "disposition": "measure-canonical-stage",
+        "previous_stages": 28,
+        "baseline_owner_metadata_module": "ClickStage_24"
+      },
+      {
+        "instance": "ClickSoc.ca_child_spi_adc.ca_child_native.ca_child_owner.ca_child_left_storage.ca_primitive_acknowledge_guard",
+        "owner": "ClickSoc.ca_child_spi_adc.ca_child_native.ca_child_owner.ca_child_left_storage",
+        "owner_module": "ClickBuffer",
+        "owner_metadata_module": "ClickBuffer_34",
+        "primitive_id": "acknowledge_guard",
+        "original_parameters": {
+          "DELAY_FS": 32000000,
+          "OP": 0,
+          "RESET_VALUE": 0,
+          "WIDTH": 1
+        },
+        "stages": 8,
+        "purpose": "ordering-and-pulse-acknowledge_guard",
+        "classification": "mixed-ordering-and-pulse/reset",
+        "disposition": "measure-canonical-stage",
+        "previous_stages": 28
+      },
+      {
+        "instance": "ClickSoc.ca_child_spi_adc.ca_child_native.ca_child_owner.ca_child_right_storage.ca_primitive_acknowledge_guard",
+        "owner": "ClickSoc.ca_child_spi_adc.ca_child_native.ca_child_owner.ca_child_right_storage",
+        "owner_module": "ClickBuffer",
+        "owner_metadata_module": "ClickBuffer_35",
+        "primitive_id": "acknowledge_guard",
+        "original_parameters": {
+          "DELAY_FS": 32000000,
+          "OP": 0,
+          "RESET_VALUE": 0,
+          "WIDTH": 1
+        },
+        "stages": 8,
+        "purpose": "ordering-and-pulse-acknowledge_guard",
+        "classification": "mixed-ordering-and-pulse/reset",
+        "disposition": "measure-canonical-stage",
+        "previous_stages": 28
+      },
+      {
+        "instance": "ClickSoc.ca_child_spi_adc.ca_child_native.ca_child_captured.ca_child_left_storage.ca_primitive_acknowledge_guard",
+        "owner": "ClickSoc.ca_child_spi_adc.ca_child_native.ca_child_captured.ca_child_left_storage",
+        "owner_module": "ClickBuffer",
+        "owner_metadata_module": "ClickBuffer_36",
+        "primitive_id": "acknowledge_guard",
+        "original_parameters": {
+          "DELAY_FS": 32000000,
+          "OP": 0,
+          "RESET_VALUE": 0,
+          "WIDTH": 1
+        },
+        "stages": 8,
+        "purpose": "ordering-and-pulse-acknowledge_guard",
+        "classification": "mixed-ordering-and-pulse/reset",
+        "disposition": "measure-canonical-stage",
+        "previous_stages": 28
+      },
+      {
+        "instance": "ClickSoc.ca_child_spi_adc.ca_child_native.ca_child_captured.ca_child_right_storage.ca_primitive_acknowledge_guard",
+        "owner": "ClickSoc.ca_child_spi_adc.ca_child_native.ca_child_captured.ca_child_right_storage",
+        "owner_module": "ClickBuffer",
+        "owner_metadata_module": "ClickBuffer_37",
+        "primitive_id": "acknowledge_guard",
+        "original_parameters": {
+          "DELAY_FS": 32000000,
+          "OP": 0,
+          "RESET_VALUE": 0,
+          "WIDTH": 1
+        },
+        "stages": 8,
+        "purpose": "ordering-and-pulse-acknowledge_guard",
+        "classification": "mixed-ordering-and-pulse/reset",
+        "disposition": "measure-canonical-stage",
+        "previous_stages": 28
+      },
+      {
+        "instance": "ClickSoc.ca_child_spi_adc.ca_child_native.ca_child_assemble.ca_primitive_acknowledge_guard",
+        "owner": "ClickSoc.ca_child_spi_adc.ca_child_native.ca_child_assemble",
+        "owner_module": "ClickStage",
+        "owner_metadata_module": "ClickStage_23",
+        "primitive_id": "acknowledge_guard",
+        "original_parameters": {
+          "DELAY_FS": 32000000,
+          "OP": 0,
+          "RESET_VALUE": 0,
+          "WIDTH": 1
+        },
+        "stages": 8,
+        "purpose": "ordering-and-pulse-acknowledge_guard",
+        "classification": "mixed-ordering-and-pulse/reset",
+        "disposition": "measure-canonical-stage",
+        "previous_stages": 28,
+        "baseline_owner_metadata_module": "ClickStage_25"
+      },
+      {
+        "instance": "ClickSoc.ca_child_spi_adc.ca_child_native.ca_child_scale.ca_child_prepare.ca_primitive_acknowledge_guard",
+        "owner": "ClickSoc.ca_child_spi_adc.ca_child_native.ca_child_scale.ca_child_prepare",
+        "owner_module": "ClickStage",
+        "owner_metadata_module": "ClickStage_24",
+        "primitive_id": "acknowledge_guard",
+        "original_parameters": {
+          "DELAY_FS": 32000000,
+          "OP": 0,
+          "RESET_VALUE": 0,
+          "WIDTH": 1
+        },
+        "stages": 8,
+        "purpose": "ordering-and-pulse-acknowledge_guard",
+        "classification": "mixed-ordering-and-pulse/reset",
+        "disposition": "measure-canonical-stage",
+        "previous_stages": 28,
+        "baseline_owner_metadata_module": "ClickStage_26"
+      },
+      {
+        "instance": "ClickSoc.ca_child_spi_adc.ca_child_native.ca_child_scale.ca_child_radix_0.ca_primitive_acknowledge_guard",
+        "owner": "ClickSoc.ca_child_spi_adc.ca_child_native.ca_child_scale.ca_child_radix_0",
+        "owner_module": "ClickStage",
+        "owner_metadata_module": "ClickStage_25",
+        "primitive_id": "acknowledge_guard",
+        "original_parameters": {
+          "DELAY_FS": 32000000,
+          "OP": 0,
+          "RESET_VALUE": 0,
+          "WIDTH": 1
+        },
+        "stages": 8,
+        "purpose": "ordering-and-pulse-acknowledge_guard",
+        "classification": "mixed-ordering-and-pulse/reset",
+        "disposition": "measure-canonical-stage",
+        "previous_stages": 28,
+        "baseline_owner_metadata_module": "ClickStage_27"
+      },
+      {
+        "instance": "ClickSoc.ca_child_spi_adc.ca_child_native.ca_child_scale.ca_child_radix_1.ca_primitive_acknowledge_guard",
+        "owner": "ClickSoc.ca_child_spi_adc.ca_child_native.ca_child_scale.ca_child_radix_1",
+        "owner_module": "ClickStage",
+        "owner_metadata_module": "ClickStage_26",
+        "primitive_id": "acknowledge_guard",
+        "original_parameters": {
+          "DELAY_FS": 32000000,
+          "OP": 0,
+          "RESET_VALUE": 0,
+          "WIDTH": 1
+        },
+        "stages": 8,
+        "purpose": "ordering-and-pulse-acknowledge_guard",
+        "classification": "mixed-ordering-and-pulse/reset",
+        "disposition": "measure-canonical-stage",
+        "previous_stages": 28,
+        "baseline_owner_metadata_module": "ClickStage_28"
+      },
+      {
+        "instance": "ClickSoc.ca_child_spi_adc.ca_child_native.ca_child_scale.ca_child_radix_2.ca_primitive_acknowledge_guard",
+        "owner": "ClickSoc.ca_child_spi_adc.ca_child_native.ca_child_scale.ca_child_radix_2",
+        "owner_module": "ClickStage",
+        "owner_metadata_module": "ClickStage_27",
+        "primitive_id": "acknowledge_guard",
+        "original_parameters": {
+          "DELAY_FS": 32000000,
+          "OP": 0,
+          "RESET_VALUE": 0,
+          "WIDTH": 1
+        },
+        "stages": 8,
+        "purpose": "ordering-and-pulse-acknowledge_guard",
+        "classification": "mixed-ordering-and-pulse/reset",
+        "disposition": "measure-canonical-stage",
+        "previous_stages": 28,
+        "baseline_owner_metadata_module": "ClickStage_29"
+      },
+      {
+        "instance": "ClickSoc.ca_child_spi_adc.ca_child_native.ca_child_scaled.ca_child_left_storage.ca_primitive_acknowledge_guard",
+        "owner": "ClickSoc.ca_child_spi_adc.ca_child_native.ca_child_scaled.ca_child_left_storage",
+        "owner_module": "ClickBuffer",
+        "owner_metadata_module": "ClickBuffer_38",
+        "primitive_id": "acknowledge_guard",
+        "original_parameters": {
+          "DELAY_FS": 32000000,
+          "OP": 0,
+          "RESET_VALUE": 0,
+          "WIDTH": 1
+        },
+        "stages": 8,
+        "purpose": "ordering-and-pulse-acknowledge_guard",
+        "classification": "mixed-ordering-and-pulse/reset",
+        "disposition": "measure-canonical-stage",
+        "previous_stages": 28
+      },
+      {
+        "instance": "ClickSoc.ca_child_spi_adc.ca_child_native.ca_child_scaled.ca_child_right_storage.ca_primitive_acknowledge_guard",
+        "owner": "ClickSoc.ca_child_spi_adc.ca_child_native.ca_child_scaled.ca_child_right_storage",
+        "owner_module": "ClickBuffer",
+        "owner_metadata_module": "ClickBuffer_39",
+        "primitive_id": "acknowledge_guard",
+        "original_parameters": {
+          "DELAY_FS": 32000000,
+          "OP": 0,
+          "RESET_VALUE": 0,
+          "WIDTH": 1
+        },
+        "stages": 8,
+        "purpose": "ordering-and-pulse-acknowledge_guard",
+        "classification": "mixed-ordering-and-pulse/reset",
+        "disposition": "measure-canonical-stage",
+        "previous_stages": 28
+      },
+      {
+        "instance": "ClickSoc.ca_child_spi_adc.ca_child_native.ca_child_finish.ca_primitive_acknowledge_guard",
+        "owner": "ClickSoc.ca_child_spi_adc.ca_child_native.ca_child_finish",
+        "owner_module": "ClickStage",
+        "owner_metadata_module": "ClickStage_28",
+        "primitive_id": "acknowledge_guard",
+        "original_parameters": {
+          "DELAY_FS": 32000000,
+          "OP": 0,
+          "RESET_VALUE": 0,
+          "WIDTH": 1
+        },
+        "stages": 8,
+        "purpose": "ordering-and-pulse-acknowledge_guard",
+        "classification": "mixed-ordering-and-pulse/reset",
+        "disposition": "measure-canonical-stage",
+        "previous_stages": 28,
+        "baseline_owner_metadata_module": "ClickStage_30"
+      },
+      {
+        "instance": "ClickSoc.ca_child_core.ca_child_address.ca_primitive_acknowledge_guard",
+        "owner": "ClickSoc.ca_child_core.ca_child_address",
+        "owner_module": "ClickStage",
+        "owner_metadata_module": "ClickStage_29",
+        "primitive_id": "acknowledge_guard",
+        "original_parameters": {
+          "DELAY_FS": 32000000,
+          "OP": 0,
+          "RESET_VALUE": 0,
+          "WIDTH": 1
+        },
+        "stages": 8,
+        "purpose": "ordering-and-pulse-acknowledge_guard",
+        "classification": "mixed-ordering-and-pulse/reset",
+        "disposition": "measure-canonical-stage",
+        "previous_stages": 28,
+        "baseline_owner_metadata_module": "ClickStage_31"
+      },
+      {
+        "instance": "ClickSoc.ca_child_core.ca_child_join.ca_child_left_storage.ca_primitive_acknowledge_guard",
+        "owner": "ClickSoc.ca_child_core.ca_child_join.ca_child_left_storage",
+        "owner_module": "ClickBuffer",
+        "owner_metadata_module": "ClickBuffer_40",
+        "primitive_id": "acknowledge_guard",
+        "original_parameters": {
+          "DELAY_FS": 32000000,
+          "OP": 0,
+          "RESET_VALUE": 0,
+          "WIDTH": 1
+        },
+        "stages": 8,
+        "purpose": "ordering-and-pulse-acknowledge_guard",
+        "classification": "mixed-ordering-and-pulse/reset",
+        "disposition": "measure-canonical-stage",
+        "previous_stages": 28
+      },
+      {
+        "instance": "ClickSoc.ca_child_core.ca_child_join.ca_child_right_storage.ca_primitive_acknowledge_guard",
+        "owner": "ClickSoc.ca_child_core.ca_child_join.ca_child_right_storage",
+        "owner_module": "ClickBuffer",
+        "owner_metadata_module": "ClickBuffer_41",
+        "primitive_id": "acknowledge_guard",
+        "original_parameters": {
+          "DELAY_FS": 32000000,
+          "OP": 0,
+          "RESET_VALUE": 0,
+          "WIDTH": 1
+        },
+        "stages": 8,
+        "purpose": "ordering-and-pulse-acknowledge_guard",
+        "classification": "mixed-ordering-and-pulse/reset",
+        "disposition": "measure-canonical-stage",
+        "previous_stages": 28
+      },
+      {
+        "instance": "ClickSoc.ca_child_core.ca_child_execute.ca_primitive_acknowledge_guard",
+        "owner": "ClickSoc.ca_child_core.ca_child_execute",
+        "owner_module": "ClickStage",
+        "owner_metadata_module": "ClickStage_30",
+        "primitive_id": "acknowledge_guard",
+        "original_parameters": {
+          "DELAY_FS": 32000000,
+          "OP": 0,
+          "RESET_VALUE": 0,
+          "WIDTH": 1
+        },
+        "stages": 8,
+        "purpose": "ordering-and-pulse-acknowledge_guard",
+        "classification": "mixed-ordering-and-pulse/reset",
+        "disposition": "measure-canonical-stage",
+        "previous_stages": 28,
+        "baseline_owner_metadata_module": "ClickStage_32"
+      }
+    ]
+  },
+  "fused_baseline_instances": {
+    "bd": [
+      {
+        "instance": "FourPhaseSoc.ca_child_program_access.ca_child_native.ca_child_prepare.ca_primitive_output_delay",
+        "owner": "FourPhaseSoc.ca_child_program_access.ca_child_native.ca_child_prepare",
+        "owner_module": "FourPhaseStage",
+        "owner_metadata_module": "FourPhaseStage_2",
+        "primitive_id": "output_delay",
+        "original_parameters": {
+          "DELAY_FS": 31000000,
+          "OP": 0,
+          "RESET_VALUE": 0,
+          "WIDTH": 1
+        },
+        "stages": 8,
+        "purpose": "ordering-publication",
+        "classification": "ordering",
+        "disposition": "measure-canonical-stage",
+        "previous_stages": 27
+      },
+      {
+        "instance": "FourPhaseSoc.ca_child_ram_access.ca_child_native.ca_child_prepare.ca_primitive_output_delay",
+        "owner": "FourPhaseSoc.ca_child_ram_access.ca_child_native.ca_child_prepare",
+        "owner_module": "FourPhaseStage",
+        "owner_metadata_module": "FourPhaseStage_11",
+        "primitive_id": "output_delay",
+        "original_parameters": {
+          "DELAY_FS": 31000000,
+          "OP": 0,
+          "RESET_VALUE": 0,
+          "WIDTH": 1
+        },
+        "stages": 8,
+        "purpose": "ordering-publication",
+        "classification": "ordering",
+        "disposition": "measure-canonical-stage",
+        "previous_stages": 27
+      }
+    ],
+    "click": [
+      {
+        "instance": "ClickSoc.ca_child_program_access.ca_child_native.ca_child_prepare.ca_primitive_acknowledge_guard",
+        "owner": "ClickSoc.ca_child_program_access.ca_child_native.ca_child_prepare",
+        "owner_module": "ClickStage",
+        "owner_metadata_module": "ClickStage_1",
+        "primitive_id": "acknowledge_guard",
+        "original_parameters": {
+          "DELAY_FS": 32000000,
+          "OP": 0,
+          "RESET_VALUE": 0,
+          "WIDTH": 1
+        },
+        "stages": 8,
+        "purpose": "ordering-and-pulse-acknowledge_guard",
+        "classification": "mixed-ordering-and-pulse/reset",
+        "disposition": "measure-canonical-stage",
+        "previous_stages": 28
+      },
+      {
+        "instance": "ClickSoc.ca_child_ram_access.ca_child_native.ca_child_prepare.ca_primitive_acknowledge_guard",
+        "owner": "ClickSoc.ca_child_ram_access.ca_child_native.ca_child_prepare",
+        "owner_module": "ClickStage",
+        "owner_metadata_module": "ClickStage_10",
+        "primitive_id": "acknowledge_guard",
+        "original_parameters": {
+          "DELAY_FS": 32000000,
+          "OP": 0,
+          "RESET_VALUE": 0,
+          "WIDTH": 1
+        },
+        "stages": 8,
+        "purpose": "ordering-and-pulse-acknowledge_guard",
+        "classification": "mixed-ordering-and-pulse/reset",
+        "disposition": "measure-canonical-stage",
+        "previous_stages": 28
+      }
+    ]
+  },
+  "adoption_evidence": {
+    "accepted_at_utc": "2026-10-18T01:50:48.463597+00:00",
+    "scope": "Reversible local guard adoption on the repaired zero-wire graph; not full-chip timing signoff",
+    "contract": "docs/gf180-guard-sizing.md",
+    "independent_review": "Approved after independent reproduction of both variant seals and exact artifact checks",
+    "measured_policy_sha256": "a20e25850f87038c375afc4eb5471aebd8984e51a6f2a23f2ffbe4832774080a",
+    "local_seal_sha256": "934d0bca6e768ea9b0fefeefa2c73e6bd4ddf3c66e9c83a7ac65cb0206989e1c",
+    "engineering_derate": 0.2,
+    "residual_ns": 2.0,
+    "statistical_qualification": false,
+    "routed_qualification": false,
+    "corners": [
+      "tt_025C_3v30",
+      "ss_125C_3v00",
+      "ss_n40C_3v00",
+      "ff_125C_3v60",
+      "ff_n40C_3v60"
+    ],
+    "input_slew_ns": [
+      0.02,
+      2.0
+    ],
+    "record_sha256": "a9f329a9726469c183913136377dc5f2c05b4ac7d748ac73853660caf6956340",
+    "families": {
+      "bd-publication": {
+        "previous_stages": 27,
+        "stages": 8,
+        "guards": 90,
+        "rationale": "Every actual loaded publication/capture branch passes the two-sided derate and 2 ns floor; not a claim of minimum possible count"
+      },
+      "bd-elapsed-request": {
+        "previous_stages": 86,
+        "stages": 28,
+        "guards": 1,
+        "rationale": "The 25-cell pilot misses the 2 ns floor; 28 retains 5.337 ns measured setup margin with full local data/hold queries"
+      },
+      "click-acknowledge": {
+        "previous_stages": 28,
+        "stages": 8,
+        "guards": 73,
+        "rationale": "Both phases retain capture hold, high-pulse and ACK-after-rearm aperture plus residual; request/output and internal pulse feedback recipes remain unchanged"
+      }
+    },
+    "variants": {
+      "bd": {
+        "case_count": 900,
+        "owner_count": 90,
+        "minima_ns": {
+          "publication-fall": 4.185685558806906,
+          "publication-rise": 4.159930115855107,
+          "hold": 0.5849620946533991,
+          "setup": 5.337012983614556
+        },
+        "owner_minima_ns": {
+          "FourPhaseSoc.ca_child_admission.ca_child_credit.head_ca_child_stage0.ca_child_storage": {
+            "publication-fall": 4.833849943761652,
+            "publication-rise": 4.690291663323969
+          },
+          "FourPhaseSoc.ca_child_admission.ca_child_pending": {
+            "publication-fall": 4.85555560386753,
+            "publication-rise": 4.712278698361167
+          },
+          "FourPhaseSoc.ca_child_completion.ca_child_reply": {
+            "publication-fall": 4.620315503143653,
+            "publication-rise": 4.587575513719638
+          },
+          "FourPhaseSoc.ca_child_control.ca_child_crc": {
+            "publication-fall": 4.551153935824001,
+            "publication-rise": 4.505850573480169
+          },
+          "FourPhaseSoc.ca_child_control.ca_child_join.ca_child_left": {
+            "publication-fall": 4.258789394971732,
+            "publication-rise": 4.221028799252688
+          },
+          "FourPhaseSoc.ca_child_control.ca_child_state.head_ca_child_stage0.ca_child_storage": {
+            "publication-fall": 4.236546564542428,
+            "publication-rise": 4.199358666284603
+          },
+          "FourPhaseSoc.ca_child_control.ca_child_update": {
+            "publication-fall": 4.244780866904351,
+            "publication-rise": 4.209042209414936
+          },
+          "FourPhaseSoc.ca_child_core.ca_child_execute": {
+            "publication-fall": 4.25807316787383,
+            "publication-rise": 4.220304045641715
+          },
+          "FourPhaseSoc.ca_child_core.ca_child_join.ca_child_left": {
+            "publication-fall": 4.420627942116077,
+            "publication-rise": 4.40345434575166
+          },
+          "FourPhaseSoc.ca_child_core.ca_child_join.ca_child_right": {
+            "publication-fall": 4.534980739250903,
+            "publication-rise": 4.4925141300419815
+          },
+          "FourPhaseSoc.ca_child_core.ca_child_state.head_ca_child_stage0.ca_child_storage": {
+            "publication-fall": 4.4198690824528235,
+            "publication-rise": 4.40268624903258
+          },
+          "FourPhaseSoc.ca_child_elapsed_scaler.ca_child_native.ca_child_owner.head_ca_child_stage0.ca_child_storage": {
+            "publication-fall": 4.4711967371432575,
+            "publication-rise": 4.480628437275562
+          },
+          "FourPhaseSoc.ca_child_elapsed_scaler.ca_child_native.ca_child_step": {
+            "publication-fall": 4.345993419219452,
+            "hold": 0.5849620946533991,
+            "publication-rise": 4.341915569934673,
+            "setup": 5.337012983614556
+          },
+          "FourPhaseSoc.ca_child_housekeeping.ca_child_join.ca_child_left": {
+            "publication-fall": 4.245539726567605,
+            "publication-rise": 4.209810306134016
+          },
+          "FourPhaseSoc.ca_child_housekeeping.ca_child_join.ca_child_right": {
+            "publication-fall": 4.38035455634987,
+            "publication-rise": 4.372566874518927
+          },
+          "FourPhaseSoc.ca_child_housekeeping.ca_child_state.head_ca_child_stage0.ca_child_storage": {
+            "publication-fall": 4.223296896138301,
+            "publication-rise": 4.188140173165931
+          },
+          "FourPhaseSoc.ca_child_housekeeping.ca_child_update": {
+            "publication-fall": 4.185685558806906,
+            "publication-rise": 4.159930115855107
+          },
+          "FourPhaseSoc.ca_child_housekeeping_source.ca_child_reservation": {
+            "publication-fall": 4.801447240102057,
+            "publication-rise": 4.662166338236782
+          },
+          "FourPhaseSoc.ca_child_i2c.ca_child_frame_store.ca_child_storage0": {
+            "publication-fall": 4.239472046703977,
+            "publication-rise": 4.2070561535944755
+          },
+          "FourPhaseSoc.ca_child_i2c.ca_child_frame_store.ca_child_storage1": {
+            "publication-fall": 4.240745339322469,
+            "publication-rise": 4.208346499239109
+          },
+          "FourPhaseSoc.ca_child_i2c.ca_child_frame_store.ca_child_storage2": {
+            "publication-fall": 4.239472046703977,
+            "publication-rise": 4.2070561535944755
+          },
+          "FourPhaseSoc.ca_child_i2c.ca_child_frame_store.ca_child_storage3": {
+            "publication-fall": 4.239472046703977,
+            "publication-rise": 4.2070561535944755
+          },
+          "FourPhaseSoc.ca_child_i2c.ca_child_native.ca_child_state.head_ca_child_stage0.ca_child_storage": {
+            "publication-fall": 4.498439124038451,
+            "publication-rise": 4.462747451188767
+          },
+          "FourPhaseSoc.ca_child_i2c.ca_child_native.ca_child_update": {
+            "publication-fall": 4.4198690824528235,
+            "publication-rise": 4.40268624903258
+          },
+          "FourPhaseSoc.ca_child_program_access.ca_child_native.ca_child_credit.head_ca_child_stage0.ca_child_storage": {
+            "publication-fall": 4.820739008830603,
+            "publication-rise": 4.6778713759516135
+          },
+          "FourPhaseSoc.ca_child_program_access.ca_child_native.ca_child_lane_0_capture": {
+            "publication-fall": 4.475529093961397,
+            "publication-rise": 4.446790170795605
+          },
+          "FourPhaseSoc.ca_child_program_access.ca_child_native.ca_child_lane_0_issue": {
+            "publication-fall": 4.549866609986079,
+            "publication-rise": 4.507591847321238
+          },
+          "FourPhaseSoc.ca_child_program_access.ca_child_native.ca_child_lane_0_join.ca_child_left": {
+            "publication-fall": 4.4762879536246505,
+            "publication-rise": 4.447558267514685
+          },
+          "FourPhaseSoc.ca_child_program_access.ca_child_native.ca_child_lane_0_join.ca_child_right": {
+            "publication-fall": 4.712368448793015,
+            "publication-rise": 4.606891174448351
+          },
+          "FourPhaseSoc.ca_child_program_access.ca_child_native.ca_child_lane_1_capture": {
+            "publication-fall": 4.475529093961397,
+            "publication-rise": 4.446790170795605
+          },
+          "FourPhaseSoc.ca_child_program_access.ca_child_native.ca_child_lane_1_issue": {
+            "publication-fall": 4.549866609986079,
+            "publication-rise": 4.507591847321238
+          },
+          "FourPhaseSoc.ca_child_program_access.ca_child_native.ca_child_lane_1_join.ca_child_left": {
+            "publication-fall": 4.4762879536246505,
+            "publication-rise": 4.447558267514685
+          },
+          "FourPhaseSoc.ca_child_program_access.ca_child_native.ca_child_lane_1_join.ca_child_right": {
+            "publication-fall": 4.712368448793015,
+            "publication-rise": 4.606891174448351
+          },
+          "FourPhaseSoc.ca_child_program_access.ca_child_native.ca_child_lane_2_capture": {
+            "publication-fall": 4.475529093961397,
+            "publication-rise": 4.446790170795605
+          },
+          "FourPhaseSoc.ca_child_program_access.ca_child_native.ca_child_lane_2_issue": {
+            "publication-fall": 4.549866609986079,
+            "publication-rise": 4.507591847321238
+          },
+          "FourPhaseSoc.ca_child_program_access.ca_child_native.ca_child_lane_2_join.ca_child_left": {
+            "publication-fall": 4.4762879536246505,
+            "publication-rise": 4.447558267514685
+          },
+          "FourPhaseSoc.ca_child_program_access.ca_child_native.ca_child_lane_2_join.ca_child_right": {
+            "publication-fall": 4.712368448793015,
+            "publication-rise": 4.606891174448351
+          },
+          "FourPhaseSoc.ca_child_program_access.ca_child_native.ca_child_lane_3_capture": {
+            "publication-fall": 4.542935443038399,
+            "publication-rise": 4.519763622364733
+          },
+          "FourPhaseSoc.ca_child_program_access.ca_child_native.ca_child_lane_3_issue": {
+            "publication-fall": 4.549866609986079,
+            "publication-rise": 4.507591847321238
+          },
+          "FourPhaseSoc.ca_child_program_access.ca_child_native.ca_child_lane_3_join.ca_child_left": {
+            "publication-fall": 4.4762879536246505,
+            "publication-rise": 4.447558267514685
+          },
+          "FourPhaseSoc.ca_child_program_access.ca_child_native.ca_child_lane_3_join.ca_child_right": {
+            "publication-fall": 4.712368448793015,
+            "publication-rise": 4.606891174448351
+          },
+          "FourPhaseSoc.ca_child_program_access.ca_child_native.ca_child_owner.ca_child_left": {
+            "publication-fall": 4.842981839259907,
+            "publication-rise": 4.699541508919698
+          },
+          "FourPhaseSoc.ca_child_program_access.ca_child_native.ca_child_owner.ca_child_right": {
+            "publication-fall": 4.505165121765379,
+            "publication-rise": 4.469561556217421
+          },
+          "FourPhaseSoc.ca_child_program_source.ca_child_reservation": {
+            "publication-fall": 4.820739008830603,
+            "publication-rise": 4.6778713759516135
+          },
+          "FourPhaseSoc.ca_child_program_source.ca_child_stored_buffer": {
+            "publication-fall": 4.873259487172429,
+            "publication-rise": 4.730212797518962
+          },
+          "FourPhaseSoc.ca_child_ram_access.ca_child_native.ca_child_credit.head_ca_child_stage0.ca_child_storage": {
+            "publication-fall": 4.820739008830603,
+            "publication-rise": 4.6778713759516135
+          },
+          "FourPhaseSoc.ca_child_ram_access.ca_child_native.ca_child_lane_0_capture": {
+            "publication-fall": 4.475529093961397,
+            "publication-rise": 4.446790170795605
+          },
+          "FourPhaseSoc.ca_child_ram_access.ca_child_native.ca_child_lane_0_issue": {
+            "publication-fall": 4.549866609986079,
+            "publication-rise": 4.507591847321238
+          },
+          "FourPhaseSoc.ca_child_ram_access.ca_child_native.ca_child_lane_0_join.ca_child_left": {
+            "publication-fall": 4.4762879536246505,
+            "publication-rise": 4.447558267514685
+          },
+          "FourPhaseSoc.ca_child_ram_access.ca_child_native.ca_child_lane_0_join.ca_child_right": {
+            "publication-fall": 4.712368448793015,
+            "publication-rise": 4.606891174448351
+          },
+          "FourPhaseSoc.ca_child_ram_access.ca_child_native.ca_child_lane_1_capture": {
+            "publication-fall": 4.475529093961397,
+            "publication-rise": 4.446790170795605
+          },
+          "FourPhaseSoc.ca_child_ram_access.ca_child_native.ca_child_lane_1_issue": {
+            "publication-fall": 4.549866609986079,
+            "publication-rise": 4.507591847321238
+          },
+          "FourPhaseSoc.ca_child_ram_access.ca_child_native.ca_child_lane_1_join.ca_child_left": {
+            "publication-fall": 4.4762879536246505,
+            "publication-rise": 4.447558267514685
+          },
+          "FourPhaseSoc.ca_child_ram_access.ca_child_native.ca_child_lane_1_join.ca_child_right": {
+            "publication-fall": 4.712368448793015,
+            "publication-rise": 4.606891174448351
+          },
+          "FourPhaseSoc.ca_child_ram_access.ca_child_native.ca_child_lane_2_capture": {
+            "publication-fall": 4.475529093961397,
+            "publication-rise": 4.446790170795605
+          },
+          "FourPhaseSoc.ca_child_ram_access.ca_child_native.ca_child_lane_2_issue": {
+            "publication-fall": 4.549866609986079,
+            "publication-rise": 4.507591847321238
+          },
+          "FourPhaseSoc.ca_child_ram_access.ca_child_native.ca_child_lane_2_join.ca_child_left": {
+            "publication-fall": 4.4762879536246505,
+            "publication-rise": 4.447558267514685
+          },
+          "FourPhaseSoc.ca_child_ram_access.ca_child_native.ca_child_lane_2_join.ca_child_right": {
+            "publication-fall": 4.712368448793015,
+            "publication-rise": 4.606891174448351
+          },
+          "FourPhaseSoc.ca_child_ram_access.ca_child_native.ca_child_lane_3_capture": {
+            "publication-fall": 4.542935443038399,
+            "publication-rise": 4.519763622364733
+          },
+          "FourPhaseSoc.ca_child_ram_access.ca_child_native.ca_child_lane_3_issue": {
+            "publication-fall": 4.549866609986079,
+            "publication-rise": 4.507591847321238
+          },
+          "FourPhaseSoc.ca_child_ram_access.ca_child_native.ca_child_lane_3_join.ca_child_left": {
+            "publication-fall": 4.4762879536246505,
+            "publication-rise": 4.447558267514685
+          },
+          "FourPhaseSoc.ca_child_ram_access.ca_child_native.ca_child_lane_3_join.ca_child_right": {
+            "publication-fall": 4.712368448793015,
+            "publication-rise": 4.606891174448351
+          },
+          "FourPhaseSoc.ca_child_ram_access.ca_child_native.ca_child_owner.ca_child_left": {
+            "publication-fall": 4.842981839259907,
+            "publication-rise": 4.699541508919698
+          },
+          "FourPhaseSoc.ca_child_ram_access.ca_child_native.ca_child_owner.ca_child_right": {
+            "publication-fall": 4.505165121765379,
+            "publication-rise": 4.469561556217421
+          },
+          "FourPhaseSoc.ca_child_ram_source.ca_child_reservation": {
+            "publication-fall": 4.820739008830603,
+            "publication-rise": 4.6778713759516135
+          },
+          "FourPhaseSoc.ca_child_spi_adc.ca_child_native.ca_child_assemble": {
+            "publication-fall": 4.603030840064708,
+            "publication-rise": 4.5414059553474955
+          },
+          "FourPhaseSoc.ca_child_spi_adc.ca_child_native.ca_child_captured.ca_child_left": {
+            "publication-fall": 4.823690070531361,
+            "publication-rise": 4.683836471204867
+          },
+          "FourPhaseSoc.ca_child_spi_adc.ca_child_native.ca_child_captured.ca_child_right": {
+            "publication-fall": 4.534980739250903,
+            "publication-rise": 4.4925141300419815
+          },
+          "FourPhaseSoc.ca_child_spi_adc.ca_child_native.ca_child_finish": {
+            "publication-fall": 4.549866609986079,
+            "publication-rise": 4.507591847321238
+          },
+          "FourPhaseSoc.ca_child_spi_adc.ca_child_native.ca_child_owner.ca_child_left": {
+            "publication-fall": 4.842981839259907,
+            "publication-rise": 4.699541508919698
+          },
+          "FourPhaseSoc.ca_child_spi_adc.ca_child_native.ca_child_owner.ca_child_right": {
+            "publication-fall": 4.842043922822177,
+            "publication-rise": 4.698592223797875
+          },
+          "FourPhaseSoc.ca_child_spi_adc.ca_child_native.ca_child_scale.ca_child_prepare": {
+            "publication-fall": 4.498767750063033,
+            "publication-rise": 4.460317128510208
+          },
+          "FourPhaseSoc.ca_child_spi_adc.ca_child_native.ca_child_scale.ca_child_radix_0": {
+            "publication-fall": 4.498767750063033,
+            "publication-rise": 4.460317128510208
+          },
+          "FourPhaseSoc.ca_child_spi_adc.ca_child_native.ca_child_scale.ca_child_radix_1": {
+            "publication-fall": 4.498767750063033,
+            "publication-rise": 4.460317128510208
+          },
+          "FourPhaseSoc.ca_child_spi_adc.ca_child_native.ca_child_scale.ca_child_radix_2": {
+            "publication-fall": 4.498767750063033,
+            "publication-rise": 4.460317128510208
+          },
+          "FourPhaseSoc.ca_child_spi_adc.ca_child_native.ca_child_scaled.ca_child_left": {
+            "publication-fall": 4.603789699727962,
+            "publication-rise": 4.542174052066575
+          },
+          "FourPhaseSoc.ca_child_spi_adc.ca_child_native.ca_child_scaled.ca_child_right": {
+            "publication-fall": 4.550216019386271,
+            "publication-rise": 4.5049012883583455
+          },
+          "FourPhaseSoc.ca_child_spi_adc.ca_child_native.ca_child_state.head_ca_child_stage0.ca_child_storage": {
+            "publication-fall": 4.820739008830603,
+            "publication-rise": 4.6778713759516135
+          },
+          "FourPhaseSoc.ca_child_supervisor.ca_child_join.ca_child_left": {
+            "publication-fall": 4.245539726567605,
+            "publication-rise": 4.209810306134016
+          },
+          "FourPhaseSoc.ca_child_supervisor.ca_child_state.head_ca_child_stage0.ca_child_storage": {
+            "publication-fall": 4.223296896138301,
+            "publication-rise": 4.188140173165931
+          },
+          "FourPhaseSoc.ca_child_supervisor.ca_child_update": {
+            "publication-fall": 4.244780866904351,
+            "publication-rise": 4.209042209414936
+          },
+          "FourPhaseSoc.ca_child_telemetry.ca_child_join.ca_child_left": {
+            "publication-fall": 4.420627942116077,
+            "publication-rise": 4.40345434575166
+          },
+          "FourPhaseSoc.ca_child_telemetry.ca_child_join.ca_child_right": {
+            "publication-fall": 4.406578913111611,
+            "publication-rise": 4.392525576441689
+          },
+          "FourPhaseSoc.ca_child_telemetry.ca_child_state.head_ca_child_stage0.ca_child_storage": {
+            "publication-fall": 4.398385111686773,
+            "publication-rise": 4.381784212783575
+          },
+          "FourPhaseSoc.ca_child_telemetry.ca_child_update": {
+            "publication-fall": 4.4198690824528235,
+            "publication-rise": 4.40268624903258
+          },
+          "FourPhaseSoc.ca_child_telemetry_source.ca_child_reservation": {
+            "publication-fall": 4.801447240102057,
+            "publication-rise": 4.662166338236782
+          },
+          "FourPhaseSoc.ca_child_transactions.ca_child_reply": {
+            "publication-fall": 4.5136758252593285,
+            "publication-rise": 4.47179328219572
+          },
+          "FourPhaseSoc.ca_child_control.ca_child_join.ca_child_right": {
+            "publication-rise": 4.188868745944217,
+            "publication-fall": 4.218166955076711
+          },
+          "FourPhaseSoc.ca_child_core.ca_child_address": {
+            "publication-rise": 4.44884070837116,
+            "publication-fall": 4.483860207773804
+          },
+          "FourPhaseSoc.ca_child_supervisor.ca_child_join.ca_child_right": {
+            "publication-fall": 4.191732632930615,
+            "publication-rise": 4.168876470876241
+          }
+        },
+        "report_sha256": "9fe8ac78cc392fc1c7a9838332af8095cbe12c32e9b9083be8119b372d67f4b7",
+        "mapping_sha256": {
+          "mapping.json": "6e350e4ed808af555ee0c490e2f5f8d5107536f42f3de080de3c34d6272665d8",
+          "netlist.v": "1158d74aeef97073ea7967a42005561c269ed1359bd33bfac84ccebeac47047d",
+          "netlist.json": "ce6b14df06a1da72c9d64c0bbe7717a7e5ef988f48f35bfb5c650d7532f6d0fd",
+          "electrical-repair/receipt.json": "d5a7a99694782fb60ed65e526b623e2160bec7b740082bbb1b728faf30ae897b"
+        },
+        "baseline_mapping_sha256": "2c52058f13ccedb57c68b213c16ee3a76f91031c3144a92e150adbdf71742e2a"
+      },
+      "click": {
+        "case_count": 730,
+        "owner_count": 73,
+        "minima_ns": {
+          "pulse-high": 4.801602006217739,
+          "ack-after-rearm": 4.24429781992866,
+          "hold": 12.847456022454928,
+          "setup": 91.1818995247024
+        },
+        "owner_minima_ns": {
+          "ClickSoc.ca_child_admission.ca_child_pending": {
+            "pulse-high": 4.962277949982276,
+            "ack-after-rearm": 4.756895164162756,
+            "hold": 13.329261653706109
+          },
+          "ClickSoc.ca_child_control.ca_child_crc": {
+            "pulse-high": 4.88889017427087,
+            "ack-after-rearm": 4.635131583720044,
+            "hold": 13.171090495280497
+          },
+          "ClickSoc.ca_child_control.ca_child_join.ca_child_left_storage": {
+            "pulse-high": 4.855289534586191,
+            "ack-after-rearm": 4.31350290799211,
+            "hold": 12.927927032366
+          },
+          "ClickSoc.ca_child_control.ca_child_join.ca_child_right_storage": {
+            "pulse-high": 4.840243192210498,
+            "ack-after-rearm": 4.259694037998228,
+            "hold": 12.866769307306301
+          },
+          "ClickSoc.ca_child_control.ca_child_update": {
+            "pulse-high": 4.850273591227995,
+            "ack-after-rearm": 4.356652926105397,
+            "hold": 12.968627409919554
+          },
+          "ClickSoc.ca_child_core.ca_child_address": {
+            "pulse-high": 4.867586670262577,
+            "ack-after-rearm": 4.599287721493841,
+            "hold": 13.1258910831214
+          },
+          "ClickSoc.ca_child_core.ca_child_execute": {
+            "pulse-high": 4.855289534586191,
+            "ack-after-rearm": 4.3643507686866485,
+            "hold": 12.978774893060539
+          },
+          "ClickSoc.ca_child_core.ca_child_join.ca_child_left_storage": {
+            "pulse-high": 4.827484947185291,
+            "ack-after-rearm": 4.530591737314966,
+            "hold": 13.039674779917709
+          },
+          "ClickSoc.ca_child_core.ca_child_join.ca_child_right_storage": {
+            "pulse-high": 4.881916496882373,
+            "ack-after-rearm": 4.633352384659384,
+            "hold": 13.166538347603957
+          },
+          "ClickSoc.ca_child_elapsed_scaler.ca_child_native.ca_child_step": {
+            "pulse-high": 4.801602006217739,
+            "ack-after-rearm": 4.572789983406784,
+            "hold": 13.069291623067283,
+            "setup": 91.1818995247024
+          },
+          "ClickSoc.ca_child_housekeeping.ca_child_join.ca_child_left_storage": {
+            "pulse-high": 4.850273591227995,
+            "ack-after-rearm": 4.305805065410858,
+            "hold": 12.917779549225015
+          },
+          "ClickSoc.ca_child_housekeeping.ca_child_join.ca_child_right_storage": {
+            "pulse-high": 4.808072563823937,
+            "ack-after-rearm": 4.481722560559792,
+            "hold": 12.981369417729086
+          },
+          "ClickSoc.ca_child_housekeeping.ca_child_update": {
+            "pulse-high": 4.835227248852302,
+            "ack-after-rearm": 4.333558865454577,
+            "hold": 12.93818502710998
+          },
+          "ClickSoc.ca_child_housekeeping_source.ca_child_reservation": {
+            "pulse-high": 4.958499150379869,
+            "ack-after-rearm": 4.9840340116557424,
+            "hold": 13.555425148039918
+          },
+          "ClickSoc.ca_child_i2c.ca_child_native.ca_child_update": {
+            "pulse-high": 4.827484947185291,
+            "ack-after-rearm": 4.563546710331551,
+            "hold": 13.072629752934294
+          },
+          "ClickSoc.ca_child_program_access.ca_child_native.ca_child_lane_0_capture": {
+            "pulse-high": 4.853256910256164,
+            "ack-after-rearm": 4.637717426444295,
+            "hold": 13.157737720461158
+          },
+          "ClickSoc.ca_child_program_access.ca_child_native.ca_child_lane_0_issue": {
+            "pulse-high": 4.881916496882373,
+            "ack-after-rearm": 4.6225293974021895,
+            "hold": 13.155715360346763
+          },
+          "ClickSoc.ca_child_program_access.ca_child_native.ca_child_lane_0_join.ca_child_left_storage": {
+            "pulse-high": 4.853256910256164,
+            "ack-after-rearm": 4.575095872285226,
+            "hold": 13.09511616630209
+          },
+          "ClickSoc.ca_child_program_access.ca_child_native.ca_child_lane_0_join.ca_child_right_storage": {
+            "pulse-high": 4.932600866129682,
+            "ack-after-rearm": 4.677711924178826,
+            "hold": 13.236557295780853
+          },
+          "ClickSoc.ca_child_program_access.ca_child_native.ca_child_lane_1_capture": {
+            "pulse-high": 4.853256910256164,
+            "ack-after-rearm": 4.637717426444295,
+            "hold": 13.157737720461158
+          },
+          "ClickSoc.ca_child_program_access.ca_child_native.ca_child_lane_1_issue": {
+            "pulse-high": 4.881916496882373,
+            "ack-after-rearm": 4.6225293974021895,
+            "hold": 13.155715360346763
+          },
+          "ClickSoc.ca_child_program_access.ca_child_native.ca_child_lane_1_join.ca_child_left_storage": {
+            "pulse-high": 4.853256910256164,
+            "ack-after-rearm": 4.575095872285226,
+            "hold": 13.09511616630209
+          },
+          "ClickSoc.ca_child_program_access.ca_child_native.ca_child_lane_1_join.ca_child_right_storage": {
+            "pulse-high": 4.932600866129682,
+            "ack-after-rearm": 4.677711924178826,
+            "hold": 13.236557295780853
+          },
+          "ClickSoc.ca_child_program_access.ca_child_native.ca_child_lane_2_capture": {
+            "pulse-high": 4.853256910256164,
+            "ack-after-rearm": 4.637717426444295,
+            "hold": 13.157737720461158
+          },
+          "ClickSoc.ca_child_program_access.ca_child_native.ca_child_lane_2_issue": {
+            "pulse-high": 4.881916496882373,
+            "ack-after-rearm": 4.6225293974021895,
+            "hold": 13.155715360346763
+          },
+          "ClickSoc.ca_child_program_access.ca_child_native.ca_child_lane_2_join.ca_child_left_storage": {
+            "pulse-high": 4.853256910256164,
+            "ack-after-rearm": 4.575095872285226,
+            "hold": 13.09511616630209
+          },
+          "ClickSoc.ca_child_program_access.ca_child_native.ca_child_lane_2_join.ca_child_right_storage": {
+            "pulse-high": 4.932600866129682,
+            "ack-after-rearm": 4.677711924178826,
+            "hold": 13.236557295780853
+          },
+          "ClickSoc.ca_child_program_access.ca_child_native.ca_child_lane_3_capture": {
+            "pulse-high": 4.853256910256164,
+            "ack-after-rearm": 4.637717426444295,
+            "hold": 13.157737720461158
+          },
+          "ClickSoc.ca_child_program_access.ca_child_native.ca_child_lane_3_issue": {
+            "pulse-high": 4.881916496882373,
+            "ack-after-rearm": 4.6225293974021895,
+            "hold": 13.155715360346763
+          },
+          "ClickSoc.ca_child_program_access.ca_child_native.ca_child_lane_3_join.ca_child_left_storage": {
+            "pulse-high": 4.853256910256164,
+            "ack-after-rearm": 4.575095872285226,
+            "hold": 13.09511616630209
+          },
+          "ClickSoc.ca_child_program_access.ca_child_native.ca_child_lane_3_join.ca_child_right_storage": {
+            "pulse-high": 4.932600866129682,
+            "ack-after-rearm": 4.677711924178826,
+            "hold": 13.236557295780853
+          },
+          "ClickSoc.ca_child_program_access.ca_child_native.ca_child_owner.ca_child_left_storage": {
+            "pulse-high": 4.962277949982276,
+            "ack-after-rearm": 4.756895164162756,
+            "hold": 13.329261653706109
+          },
+          "ClickSoc.ca_child_program_access.ca_child_native.ca_child_owner.ca_child_right_storage": {
+            "pulse-high": 4.867586670262577,
+            "ack-after-rearm": 4.579395366500908,
+            "hold": 13.105998728128467
+          },
+          "ClickSoc.ca_child_program_source.ca_child_reservation": {
+            "pulse-high": 4.962277949982276,
+            "ack-after-rearm": 4.993960649226427,
+            "hold": 13.566327138769779
+          },
+          "ClickSoc.ca_child_program_source.ca_child_stored_buffer": {
+            "pulse-high": 4.962277949982276,
+            "ack-after-rearm": 4.819576403913317,
+            "hold": 13.391942893456669
+          },
+          "ClickSoc.ca_child_ram_access.ca_child_native.ca_child_lane_0_capture": {
+            "pulse-high": 4.853256910256164,
+            "ack-after-rearm": 4.637717426444295,
+            "hold": 13.157737720461158
+          },
+          "ClickSoc.ca_child_ram_access.ca_child_native.ca_child_lane_0_issue": {
+            "pulse-high": 4.881916496882373,
+            "ack-after-rearm": 4.6225293974021895,
+            "hold": 13.155715360346763
+          },
+          "ClickSoc.ca_child_ram_access.ca_child_native.ca_child_lane_0_join.ca_child_left_storage": {
+            "pulse-high": 4.853256910256164,
+            "ack-after-rearm": 4.575095872285226,
+            "hold": 13.09511616630209
+          },
+          "ClickSoc.ca_child_ram_access.ca_child_native.ca_child_lane_0_join.ca_child_right_storage": {
+            "pulse-high": 4.932600866129682,
+            "ack-after-rearm": 4.677711924178826,
+            "hold": 13.236557295780853
+          },
+          "ClickSoc.ca_child_ram_access.ca_child_native.ca_child_lane_1_capture": {
+            "pulse-high": 4.853256910256164,
+            "ack-after-rearm": 4.637717426444295,
+            "hold": 13.157737720461158
+          },
+          "ClickSoc.ca_child_ram_access.ca_child_native.ca_child_lane_1_issue": {
+            "pulse-high": 4.881916496882373,
+            "ack-after-rearm": 4.6225293974021895,
+            "hold": 13.155715360346763
+          },
+          "ClickSoc.ca_child_ram_access.ca_child_native.ca_child_lane_1_join.ca_child_left_storage": {
+            "pulse-high": 4.853256910256164,
+            "ack-after-rearm": 4.575095872285226,
+            "hold": 13.09511616630209
+          },
+          "ClickSoc.ca_child_ram_access.ca_child_native.ca_child_lane_1_join.ca_child_right_storage": {
+            "pulse-high": 4.932600866129682,
+            "ack-after-rearm": 4.677711924178826,
+            "hold": 13.236557295780853
+          },
+          "ClickSoc.ca_child_ram_access.ca_child_native.ca_child_lane_2_capture": {
+            "pulse-high": 4.853256910256164,
+            "ack-after-rearm": 4.637717426444295,
+            "hold": 13.157737720461158
+          },
+          "ClickSoc.ca_child_ram_access.ca_child_native.ca_child_lane_2_issue": {
+            "pulse-high": 4.881916496882373,
+            "ack-after-rearm": 4.6225293974021895,
+            "hold": 13.155715360346763
+          },
+          "ClickSoc.ca_child_ram_access.ca_child_native.ca_child_lane_2_join.ca_child_left_storage": {
+            "pulse-high": 4.853256910256164,
+            "ack-after-rearm": 4.575095872285226,
+            "hold": 13.09511616630209
+          },
+          "ClickSoc.ca_child_ram_access.ca_child_native.ca_child_lane_2_join.ca_child_right_storage": {
+            "pulse-high": 4.932600866129682,
+            "ack-after-rearm": 4.677711924178826,
+            "hold": 13.236557295780853
+          },
+          "ClickSoc.ca_child_ram_access.ca_child_native.ca_child_lane_3_capture": {
+            "pulse-high": 4.853256910256164,
+            "ack-after-rearm": 4.637717426444295,
+            "hold": 13.157737720461158
+          },
+          "ClickSoc.ca_child_ram_access.ca_child_native.ca_child_lane_3_issue": {
+            "pulse-high": 4.881916496882373,
+            "ack-after-rearm": 4.6225293974021895,
+            "hold": 13.155715360346763
+          },
+          "ClickSoc.ca_child_ram_access.ca_child_native.ca_child_lane_3_join.ca_child_left_storage": {
+            "pulse-high": 4.853256910256164,
+            "ack-after-rearm": 4.575095872285226,
+            "hold": 13.09511616630209
+          },
+          "ClickSoc.ca_child_ram_access.ca_child_native.ca_child_lane_3_join.ca_child_right_storage": {
+            "pulse-high": 4.932600866129682,
+            "ack-after-rearm": 4.677711924178826,
+            "hold": 13.236557295780853
+          },
+          "ClickSoc.ca_child_ram_access.ca_child_native.ca_child_owner.ca_child_left_storage": {
+            "pulse-high": 4.962277949982276,
+            "ack-after-rearm": 4.756895164162756,
+            "hold": 13.329261653706109
+          },
+          "ClickSoc.ca_child_ram_access.ca_child_native.ca_child_owner.ca_child_right_storage": {
+            "pulse-high": 4.867586670262577,
+            "ack-after-rearm": 4.579395366500908,
+            "hold": 13.105998728128467
+          },
+          "ClickSoc.ca_child_ram_source.ca_child_reservation": {
+            "pulse-high": 4.962277949982276,
+            "ack-after-rearm": 4.992444350985428,
+            "hold": 13.56481084052878
+          },
+          "ClickSoc.ca_child_spi_adc.ca_child_native.ca_child_assemble": {
+            "pulse-high": 4.905536692239441,
+            "ack-after-rearm": 4.722458709500215,
+            "hold": 13.266512046419761
+          },
+          "ClickSoc.ca_child_spi_adc.ca_child_native.ca_child_captured.ca_child_left_storage": {
+            "pulse-high": 4.958499150379869,
+            "ack-after-rearm": 4.736711131368542,
+            "hold": 13.308102267752718
+          },
+          "ClickSoc.ca_child_spi_adc.ca_child_native.ca_child_captured.ca_child_right_storage": {
+            "pulse-high": 4.881916496882373,
+            "ack-after-rearm": 4.602637042409256,
+            "hold": 13.13582300535383
+          },
+          "ClickSoc.ca_child_spi_adc.ca_child_native.ca_child_finish": {
+            "pulse-high": 4.881916496882373,
+            "ack-after-rearm": 4.684200245353924,
+            "hold": 13.217386208298498
+          },
+          "ClickSoc.ca_child_spi_adc.ca_child_native.ca_child_owner.ca_child_left_storage": {
+            "pulse-high": 4.962277949982276,
+            "ack-after-rearm": 4.756895164162756,
+            "hold": 13.329261653706109
+          },
+          "ClickSoc.ca_child_spi_adc.ca_child_native.ca_child_owner.ca_child_right_storage": {
+            "pulse-high": 4.962277949982276,
+            "ack-after-rearm": 4.726179821912629,
+            "hold": 13.298546311455981
+          },
+          "ClickSoc.ca_child_spi_adc.ca_child_native.ca_child_scale.ca_child_prepare": {
+            "pulse-high": 4.874751761208163,
+            "ack-after-rearm": 4.610908292994482,
+            "hold": 13.140803221734082
+          },
+          "ClickSoc.ca_child_spi_adc.ca_child_native.ca_child_scale.ca_child_radix_0": {
+            "pulse-high": 4.874751761208163,
+            "ack-after-rearm": 4.621731280251677,
+            "hold": 13.151626208991276
+          },
+          "ClickSoc.ca_child_spi_adc.ca_child_native.ca_child_scale.ca_child_radix_1": {
+            "pulse-high": 4.874751761208163,
+            "ack-after-rearm": 4.621731280251677,
+            "hold": 13.151626208991276
+          },
+          "ClickSoc.ca_child_spi_adc.ca_child_native.ca_child_scale.ca_child_radix_2": {
+            "pulse-high": 4.874751761208163,
+            "ack-after-rearm": 4.621731280251677,
+            "hold": 13.151626208991276
+          },
+          "ClickSoc.ca_child_spi_adc.ca_child_native.ca_child_scaled.ca_child_left_storage": {
+            "pulse-high": 4.905536692239441,
+            "ack-after-rearm": 4.659837155341146,
+            "hold": 13.203890492260692
+          },
+          "ClickSoc.ca_child_spi_adc.ca_child_native.ca_child_scaled.ca_child_right_storage": {
+            "pulse-high": 4.88889017427087,
+            "ack-after-rearm": 4.6459545709772385,
+            "hold": 13.181913482537691
+          },
+          "ClickSoc.ca_child_supervisor.ca_child_join.ca_child_left_storage": {
+            "pulse-high": 4.850273591227995,
+            "ack-after-rearm": 4.305805065410858,
+            "hold": 12.917779549225015
+          },
+          "ClickSoc.ca_child_supervisor.ca_child_join.ca_child_right_storage": {
+            "pulse-high": 4.8311936974674605,
+            "ack-after-rearm": 4.24429781992866,
+            "hold": 12.847456022454928
+          },
+          "ClickSoc.ca_child_supervisor.ca_child_update": {
+            "pulse-high": 4.850273591227995,
+            "ack-after-rearm": 4.356652926105397,
+            "hold": 12.968627409919554
+          },
+          "ClickSoc.ca_child_telemetry.ca_child_join.ca_child_left_storage": {
+            "pulse-high": 4.827484947185291,
+            "ack-after-rearm": 4.542365430779494,
+            "hold": 13.051448473382237
+          },
+          "ClickSoc.ca_child_telemetry.ca_child_join.ca_child_right_storage": {
+            "pulse-high": 4.821013679036336,
+            "ack-after-rearm": 4.501674068237152,
+            "hold": 13.007611893331102
+          },
+          "ClickSoc.ca_child_telemetry.ca_child_update": {
+            "pulse-high": 4.827484947185291,
+            "ack-after-rearm": 4.593213291474035,
+            "hold": 13.102296334076778
+          },
+          "ClickSoc.ca_child_telemetry_source.ca_child_reservation": {
+            "pulse-high": 4.958499150379869,
+            "ack-after-rearm": 4.9840340116557424,
+            "hold": 13.555425148039918
+          }
+        },
+        "report_sha256": "bbade62856095251fa78fb768ac84433e9ef213bdeaa816b0072bae864a1e51a",
+        "mapping_sha256": {
+          "mapping.json": "29fb1092f18ced31db99b16c5ac53b2537cc81b589e0200ee928e0db63ca1222",
+          "netlist.v": "8dc517e63efb3c30a805db3f215711f85f4dd7265e8faeed1e046408a371dc8e",
+          "netlist.json": "308b53e2b20c16cfbd28e92d08564d342aa3a4308fce28ad3b4f07f52b7efc03",
+          "electrical-repair/receipt.json": "a186602ad31fd510c5422d1ecd5977a2a53e89e5ef4b2ee4a7b858ec123a3003"
+        },
+        "baseline_mapping_sha256": "967da76cbfdfeea30e8f753644751036d0ba2b101ea985a9609a76791b61dc51"
+      }
+    },
+    "controls": {
+      "digital-bd-r4": {
+        "status": "PASS",
+        "report_sha256": "7235e00537e88e3042b4c54c70146ec3ee91d73d347d14cd21d985c3ca475e76"
+      },
+      "digital-click-r4": {
+        "status": "PASS",
+        "report_sha256": "598d7302aa16c32b4c16d2273487027a52160895b4aba0556ec939c318395146"
+      },
+      "soc-bd-fast-r2": {
+        "status": "PASS",
+        "report_sha256": "7ed627e2979805c9eea81a49b1648621129c72e7c7f5ea89256bf6b3fc78370b"
+      },
+      "soc-click-fast-r1": {
+        "status": "PASS",
+        "report_sha256": "f2cfc5bdd6ad9dfa00f7342010814ada189ab81934ddb76084157cff6002eb0a"
+      },
+      "bd-final-controls-r1": {
+        "status": "PASS_EXACT_CONTROLS",
+        "report_sha256": "eae72e5c62aa4645c31c42d80a18e1eedfd8d899fd298c4f8d2dbc1f7d5c72bf"
+      },
+      "click-final-controls-r1": {
+        "status": "PASS_EXACT_CONTROLS",
+        "report_sha256": "4cad54c5137888864a89d7c7ff92b89080e10f2faeee7316a8e672dee9b8a0a8"
+      },
+      "bd-no-crpr-controls-r1": {
+        "status": "PASS_EXACT_CONTROLS",
+        "report_sha256": "4b776251fb0f1d83081f38e3b9dcc92ecbcf7a8cb0418323f1d790a854ca0f71"
+      }
+    },
+    "original_bd_execution_failures": 5,
+    "complete_bd_retry_cases": 30,
+    "identical_successful_retry_overlaps": 25,
+    "retry_scope": "CRPR disabled only in explicit retry cohorts; all original failures, exact source deltas and unchanged raw-overlap results retained",
+    "runtime_scope": "Queue-only worker increases with immutable case/Future identities and unchanged tasks, timeouts, queries and results; chained receipts are campaign artifacts",
+    "baseline_disposition": {
+      "bd_ordering_guards": 199,
+      "bd_fused_away": 4,
+      "bd_changed": 91,
+      "bd_canonical_request_retained": 89,
+      "bd_custom_retained": 15,
+      "click_selected_ack_changed": 73,
+      "click_selected_ack_fused_away": 2
+    },
+    "retained_obligations": [
+      "The fifteen custom BD ordering guards retain their previous recipes and named ownership/reset obligations",
+      "Fixed-time SRAM/pulse, watchdog/LF, reset-hold, SPI and seed admission requirements remain independent",
+      "Other unchanged data setup and complete source launch are unmeasured by the guard-only receipt",
+      "Pending admission and complete BD return-to-zero composition remain separate",
+      "The positive 0.584962 ns elapsed local hold has no invented source-release credit and is not the changed-guard 2 ns claim",
+      "Complete electrical closure, reset distribution, statistical mismatch qualification and extracted min/max RC remain open"
+    ]
+  }
+}

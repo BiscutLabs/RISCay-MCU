@@ -15,10 +15,11 @@ import riscay._
   */
 class ClickCore(domain: ResetDomain = new ResetDomain("root"),
     registerCell: ModelTime = RegisterTiming.minimum,
-    timing: ClickTiming = ClickTiming.Simulation,
+    timing: ClickTiming = OwnerTiming.base,
     executeData: ModelTime = RegisterTiming.executeData,
     executeTiming: Option[ClickTiming] = None) extends AsyncModule(domain) {
   private val resolvedExecuteTiming = executeTiming.getOrElse(OwnerTiming.execute(timing,executeData))
+  private val nativeTiming = OwnerTiming.passive(timing)
   RegisterTiming.check(registerCell)
   val start = IO(Input(Bool()))
   val request = twoPhaseOutput("request", new MemoryRequest)
@@ -26,15 +27,15 @@ class ClickCore(domain: ResetDomain = new ResetDomain("root"),
   val trace = IO(Output(new Retirement))
   val traceEvent = IO(Output(Bool()))
   private val state = asyncChild("state")(d => new PhaseDecoupledClickBuffer(
-    new CoreState, timing, Some(CoreState.initial), d))
+    new CoreState, nativeTiming, Some(CoreState.initial), d))
   private val fork = asyncChild("fork")(d => new ClickFork(new CoreState, d))
   private val address = asyncChild("address")(d => new ClickStage(new CoreState,
-    new MemoryRequest, Execute.request, timing, d))
-  private val join = asyncChild("join")(d => new ClickJoin(new CoreState, new MemoryResponse, timing, d))
+    new MemoryRequest, Execute.request, nativeTiming, d))
+  private val join = asyncChild("join")(d => new ClickJoin(new CoreState, new MemoryResponse, nativeTiming, d))
   private val execute = asyncChild("execute")(d => new ClickStage(
     new ExecutionInput, new ExecutionResult,
     (p: ExecutionInput) => Execute.step(p.state, p.response, p.a, p.b),
-    resolvedExecuteTiming, d))
+    OwnerTiming.passive(resolvedExecuteTiming), d))
   private val registers = asyncChild("register_file")(d => new ArchitecturalRegisters(d,registerCell))
   private val arrival = Module(new XorGate(registerCell))
   arrival.reset := reset; arrival.a := state.out.req; arrival.b := state.out.ack

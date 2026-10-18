@@ -21,7 +21,7 @@ class FourPhaseRamSource(domain: ResetDomain) extends AsyncModule(domain) {
   val applicationReset=IO(Input(AsyncReset()))
   val eligible=IO(Output(Bool())); val idle=IO(Output(Bool()))
   Seq(reserve,grant,decision,publication).foreach(dontTouch(_))
-  private val timing=BundledTiming.Simulation
+  private val timing=OwnerTiming.base
   private val cell=ModelTime.ps(1000)
   private val guard=ModelTime.ps(200000)
   private val resetRef=contract.endpoint("reset",reset)

@@ -26,8 +26,13 @@ NATIVE_STATE = frozenset({
     "ChiselAsyncCElement_v1", "ChiselAsyncLatch_v1",
 })
 NATIVE_COMB = frozenset({
-    "ChiselAsyncControlGate_v1", "ChiselAsyncAnd_v1", "ChiselAsyncXor_v1",
+    "ChiselAsyncControlGate_v1", "ChiselAsyncPassiveDataAllowance_v1", "ChiselAsyncAnd_v1", "ChiselAsyncXor_v1",
 })
+# The physical mapper preserves these typed primitive instances. Preserve the
+# same functional inventory in the independent audit graph, including unit/
+# credit payloads whose Q has no architectural consumer. Timing markers are
+# evidence-only and intentionally excluded; no unknown model is selected.
+NATIVE_KEEP = 'setattr -set keep 1 ' + ' '.join('t:' + n for n in sorted(NATIVE_STATE | NATIVE_COMB)) + '\n'
 NATIVE_PINS = {
     'ChiselAsyncAsymmetricC_v1': ('reset','common','rising','falling'),
     'ChiselAsyncClosingLatch_v1': ('reset','closed','d'),
@@ -36,6 +41,7 @@ NATIVE_PINS = {
     'ChiselAsyncCElement_v1': ('reset','a','b'),
     'ChiselAsyncLatch_v1': ('reset','enable','d'),
     'ChiselAsyncControlGate_v1': ('reset','a','b'),
+    'ChiselAsyncPassiveDataAllowance_v1': ('a',),
     'ChiselAsyncAnd_v1': ('reset','d'),
     'ChiselAsyncXor_v1': ('reset','a','b'),
 }
@@ -215,7 +221,7 @@ def prepare_graph(export: Path, output: Path, manifest: dict) -> dict:
         subprocess.run(commands[0], stdout=out, stderr=err, check=True, timeout=120)
     top = manifest["top"]
     script = (f'read_verilog -sv {linux(output / "converted.v")}\n'
-              f'hierarchy -check -top {top}\nproc\nflatten\nopt_clean\n'
+              f'hierarchy -check -top {top}\nproc\nflatten\n' + NATIVE_KEEP + 'opt_clean\n' +
               f'write_json {linux(output / "netlist.json")}\n')
     (output / "graph.ys").write_text(script)
     commands.append(["wsl", "-e", linux(tools["yosys"]), "-s", linux(output / "graph.ys")])
@@ -312,6 +318,7 @@ def audit_graph(database: dict, top: str, capacities: dict | None = None) -> dic
         reset_checks=set()
         for name,cell in cells.items():
             if model(cell) not in NATIVE_STATE | NATIVE_COMB: continue
+            if model(cell) == 'ChiselAsyncPassiveDataAllowance_v1': continue  # no reset pin; a->q remains in full taint graph
             expected=None
             if name.startswith('ca_child_core.'): expected='core'
             elif name.startswith(('ca_child_transactions.','ca_child_admission.','ca_child_completion.')): expected='native'
@@ -496,7 +503,13 @@ def check_reset_crossings(export: Path, manifest: dict) -> dict:
     capacities = sram_capacities(json.loads(inventory_path.read_text()), manifest["top"])
     inputs["sram_inventory_sha256"] = sha(inventory_path)
     inputs["sram_capacities"] = capacities
-    result = audit_graph(json.loads((output / "netlist.json").read_text()), manifest["top"], capacities)
+    database = json.loads((output / "netlist.json").read_text())
+    result = audit_graph(database, manifest["top"], capacities)
+    from native_allowance_audit import audit_elaborated
+    allowance = audit_elaborated(database, manifest)
+    allowance["inputs"] = inputs
+    (output / "allowance-audit.json").write_text(json.dumps(allowance, indent=2) + "\n")
+    result["passive_allowance_instances"] = allowance["instance_count"]
     result["inputs"] = inputs
     (output / "report.json").write_text(json.dumps(result, indent=2) + "\n")
     if result["violations"]:

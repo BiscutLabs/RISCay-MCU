@@ -295,6 +295,63 @@ class GlobalRepairTest(unittest.TestCase):
         self.assertEqual(len(b['modules']['wrapper']['cells'])-len(top['cells']),1)
         self.assertEqual(len(self.proof(a,b,{'a/driver/keeper':'a/driver','b/driver/keeper':'b/driver'})['added_buffers']),2)
 
+    def passive_native(self):
+        a=self.reset_native()
+        a['modules']['allowance']=dict(ports={'a':dict(direction='input',bits=[1,2]),
+            'q':dict(direction='output',bits=[1,2])},cells={})
+        a['modules']['top']['cells']['data']=dict(type='allowance',
+            port_directions={'a':'input','q':'output'},connections={'a':[1,8],'q':[1,8]})
+        binding=dict(model='ChiselAsyncPassiveDataAllowance_v1',module='allowance',
+            parameters=dict(WIDTH=2,DELAY_FS=10000),instances=['data_native'],cells=[],
+            aliases=[['q[0]','a[0]'],['q[1]','a[1]']])
+        return a,[dict(model='ChiselAsyncBuffer_v1',instances=['native']),binding]
+
+    def test_only_proved_passive_alias_skips_reset_distribution(self):
+        a,bindings=self.passive_native();b=deepcopy(a);aliases=[]
+        report=buffer_native_resets(b,'top',{'native':'driver','data_native':'data'},
+            bindings=bindings,reset_free_aliases=aliases)
+        self.assertEqual(len(report),1)
+        self.assertEqual(b['modules']['allowance'],a['modules']['allowance'])
+        self.assertEqual(b['modules']['top']['cells']['data'],a['modules']['top']['cells']['data'])
+        self.assertEqual(aliases,[dict(instance='data_native',owner='data',
+            model='ChiselAsyncPassiveDataAllowance_v1',width=2,
+            reason='proved-cell-free-data-alias-with-no-reset-load')])
+        self.assertEqual(len(self.proof(a,b,{'driver/keeper':'driver'})['added_buffers']),1)
+
+    def test_resetless_alias_requires_exact_model_and_instance_binding(self):
+        for mutation,error in (
+            (lambda bs:bs[1].update(model='ChiselAsyncBuffer_v1'),'REPAIR_RESET_BOUNDARY_SHAPE'),
+            (lambda bs:bs[1].update(module='other'),'REPAIR_RESET_ALIAS_IDENTITY'),
+            (lambda bs:bs[1].update(instances=['other']),'REPAIR_RESET_BINDING_MISSING'),
+            (lambda bs:bs.append(deepcopy(bs[1])),'REPAIR_RESET_BINDING_DUPLICATE')):
+            with self.subTest(error=error):
+                a,bindings=self.passive_native();mutation(bindings)
+                with self.assertRaisesRegex(ValueError,error):
+                    buffer_native_resets(a,'top',{'native':'driver','data_native':'data'},bindings=bindings)
+        a,_=self.passive_native()
+        with self.assertRaisesRegex(ValueError,'REPAIR_RESET_BOUNDARY_SHAPE'):
+            buffer_native_resets(a,'top',{'data_native':'data'})
+
+    def test_resetless_alias_complete_module_and_instance_shape_are_checked(self):
+        mutations=(
+            (lambda a,b:a['modules']['allowance']['cells'].update(hidden=cell('buf_1',I=1,Z=2)),
+                'PASSIVE_ALIAS_HAS_CELLS'),
+            (lambda a,b:a['modules']['allowance']['ports']['q'].update(bits=[2,1]),
+                'PASSIVE_ALIAS_CONNECTION'),
+            (lambda a,b:b[1].update(aliases=[['q[0]','a[1]'],['q[1]','a[0]']]),
+                'PASSIVE_ALIAS_LAYOUT'),
+            (lambda a,b:a['modules']['allowance']['ports'].update(reset=dict(direction='input',bits=[3])),
+                'PASSIVE_ALIAS_PORTS'),
+            (lambda a,b:a['modules']['top']['cells']['data']['connections'].update(q=[1]),
+                'REPAIR_RESET_ALIAS_INSTANCE_PORTS'),
+            (lambda a,b:a['modules']['top']['cells']['data']['port_directions'].update(q='input'),
+                'REPAIR_RESET_ALIAS_INSTANCE_PORTS'))
+        for mutation,error in mutations:
+            with self.subTest(error=error):
+                a,bindings=self.passive_native();mutation(a,bindings)
+                with self.assertRaisesRegex(ValueError,error):
+                    buffer_native_resets(a,'top',{'native':'driver','data_native':'data'},bindings=bindings)
+
     def test_orphan_cleanup_removes_only_added_ties(self):
         a=fixture();a['modules']['top']['cells']['original_tie']=cell('tiel',ZN=7)
         b=deepcopy(a);b['modules']['top']['cells']['added_tie']=cell('tieh',Z=8)

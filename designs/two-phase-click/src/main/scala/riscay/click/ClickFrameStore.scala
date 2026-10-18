@@ -5,7 +5,7 @@ import chisel3._
 import chisel3.util._
 import chiselasync.core.{AsyncModule, ResetDomain}
 import chiselasync.metadata.{BundledTiming, ModelTime}
-import chiselasync.primitives.{AsymmetricCElement, ControlGate, EventRegister, GateOperation, PhaseRegister, XorGate}
+import chiselasync.primitives.{PassiveDataAllowance,AsymmetricCElement, ControlGate, EventRegister, GateOperation, PhaseRegister, XorGate}
 import riscay.soc.I2cFrame
 
 /** Native two-phase four-bank capture. One global input phase owns the common
@@ -26,6 +26,9 @@ class ClickFrameStore(domain: ResetDomain) extends AsyncModule(domain) {
   private val resetRef=contract.endpoint("reset",reset)
   private val cell=ModelTime.ps(1000)
   private def gate(id: String, data: UInt, width: Int, delay: ModelTime): UInt = {
+    if (Set("data_delay")(id)) {
+      return PassiveDataAllowance(this,id,data,delay,resetRef)
+    }
     val g=Module(new ControlGate(width,GateOperation.Buffer,delay)); g.reset:=reset; g.a:=data; g.b:=0.U
     contract.primitive(id,g,Map("WIDTH"->BigInt(width),"OP"->BigInt(0),
       "DELAY_FS"->BigInt(delay.fs),"RESET_VALUE"->BigInt(0)),resetRef,

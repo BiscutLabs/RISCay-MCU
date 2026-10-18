@@ -10,7 +10,7 @@ import re
 ROLES = ('Core','Fabric','Control','Telemetry','Housekeeping','Supervisor','Sram',
          'FrameStore','Elapsed','Sample','SpiAdc','I2c','Admission','Completion',
          'RamSource','RamReturn','ProgramSource','ProgramReturn','PublicationSource','RecoveryReturn')
-PRIMITIVES = {'ChiselAsync'+name+'_v1' for name in ('ControlGate','AsymmetricC',
+PRIMITIVES = {'ChiselAsync'+name+'_v1' for name in ('ControlGate','PassiveDataAllowance','AsymmetricC',
               'TimingMarker','ClosingLatch','EventRegister','And','ProtocolGuard',
               'PhaseRegister','Xor','ClickMarker')}
 

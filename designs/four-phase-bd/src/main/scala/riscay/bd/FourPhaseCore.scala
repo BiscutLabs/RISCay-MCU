@@ -15,8 +15,9 @@ import riscay._
   */
 class FourPhaseCore(domain: ResetDomain = new ResetDomain("root"),
     registerCell: ModelTime = RegisterTiming.minimum,
-    timing: BundledTiming = BundledTiming.Simulation,
+    timing: BundledTiming = OwnerTiming.base,
     executeTiming: BundledTiming = OwnerTiming.execute) extends AsyncModule(domain) {
+  private val nativeTiming = OwnerTiming.passive(timing)
   RegisterTiming.check(registerCell)
   val request = fourPhaseOutput("request", new MemoryRequest)
   val response = fourPhaseInput("response", new MemoryResponse)
@@ -24,15 +25,15 @@ class FourPhaseCore(domain: ResetDomain = new ResetDomain("root"),
   val traceEvent = IO(Output(Bool()))
   private val cell = ModelTime.ps(1000)
   private val state = asyncChild("state")(d => new FourPhaseFifo(new CoreState, 1,
-    timing, Seq(CoreState.initial), cell, d))
+    nativeTiming, Seq(CoreState.initial), cell, d))
   private val fork = asyncChild("fork")(d => new FourPhaseFork(new CoreState, 2, cell, d))
   private val address = asyncChild("address")(d => new FourPhaseStage(new CoreState,
-    new MemoryRequest, Execute.request, timing, d))
-  private val join = asyncChild("join")(d => new FourPhaseJoin(new CoreState, new MemoryResponse, timing, cell, d))
+    new MemoryRequest, Execute.request, nativeTiming, d))
+  private val join = asyncChild("join")(d => new FourPhaseJoin(new CoreState, new MemoryResponse, nativeTiming, cell, d))
   private val execute = asyncChild("execute")(d => new FourPhaseStage(
     new ExecutionInput, new ExecutionResult,
     (p: ExecutionInput) => Execute.step(p.state, p.response, p.a, p.b),
-    executeTiming, d))
+    OwnerTiming.passive(executeTiming), d))
   private val registers = asyncChild("register_file")(d => new ArchitecturalRegisters(d,registerCell))
   private val arrival = Module(new ControlGate(1,GateOperation.Buffer,registerCell))
   arrival.reset := reset; arrival.a := state.out.req.asUInt; arrival.b := 0.U

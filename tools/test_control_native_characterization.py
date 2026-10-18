@@ -327,7 +327,7 @@ class NativeCharacterizationTest(unittest.TestCase):
         cell=dict(type=SC+"inv_1",connections={"I":[2],"ZN":[3]})
         body=dict(cells={"u0":cell},netnames={"state":{"bits":[2]},"inverse":{"bits":[3]}})
         n=dict(modules={"stage":{"cells":{"ca_primitive_test":{"type":"adapter"}}},"adapter":body})
-        record=dict(bindings=[dict(module="adapter",cells=[dict(name="u0",cell=SC+"inv_1",pins={"I":"state","ZN":"inverse"})])])
+        record=dict(bindings=[dict(model="ChiselAsyncAsymmetricC_v1",module="adapter",cells=[dict(name="u0",cell=SC+"inv_1",pins={"I":"state","ZN":"inverse"})])])
         plan=dict(module="stage",aliases=[dict(path="ca_primitive_test")])
         audit_bindings(n,record,plan)
         bad=deepcopy(n);bad["modules"]["adapter"]["cells"]["u0"]["connections"]["I"]=[3]

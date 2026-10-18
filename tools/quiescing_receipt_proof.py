@@ -83,7 +83,8 @@ def prove_masked_request(database, top, control_proof):
                 require(name == control_proof['first'] and pin == 'D', 'UNMASKED_PERIODIC_SINK_'+name+'_'+pin)
                 sinks.append([name,pin]); continue
             require(cell['type'].startswith('$') or model(cell) in
-                {'ChiselAsyncControlGate_v1','ChiselAsyncAnd_v1','ChiselAsyncXor_v1'}, 'UNCLASSIFIED_FANOUT')
+                {'ChiselAsyncControlGate_v1','ChiselAsyncAnd_v1','ChiselAsyncXor_v1',
+                 'ChiselAsyncPassiveDataAllowance_v1'}, 'UNCLASSIFIED_FANOUT')
             for output, direction in cell['port_directions'].items():
                 if direction == 'output':
                     for target in cell['connections'][output]:

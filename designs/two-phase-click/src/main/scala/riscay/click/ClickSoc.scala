@@ -10,7 +10,7 @@ import riscay.profiles._
 import riscay._
 
 class ClickSoc(p: SocParameters, board: SocParameters => BoardProfile = p => new GenericBoard(p),
-    timing: ClickTiming = ClickTiming.Simulation,
+    timing: ClickTiming = OwnerTiming.base,
     executeData: ModelTime = RegisterTiming.executeData,
     executeTiming: Option[ClickTiming] = None, owners: OwnerTiming = OwnerTiming())
     extends ClickPlatform(p, board, clockedCpuResponse=false, owners=owners) {

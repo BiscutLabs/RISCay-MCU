@@ -33,6 +33,10 @@ def synth(mapping,pdk):
     if (mapping/'electrical-repair').exists(): raise ValueError('REPAIR_FRESH_MAPPING_REQUIRED')
     pdk_verify(pdk)
     record=json.loads((mapping/"mapping.json").read_text())
+    for name,key in (('ordering-guards.json','ordering_guard_policy_sha256'),
+                     ('passive-allowance-audit.json','passive_allowance_audit_sha256')):
+        if record.get(key) is not None and sha(mapping/name)!=record[key]:
+            raise ValueError('MAPPED_POLICY_CHANGED_'+name)
     for f,h in record["files_sha256"].items():
         if sha(mapping/f)!=h: raise ValueError("MAPPED_INPUT_CHANGED_"+f)
     files=[mapping/x for x in (mapping/"filelist.f").read_text().splitlines()]
@@ -100,6 +104,8 @@ def audit(mapping, *, adapter_instances=None):
                 try: return adapter_module["netnames"][name]["bits"][index]
                 except (KeyError,IndexError):
                     raise ValueError("PRESERVED_NET_MISSING_"+path+"/"+net) from None
+            from gf180_physical import audit_alias_binding
+            audit_alias_binding(b,adapter_module)
             for c in b["cells"]:
                 actual_cell=cells[c["name"]]
                 if actual_cell["type"]!=c["cell"]:

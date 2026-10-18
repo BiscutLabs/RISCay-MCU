@@ -101,7 +101,7 @@ class ProbeBudgetTest(unittest.TestCase):
         scopes['Toy']['registers']['i0'] = 2  # Preserve repeated force entries.
         child = dict(rtl_path='Toy.child', module='Child', children=[], channels=[], timing=[],
                      endpoints=[dict(id='reset', rtl_path='Toy.child.reset', source='~|Child>reset', width=1)],
-                     primitives=[dict(rtl_path='Toy.child.cell', reset='reset', ports=[
+                     primitives=[dict(rtl_path='Toy.child.cell', reset='reset', model='ChiselAsyncEventRegister_v1', ports=[
                          dict(name='d', direction='input', width=3), dict(name='q', direction='output', width=3)])])
         manifest['design']['children'] = [dict(contract=child)]
         scopes['Toy.child'] = dict(ports={'ignored_child_input': dict(direction='input', width=17)},
@@ -113,6 +113,21 @@ class ProbeBudgetTest(unittest.TestCase):
         estimate = budget.paired_probe_budget(manifest, scopes)
         self.assertEqual(all_count - count, estimate['extra_mapping_checks'])
         self.assertEqual(len(paired.splitlines()) - len(ordinary.splitlines()), estimate['extra_lines'])
+
+    def test_passive_reset_binding_keeps_every_driver_and_paired_sample(self):
+        manifest, scopes = fixture([2])
+        manifest['design']['primitives'] = [dict(rtl_path='Toy.allowance', reset='reset',
+            model='ChiselAsyncPassiveDataAllowance_v1', ports=[
+                dict(name='a', direction='input', width=3), dict(name='q', direction='output', width=3)])]
+        ordinary, count = REFERENCE['probe_source'](manifest, scopes)
+        paired, all_count = REFERENCE['probe_source'](manifest, scopes, paired=True)
+        estimate = budget.require_paired_probe_budget(manifest, scopes, SOURCE)
+        self.assertEqual(budget.driver_inventory(manifest, scopes)[0], [('Toy.i0',2),('Toy.allowance.q',3)])
+        self.assertNotIn('Toy.allowance.reset', ordinary)
+        self.assertIn('RESET_BINDING_MISMATCH', ordinary)
+        self.assertEqual(all_count-count, estimate['extra_mapping_checks'])
+        self.assertEqual(len(paired.splitlines())-len(ordinary.splitlines()),estimate['extra_lines'])
+        self.assertLessEqual(len(paired.encode())-len(ordinary.encode()),estimate['extra_source_bytes_upper_bound'])
 
     def test_huge_width_and_soc_driver_count_fail_without_pair_allocation(self):
         # Fail before testing giant widths if a future implementation starts

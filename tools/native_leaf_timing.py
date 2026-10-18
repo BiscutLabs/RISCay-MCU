@@ -127,7 +127,21 @@ def bind_plan(plan, index, descriptor, original, cuts):
            for row in index.boundary(prefix[:-1],port)]
     require(len(lanes)==descriptor['input_width'],'LEAF_LOGICAL_WIDTH')
     data=sorted({(row['kind'],row['source']) for row in lanes if row['kind'] in ('pin','port')})
-    require(data and all(kind=='pin' for kind,_ in data),'LEAF_DATA_SOURCE_PIN_REQUIRED')
+    if not data and all(row['kind']=='constant' for row in lanes):
+        input_bits=[bit for port,p in body['ports'].items()
+                    if port=='in_bits' or port.startswith('in_bits_') for bit in p['bits']]
+        values={bit:row['value'] for bit,row in zip(input_bits,lanes)}
+        allowance=body['cells']['ca_primitive_data_delay']['connections']['a']
+        for row in result['lane_map']:
+            bit=allowance[row['logical']]
+            if bit in values:result['constant_lanes'][str(row['lane'])]=values[bit]
+        for context in result['contexts']:
+            if context['kind']=='data':
+                context['queries']=[q for q in context['queries']
+                                    if str(q['lane']) not in result['constant_lanes']]
+    constant_only=(not data and len(result.get('constant_lanes',{}))==result['payload_width'] and
+                   all(row['kind']=='constant' for row in lanes))
+    require((data or constant_only) and all(kind=='pin' for kind,_ in data),'LEAF_DATA_SOURCE_PIN_REQUIRED')
     signals={p:index.scalar(prefix[:-1],p) for p in ('reset','in_req','out_ack','in_ack')}
     require(all(k=='pin' for k,p in signals.values()),'LEAF_CONTROL_SOURCE_PIN_REQUIRED')
     ack_net=index.before['boundaries'][prefix+'in_ack'][0]
@@ -146,7 +160,12 @@ def bind_plan(plan, index, descriptor, original, cuts):
         ctx['state']['cases']=[(k,prefix+p,v) if k=='pin' else (*signals[p],v)
                                for k,p,v in ctx['state']['cases']]
         ctx['state']['keeper_cuts']=cuts
-        if ctx['kind']=='data':ctx['sources']=[p for _,p in data]
+        if ctx['kind']=='data':
+            # A literal-only token has no data launch path. Use the request
+            # source solely as a clock object for an empty query context; no
+            # data arrival or polarity coverage is inferred from it.
+            require(not constant_only or not ctx['queries'],'LEAF_CONSTANT_DATA_QUERIES')
+            ctx['sources']=[p for _,p in data] if data else [signals['in_req'][1]]
         elif ctx['source_kind']=='clock':ctx['sources']=[result['event']]
         else:ctx['sources']=[signals[p][1] for p in ctx['sources']]
         ctx['source_kind']='clock'

@@ -16,7 +16,7 @@ class AdapterAudit(unittest.TestCase):
         self.root=Path(self.temp.name)
         self.ids=["FourPhaseSoc.owner.first","FourPhaseSoc.owner.second"]
         self.paths={i:"soc/owner/"+i.rsplit('.',1)[1]+"/variant_0.mapped" for i in self.ids}
-        self.record={"bindings":[dict(module="Native",instances=self.ids,cells=[
+        self.record={"bindings":[dict(model="ChiselAsyncControlGate_v1",module="Native",instances=self.ids,cells=[
             dict(name="u0",cell=SC+"buf_1",pins={"I":"d[0]","Z":"q"})])]}
         self.modules={
             "RiscayMcuDigital":{"cells":{

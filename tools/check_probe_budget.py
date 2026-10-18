@@ -20,7 +20,9 @@ import json
 ALGORITHM_SHA256 = {
     'nodes': '0dd5a620436ea469eb81ab696d80def0bc7290d4c7e524bea10534441f447d60',
     'paired_probe_values': '014c220c41e95e831b2f8df3e06492ea1ac98817410ca776a4196a2910bde9e7',
-    'probe_source': 'ae264a622707cefa7951332597394acfb7e7ca444c57c1956647cce086c8d6e8',
+    # A8b changes only the reset-domain comparison for reset-free passive
+    # allowances. Driver ordering, paired loops and counted samples are intact.
+    'probe_source': '4e3e3cfa0906ea2af9270f7009865d2a98b85252492dd19614e8d6ab0af9c8fd',
 }
 LIMITS = {
     'paired_samples': 250_000,

@@ -13,6 +13,7 @@ import argparse
 import hashlib
 import json
 import re
+from passive_allowance_policy import PASSIVE, return_policy
 from pathlib import Path
 
 CAPTURES = {
@@ -42,6 +43,9 @@ EXPORTED_MODEL_HASHES = dict(zip(MODEL_HASHES, (
     'da2f055a2fabb4d5fb42d631d2d6ccec400465d1d37dd54ee1a65f8f546c104e',
     '18a250359ad29ec8997c94bd7b3f56415b42497fad0fd09ea904cbd4b6c69b13',
     '0f07e7fd8d20f1e0456e304c42c83b0bd2a85709385dfb1c8fc07af57e66fe28')))
+
+MODEL_HASHES[PASSIVE] = '3d521cec1c482b68bb7b0aae2c75b93a89e820986e2c866d671e1686960028b0'
+EXPORTED_MODEL_HASHES[PASSIVE] = '3f3f69da006032153304ca2c7fde57426ddb712517b1da3fcad3694807fc9860'
 
 
 def require(condition, diagnostic):
@@ -272,7 +276,7 @@ def global_probe_name(node, endpoint):
 def validate_ram_return(node, resolved=False):
     require(re.fullmatch(r'(?:FourPhase|Click)RamReturn(?:_[0-9]+)?', node.get('module', '')), 'OWNER')
     variant = 'click' if node['module'].startswith('Click') else 'bd'
-    expected = policy(variant)
+    expected = return_policy(node, policy(variant))
     require(re.fullmatch(r'\w+(?:\.\w+)*', node.get('rtl_path', '')) and
             isinstance(node.get('reset_domain'), str) and bool(node['reset_domain']) and
             node.get('capacity') == 1 and node.get('children') == [], 'INVENTORY')
@@ -316,7 +320,7 @@ def ram_return_bindings(node, resolved=False):
     peer and POR/application reset source. The standalone structural checker
     additionally rejects extra RTL writers and checks model hashes.
     """
-    spec = policy(validate_ram_return(node, resolved=resolved))
+    spec = return_policy(node, policy(validate_ram_return(node, resolved=resolved)))
     cells = {p['id']: p['rtl_path'] for p in node['primitives']}
     endpoints = {e['id']: e['rtl_path'] for e in node['endpoints']}
 
@@ -470,7 +474,7 @@ def parse_rtl(node, rtl):
 
 def validate_ram_return_rtl(node, rtl, references, resolved=False):
     variant = validate_ram_return(node, resolved=resolved)
-    expected = policy(variant)
+    expected = return_policy(node, policy(variant))
     instances, wires, assignments = parse_rtl(node, rtl)
     cells = {p['id']: p for p in node['primitives']}
     require(set(instances) == {p['rtl_path'].rsplit('.', 1)[1] for p in cells.values()}, 'RTL_CELLS')
@@ -488,6 +492,8 @@ def validate_ram_return_rtl(node, rtl, references, resolved=False):
         port_widths = {n: 1 for n in pin_names}
         if spec['model'].endswith('ControlGate_v1'):
             port_widths.update(a=width, b=width, q=width)
+        elif spec['model'] == PASSIVE:
+            port_widths.update(a=width, q=width)
         elif spec['model'].endswith('EventRegister_v1'):
             port_widths.update(d=width, q=width)
         elif spec['model'].endswith('TimingMarker_v1'):
@@ -585,7 +591,7 @@ def reset_record(node, variant, bindings, endpoints):
     cells = {p['id']: p for p in node['primitives']}
     state = []
     for name, cell in cells.items():
-        if cell['model'].endswith('TimingMarker_v1'):
+        if cell['model'].endswith('TimingMarker_v1') or cell['model'] == PASSIVE:
             continue
         state.append(dict(id=name, model=cell['model'], path=cell['rtl_path'], reset_pin=cell['rtl_path'] + '.reset',
                           reset_expression=bindings[cell['rtl_path'] + '.reset'],

@@ -14,7 +14,7 @@ class ClickAdmission(domain: ResetDomain) extends AsyncModule(domain) {
   val returned=twoPhaseInput("returned",Bool())
   val grant=twoPhaseOutput("grant",Bool())
   val start=IO(Input(Bool()))
-  private val timing=ClickTiming.Simulation
+  private val timing=OwnerTiming.base
   private val pending=asyncChild("pending")(d => new ClickBuffer(Bool(),timing,d))
   private val credit=asyncChild("credit")(d => new PhaseDecoupledClickBuffer(Bool(),timing,Some(false.B),d))
   credit.start.get:=start

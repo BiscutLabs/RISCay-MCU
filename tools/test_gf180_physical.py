@@ -5,7 +5,7 @@ from pathlib import Path
 import subprocess
 import tempfile
 import unittest
-from gf180_physical import adapter, sha, distribution_profile, SC
+from gf180_physical import adapter, sha, distribution_profile, SC, audit_alias_binding
 from copy import deepcopy
 from gf180_control_roles import CONTROL, DATA
 from gf180_constraints import monitors, brace
@@ -15,6 +15,36 @@ def primitive(model,**parameters):
     return dict(model="ChiselAsync"+model+"_v1",parameters={k:str(v) for k,v in parameters.items()})
 
 class PhysicalControls(unittest.TestCase):
+    def test_passive_allowance_maps_only_to_exact_aliases(self):
+        for width in (1,101,337):
+            p=primitive('PassiveDataAllowance',WIDTH=width,DELAY_FS=10000000)
+            p['ports']=[dict(name='a',direction='input',width=width),dict(name='q',direction='output',width=width)]
+            c,r=adapter(p,.1,role=DATA)
+            self.assertEqual(c.cells,[])
+            self.assertEqual(c.aliases,[(f'q[{i}]',f'a[{i}]') for i in range(width)])
+            text=c.verilog('passive',p['ports'])
+            self.assertNotIn('reset',text);self.assertNotIn('#',text)
+            self.assertEqual(r['implementation'],'passive-alias')
+            with self.assertRaisesRegex(ValueError,'PASSIVE_ALLOWANCE_REQUIRES_DATA_ROLE'):
+                adapter(p,.1,role=CONTROL)
+            p['ports'].append(dict(name='reset',direction='input',width=1))
+            with self.assertRaisesRegex(ValueError,'INVALID_PASSIVE_ALLOWANCE_PORTS'):
+                adapter(p,.1,role=DATA)
+
+    def test_passive_graph_audit_rejects_missing_swapped_or_active_views(self):
+        binding=dict(model='ChiselAsyncPassiveDataAllowance_v1',parameters=dict(WIDTH=2,DELAY_FS=10),
+                     cells=[],aliases=[['q[0]','a[0]'],['q[1]','a[1]']])
+        body=dict(cells={},ports=dict(a=dict(direction='input',bits=[3,4]),q=dict(direction='output',bits=[3,4])))
+        audit_alias_binding(binding,body)
+        mutations=[('PASSIVE_ALIAS_LAYOUT',lambda b,m:b.pop('aliases')),
+                   ('PASSIVE_ALIAS_CONNECTION',lambda b,m:m['ports']['q'].update(bits=[4,3])),
+                   ('PASSIVE_ALIAS_HAS_CELLS',lambda b,m:m['cells'].update(unexpected={})),
+                   ('PASSIVE_ALIAS_PORTS',lambda b,m:m['ports'].update(reset=dict(direction='input',bits=[5]))),
+                   ('UNSUPPORTED_PASSIVE_ALIAS_MODEL',lambda b,m:b.update(model='ChiselAsyncControlGate_v1'))]
+        for reason,mutate in mutations:
+            b,m=deepcopy(binding),deepcopy(body);mutate(b,m)
+            with self.subTest(reason=reason),self.assertRaisesRegex(ValueError,reason):audit_alias_binding(b,m)
+
     def test_relative_guard_requires_finite_positive_margin(self):
         self.assertEqual(strict(31,30,"writeback")["margin_ns"],1)
         for available,required in ((30,30),(29,30),(float("nan"),30),(31,float("nan")),

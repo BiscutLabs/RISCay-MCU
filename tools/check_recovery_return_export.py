@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
 """Closed digital policy for native final-return proof and temporary receipts."""
 import re
+from passive_allowance_policy import PASSIVE, data_specs
 
 PHASES=(('target','target_sources','target_data','fresh','target','target_data_delay'),
         ('issue','target','issue_data','issue_event','issued','issue_data_delay'),
@@ -63,6 +64,7 @@ def validate_recovery_return(node):
         else:params.update(KIND=1,WIDTH=5,SETUP_FS=100000,HOLD_FS=100000)
         cell(t['marker'],'TimingMarker',**params)
     if len(cells)!=len(node['primitives']) or set(cells)!=set(expected):raise ValueError('RECOVERY_RETURN_CELLS')
+    expected = data_specs(node, expected)
     for n,(model,params) in expected.items():
         if cells[n]['model']!=model or cells[n]['parameters']!=params:raise ValueError('RECOVERY_RETURN_CELL_POLICY:'+n)
         if cells[n]['reset']!='reset':raise ValueError('RECOVERY_RETURN_RESET:'+n)
@@ -79,7 +81,8 @@ def recovery_return_bindings(node):
             (q(n+'_nb'),c[n+'_or']+'.b'),(q(n+'_or'),c[n]+'.a')])
     # Unused gate pins and all POR inputs are closed too.
     for p in node['primitives']:
-        pairs.append((c[p['id']]+'.reset',e['reset']))
+        if p['model'] != PASSIVE:
+            pairs.append((c[p['id']]+'.reset',e['reset']))
         if p['model']=='ChiselAsyncControlGate_v1' and p['parameters']['OP']!='2':
             pairs.append((c[p['id']]+'.b',"1'b0"))
     if click:

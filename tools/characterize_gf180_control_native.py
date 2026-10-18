@@ -87,6 +87,8 @@ def audit_bindings(netlist, record, plan):
             m=re.fullmatch(r'(\w+)\[(\d+)\]',net)
             n,i=(m[1],int(m[2])) if m else (net,0)
             return body["netnames"][n]["bits"][i]
+        from gf180_physical import audit_alias_binding
+        audit_alias_binding(binding,body)
         for c in binding["cells"]:
             actual=body["cells"][c["name"]]
             require(actual["type"]==c["cell"] and actual["connections"]=={p:[bit(n)] for p,n in c["pins"].items()},"NATIVE_BINDING_CONNECTION")

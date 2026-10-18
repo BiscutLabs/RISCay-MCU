@@ -39,6 +39,29 @@ def key(p):
 def passive(p):
     return p["view"] == "constraint-marker" or p["model"] == "ChiselAsyncProtocolGuard_v1"
 
+
+def audit_alias_binding(binding, body):
+    """Prove the complete physical view of the only supported cell-free model."""
+    model=binding['model']
+    if model!='ChiselAsyncPassiveDataAllowance_v1':
+        if binding.get('aliases'): raise ValueError('UNSUPPORTED_PASSIVE_ALIAS_MODEL')
+        return
+    params=binding['parameters']
+    if set(params)!={'WIDTH','DELAY_FS'} or params['WIDTH']<1 or params['DELAY_FS']<=0:
+        raise ValueError('PASSIVE_ALIAS_PARAMETERS')
+    width=params['WIDTH']
+    if binding.get('cells')!=[] or body.get('cells',{}):
+        raise ValueError('PASSIVE_ALIAS_HAS_CELLS')
+    if binding.get('aliases')!=[[f'q[{i}]',f'a[{i}]'] for i in range(width)]:
+        raise ValueError('PASSIVE_ALIAS_LAYOUT')
+    ports=body['ports']
+    if (set(ports)!={'a','q'} or ports['a']['direction']!='input' or
+            ports['q']['direction']!='output' or len(ports['a']['bits'])!=width or
+            len(ports['q']['bits'])!=width):
+        raise ValueError('PASSIVE_ALIAS_PORTS')
+    if ports['q']['bits']!=ports['a']['bits']:
+        raise ValueError('PASSIVE_ALIAS_CONNECTION')
+
 def inventory(export):
     manifest = json.loads((export/"contract.json").read_text())["manifest"]
     ns = list(nodes(manifest["design"]))
@@ -73,6 +96,7 @@ class Circuit:
     """Explicit standard-cell graph, also used to generate SPICE test circuits."""
     def __init__(self):
         self.cells = []
+        self.aliases = []
         self.serial = 0
     def cell(self, kind, **pins):
         name = "u"+str(self.serial); self.serial += 1
@@ -96,6 +120,7 @@ class Circuit:
         nets = sorted({v for c in self.cells for v in c["pins"].values() if re.fullmatch(r'n\d+',v)})
         body = [f'(* keep_hierarchy = "yes" *) module {module} ('+", ".join(declarations)+");"]
         if nets: body.append(ATTR+"wire "+", ".join(nets)+";")
+        body += [f'assign {sink} = {source};' for sink,source in self.aliases]
         body += [ATTR+c["cell"]+" "+c["name"]+" ("+", ".join(f'.{p}({v})' for p,v in c["pins"].items())+");" for c in self.cells]
         return "\n".join(body)+"\nendmodule\n"
 
@@ -157,9 +182,13 @@ def distribution_profile(cells, *, capture_root=None, data_reset=False, fanout=1
     return dict(maximum_input_fanout=max(loads.values(),default=0),**depths)
 
 
-def adapter(p, guard_min_ns, *, role=None):
+def adapter(p, guard_min_ns, *, role=None, guard_stages=None):
     k=dict(key(p)[1]); model=p["model"].removeprefix("ChiselAsync").removesuffix("_v1")
     c=Circuit(); requirement={"control_max_ns":10}
+    if guard_stages is not None and (model!='ControlGate' or role!=CONTROL or
+            k.get('WIDTH')!=1 or k.get('OP')!=0 or k.get('RESET_VALUE')!=0 or
+            k.get('DELAY_FS',0)<=1000000 or type(guard_stages) is not int or guard_stages<1):
+        raise ValueError('INVALID_ORDERING_GUARD_OVERRIDE')
     # Long guards use GF180's DLYD cell (less area per guaranteed delay than
     # repeated BUFs). Counts derive from all pinned corners with extra stages.
     # Post-route slew/load and delay checks remain
@@ -186,6 +215,17 @@ def adapter(p, guard_min_ns, *, role=None):
         else: value=c.gate("xor2_1",dict(A1="a",A2="b"))
         value=c.gate("and2_1",dict(A1=value,A2=c.inv("reset")))
         c.chain(value,9); requirement["control_min_ns"]=1
+    elif model=="PassiveDataAllowance":
+        if set(k)!={"WIDTH","DELAY_FS"} or k["WIDTH"]<1 or k["DELAY_FS"]<=0:
+            raise ValueError("INVALID_PASSIVE_ALLOWANCE_PARAMETERS")
+        if role!=DATA: raise ValueError("PASSIVE_ALLOWANCE_REQUIRES_DATA_ROLE")
+        ports={port["name"]:(port["direction"],port["width"]) for port in p["ports"]}
+        if len(p["ports"])!=2 or ports!={"a":("input",k["WIDTH"]),"q":("output",k["WIDTH"])}:
+            raise ValueError("INVALID_PASSIVE_ALLOWANCE_PORTS")
+        c.aliases=[(f'q[{i}]',f'a[{i}]') for i in range(k["WIDTH"])]
+        requirement=dict(role=DATA,implementation="passive-alias",invalid_data="unmasked",
+                         model_allowance_fs=k["DELAY_FS"],
+                         physical_obligation="real-source-to-capture-max-min-and-valid-qualified-fanout")
     elif model=="ControlGate":
         width=k["WIDTH"]; op=k["OP"]
         if role not in (DATA,CONTROL): raise ValueError("EXPLICIT_CONTROL_ROLE_REQUIRED")
@@ -198,6 +238,9 @@ def adapter(p, guard_min_ns, *, role=None):
         if data and (op!=0 or k["RESET_VALUE"]!=0): raise ValueError("UNKNOWN_DATA_ALLOWANCE")
         requirement={"role":role,
                      "data_max_ns" if data else "control_min_ns":k["DELAY_FS"]/1e6}
+        if guard_stages is not None:
+            requirement=dict(role=role,model_delay_fs=k['DELAY_FS'],physical_stages=guard_stages,
+                physical_obligation='same-corner-relative-ordering',engineering_derate=.2,residual_ns=2.)
         nr=c.inv("reset")
         reset_groups={}
         if data:
@@ -212,7 +255,7 @@ def adapter(p, guard_min_ns, *, role=None):
             value=c.gate("or2_1" if (k["RESET_VALUE"]>>i)&1 else "and2_1",
                 dict(A1=value,A2="reset" if (k["RESET_VALUE"]>>i)&1 else reset_groups.get(i//16,nr)))
             long_guard=not data and k["DELAY_FS"]>1000000
-            c.chain(value,stages(k["DELAY_FS"]/1e6) if long_guard else 1 if data else 9,
+            c.chain(value,guard_stages if guard_stages is not None else stages(k["DELAY_FS"]/1e6) if long_guard else 1 if data else 9,
                 f'q[{i}]',kind="dlyd_1" if long_guard else "buf_1")
         if not data and k["DELAY_FS"]<=1000000: requirement["control_max_ns"]=10
     elif model in ("EventRegister","ClosingLatch","PhaseRegister"):
@@ -300,7 +343,7 @@ def physical_policy(export, manifest, *, comparison_baseline=False):
         raise ValueError("AMBIGUOUS_APPLICATION_RESET_POLICY")
     return policy
 
-def prepare(export,out,pdk, *, comparison_baseline=False):
+def prepare(export,out,pdk, *, comparison_baseline=False,candidate_guards=False):
     if out.exists(): raise ValueError("OUTPUT_ALREADY_EXISTS")
     pdk_verify(pdk)
     from sram_assets import verify
@@ -313,13 +356,30 @@ def prepare(export,out,pdk, *, comparison_baseline=False):
     roles=resolve_roles(manifest["design"])
     policy=physical_policy(export,manifest,comparison_baseline=comparison_baseline)
     floor=guard_floor(pdk)
-    out.mkdir(parents=True)
-    bindings=[]; circuits=[]; filelist=[]
+    guard_policy_path=ROOT/'physical/gf180/ordering-guards.json'
+    wrappers={}; rewrites={}; guard_evidence={}; guard_policy=None
     primitive_files={k[0]+".sv" for k in groups}
+    if guard_policy_path.exists() and not comparison_baseline:
+        from ordering_guard_mapping import specialize
+        guard_policy=json.loads(guard_policy_path.read_text())
+        groups,wrappers,rewrites,guard_evidence=specialize(export,manifest,groups,
+            guard_policy,policy['variant'],floor,candidate=candidate_guards)
+    allowance_audit = None
+    if any(k[0] == 'ChiselAsyncPassiveDataAllowance_v1' for k in groups):
+        from check_reset_crossings import check_reset_crossings
+        check_reset_crossings(export, manifest)
+        allowance_audit = export/'reset-crossings/allowance-audit.json'
+    out.mkdir(parents=True)
+    if allowance_audit:
+        shutil.copyfile(allowance_audit, out/'passive-allowance-audit.json')
+    bindings=[]; circuits=[]; filelist=[]
     for source in sources:
         if source.name in primitive_files: continue
         if source.name==SRAM+".sv":
             shutil.copyfile(ROOT/".tools/gf180-sram"/(SRAM+".blackbox.v"),out/source.name)
+        elif source.name in rewrites:
+            from ordering_guard_mapping import rewrite_owner
+            (out/source.name).write_text(rewrite_owner(source.read_text(),rewrites[source.name]))
         else: shutil.copyfile(source,out/source.name)
         filelist.append(source.name)
     bymodel=defaultdict(list)
@@ -327,21 +387,26 @@ def prepare(export,out,pdk, *, comparison_baseline=False):
         p=ps[0]
         if passive(p): bymodel[k[0]].append((k,None)); continue
         role=roles[p["rtl_path"]]["role"] if p["rtl_path"] in roles else None
-        circuit,requirements=adapter(p,floor,role=role)
+        circuit,requirements=adapter(p,floor,role=role,guard_stages=wrappers.get(k[0],{}).get('stages'))
         module=f'riscay_gf180_cell_{index}'
         text=circuit.verilog(module,p["ports"])
         # Internal keeper nets are explicitly declared, never implicit wires.
         extra=[n for n in ("state","next_n") if any(n in c["pins"].values() for c in circuit.cells)]
         if extra: text=text.replace(");\n", ");\n"+ATTR+"wire "+", ".join(extra)+";\n",1)
         circuits.append(text)
-        binding=dict(model=k[0],parameters=dict(k[1]),module=module,ports=p["ports"],
+        binding=dict(model=p['model'],parameters=dict(k[1]),module=module,ports=p["ports"],
             instances=[x["rtl_path"] for x in ps],requirements=requirements,cells=circuit.cells)
+        if k[0] in wrappers:
+            binding['guard_policy']={x['rtl_path']:guard_evidence[x['rtl_path']] for x in ps}
+        if circuit.aliases: binding["aliases"]=circuit.aliases
         if role is not None:
             binding["role_evidence"]={x["rtl_path"]:roles[x["rtl_path"]] for x in ps}
         bindings.append(binding); bymodel[k[0]].append((k,binding))
     for model,variants in sorted(bymodel.items()):
-        source=(export/(model+".sv")).read_text(); start=source.index("module "+model)
+        original_model=wrappers.get(model,{}).get('model',model)
+        source=(export/(original_model+".sv")).read_text(); start=source.index("module "+original_model)
         header=source[start:source.index(");",start)+2]
+        if original_model!=model:header=header.replace('module '+original_model,'module '+model,1)
         header=header.replace("parameter time", "parameter [63:0]")
         header=header.replace("parameter longint unsigned", "parameter [63:0]")
         body=[]
@@ -362,11 +427,15 @@ def prepare(export,out,pdk, *, comparison_baseline=False):
     (out/"filelist.f").write_text("\n".join(filelist)+"\n")
     shutil.copyfile(export/"contract.json",out/"timing-intent.json")
     shutil.copyfile(export/"physical-policy.json",out/"physical-policy.json")
+    if guard_policy:shutil.copyfile(guard_policy_path,out/'ordering-guards.json')
     timing_contract(out,manifest,bindings)
     write_json(out/"mapping.json",dict(schema="riscay-gf180-mapping-v1",status="mapped-unqualified",
         comparison_baseline=comparison_baseline, physical_policy_sha256=sha(export/"physical-policy.json"),
         top="RiscayMcuDigital",variant=policy["variant"],matched_delay_cell="dlyd_1",matched_delay_floor_ns=floor,
         bindings=bindings,inputs={p.name:sha(p) for p in sources},
+        passive_allowance_audit_sha256=sha(allowance_audit) if allowance_audit else None,
+        ordering_guard_policy_sha256=sha(guard_policy_path) if guard_policy else None,
+        ordering_guard_status=guard_policy['status'] if guard_policy else 'unchanged-baseline',
         control_roles_sha256=sha(CATALOGUE),
         files_sha256={f:sha(out/f) for f in filelist},
         qualification="PVT, extracted relative timing, pulse/aperture, reset and C-element checks required"))
@@ -428,5 +497,6 @@ if __name__=="__main__":
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument("export",type=Path); parser.add_argument("output",type=Path)
     parser.add_argument("--pdk",type=Path,default=ROOT/".tools/physical/pdk")
+    parser.add_argument('--candidate-guards',action='store_true',help='Explicit exploratory mapping of a not-yet-accepted guard policy')
     args=parser.parse_args()
-    print(f"Mapped {prepare(args.export,args.output,args.pdk)} exact specializations; qualification pending")
+    print(f"Mapped {prepare(args.export,args.output,args.pdk,candidate_guards=args.candidate_guards)} exact specializations; qualification pending")

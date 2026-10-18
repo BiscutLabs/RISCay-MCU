@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
 """Closed digital contracts for the MCU-owned selected completion joins."""
 import re
+from passive_allowance_policy import PASSIVE, data_specs
 
 BD_COMPLETION_PATH = "held plan selects immediate, completed program or completed RAM reply"
 CLICK_COMPLETION_PATH = "complete response and selected phase feedback before common capture"
@@ -97,6 +98,7 @@ def validate_completion(node):
     if (len(cells) != len(node["primitives"]) or set(cells) != set(expected_cells) | markers or
             any(cells[n]["model"] != "ChiselAsyncTimingMarker_v1" for n in markers)):
         raise ValueError("COMPLETION_PRIMITIVE_INVENTORY")
+    expected_cells = data_specs(node, expected_cells)
     for name, (model, params) in expected_cells.items():
         actual = cells.get(name, {})
         if (actual.get("model") != model or actual.get("parameters") != params or

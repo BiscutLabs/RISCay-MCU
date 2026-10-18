@@ -37,6 +37,13 @@ class HeldDataHandoffTest(unittest.TestCase):
         cut=propagation_graph(cells,lambda c:c['type'],[item])
         for bit in (10,20,21):self.assertIn(22,reachable(cut,[bit]))
 
+    def test_passive_alias_never_cuts_unmasked_reset_or_payload_taint(self):
+        cells,item=self.fixture()
+        cells['allowance']=dict(type='ChiselAsyncPassiveDataAllowance_v1',
+            port_directions=dict(a='input',q='output'),connections=dict(a=[10],q=[22]))
+        cut=propagation_graph(cells,lambda c:c['type'],[item])
+        self.assertIn(22,reachable(cut,[10]))
+
     def test_arst_and_clock_are_not_graph_cuts(self):
         cells,item=self.fixture()
         cells['reg']=dict(type='$adff',port_directions=dict(D='input',Q='output',CLK='input',ARST='input'),

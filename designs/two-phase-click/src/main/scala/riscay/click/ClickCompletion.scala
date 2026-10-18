@@ -5,7 +5,7 @@ import chisel3._
 import chisel3.util._
 import chiselasync.core.{AsyncModule,ResetDomain}
 import chiselasync.metadata.{BundledTiming,ClickTiming,ModelTime}
-import chiselasync.primitives.{ControlGate,EventRegister,GateOperation,XorGate}
+import chiselasync.primitives.{PassiveDataAllowance,ControlGate,EventRegister,GateOperation,XorGate}
 import riscay._
 import riscay.soc._
 
@@ -24,7 +24,7 @@ class ClickCompletion(domain: ResetDomain) extends AsyncModule(domain) {
   // Keep the full declared channel ABI even when a particular endpoint always
   // publishes error=false or an effect token has no architectural payload.
   Seq(plan,memory,ram,telemetry,housekeeping,response,creditReturn).foreach(dontTouch(_))
-  private val timing=ClickTiming.Simulation
+  private val timing=OwnerTiming.base
   private val cell=timing.controls.fire.model
   private val resetRef=contract.endpoint("reset",reset)
   // Selected-input comparators and four composed ANDs are deeper than a
@@ -35,6 +35,9 @@ class ClickCompletion(domain: ResetDomain) extends AsyncModule(domain) {
   private val guard=ModelTime(math.max(math.max(timing.acknowledgeDelay.fs,timing.outputDelay.fs),drain))
   private def gate(id: String,op: GateOperation.Value,a: UInt,b: UInt=0.U,
       width: Int=1,delay: ModelTime=cell,initial: Int=0): UInt = {
+    if (Set("data_delay")(id)) {
+      return PassiveDataAllowance(this,id,a,delay,resetRef)
+    }
     val g=Module(new ControlGate(width,op,delay,initial)); g.reset:=reset; g.a:=a; g.b:=b
     contract.primitive(id,g,Map("WIDTH"->BigInt(width),"OP"->BigInt(op.id),"DELAY_FS"->BigInt(delay.fs),
       "RESET_VALUE"->BigInt(initial)),resetRef,"native completion control/data; qualify complete selected-input feedback")

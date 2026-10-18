@@ -47,7 +47,7 @@ state. Programming lock lasts until full MCU reset or power loss; status and
 telemetry remain readable when locked. See the
 [host status, telemetry and lock contract](docs/loader-status-and-lock.md).
 
-**Status: correcting excessive clocked coordination around native services;
+**Status: reducing native storage, timing overhead and clocked coordination;
 physical timing is unqualified.**
 Both design folders own independent native implementations of CPU/fabric routing,
 MMIO and loader state, telemetry/events, arithmetic, permanent supervision,
@@ -62,9 +62,10 @@ tracks removal candidates; a smaller clocked-bit count does not establish lower
 area or power. The [native area reduction plan](docs/native-area-reduction.md)
 targets elapsed/CRC arithmetic, wide payload transport and duplicate storage,
 with measured cost gates. The [area ledger](docs/area-ledger.md) separates mapped,
-repaired and component costs, with BD mapped logic below 2.3 mm² as the next
-unmet milestone. A7b/A8b component pilots pass their local checks; production
-adoption still needs the documented source, reset and physical qualification.
+repaired and component costs. The combined A7b/A8b/A10 batch reaches the BD
+2.3 mm² mapped milestone with supported passive allowances, measured ordering
+guards and SRAM prepare fusion. Local timing, digital tests, strict exports and
+independent review pass. Full physical qualification remains separate at item 17.
 The bounded native elapsed loop preserves the time ABI;
 compact native CRC feedback removes redundant command storage. The I2C
 observation projection removes 325 native storage bits per variant. The compact
@@ -75,11 +76,11 @@ clocked bits per variant. Capacity-sized loader metadata removes
 183 native payload bits and 40 periodic bits per variant.
 The digitally verified Control frame-borrow change removes 268 periodic
 flip-flops per variant. The Housekeeping/Telemetry ownership batch removes
-another 262. Current mapped logic is **2.792933 / 3.554119 mm²** (BD / Click),
-excluding SRAM; accepted pre-placement repair raises it to **2.978974 /
-3.757950 mm²**, adding **0.186041 / 0.203831 mm²**. Functional and strict export
+another 262. Current mapped logic is **2.229395 / 3.048424 mm²** (BD / Click),
+excluding SRAM; accepted pre-placement repair raises it to **2.412382 /
+3.252393 mm²**, adding **0.182987 / 0.203969 mm²**. Functional and strict export
 checks pass; physical timing remains open. See the
-[matched measurements and scope](docs/reviews/service-command-borrow.md).
+[matched measurements and scope](docs/reviews/native-area-adoption.md).
 The earlier A2b measurements were 2.830967 / 3.596523 mm² with 3,255 BD / 3,160
 Click work-clock edges for the 43-instruction firmware wake. Those activity and
 power figures are historical. The current native-model firmware wake uses
@@ -109,7 +110,7 @@ sampling is an explicit gate before further timing claims.
 The [relative-timing pilot](docs/reviews/control-relative-timing.md) resolves
 local Control capture/ACK paths under explicit handshake states at five cell
 corners. Source launch, full return/pulse behavior, electrical repair and routed
-timing remain open; no hardware clock or shortened guard is introduced.
+timing remain open; that pilot introduced no hardware clock or shortened guard.
 The earlier [reusable stage survey](docs/reviews/native-stage-timing.md) found
 negative execute/elapsed allowances. Longer timing policies and the repaired-leaf
 measurements above supersede those local results; their original failure evidence

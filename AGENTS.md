@@ -16,6 +16,16 @@
   Keep fixed-time requirements separate, retain failure evidence, and lengthen
   parameters if later physical evidence requires it. RAM prepare is the first
   A10 stage-fusion candidate. This supersedes older blanket adoption holds below.
+- Passive allowances use the supported source-pinned chisel-async primitive;
+  see `project/chisel-async-source.json` and `docs/passive-allowance-contract.md`.
+  Preserve the emitted invalid-data fanout audit and exact physical capture
+  identities, including proven literal values. A cell-free alias removes only
+  the nonexistent cell propagation query, never capture/hold/reset coverage.
+  Guard policies must bind the actual canonical family, primitive ID and
+  original parameters; a purpose label alone cannot authorize shortening.
+  Deduplicated modules take the conservative maximum of their instances.
+  Keep measured loaded rise/fall slews through composed timing contexts and
+  Click's complete rearm/pulse obligation. Follow `docs/gf180-guard-sizing.md`.
 - Implement the MCU here; chisel-async and Chiselator remain separate projects.
 - Deliver a reusable SoC with on-chip boot ROM, executable RAM and working RAM.
   Keep common CPU/host services independent of board names, pins and policy.
@@ -38,8 +48,8 @@
   independent review; open a pull request only when the user requests one.
   Repeat this review loop for every batch or independent item. Run the bounded
   A7b guard and A8b passive-allowance pilots in parallel. Maintain the single
-  item/batch cost ledger in `docs/area-ledger.md`; its next milestone is BD
-  mapped logic below 2.3 mm² excluding SRAM, measured with matched inputs.
+  item/batch cost ledger in `docs/area-ledger.md`; the A7b/A8b/A10 batch reached
+  its BD mapped-logic milestone below 2.3 mm² excluding SRAM with matched inputs.
   An isolated pilot's saving is not an adopted whole-chip result. Full physical
   requalification stays at item 17; retain each changed path's local obligations.
   For 11b2/11b3 borrowed service commands, retain the existing bank through full

@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
 """Closed policy for native program ownership and loader Stored delivery."""
 import re
+from passive_allowance_policy import PASSIVE, data_specs
 from check_application_reset import presentation_reset
 
 PROGRAM_ARM_PATH = "program reservation phase before eligibility arm"
@@ -175,6 +176,7 @@ def validate_program_source(node):
     markers={t["marker"] for t in node["timing"]}
     if len(cells)!=len(node["primitives"]) or set(cells)!=set(expected)|markers:
         raise ValueError("PROGRAM_SOURCE_CELL_INVENTORY")
+    expected = data_specs(node, expected)
     for name,(model,params) in expected.items():
         if cells[name]["model"]!=model or cells[name]["parameters"]!=params: raise ValueError("PROGRAM_SOURCE_CELL_POLICY:"+name)
     for name,c in cells.items():

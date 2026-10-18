@@ -69,7 +69,8 @@ def prepare(mapping):
     if audit["netlist_sha256"]!=sha(mapping/"netlist.v") or audit["mapping_sha256"]!=sha(mapping/"mapping.json"):
         raise ValueError("STA_INPUT_CHANGED")
     manifest=json.loads((mapping/"timing-intent.json").read_text())["manifest"]
-    modules=json.loads((mapping/"netlist.json").read_text())["modules"]
+    database=json.loads((mapping/"netlist.json").read_text())
+    modules=database["modules"]
     tree=hierarchy(modules,"RiscayMcuDigital")
     _,net_aliases=graph(modules)
     sdc=[PRELUDE,"# Clocked island, bounded async entry points and SRAM half cycles."]
@@ -171,6 +172,10 @@ def prepare(mapping):
     # are preserved module interfaces; data paths include register-read muxes.
     async_sdc=[PRELUDE]; measurements=[PRELUDE]; cuts=[]; bounds=[]; preserve=[]; monitor=[]
     byinstance={i:b for b in record["bindings"] for i in b["instances"]}
+    passive_captures={}
+    if any(b['model']=='ChiselAsyncPassiveDataAllowance_v1' for b in record['bindings']):
+        from passive_capture_constraints import load_bindings
+        passive_captures=load_bindings(mapping,database,record,audit)
     def leaf(instance,logical,outputs=False):
         b=byinstance[instance]; root=audit["adapter_instances"][instance]
         found=[]
@@ -193,6 +198,11 @@ def prepare(mapping):
             c=next(c for c in b["cells"] if c["pins"].get("A1")=="state")
             cuts.append(f'set_disable_timing -from A1 -to ZN [get_cells {brace(root+"/"+c["name"])}]')
         req=b["requirements"]
+        if b['model']=='ChiselAsyncPassiveDataAllowance_v1':
+            # q=a contains no physical propagation cell or output driver to
+            # constrain. Its exact downstream capture D pins remain bound below;
+            # storage capture/reset/pulse monitors remain independently present.
+            continue
         async_sdc.append('set_max_capacitance 0.05 '+expr(leaf(instance,"q",True)))
         if any(x in b["model"] for x in ("ControlGate","And_v1","Xor_v1","AsymmetricC")):
             sources=[]
@@ -269,7 +279,11 @@ def prepare(mapping):
             owner=n
             for child in t['delay_owner']:owner=next(c['contract'] for c in owner['children'] if c['id']==child)
             delay=next(p for p in owner['primitives'] if p['id']==t['delay_cell'])
-            sink=leaf(delay['rtl_path'],'q',True)
+            if delay['rtl_path'] in passive_captures:
+                sink=passive_captures[delay['rtl_path']]['sink_pins']
+                endpoint_binding += ';exact-native-capture-leaves'
+            else:
+                sink=leaf(delay['rtl_path'],'q',True)
             budget=int(t['budget']['max_fs'])/1e6
             bound=data_bound(budget,source_refs,expr(sink),optimized_source=endpoint_binding.startswith('conservative-'))
             if bound:async_sdc.append(bound)
@@ -290,6 +304,7 @@ def prepare(mapping):
         cdc_scope='cost experiment; new native CDC cones retain synchronous timing; aperture qualification open',
         gray_sources=gray_q,gray_sinks=gray_d,
         paths=bounds,stages=stages,constant_data=constant_data,event_monitors=monitor,
+        passive_capture_bindings=passive_captures,
         obligations=["BD fork ordering after extraction","Click feedback high/low pulse inequalities",
             "SDF event/aperture monitors", "reset recovery/removal including source stopping",
             "local clock distribution", "SRAM setup/hold on both edges", "electrical slew/load limits"],

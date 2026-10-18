@@ -19,13 +19,13 @@ class FourPhaseControl(p: SocParameters, domain: ResetDomain,
     owners: OwnerTiming = OwnerTiming()) extends AsyncModule(domain) {
   val command = fourPhaseInput("command", new ControlCommand)
   val reply = fourPhaseOutput("reply", new ControlReply(p.config.programBytes))
-  private val timing = owners.controlOwner
+  private val timing = OwnerTiming.passive(owners.controlOwner)
   private val cell = ModelTime.ps(1000)
   private val state = asyncChild("state")(d => new FourPhaseFifo(new ControlToken(p.config.programBytes), 1,
     timing, Seq(ControlToken.initial(p.config.programBytes)), cell, d))
   private val join = asyncChild("join")(d => new FourPhaseJoin(new ControlToken(p.config.programBytes), new ControlCommand, timing, cell, d))
   private val update = asyncChild("update")(d => new FourPhaseStage(new Joined(new ControlToken(p.config.programBytes), new ControlCommand),
-    new ControlReply(p.config.programBytes), (x: Joined[ControlToken, ControlCommand]) => transition(x.left.state, x.right, x.left.pendingCrc), owners.controlUpdate, d))
+    new ControlReply(p.config.programBytes), (x: Joined[ControlToken, ControlCommand]) => transition(x.left.state, x.right, x.left.pendingCrc), OwnerTiming.passive(owners.controlUpdate), d))
   // Compute only the candidate CRC here; update retains the entire context.
   // Every feedback starts from architectural crc, even while loaderPending
   // survives other commands. Only Stored commits the candidate to that state.

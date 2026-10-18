@@ -14,6 +14,7 @@ CATALOGUE = Path(__file__).resolve().parents[1] / "physical/gf180/controlgate-ro
 DATA = "whole-transform-allowance"
 CONTROL = "matched-control-delay"
 MODEL = "ChiselAsyncControlGate_v1"
+PASSIVE_MODEL = "ChiselAsyncPassiveDataAllowance_v1"
 
 
 def require(condition, reason):
@@ -76,10 +77,14 @@ def resolve_roles(root, catalogue=None):
             matches = [p for p in dest["primitives"] if p["id"] == cell]
             require(len(matches) == 1, "MISSING_DELAY_CELL_" + str(cell))
             p = matches[0]
-            require(p["model"] == MODEL, "UNSUPPORTED_DATA_MARKER_" + p["model"])
+            require(p["model"] in (MODEL,PASSIVE_MODEL), "UNSUPPORTED_DATA_MARKER_" + p["model"])
             params = p["parameters"]
-            require(int(params["OP"]) == 0 and int(params["RESET_VALUE"]) == 0,
-                    "UNSUPPORTED_DATA_OPERATION_" + p["rtl_path"])
+            if p["model"]==MODEL:
+                require(int(params["OP"]) == 0 and int(params["RESET_VALUE"]) == 0,
+                        "UNSUPPORTED_DATA_OPERATION_" + p["rtl_path"])
+            else:
+                require(set(params)=={"WIDTH","DELAY_FS"} and int(params["WIDTH"])>0,
+                        "PASSIVE_PARAMETERS_" + p["rtl_path"])
             lo, nominal, hi = (int(budget[x]) for x in ("min_fs", "model_fs", "max_fs"))
             require(0 < lo <= nominal <= hi, "INVALID_DATA_BUDGET_" + p["rtl_path"])
             require(nominal == int(params["DELAY_FS"]), "DATA_BUDGET_DISAGREES_" + p["rtl_path"])
@@ -91,14 +96,15 @@ def resolve_roles(root, catalogue=None):
         # width convention is used to infer intent.
         owner = re.sub(r"_\d+$", "", node["module"])
         for p in node["primitives"]:
-            if p["model"] != MODEL:
+            if p["model"] not in (MODEL,PASSIVE_MODEL):
                 continue
             require(p["view"] == "behavioral", "NONBEHAVIORAL_GATE_" + p["rtl_path"])
             role = catalogue.get(owner, {}).get(p["id"])
             require(role in (DATA, CONTROL), "UNREVIEWED_" + owner + "." + p["id"])
+            require(p["model"]!=PASSIVE_MODEL or role==DATA,"PASSIVE_CONTROL_"+p["rtl_path"])
             refs = references.get(p["rtl_path"], [])
             require(bool(refs) == (role == DATA), "REFERENCE_DISAGREES_" + p["rtl_path"])
-            key = tuple(sorted((k, int(v)) for k, v in p["parameters"].items()))
+            key = (p["model"],tuple(sorted((k, int(v)) for k, v in p["parameters"].items())))
             require(key not in tuples or tuples[key] == role, "PARAMETER_ROLE_COLLISION")
             tuples[key] = role
             roles[p["rtl_path"]] = dict(role=role, owner=owner, primitive_id=p["id"], timing=refs)

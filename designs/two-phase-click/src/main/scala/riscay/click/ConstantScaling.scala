@@ -29,7 +29,7 @@ object ConstantScaling {
   * Digital timing is explicit; complete physical closure remains separate.
   */
 class ClickElapsed(micros: Seq[Int], domain: ResetDomain,
-    ownerTiming: ClickTiming = ClickTiming.Simulation,
+    ownerTiming: ClickTiming = OwnerTiming.base,
     stepTiming: ClickTiming = OwnerTiming.elapsedStep) extends AsyncModule(domain) {
   OwnerTiming.check(ownerTiming); OwnerTiming.check(stepTiming)
   require(micros.nonEmpty && micros.forall(_ > 0))
@@ -39,7 +39,7 @@ class ClickElapsed(micros: Seq[Int], domain: ResetDomain,
   private val runMode = 1.U(modeWidth.W)
   val command = twoPhaseInput("command", UInt(32.W))
   val reply = twoPhaseOutput("reply", new ElapsedResult(lanes))
-  private val timing = ownerTiming
+  private val timing = OwnerTiming.passive(ownerTiming)
   private val cell = ModelTime.ps(1000)
   private val resetRef = contract.endpoint("reset", reset)
   val start = IO(Input(Bool()))
@@ -79,7 +79,7 @@ class ClickElapsed(micros: Seq[Int], domain: ResetDomain,
       r.mode := Mux(last, idleMode, runMode)
       when(last) { r.replyPhase := !x.state.replyPhase }
       r
-    }, stepTiming, d))
+    }, OwnerTiming.passive(stepTiming), d))
 
   // Source reuse is allowed after command ACK; unused live source fields must
   // not enter a pending arithmetic token during later feedback turns.
@@ -124,7 +124,7 @@ class ClickElapsed(micros: Seq[Int], domain: ResetDomain,
 class ClickSample(numerator: Int, denominator: Int, domain: ResetDomain) extends AsyncModule(domain) {
   require(numerator > 0 && denominator > 0)
   private val width = log2Ceil(denominator).max(1)
-  private val timing = ClickTiming.Simulation
+  private val timing = OwnerTiming.base
   private val cell = ModelTime.ps(1000)
   val command = twoPhaseInput("command", UInt(12.W))
   val reply = twoPhaseOutput("reply", UInt(32.W))
@@ -151,7 +151,7 @@ class ClickSample(numerator: Int, denominator: Int, domain: ResetDomain) extends
   * running through request and response bridge drainage, even with zero elapsed.
   */
 class ElapsedTicks(micros: Seq[Int], domain: ResetDomain,
-    ownerTiming: ClickTiming = ClickTiming.Simulation,
+    ownerTiming: ClickTiming = OwnerTiming.base,
     stepTiming: ClickTiming = OwnerTiming.elapsedStep) extends ClockedBridge(domain, 2) {
   val io = IO(new ElapsedScalingPort(micros.size))
   dontTouch(io) // Profiles may ignore observation flags or duplicate elapsed lanes.

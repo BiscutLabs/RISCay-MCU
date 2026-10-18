@@ -17,7 +17,7 @@ FIELDS = {'mask': (0, 4), 'data': (4, 32), 'address': (36, 32), 'operation': (68
 NATIVE = frozenset(('ChiselAsyncAsymmetricC_v1', 'ChiselAsyncClosingLatch_v1',
     'ChiselAsyncEventRegister_v1', 'ChiselAsyncPhaseRegister_v1',
     'ChiselAsyncCElement_v1', 'ChiselAsyncLatch_v1', 'ChiselAsyncControlGate_v1',
-    'ChiselAsyncAnd_v1', 'ChiselAsyncXor_v1'))
+    'ChiselAsyncAnd_v1', 'ChiselAsyncXor_v1', 'ChiselAsyncPassiveDataAllowance_v1'))
 # Reviewed C1f -> C1e1 topology is identical in portable and physical exports.
 # These are maintained constants, never learned from the graph being audited.
 EXPECTED = {
@@ -25,6 +25,15 @@ EXPECTED = {
            'fabric': '4c32d7fc17f3af226f8cbcb15e7c641fb19f91358d6e5047ec4c85fafe0cf0f3'},
     'click': {'address': '583df44b8dea3d25c009c2d10d131da9c1b7e26e6d2d67497c0bc48f6d511d8d',
               'fabric': '5927432ca7205e12ec272cff525a1036c9ce11f7dca11d9f9e7ef4e5040d740e'},
+}
+# A8b review compares every canonical native pin record and all boundary
+# expressions against the above graph. Only the named data allowance changes
+# to passive a/q; controller, storage, ACK and reset records are identical.
+PASSIVE_EXPECTED = {
+    'bd': {'address': '902b7aa6e503c5fa0fd45a4ed5b2c3bf36e3c199de7d5f15e8b8a347d09c13fd',
+           'fabric': '1ec507f4dc3c9400038fa49cd0c461f6428dddc77aac3011f46bd2a44fc1cbcd'},
+    'click': {'address': 'cd4378a12a92fa8e50d05249010bd1575da80e9ea9b5d961e589f90ac23e680a',
+              'fabric': '4ec6f3aeba5b9f75808f7d68abeb96ed059dabc41ecc30c948a5adf42a01b3d2'},
 }
 FIXTURE_FABRIC = {
     'bd': 'aaa0c271ed06a37f09de4c70e90d5365d6210aec94dc3b791fc5d826a030137b',
@@ -137,8 +146,9 @@ def prove_request_hold(database, top, capacities):
         need(cone.bits(owner+'.reset')==cone.bits(reset_name), 'RESET_ALIAS_'+owner)
     signatures=source_signatures(database,top)
     for owner,signature in signatures.items():
-        expected=FIXTURE_FABRIC[protocol] if fixture and owner=='fabric' else EXPECTED[protocol][owner]
-        need(signature['sha256']==expected, 'OWNER_TOPOLOGY_'+owner)
+        expected=({FIXTURE_FABRIC[protocol]} if fixture and owner=='fabric' else
+                  {EXPECTED[protocol][owner], PASSIVE_EXPECTED[protocol][owner]})
+        need(signature['sha256'] in expected, 'OWNER_TOPOLOGY_'+owner)
     return dict(prefix=address, consumer_prefix=receipt, status='pass', protocol=protocol, source=address+'.ca_primitive_payload',
         source_width=70, signatures=signatures, capacities=capacities, phase_aliases=aliases,
         contract='reviewed complete native Stage and Fabric hold/ACK/return topology; coordinated reset required')

@@ -1,5 +1,18 @@
 # Build and test
 
+## Current passive-data, guard and SRAM-fusion batch
+
+The A7b/A8b/A10 adoption passes **808 distinct Scala cases**, **1,198 Python
+controls**, all four strict SoC exports and 1,630 local guard corner/slew cases.
+The original broad regression retained one Click cold-boot host timeout; its
+unchanged executable replay passed, and the exact affected test passed after
+raising only its host allowance to 600 seconds. The 1.2-second simulated deadline
+and every assertion remain unchanged. The other broad cases are not double-counted
+as reruns. All five physical tests pass. See the
+[batch evidence](reviews/native-area-adoption.md), [area ledger](area-ledger.md)
+and [pinned library setup](#digital-build). Routed physical qualification remains
+open. Historical campaigns below retain their original sources and scope.
+
 ## Reset assertion and release intervals (R2a)
 
 R2 keeps the original eight-edge pulse qualifier and adds separate 64-edge native
@@ -1906,14 +1919,24 @@ functional/strict-export record below was not rerun for the estimation scripts.
 
 ## Digital build
 
-The build consumes the chisel-async RC1 JAR; it does not compile a second copy of
+The build consumes the chisel-async JAR; it does not compile a second copy of
 the library in this repository. Required versions are Scala 2.13.18, Chisel/plugin
 7.16.0, firtool 1.160.0, sbt 1.12.4, JDK 21 and Icarus Verilog 13.
 
-Install RC1 into the local Ivy cache by running `sbt publishLocal` from a pinned
-chisel-async RC1 checkout, or add the resolver for its released Maven ZIP using
-the [library installation guide](https://github.com/BiscutLabs/chisel-async/blob/main/docs/getting-started.md).
-Maven Central does not currently host that RC. Point `JAVA_HOME` at JDK 21 and
+The passive-allowance adoption uses source commit
+[`06b1216493032c1fbb1a923aed82815b9cd7944e`](https://github.com/BiscutLabs/chisel-async/commit/06b1216493032c1fbb1a923aed82815b9cd7944e).
+From a checkout of that exact commit, publish its source-specific local coordinate:
+
+```text
+python tools/sbt.py 'set ThisBuild / version := "0.1.0-RC2-06b1216-SNAPSHOT"' publishLocal
+```
+
+The MCU resolves `0.1.0-RC2-06b1216-SNAPSHOT`, rather than a moving generic
+snapshot. This is a local source build, not a Maven Central release. Keep the
+resolved JAR hash with verification evidence; a snapshot name alone is not
+artifact provenance. The [source pin](../project/chisel-async-source.json) records
+the full commit, publish tasks and verified local artifact hash. See the [library installation guide](https://github.com/BiscutLabs/chisel-async/blob/06b1216493032c1fbb1a923aed82815b9cd7944e/docs/getting-started.md)
+for other prerequisites. Point `JAVA_HOME` at JDK 21 and
 `CHISEL_FIRTOOL_PATH` at the directory containing firtool; put `iverilog` and `vvp`
 on PATH. There is no required sibling-checkout path in this build.
 

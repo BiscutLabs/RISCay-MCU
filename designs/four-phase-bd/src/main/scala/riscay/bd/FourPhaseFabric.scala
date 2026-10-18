@@ -61,7 +61,7 @@ class FourPhaseFabric(config: McuConfiguration, timing: BundledTiming,
   private val returned = and("service_returned", serviceRequest.ack, serviceResponse.req)
   private val available = gate("response_available", GateOperation.Or, local, returned)
   private val reply = asyncChild("reply")(d => new FourPhaseStage(new MemoryResponse, new MemoryResponse,
-    (x: MemoryResponse) => x, timing, d))
+    (x: MemoryResponse) => x, OwnerTiming.passive(timing), d))
   reply.in.req := and("reply_offer", guarded, available)
   private val muxResult = WireDefault(Mux(local, localReply, serviceResponse.bits))
   reply.in.bits := muxResult

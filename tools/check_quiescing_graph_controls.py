@@ -14,7 +14,7 @@ import time
 
 import check_quiescing_receipt_controls as regression
 from check_frame_store_controls import helper_closure
-from check_reset_crossings import audit_graph, SRAM
+from check_reset_crossings import audit_graph, SRAM, NATIVE_KEEP
 from reset_bridge_proof import Cone, sram_capacities
 from reset_coordinator_proof import work_clock
 from quiescing_receipt_proof import FIELDS
@@ -217,7 +217,7 @@ def graph_inputs(export,report,root,tool_inputs,inputs):
              'GRAPH_TOOL_BINDING:'+name)
         bind(inputs,path,record['tools'][name]['sha256'])
     script=(f'read_verilog -sv {linux(folder/"converted.v")}\n'
-            f'hierarchy -check -top {top}\nproc\nflatten\nopt_clean\n'
+            f'hierarchy -check -top {top}\nproc\nflatten\n' + NATIVE_KEEP + 'opt_clean\n' +
             f'write_json {linux(folder/"netlist.json")}\n')
     need((folder/'graph.ys').read_text()==script,'ACTUAL_PROC_FLATTEN_SCRIPT')
     commands=[['wsl','-e',linux(tools['sv2v']),'-DSYNTHESIS',*[linux(folder/n) for n in names]],

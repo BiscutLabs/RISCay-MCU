@@ -7,7 +7,7 @@ import chiselasync.bundled._
 import chiselasync.clocked._
 import chiselasync.core.{AsyncModule, ResetDomain}
 import chiselasync.metadata.{BundledTiming, ClickTiming, ModelTime}
-import chiselasync.primitives.{AsymmetricCElement, ControlGate, EventRegister, GateOperation, PhaseRegister, XorGate}
+import chiselasync.primitives.{PassiveDataAllowance,AsymmetricCElement, ControlGate, EventRegister, GateOperation, PhaseRegister, XorGate}
 import chiselasync.protocol.TwoPhase
 import riscay.soc._
 
@@ -20,7 +20,7 @@ class ClickI2c(address: Int, domain: ResetDomain) extends AsyncModule(domain) {
   val frame=twoPhaseOutput("frame",new I2cFrame)
   val snapshot=twoPhaseOutput("snapshot",UInt(8.W))
   val observed=IO(Output(new I2cObservation)); dontTouch(observed)
-  private val timing=ClickTiming.Simulation
+  private val timing=OwnerTiming.base
   val start=IO(Input(Bool()))
   private val state=asyncChild("state")(d => new PhaseDecoupledClickBuffer(new I2cState,timing,Some(I2cState.initial),d))
   state.start.get:=start; contract.endpoint("start",start)
@@ -131,6 +131,9 @@ class I2cPublication(domain: ResetDomain) extends AsyncModule(domain) {
   private val guard = ModelTime.ps(110000)
   private def gate(id: String, op: GateOperation.Value, a: UInt, b: UInt = 0.U,
       width: Int = 1, delay: ModelTime = cell, initial: BigInt = 0): UInt = {
+    if (Set("byte_data_delay","data_delay")(id)) {
+      return PassiveDataAllowance(this,id,a,delay,resetRef)
+    }
     val g=Module(new ControlGate(width,op,delay,initial)); g.reset:=reset; g.a:=a; g.b:=b
     contract.primitive(id,g,Map("WIDTH"->BigInt(width),"OP"->BigInt(op.id),
       "DELAY_FS"->BigInt(delay.fs),"RESET_VALUE"->initial),resetRef,

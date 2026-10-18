@@ -7,11 +7,24 @@ mapped results. Keep native BD and Click; do not replace native work with
 periodic-clock staging. Measure each accepted batch against its exact parent;
 retain a separate ownership proof and fault controls for every included item.
 The [single area ledger](area-ledger.md) records accepted batches and isolated
-pilots separately. The next milestone is BD mapped logic below **2.3 mm²**,
-excluding SRAM, after A7b/A8b and the next ownership batch. At the 11b1 baseline
-this required 0.525888 mm² (18.61%) more reduction. The accepted 11b2/11b3
-batch reaches 2.792933 mm², leaving **0.492933 mm² (17.65%)**; the milestone
-remains unmet. Isolated pilot deltas are not included in this production total.
+pilots separately. The **BD mapped-logic milestone below 2.3 mm² excluding SRAM
+is achieved**. The locally accepted A7b/A8b/A10 batch measures **2.229395 mm² BD /
+3.048424 mm² Click**, down 20.177% / 14.228% from the matched 11b2/11b3 parent.
+Isolated pilot deltas are not included in this fresh whole-chip result.
+
+The latest review advances A7b/A8b from pilots to a production adoption batch,
+with [SRAM prepare fusion](native-sram-prepare-fusion.md) as A10's first case.
+Use the uploaded [async design skill](../.agents/skills/async-circuit-design/SKILL.md).
+The [guard policy](gf180-guard-sizing.md) fixes a 20% two-sided engineering derate
+and 2 ns residual, inventories all 199 baseline BD ordering guards and targets
+Click ACK guards while preserving pulse/rearm constraints. The
+[passive contract](passive-allowance-contract.md) covers every actual allowance,
+including reset and invalid-data fanout. Adopt locally measured reversible
+parameters after digital checks and independent review; full item 17 remains
+subsequent qualification. This supersedes the older blanket adoption holds in
+the historical pilot descriptions. The accepted ledger row and
+[batch evidence](reviews/native-area-adoption.md) record the completed checks
+and the remaining physical qualification boundary.
 
 ## Order and acceptance gates
 
@@ -140,12 +153,24 @@ remains unmet. Isolated pilot deltas are not included in this production total.
     and a justified mismatch derate. Keep physical minimum pulses and external
     time requirements as separate constraints. Begin with an already composed
     standard owner; retain the old recipe as the matched comparison.
+    These are eventual qualification obligations. The current local adoption
+    substep is accepted separately after measured changed-path checks and review;
+    extracted RC and full source/reset history remain item 17. They do not impose
+    a blanket hold on reversible measured parameters.
+    - [x] **A7b1: adopt the measured canonical-controller cohort.** All 199
+      baseline BD guards have a disposition: four removed by fusion, 91 changed
+      and 104 retained. The 90 BD owners and 73 Click ACK owners pass 1,630
+      corner/slew cases with a 20% two-sided engineering derate and 2 ns changed-
+      guard floor. Retained custom guards and full source/reset/routed envelopes
+      remain open; this is not foundry-qualified mismatch. See the
+      [sizing contract](gf180-guard-sizing.md).
     The [first isolated elapsed-step experiment](reviews/a7b-elapsed-guard.md)
     measures an 86 → 25 DLYD request chain at ten corner/slew cases, saving
     0.004553 mm² locally. Setup remains positive under a 15% sensitivity check;
     data, hold and ACK timing are unchanged. Source launch/return/reset,
     justified mismatch and routed qualification remain open; production
-    shortening is disabled. The [area ledger](area-ledger.md) keeps this
+    shortening was disabled for that pilot. The current campaign above uses a
+    stricter engineering policy and a separately measured recipe. The [area ledger](area-ledger.md) keeps this
     component delta separate from adopted whole-chip savings.
   - [ ] **A7c: compare mixed-cell tracking with the existing DLYD recipe.**
     Characterize the actual chain at every corner, including interstage loading
@@ -161,7 +186,7 @@ remains unmet. Isolated pilot deltas are not included in this production total.
   - [x] **A8a: refresh the actual leaf inventory.** The current counts below
     supersede the C1g counts for this configuration; named `data_delay` is a
     subset of all transform allowances, not an additional saving.
-  - [ ] **A8b: present a passive-allowance contract and one-owner experiment.**
+  - [x] **A8b: adopt the supported passive allowance across both implementations — locally verified.**
     Specify invalid-data use, reset observability, resolved transform endpoints,
     actual capture/ACK pins and mandatory max/min checks. Preserve explicit
     masks where reset isolation requires them. Run unknown-payload/reset and
@@ -170,9 +195,13 @@ remains unmet. Isolated pilot deltas are not included in this production total.
     The [isolated RAM prepare pilot](reviews/a8b-passive-stage.md) compares a
     separately named passive model with its matching physical alias in both
     variants. It removes 0.003398 mm² locally per variant, including one reset
-    repair buffer, without local hold repair. Existing library/production
-    semantics remain unchanged; source launch, invalid-data fanout and complete
-    physical qualification still gate adoption. See the [ledger](area-ledger.md).
+    repair buffer, without local hold repair. That pilot left production
+    semantics unchanged. The supported library primitive is now upstream at
+    `06b1216`; the current adoption batch audits all 108 BD / 122 Click surviving
+    allowances after SRAM prepare fusion. Exact invalid-data/capture audits,
+    local timing screens, four strict exports, digital checks and independent
+    review pass. Full
+    extracted physical qualification remains item 17. See the [ledger](area-ledger.md).
 - [ ] **A9: reset-free payload storage, by owner.** Separate seeded state,
   phase/control, architectural reset values and payload whose consumers are
   valid-qualified. Prove read-before-write exclusion and both reset lifetimes
@@ -186,6 +215,11 @@ remains unmet. Isolated pilot deltas are not included in this production total.
   Remove a copy and its controller/guards/crossings together where ownership
   allows it; do not assume all FIFOs are redundant. Continue 11b–14, including
   Housekeeping's existing-bank reuse, alongside A7/A8's measured experiments.
+  - [x] **A10a: fuse the two 101-bit SRAM prepare stores per variant.** The
+    [ownership contract](native-sram-prepare-fusion.md) preserves the preceding
+    Join, lane forks and sole execution credit. Full-capacity SRAM regressions,
+    both operand orders, composed setup/hold and exact mapped fault controls
+    pass on the fused graph. The byte-macro clock boundary remains unchanged.
 - [ ] **A11: bulk SRAM and serial datapaths.** Evaluate frame/RF placement only
   with an explicit capacity/port/concurrency budget and A4's qualified native
   access. Do not consume advertised application SRAM silently or change loader
@@ -199,7 +233,7 @@ remains unmet. Isolated pilot deltas are not included in this production total.
 The review correctly identifies implementation overhead as the target.
 A7b's BD elapsed guard and A8b's standard-stage passive allowance pilots ran
 in parallel with the now digitally verified 11b2/11b3 ownership batch. Their
-isolated results and remaining production-adoption gates are recorded in the
+isolated results and subsequent accepted production batch are recorded in the
 [area ledger](area-ledger.md). Keep full physical requalification at item 17 and retain the
 changed paths' local timing/reset obligations. Further broad repair sweeps are
 lower priority. Every accepted batch needs a matched map, activity and leakage
@@ -267,8 +301,11 @@ I/O waveforms and SRAM pin minima are outside this ControlGate inventory and
 retain independent physical time constraints. All adapters also have reset
 propagation obligations. A 645 ns slow-corner result for a 100 ns model does
 not itself establish 6.45× removable delay: the corresponding data/control cone
-also changes at that corner. Require each corner's complete inequality before
-shortening, including rising and falling transitions and min/max wire RC.
+also changes at that corner. Reversible local shortening requires the changed
+ordering inequalities at every corner, including rising and falling transitions.
+Full source/return composition, mismatch qualification and extracted min/max wire
+RC remain item 17; later evidence can require lengthening. The local result must
+name its unmeasured obligations rather than claim those are already closed.
 
 For a repeated-cell chain, taking the maximum required count across same-corner
 requirement/delay ratios is a starting estimate. Final acceptance uses actual

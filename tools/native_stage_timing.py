@@ -105,7 +105,11 @@ def descriptor(manifest, netlist, record, path, variant, *, storage=False):
         require(p["rtl_path"]==path+".ca_primitive_"+name and p["version"]==1,"STAGE_PRIMITIVE_PATH")
         params={k:int(v) for k,v in p["parameters"].items()}
         if name=="data_delay":
-            model="ChiselAsyncControlGate_v1";shape=dict(OP=0,RESET_VALUE=0,WIDTH=ow,DELAY_FS=1)
+            model=p["model"]
+            require(model in ("ChiselAsyncControlGate_v1","ChiselAsyncPassiveDataAllowance_v1"),
+                    "STAGE_DATA_ALLOWANCE_MODEL")
+            shape=(dict(WIDTH=ow,DELAY_FS=1) if model=="ChiselAsyncPassiveDataAllowance_v1" else
+                   dict(OP=0,RESET_VALUE=0,WIDTH=ow,DELAY_FS=1))
         else:
             model,shape=expected_binding(variant,name)
             if name=="payload":shape["WIDTH"]=ow
@@ -115,7 +119,13 @@ def descriptor(manifest, netlist, record, path, variant, *, storage=False):
         require(len(bindings)==1 and bindings[0]["model"]==model and bindings[0]["parameters"]==params,"STAGE_MAPPING_METADATA")
         expected["ca_primitive_"+name]=(model,params)
     body=netlist["modules"][kind]
-    require(body["cells"]["ca_primitive_data_delay"]["connections"]["reset"]==body["ports"]["reset"]["bits"],"STAGE_DATA_RESET")
+    data_connections=body["cells"]["ca_primitive_data_delay"]["connections"]
+    if selected["data_delay"]["model"]=="ChiselAsyncPassiveDataAllowance_v1":
+        require(set(data_connections)=={"a","q"} and
+                len(data_connections["a"])==len(data_connections["q"])==ow,
+                "STAGE_PASSIVE_DATA_PORTS")
+    else:
+        require(data_connections["reset"]==body["ports"]["reset"]["bits"],"STAGE_DATA_RESET")
     require(set(p for p,v in body["ports"].items() if v["direction"]=="input" and not (p=="in_bits" or p.startswith("in_bits_")))=={"reset","in_req","out_ack"},"STAGE_UNDECLARED_INPUT")
     timing=[t for t in node["timing"] if t["kind"]==("long-hold-bundling-v2" if variant=="bd" else "click-bundling-v1")]
     require(len(timing)==1,"STAGE_TIMING_KIND")

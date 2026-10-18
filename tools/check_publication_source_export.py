@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
 """Closed digital policy for native exclusive service publication receipts."""
 import re
+from passive_allowance_policy import PASSIVE, data_specs
 from check_application_reset import coordinated_reset,reset_endpoint,presentation_reset
 from check_recovery_return_export import (validate_recovery_return,recovery_return_bindings,
     validate_return_receipt,return_receipt_bindings)
@@ -209,6 +210,7 @@ def validate_publication_source(node):
         cell(t['marker'],'TimingMarker',**params)
     if len(cells)!=len(node['primitives']) or set(cells)!=set(expected)|markers:
         raise ValueError('PUBLICATION_SOURCE_CELL_INVENTORY')
+    expected = data_specs(node, expected)
     for name,(model,params) in expected.items():
         if cells[name]['model']!=model or cells[name]['parameters']!=params:raise ValueError('PUBLICATION_SOURCE_CELL_POLICY:'+name)
     for name,c in cells.items():

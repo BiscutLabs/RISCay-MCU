@@ -21,18 +21,23 @@ class FourPhaseSram(domain: ResetDomain) extends AsyncModule(domain) {
   val response = fourPhaseOutput("response", UInt(32.W))
   val byteRequest = (0 until 4).map(i => fourPhaseOutput(s"byte_request_$i", new SramByteRequest))
   val byteResponse = (0 until 4).map(i => fourPhaseInput(s"byte_response_$i", UInt(8.W)))
-  private val timing = BundledTiming.Simulation
+  private val timing = OwnerTiming.base
   private val cell = ModelTime.ps(1000)
   private val credit = asyncChild("credit")(d => new FourPhaseFifo(Bool(), 1, timing, Seq(false.B), cell, d))
 
   private val owner = asyncChild("owner")(d => new FourPhaseJoin(Bool(), new SramWordRequest, timing, cell, d))
   FourPhase.connect(owner.left, credit.out); FourPhase.connect(owner.right, request)
-  private val prepare = asyncChild("prepare")(d => new FourPhaseStage(new Joined(Bool(), new SramWordRequest), new SramWork,
-    (x: Joined[Bool, SramWordRequest]) => {
-      val w = Wire(new SramWork); w.request := x.right; w.result := 0.U; w
-    }, timing, d))
-  FourPhase.connect(prepare.in, owner.out)
-  private var previous = prepare.out
+  // A10: the Join already retains both operands until the first fork accepts.
+  // Preparation only copies the request and appends zero; it needs no second
+  // payload store, controller or matched delay. The first fork returns the
+  // Join's ACK directly, including the full four-phase return sequence.
+  private val prepared = Wire(new FourPhase(new SramWork, Some(domain)))
+  prepared.req := owner.out.req; owner.out.ack := prepared.ack
+  prepared.bits.request := owner.out.bits.right; prepared.bits.result := 0.U
+  // Credit validity gates ownership; retain its declared payload port even
+  // though this projection does not consume the bit.
+  dontTouch(owner.out.bits.left)
+  private var previous = prepared
   for(lane <- 0 until 4) {
     val fork = asyncChild(s"lane_${lane}_fork")(d => new FourPhaseFork(new SramWork, 2, cell, d))
     val issue = asyncChild(s"lane_${lane}_issue")(d => new FourPhaseStage(new SramWork, new SramByteRequest,
@@ -61,7 +66,7 @@ class FourPhaseSram(domain: ResetDomain) extends AsyncModule(domain) {
   // Consumer acknowledgement returns execution credit. Carry the retired
   // operation bit, stable before response.req and held until credit capture
   // acknowledges the final result. Credit availability alone gates execution;
-  // its payload is ignored by prepare and remains observable in the contract.
+  // its payload is ignored by the projection and remains observable in the contract.
   credit.in.bits := previous.bits.request.write; credit.in.req := response.ack
   dontTouch(credit.in)
   previous.ack := credit.in.ack

@@ -5,7 +5,7 @@ import chisel3._
 import chisel3.util.Cat
 import chiselasync.core.{AsyncModule,ResetDomain}
 import chiselasync.metadata.{BundledTiming,ClickTiming,ModelTime}
-import chiselasync.primitives.{AsymmetricCElement,ControlGate,EventRegister,GateOperation,XorGate}
+import chiselasync.primitives.{PassiveDataAllowance,AsymmetricCElement,ControlGate,EventRegister,GateOperation,XorGate}
 import riscay.soc.ProgramReturnResponse
 
 /** POR word capture and publication, with independently reset native application
@@ -21,7 +21,7 @@ class ClickProgramReturn(domain: ResetDomain) extends AsyncModule(domain) {
   val applicationReset=IO(Input(AsyncReset()));val eligible=IO(Input(Bool()))
   val presentationSettled=IO(Output(Bool()));val idle=IO(Output(Bool()))
   Seq(word,publication,response).foreach(dontTouch(_))
-  private val timing=ClickTiming.Simulation
+  private val timing=OwnerTiming.base
   private val cell=timing.controls.fire.model
   private val guard=ModelTime.ps(200000)
   private val resetRef=contract.endpoint("reset",reset)
@@ -30,6 +30,9 @@ class ClickProgramReturn(domain: ResetDomain) extends AsyncModule(domain) {
   private val presentationResetRef=contract.endpoint("presentation_reset",presentationReset)
   private def gate(id: String,op: GateOperation.Value,d: UInt,b: UInt=0.U,width: Int=1,
       delay: ModelTime=cell,initial: Int=0,application: Boolean=false): UInt = {
+    if (Set("application_data_delay","data_delay","finish_data_delay","issue_data_delay","permission_data_delay","target_data_delay")(id)) {
+      return PassiveDataAllowance(this,id,d,delay,resetRef)
+    }
     val g=Module(new ControlGate(width,op,delay,initial));g.reset:= (if(application) presentationReset else reset)
     g.a:=d;g.b:=b
     contract.primitive(id,g,Map("WIDTH"->BigInt(width),"OP"->BigInt(op.id),"DELAY_FS"->BigInt(delay.fs),
