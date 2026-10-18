@@ -36,7 +36,9 @@ class BdHousekeepingFixture(p: SocParameters) extends FabricFixture(p) {
   val houseState=IO(Output(new HousekeepingState)); houseState:=BoringUtils.bore(fabric.housekeepingState)
   val visibleLease=IO(Output(UInt(32.W))); visibleLease:=BoringUtils.bore(fabric.sleepRemaining)
   val visibleMask=IO(Output(UInt(32.W))); visibleMask:=BoringUtils.bore(fabric.wakeMask)
-  val boardTime=IO(Output(UInt(32.W))); boardTime:=BoringUtils.bore(fabric.boardNow)
+  val projectedTime=IO(Output(UInt(32.W))); projectedTime:=(BoringUtils.bore(fabric.housekeepingState).now + BoringUtils.bore(fabric.housekeepingQueued).elapsed(0) +
+    Mux(BoringUtils.bore(fabric.housekeepingOrderedPending),BoringUtils.bore(fabric.housekeepingOrdered).elapsed(0),0.U) +
+    BoringUtils.bore(fabric.housekeepingInFlight).elapsed(0))
   val consumed=IO(Output(UInt(32.W))); consumed:=fabric.io.consumedGray
   val idle=IO(Output(Bool())); idle:= !BoringUtils.bore(fabric.housekeepingWork) &&
     !BoringUtils.bore(fabric.telemetryWork) && !BoringUtils.bore(fabric.controlBusy)
@@ -105,17 +107,17 @@ end endtask
       ClockedSimulation.run(fixture(parameters),name+"-housekeeping-publication","""
         manualTime=1; referenceEnabled=0; wait(idle); publish; wait(idle);
         pauseHouseCommand=1; advance(1,120,120); #5000;
-        if(consumed || timeNow || boardTime != 120 || sleepEligible)
+        if(consumed || timeNow || projectedTime != 120 || sleepEligible)
           $fatal(1,"HOUSEKEEPING_EARLY_TIME_OR_LOST_OBSERVATION");
         read_words(2,0,0);
         if(snapshot[64+:32] < 120 || snapshot[32] || !snapshot[33])
           $fatal(1,"HOUSEKEEPING_STALL_HID_SAMPLE_AGE");
         pauseHouseReply=1; pauseHouseCommand=0; wait(housePending);
         advance(2,5,7); #2000;
-        if(consumed || timeNow || boardTime != 125 || sleepEligible)
+        if(consumed || timeNow || projectedTime != 125 || sleepEligible)
           $fatal(1,"HOUSEKEEPING_PENDING_PUBLICATION_ACKNOWLEDGED");
         pauseHouseReply=0; wait(consumed==3); wait(idle);
-        if(timeNow != 125 || boardTime != 125) $fatal(1,"HOUSEKEEPING_ELAPSED_LOST_OR_REPLAYED");
+        if(timeNow != 125 || projectedTime != 125) $fatal(1,"HOUSEKEEPING_ELAPSED_LOST_OR_REPLAYED");
         read_words(2,0,0);
         if(snapshot[64+:32] != 127) $fatal(1,"HOUSEKEEPING_AGE_DOUBLE_COUNTED");
       """,tasks,referenceHalfPeriodNs=10000000,deadlineNs=3000000)
@@ -221,7 +223,9 @@ class ClickHousekeepingFixture(p: SocParameters) extends ClickFabricFixture(p) {
   val houseState=IO(Output(new HousekeepingState)); houseState:=BoringUtils.bore(fabric.housekeepingState)
   val visibleLease=IO(Output(UInt(32.W))); visibleLease:=BoringUtils.bore(fabric.sleepRemaining)
   val visibleMask=IO(Output(UInt(32.W))); visibleMask:=BoringUtils.bore(fabric.wakeMask)
-  val boardTime=IO(Output(UInt(32.W))); boardTime:=BoringUtils.bore(fabric.boardNow)
+  val projectedTime=IO(Output(UInt(32.W))); projectedTime:=(BoringUtils.bore(fabric.housekeepingState).now + BoringUtils.bore(fabric.housekeepingQueued).elapsed(0) +
+    Mux(BoringUtils.bore(fabric.housekeepingOrderedPending),BoringUtils.bore(fabric.housekeepingOrdered).elapsed(0),0.U) +
+    BoringUtils.bore(fabric.housekeepingInFlight).elapsed(0))
   val consumed=IO(Output(UInt(32.W))); consumed:=fabric.io.consumedGray
   val idle=IO(Output(Bool())); idle:= !BoringUtils.bore(fabric.housekeepingWork) &&
     !BoringUtils.bore(fabric.telemetryWork) && !BoringUtils.bore(fabric.controlBusy)

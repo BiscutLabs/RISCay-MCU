@@ -8,7 +8,9 @@ import subprocess
 
 import control_relative_timing as r
 import native_leaf_timing as leaf
-from check_control_relative_controls import fault_sdf, verify_runtime
+from check_control_relative_controls import fault_sdf
+from run_receipt import RunReceipt
+from timing_properties import period_invariant
 
 
 def parent_data_fault(plan, saved, index, buffers):
@@ -101,62 +103,67 @@ def verdict(before, after, plan, fault, arcs):
 
 
 def run(baseline, output, indices, faults=("period","short_request","early_ack","late_capture")):
-    r.require(not output.exists() and indices and len(indices)<=4 and len(indices)==len(set(indices)),"STAGE_CONTROL_SELECTION")
+    r.require(not output.exists() and indices and len(indices)<=2 and len(indices)==len(set(indices)),"STAGE_CONTROL_SELECTION")
     r.require(faults and len(faults)==len(set(faults)) and set(faults)<={"period","short_request","early_ack","late_capture","late_parent_data"},"STAGE_CONTROL_FAULT_SELECTION")
-    receipt=json.loads((baseline/"results.json").read_text());sta=r.tool("sta")
-    runtime=verify_runtime(sta,receipt["inputs_sha256"])
-    sources=[Path(__file__),Path(__file__).with_name("check_control_relative_controls.py")]
-    frozen={str(p.resolve()):r.sha(p) for p in sources}
-    def verify():
-        for p,h in {**receipt["inputs_sha256"],**frozen}.items():r.require(r.sha(Path(p))==h,"STAGE_CONTROL_INPUT_CHANGED")
-        for p,h in receipt["files_sha256"].items():r.require(r.sha(baseline/p)==h,"STAGE_CONTROL_BASE_CHANGED")
-    verify();output.mkdir(parents=True);verdicts=[]
-    netlist=next(Path(p) for p in receipt["inputs_sha256"] if Path(p).name=="netlist.v")
-    mapping=netlist.parent
-    proof=json.loads((mapping/'electrical-repair/proof.json').read_text())
-    leaf_index=leaf.LeafIndex(json.loads((mapping/'electrical-repair/reference/netlist.json').read_text()),
-        json.loads((mapping/'netlist.json').read_text()),proof['added_buffers'],proof['added_ties'])
-    for index in indices:
-        source=baseline/str(index);plan=json.loads((source/"plan.json").read_text())
-        key="tt_025C_3v30-s0.2";saved=json.loads((source/(key+".json")).read_text())
-        r.require(saved["case"]["failure"] is None,"STAGE_CONTROL_UNRESOLVED_BASE")
-        sub=output/str(index);sub.mkdir()
-        for fault in faults:
-            results=deepcopy(saved["results"]);arcs=[]
-            if fault!="period":
-                if fault=='late_parent_data':sdf,arcs,parent_lanes=parent_data_fault(plan,saved,leaf_index,set(proof['added_buffers']))
-                else:sdf,arcs=fault_sdf(plan,fault,capture_fault_pin(plan) if fault=="late_capture" else None)
-                (sub/(fault+".sdf")).write_text(sdf,newline="\n")
-            for ctx in plan["contexts"]:
-                relevant=(True if fault=='period' else ctx['kind']=='data' if fault=='late_parent_data' else ctx['kind']=='request' if fault=='short_request'
-                          else ctx['kind'] in ('common','sequential_ack'))
-                if not relevant:continue
-                if plan.get('leaf_anchored') and ctx['kind'] in ('common','sequential_ack'):
-                    prior=[v['event_slew_ns'] for name,v in saved['results'].items() if name.startswith(('request-','release-'))]
-                    ctx['root_slew_ns']=dict(min=min(v[0] for v in prior),max=max(v[1] for v in prior))
-                tcl=sub/(fault+"-"+ctx["id"]+".tcl");log=tcl.with_suffix(".log")
-                text=(leaf.script(netlist,r.CORNERS[0],.2,plan,ctx,period=2000 if fault=='period' else 1000,sta=sta)
-                      if plan.get('leaf_anchored') else
-                      r.script(netlist,r.CORNERS[0],.2,plan,ctx,2000 if fault=="period" else 1000,path=sta.path))
-                if fault!="period":text=text.replace('row RELATIVE_BEGIN',f'read_sdf {r.brace(sta.path(sub/(fault+".sdf")))}\nrow RELATIVE_BEGIN')
-                tcl.write_text(text,newline="\n")
-                with log.open("w") as stream:
-                    subprocess.run(sta.command(["-no_init","-exit",sta.path(tcl)],timeout=55),stdout=stream,stderr=subprocess.STDOUT,check=True,timeout=65)
-                results[ctx["id"]]=(leaf.parse(log.read_text(),plan,ctx,.2,leaf_index) if plan.get('leaf_anchored')
-                                     else r.parse(log.read_text(),plan,ctx))
-            summary=r.margins(results,plan,saved["aperture"])
-            if fault=="period":
-                r.require(results==saved["results"] and summary==saved["summary"],"STAGE_CONTROL_PERIOD_DEPENDENCE")
-                checked=dict(fault=fault,status="IDENTICAL")
-            elif fault=='late_parent_data':checked=parent_verdict(saved['summary'],summary,plan,parent_lanes)
-            else:checked=verdict(saved["summary"],summary,plan,fault,arcs)
-            r.write_json(sub/(fault+".json"),dict(verdict=checked,summary=summary,results=results,arcs=arcs))
-            verdicts.append(dict(index=index,instance=plan["descriptor"]["instance"],**checked))
-            print(json.dumps({k:len(v) if isinstance(v,list) else v for k,v in verdicts[-1].items()}),flush=True)
-    verify()
-    r.write_json(output/"controls.json",dict(status="PASS",physical_qualification=False,verdicts=verdicts,
-        baseline_sha256=r.sha(baseline/"results.json"),runtime_sha256=runtime,sources_sha256=frozen,
-        files_sha256={str(p.relative_to(output)).replace("\\","/"):r.sha(p) for p in output.rglob("*") if p.is_file()}))
+    receipt=json.loads((baseline/"receipt.json").read_text());sta=r.tool("sta")
+    r.require(receipt['status']=='pass','STAGE_CONTROL_FAILED_BASE')
+    sources=[Path(__file__),Path(__file__).with_name("check_control_relative_controls.py"),
+             Path(__file__).with_name("timing_properties.py"),Path(__file__).with_name("run_receipt.py")]
+    run_receipt=RunReceipt(output/'receipt.json',inputs=[baseline/'receipt.json',*receipt['sha256']],
+                           tools=[*sources,*sta.input_files()])
+    r.require(all(run_receipt.files[p]==h for p,h in receipt['sha256'].items()),'STAGE_CONTROL_BASE_CHANGED')
+    r.require(all(str(p.resolve()) in receipt['sha256'] for p in sta.input_files()),'STAGE_CONTROL_RUNTIME_CHANGED')
+    output.mkdir(parents=True);verdicts=[]
+    netlist=next(Path(p) for p in receipt['inputs'] if Path(p).name=="netlist.v")
+    status='fail'
+    try:
+        mapping=netlist.parent
+        proof=json.loads((mapping/'electrical-repair/proof.json').read_text())
+        leaf_index=leaf.LeafIndex(json.loads((mapping/'electrical-repair/reference/netlist.json').read_text()),
+            json.loads((mapping/'netlist.json').read_text()),proof['added_buffers'],proof['added_ties'])
+        for index in indices:
+            source=baseline/str(index);plan=json.loads((source/"plan.json").read_text())
+            key="tt_025C_3v30-s0.2";saved=json.loads((source/(key+".json")).read_text())
+            r.require(saved["case"]["failure"] is None,"STAGE_CONTROL_UNRESOLVED_BASE")
+            sub=output/str(index);sub.mkdir()
+            for fault in faults:
+                results=deepcopy(saved["results"]);arcs=[]
+                if fault!="period":
+                    if fault=='late_parent_data':sdf,arcs,parent_lanes=parent_data_fault(plan,saved,leaf_index,set(proof['added_buffers']))
+                    else:sdf,arcs=fault_sdf(plan,fault,capture_fault_pin(plan) if fault=="late_capture" else None)
+                    (sub/(fault+".sdf")).write_text(sdf,newline="\n")
+                for ctx in plan["contexts"]:
+                    relevant=(True if fault=='period' else ctx['kind']=='data' if fault=='late_parent_data' else ctx['kind']=='request' if fault=='short_request'
+                              else ctx['kind'] in ('common','sequential_ack'))
+                    if not relevant:continue
+                    if plan.get('leaf_anchored') and ctx['kind'] in ('common','sequential_ack'):
+                        prior=[v['event_slew_ns'] for name,v in saved['results'].items() if name.startswith(('request-','release-'))]
+                        ctx['root_slew_ns']=dict(min=min(v[0] for v in prior),max=max(v[1] for v in prior))
+                    tcl=sub/(fault+"-"+ctx["id"]+".tcl");log=tcl.with_suffix(".log")
+                    text=(leaf.script(netlist,r.CORNERS[0],.2,plan,ctx,period=2000 if fault=='period' else 1000,sta=sta)
+                          if plan.get('leaf_anchored') else
+                          r.script(netlist,r.CORNERS[0],.2,plan,ctx,2000 if fault=="period" else 1000,path=sta.path))
+                    if fault!="period":text=text.replace('row RELATIVE_BEGIN',f'read_sdf {r.brace(sta.path(sub/(fault+".sdf")))}\nrow RELATIVE_BEGIN')
+                    tcl.write_text(text,newline="\n")
+                    with log.open("w") as stream:
+                        subprocess.run(sta.command(["-no_init","-exit",sta.path(tcl)],timeout=55),stdout=stream,stderr=subprocess.STDOUT,check=True,timeout=65)
+                    results[ctx["id"]]=(leaf.parse(log.read_text(),plan,ctx,.2,leaf_index) if plan.get('leaf_anchored')
+                                         else r.parse(log.read_text(),plan,ctx))
+                summary=r.margins(results,plan,saved["aperture"])
+                if fault=="period":
+                    period_invariant((results,summary),(saved["results"],saved["summary"]))
+                    checked=dict(fault=fault,status="IDENTICAL")
+                elif fault=='late_parent_data':checked=parent_verdict(saved['summary'],summary,plan,parent_lanes)
+                else:checked=verdict(saved["summary"],summary,plan,fault,arcs)
+                r.write_json(sub/(fault+".json"),dict(verdict=checked,summary=summary,results=results,arcs=arcs))
+                verdicts.append(dict(index=index,instance=plan["descriptor"]["instance"],**checked))
+                print(json.dumps({k:len(v) if isinstance(v,list) else v for k,v in verdicts[-1].items()}),flush=True)
+        r.write_json(output/"controls.json",dict(status="PASS",physical_qualification=False,verdicts=verdicts))
+        status='pass'
+    finally:
+        run_receipt.finish(outputs=[p for p in output.rglob('*') if p.is_file()],status=status,
+                           coverage=dict(requested=[dict(index=i,fault=f) for i in indices for f in faults],verdicts=verdicts))
+
 
 
 if __name__=="__main__":

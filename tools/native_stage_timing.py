@@ -5,6 +5,7 @@ No numeric controller result is shared between instances: physical load, capture
 width, guards, corner and input slew remain part of each measurement. Custom
 owners, FIFOs and Joins are deliberately not relabeled as canonical stages.
 """
+from run_receipt import RunReceipt
 import argparse
 from copy import deepcopy
 import hashlib
@@ -217,41 +218,44 @@ def run(mapping, output, variant, paths, campaign=False):
     files += [ROOT/"tools"/f for f in source_names]+[relative.PROBE]+sta.input_files()+yosys.input_files()
     files += [pdk/(relative.SC+c+".lib") for c in relative.CORNERS]
     files += [ROOT/'.tools/gf180-sram'/(leaf.SRAM+'__tt_025C_3v30.lib')]
-    frozen={str(p.resolve()):sha(p) for p in files}
-    output.mkdir(parents=True);write_json(output/"inventory.json",inventory(manifest))
-    roundtrip(mapping,output,netlist,yosys,pdk)
-    cases=[]
-    for index,plan in enumerate(plans):
-        sub=output/str(index);sub.mkdir();write_json(sub/"plan.json",plan)
-        for corner in (relative.CORNERS if campaign else relative.CORNERS[:1]):
-            cell=relative.aperture(relative.library(pdk/(relative.SC+corner+".lib")),variant)
-            for slew in ([0.02,2.0] if campaign else [0.2]):
-                key=f"{corner}-s{slew}";results={};failure=None
-                for ctx in plan["contexts"]:
-                    if ctx['kind'] in ('common','sequential_ack'):
-                        prior=[r['event_slew_ns'] for name,r in results.items() if name.startswith(('request-','release-'))]
-                        require(prior,'LEAF_COMMON_SLEW_REQUIRED')
-                        ctx['root_slew_ns']=dict(min=min(r[0] for r in prior),max=max(r[1] for r in prior))
-                    tcl=sub/(key+"-"+ctx["id"]+".tcl");log=tcl.with_suffix(".log")
-                    tcl.write_text(leaf.script(mapping/"netlist.v",corner,slew,plan,ctx,sta=sta),newline="\n")
-                    with log.open("w") as stream:
-                        subprocess.run(sta.command(["-no_init","-exit",sta.path(tcl)],timeout=55),stdout=stream,stderr=subprocess.STDOUT,check=True,timeout=65)
-                    try:results[ctx["id"]]=leaf.parse(log.read_text(),plan,ctx,slew,leaf_index)
-                    except ValueError as e:
-                        failure=dict(context=ctx["id"],diagnostic=str(e));break
-                if failure is None:
-                    try:summary=relative.margins(results,plan,cell)
-                    except ValueError as e:failure=dict(context="relative-composition",diagnostic=str(e))
-                case=dict(instance=plan["descriptor"]["instance"],key=key,status="UNRESOLVED" if failure else "CONDITIONAL_LOCAL_MEASUREMENTS",failure=failure,
-                          numerical=None if failure else numerical_status(summary),
-                          summary=None if failure else {k:v for k,v in summary.items() if k!="lanes"})
-                write_json(sub/(key+".json"),dict(case=case,results=results,aperture=cell,summary=None if failure else summary))
-                cases.append(case);print(json.dumps(case),flush=True)
-    require(all(sha(Path(p))==h for p,h in frozen.items()),"STAGE_INPUT_CHANGED")
-    validate_receipt(mapping)
-    write_json(output/"results.json",dict(physical_qualification=False,cases=cases,inputs_sha256=frozen,
-        files_sha256={str(p.relative_to(output)).replace("\\","/"):sha(p) for p in sorted(output.rglob("*")) if p.is_file()}))
-    if any(c["status"]=="UNRESOLVED" for c in cases):raise ValueError("STAGE_CAMPAIGN_UNRESOLVED")
+    run_receipt=RunReceipt(output/"receipt.json",inputs=files,tools=[ROOT/"tools/run_receipt.py"])
+    status='fail'
+    try:
+        output.mkdir(parents=True);write_json(output/"inventory.json",inventory(manifest))
+        roundtrip(mapping,output,netlist,yosys,pdk)
+        cases=[]
+        for index,plan in enumerate(plans):
+            sub=output/str(index);sub.mkdir();write_json(sub/"plan.json",plan)
+            for corner in (relative.CORNERS if campaign else relative.CORNERS[:1]):
+                cell=relative.aperture(relative.library(pdk/(relative.SC+corner+".lib")),variant)
+                for slew in ([0.02,2.0] if campaign else [0.2]):
+                    key=f"{corner}-s{slew}";results={};failure=None
+                    for ctx in plan["contexts"]:
+                        if ctx['kind'] in ('common','sequential_ack'):
+                            prior=[r['event_slew_ns'] for name,r in results.items() if name.startswith(('request-','release-'))]
+                            require(prior,'LEAF_COMMON_SLEW_REQUIRED')
+                            ctx['root_slew_ns']=dict(min=min(r[0] for r in prior),max=max(r[1] for r in prior))
+                        tcl=sub/(key+"-"+ctx["id"]+".tcl");log=tcl.with_suffix(".log")
+                        tcl.write_text(leaf.script(mapping/"netlist.v",corner,slew,plan,ctx,sta=sta),newline="\n")
+                        with log.open("w") as stream:
+                            subprocess.run(sta.command(["-no_init","-exit",sta.path(tcl)],timeout=55),stdout=stream,stderr=subprocess.STDOUT,check=True,timeout=65)
+                        try:results[ctx["id"]]=leaf.parse(log.read_text(),plan,ctx,slew,leaf_index)
+                        except ValueError as e:
+                            failure=dict(context=ctx["id"],diagnostic=str(e));break
+                    if failure is None:
+                        try:summary=relative.margins(results,plan,cell)
+                        except ValueError as e:failure=dict(context="relative-composition",diagnostic=str(e))
+                    case=dict(instance=plan["descriptor"]["instance"],key=key,status="UNRESOLVED" if failure else "CONDITIONAL_LOCAL_MEASUREMENTS",failure=failure,
+                              numerical=None if failure else numerical_status(summary),
+                              summary=None if failure else {k:v for k,v in summary.items() if k!="lanes"})
+                    write_json(sub/(key+".json"),dict(case=case,results=results,aperture=cell,summary=None if failure else summary))
+                    cases.append(case);print(json.dumps(case),flush=True)
+        write_json(output/"results.json",dict(physical_qualification=False,cases=cases))
+        if any(c["status"]=="UNRESOLVED" for c in cases):raise ValueError("STAGE_CAMPAIGN_UNRESOLVED")
+        status='pass'
+    finally:
+        run_receipt.finish(outputs=[p for p in output.rglob('*') if p.is_file()],status=status)
+
 
 
 if __name__=="__main__":

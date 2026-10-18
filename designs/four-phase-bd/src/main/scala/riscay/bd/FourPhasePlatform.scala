@@ -439,40 +439,6 @@ abstract class FourPhasePlatform(p: SocParameters, board: SocParameters => Board
     }
   }
 
-  // Immutable profile selects this design's native permanent controller.
-  val supervisorBridges = board(p) match {
-    case profile: riscay.profiles.GroundlarkBoard =>
-      val supervisor = asyncChild("supervisor")(d => new FourPhaseSupervisor(p,profile.policy,d))
-      val supervisorCommandBridge = asyncChild("supervisor_command_bridge")(d => new chiselasync.clocked.DecoupledToFourPhase(new SupervisorCommand, 2, d))
-      val supervisorReplyBridge = asyncChild("supervisor_reply_bridge")(d => new FourPhaseServiceReplyReceipt(new SupervisorState, d))
-      supervisorCommandBridge.clock := workClock; supervisorReplyBridge.clock := workClock
-
-      chiselasync.protocol.FourPhase.connect(supervisor.command,supervisorCommandBridge.out)
-      chiselasync.protocol.FourPhase.connect(supervisorReplyBridge.in,supervisor.reply)
-      supervisorCommandBridge.in <> fabric.boardCommand
-      supervisorReplyBridge.out.ready := fabric.boardReply.ready
-      fabric.boardReply.valid := supervisorReplyBridge.out.valid
-      val result=supervisorReplyBridge.out.bits
-      val power=result.mode === 1.U || result.mode === 2.U
-      val shutdown=result.mode === 2.U
-      fabric.boardReply.bits.outputs := Cat(0.U(30.W),shutdown,power)
-      fabric.boardReply.bits.registers := VecInit(Seq(result.mode.pad(32),Cat(0.U(31.W),power),Cat(0.U(31.W),shutdown),
-        Cat(0.U(31.W),result.qualified && result.counts(1) >= profile.policy.ackStableMs.U),result.fault.pad(32),result.timeouts.pad(32)))
-      dontTouch(supervisorReplyBridge.out)
-      val returning = withClockAndReset(workClock, reset) {
-        val pending=RegInit(false.B)
-        when(supervisorReplyBridge.out.fire) { pending := true.B }
-          .elsewhen(!supervisorReplyBridge.in.ack) { pending := false.B }
-        pending
-      }
-      fabric.io.boardDraining := !supervisorCommandBridge.in.ready || (returning && supervisorReplyBridge.in.ack)
-      Some((supervisorCommandBridge,supervisorReplyBridge))
-    case _: GenericBoard =>
-      fabric.boardCommand.ready := true.B; fabric.boardReply.valid := false.B
-      fabric.boardReply.bits := 0.U.asTypeOf(new BoardResult); fabric.io.boardDraining := false.B
-      None
-    case _ => throw new IllegalArgumentException("Board profile needs a native implementation in this design")
-  }
   p.lowPower match {
     case Some(lp) =>
       val scaler = asyncChild("elapsed_scaler")(d => new ElapsedTicks(
@@ -487,11 +453,12 @@ abstract class FourPhasePlatform(p: SocParameters, board: SocParameters => Board
     case Some(a) =>
       val adc=asyncChild("spi_adc")(d => new SpiAdc(a,p.lowPower.isEmpty,d))
       adc.clock:=workClock; adc.io <> fabric.io.adc; adc.miso:=adcMiso
-      adcCsN:=adc.csN; adcSclk:=adc.sclk
+      adcCsN:=adc.csN
+      adcSclk := (if(p.spiBoot) Mux(fabric.io.spiClaimed, fabric.io.gpioOut(3) && fabric.io.gpioOe(3), adc.sclk) else adc.sclk)
     case None =>
       fabric.io.adc.busy:=false.B; fabric.io.adc.done:=false.B; fabric.io.adc.age:=0.U
       fabric.io.adc.result:=0.U.asTypeOf(fabric.io.adc.result)
-      adcCsN:=true.B; adcSclk:=false.B
+      adcCsN:=true.B; adcSclk := (if(p.spiBoot) fabric.io.gpioOut(3) && fabric.io.gpioOe(3) else false.B)
   }
   resetBoundary.io.closed:=requestClosed && fabric.io.presentationClosed && applicationBridges.map(_.closed).reduce(_ && _)
   resetBoundary.io.rebased:=requestRebased && applicationBridges.map(_.rebased).reduce(_ && _)
@@ -513,8 +480,8 @@ abstract class FourPhasePlatform(p: SocParameters, board: SocParameters => Board
       sleepEntries := gate.io.entries; sleeping := !gate.io.running
       if(lp.stopServiceClock) {
         val wake = withClockAndReset(serviceClock, reset) { Module(new ServiceClockWake) }
-        val mask = ((BigInt(1) << p.config.gpioCount) - 1).U(32.W)
-        wake.io.event := timebase.io.gray =/= fabric.io.consumedGray || ((gpioIn ^ fabric.io.observedGpio) & mask).orR
+        val mask = p.gpioEventMask.U(32.W)
+        wake.io.event := timebase.io.gray =/= fabric.io.consumedGray || ((fabric.io.gpioIn ^ fabric.io.observedGpio) & mask).orR
         wake.io.scl := scl; wake.io.sda := sda
         wake.io.selected := fabric.io.hostSelected; wake.io.rejected := fabric.io.hostRejected
         wake.io.running := gate.io.running || applicationIsolation
@@ -526,7 +493,7 @@ abstract class FourPhasePlatform(p: SocParameters, board: SocParameters => Board
       serviceClockEnable := true.B
   }
   fabric.io.sleepEntries := sleepEntries
-  fabric.io.gpioIn := gpioIn; gpioOut := fabric.io.gpioOut; gpioOe := fabric.io.gpioOe
+  fabric.io.gpioIn := (if(p.spiBoot) (gpioIn & "hffffffbf".U) | (adcMiso.asUInt << 6) else gpioIn); gpioOut := fabric.io.gpioOut; gpioOe := fabric.io.gpioOe
   fabric.io.watchdogReason := watchdogReasonActive; watchdog.io.heartbeat := fabric.io.heartbeat
   fabric.io.watchdogAck := watchdog.io.acknowledge
   mode := fabric.io.mode; programmed := fabric.io.programmed; locked := fabric.io.locked

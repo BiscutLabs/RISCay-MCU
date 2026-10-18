@@ -2,13 +2,13 @@
 
 The four-phase and native Click SoCs implement the same RV32E execution, internal
 storage and peripheral behavior. Compressed instructions remain deferred. The
-CPU, transaction routing, Control, Telemetry, Supervisor, Housekeeping, I2C and SPI ADC protocol state
+CPU, transaction routing, Control, Telemetry, Housekeeping, I2C and SPI ADC protocol state
 loops are asynchronous.
 Each design owns its native loader/MMIO, software GPIO/application-word, event
 and host measurement state. Ingress, snapshots, reset projections, GPIO sampling,
 independent LF/watchdog and heartbeat delivery, individual synchronous SRAM byte
 accesses, I2C wire sampling/timeout and SPI pin timing/full-frame capture remain
-clocked. Native Housekeeping owns NOW/board time, deadline/lease/wake-mask state,
+clocked. Native Housekeeping owns NOW, deadline/lease/wake-mask state,
 watchdog kick authorization and low-power acquisition cadence. Elapsed ingress
 still feeds observation/freshness history independently of housekeeping stalls;
 only final housekeeping publication advances consumedGray. Native SPI loops own
@@ -17,8 +17,8 @@ item 8 passes digital verification and strict exports. Their surrounding clocked
 boundary still owns launch/admission, active/pending state and age accumulation,
 as well as pin timing and capture; these remain candidates under item 15c.
 Separate native SRAM word sequencing passes the
-item 6 digital regressions and strict exports. Board policy and its safety sample view
-use independent POR-only native loops with clocked ingress/output projection.
+item 6 digital regressions and strict exports. Application policy is uploaded firmware;
+no profile controller or GPIO ownership override exists in silicon.
 ROM/static faults complete in the native fabric. The Control integration passes
 the digital regressions and strict exports documented in the current checklist.
 See the [migration checklist and handshake contract](async-soc-migration.md). Its
@@ -112,7 +112,7 @@ Explicit command/reply recovery markers must match that retained role.
 Housekeeping resetApplication also marks ordinary maintenance and cannot prove
 recovery identity. Fresh Telemetry recovery publication may project post-reset
 events before debt clears; stale replies cannot restore application projections.
-Host samples, board time and acquisition continue through recovery. Prolonged
+Host samples, elapsed time and acquisition continue through recovery. Prolonged
 application reset permits unowned Housekeeping maintenance, including watchdog
 kicks, while fresh recovery reservations wait for reset release. Only actual
 Housekeeping publication advances consumedGray.
@@ -166,12 +166,13 @@ See [sleep and clock integration](sleep-and-clock.md) for the exact gating scope
 
 | Byte address | Region | Permissions |
 | --- | --- | --- |
-| `0x00000000..0x0000000b` | 12-byte constant boot ROM | Read/fetch only |
+| `0x00000000` + emitted ROM size | Generic SPI boot ROM (2084 bytes currently); optional I2C-only fixture ROM is 12 bytes | Read/fetch only |
 | `0x10000000` + configured capacity | Executable program RAM | Host loader writes; CPU reads/fetches only after validation, within image length |
 | `0x20000000` + configured capacity | Working RAM | CPU data reads and byte-masked writes; no instruction fetch |
-| `0x30000000..0x3000004b` | MMIO | Aligned 32-bit data accesses only |
+| `0x30000000..0x3000007f` | MMIO | Aligned 32-bit data accesses only |
 
-All storage is on chip. Groundlark uses two 1 KiB GF180 SRAM macros for program
+Runtime storage is on chip; a generic external SPI flash stores the persistent image.
+The reference capacities use two 1 KiB GF180 SRAM macros for program
 storage and one for its 1 KiB working RAM. Each variant's controller sequences four
 byte operations per word through native rendezvous; macro inputs launch on falling
 service-clock edges. Native execution credit waits for final response acceptance.
@@ -210,11 +211,15 @@ canceled by reset. Timer/peripheral effects, WAIT qualification, observation
 ingress and coherent read snapshots remain clocked. MMIO still crosses those
 explicit boundaries.
 
-The ROM executes `lui x1,0x30000; lw x2,0(x1); jalr x0,x2,0`. The load blocks
-until START, then returns the validated absolute entry address. Control transfer
-does not reset the SoC or board outputs. Registers follow the core reset contract;
-the ROM clobbers x1/x2. A separate permanent board controller handles startup and
-supervision, including when no application exists. The loader is fixed hardware.
+The generic ROM loads an image from external SPI flash and validates it through
+the existing native loader before START. Blank, incompatible or corrupt storage
+falls back to I2C. Watchdog recovery reuses a valid retained image, including a
+locked image, unless the host explicitly requests loader recovery. The optional
+`spiBoot=false` fixture uses the original three-instruction I2C wait ROM. Both
+boot paths clobber CPU registers; firmware initializes its own stack/data/BSS.
+See [the generic boot contract](generic-boot-contract.md) for format, persistence,
+shared ADC ownership and the added MMIO registers. No application behavior lives
+in either ROM.
 
 | MMIO offset | Read | Write |
 | ---: | --- | --- |
@@ -224,14 +229,14 @@ supervision, including when no application exists. The loader is fixed hardware.
 | 12 | Pending events | Write-one acknowledge |
 | 16 | Wait for an enabled pending event, without clearing; lease expiry and host wake always qualify | Error |
 | 20 | Synchronized GPIO inputs | Error |
-| 24 | Effective GPIO outputs | Set generic output latch; board-owned bits stay protected |
-| 28 | Effective GPIO enables | Set generic enables; board-owned bits stay protected |
+| 24 | Effective GPIO outputs | Set output latch |
+| 28 | Effective GPIO enables | Set output enables |
 | 32 | Zero | `0x57444f47` services watchdog; other values error |
 | 36 | Measurement producer index | Select an existing channel |
 | 40 | Producer value staging register | Stage signed 32-bit value |
 | 44 | Zero | Publish staged value: bit 0 valid, bit 1 calibrated; permanently acquired channels reject CPU publication |
 | 48 | Application word index | Select a profile-declared word in 0..63; holes reject |
-| 52 | Selected application word | Update firmware-owned word; board-owned words reject writes |
+| 52 | Selected application word | Update selected firmware-owned word |
 | 56 | Wake mask (reset `0x0f`) | Bits 0..5 only; tick can be masked independently of timekeeping |
 | 60 | Remaining sleep lease, ms | Arm/cancel finite lease; does not kick watchdog; requires low-power build; default maximum 60000 ms |
 | 64 | Applied ADC sample period, ms | Request new period; requires low-power build and ADC; applied between conversions |
@@ -250,7 +255,7 @@ acknowledge. Events raised during a native MMIO validation window also win that
 transaction's clear; a deadline replacement still consumes only its previous
 deadline event. GPIO uses two sampling stages; pulses must last at least three
 service cycles after oscillator startup and meet the eventual synchronizer implementation's constraints.
-Blocking the CPU never blocks host status or the permanent controller.
+Blocking the CPU never blocks host status, independent sensing or the watchdog.
 Firmware acknowledges only consumed bits before processing the wake. The
 `wait_events()` helper never clears pending bits; `acknowledge_events(bits)` is
 explicit. Edges arriving during processing remain pending for the next wait.
@@ -313,6 +318,8 @@ There is no queue of pending writes and no deferred memory write after a command
 | 6 START_AND_LOCK | None | Atomically lock and start validated image |
 | 7 SAMPLE_PERIOD | One word: nominal period ms | Validate and queue period for next eligible maintenance boundary between conversions; allowed while image locked |
 | 8 WAKE | None | Set pending bit 5; never reset/unlock/start the CPU |
+| 9 ENTER_LOADER | None | SPI-boot builds only: inhibit automatic restart and stop application watchdog servicing; reject if locked |
+| 10 PERSIST | None | SPI-boot builds only: request ROM write-through of a verified, unlocked, unstarted image; START/LOCK wait for completion |
 
 These are additive v1 commands. A sample-period acceptance queues peripheral
 configuration, not an image write. Read timing status bit 3 and applied period to
@@ -376,14 +383,15 @@ BEGIN preserves the previous image; an accepted BEGIN invalidates it immediately
 Only LOADING can accept writes; READY requires a new BEGIN before replacement.
 After START, a trap halts execution until application watchdog recovery or full
 reset. Watchdog recovery returns RUNNING/FAULT to READY while preserving image
-validity, bytes, metadata and lock. START/START_AND_LOCK explicitly restarts that
-image; a locked image still rejects replacement. No automatic crash loop occurs.
+validity, bytes, metadata and lock. The SPI ROM automatically restarts that
+image unless ENTER_LOADER requested recovery. I2C-only fixtures still require an
+explicit START. A locked image rejects replacement in either configuration.
 The host may LOCK a running valid image. A bus recovery, host reboot or Pi rail
 cycle never clears the lock. Full MCU reset clears both lock and image validity.
 Working RAM and permitted peripheral writes remain available when locked.
 
-An interrupted upload may remain LOADING indefinitely; fixed supervision keeps
-running. The host can restart with BEGIN while unlocked. No host-boot detector,
+An interrupted host upload may remain LOADING indefinitely; generic sensing and
+host status remain available. The host can restart with BEGIN while unlocked. No host-boot detector,
 upload-driven power cycling or heartbeat policy is implied.
 
 ## Measurements, ADC and timebase
@@ -422,7 +430,7 @@ through waveform, buffered capture, native computation, publication and return
 drainage. The first complete conversion after POR is discarded; watchdog reset
 preserves priming, the in-progress frame, any buffered reply and its age.
 Upper-bound elapsed age starts at admission, saturates and includes a coincident
-publication tick. Telemetry and supervisor histories retain it rather than
+publication tick. Telemetry history retain it rather than
 resetting it on a delayed publication. Signed offset/calibration is unchanged.
 The unstalled digital start-through-drain allowance is 32 SPI half-periods,
 32 additional service edges and 2 us of native processing. The focused maximum-delay
@@ -443,8 +451,9 @@ The watchdog owns a separate reference clock and a held-toggle kick handshake.
 An accepted key write while a heartbeat is crossing domains latches a pending
 kick, dispatched after acknowledgement. Multiple busy kicks coalesce into one
 pending kick. Lease-register writes, including zero, never count as kicks.
-Permanent bootstrap services it while the application has not started. Afterward
-firmware must write the key regularly; hardware services it during a blocked
+The ROM kicks during bounded boot/update progress. Hardware leases a deliberately
+blocked idle-loader read, but does not kick merely because START has not occurred.
+After START firmware must write the key regularly; hardware services it during a blocked
 event WAIT only while a finite sleep lease remains. WAIT completion cancels the
 remaining lease. Lease expiry always wakes WAIT and stops automatic servicing;
 an application that never resumes useful execution eventually resets. The
@@ -460,10 +469,12 @@ The retained clock gate synchronizes its complete demand before the falling-edge
 enable flip-flop, and restart forces that gate running. These crossings still
 need physical synchronizer placement, related-clock setup/hold, reset
 recovery/removal and half-cycle gate-enable timing checks.
-The permanent board controller
-and its GPIO override, ADC, samples/ages, LF/elapsed timebase, I2C loader, image
-validity/metadata and programming lock are POR-only. The supervisor retains its
-RUN/SHUTDOWN state, deadlines and timeout count through application recovery.
+ADC, samples/ages, LF/elapsed timebase, I2C loader, validated image/metadata and
+programming lock are POR-only. GPIOs reset to inputs at POR. The generic
+`retainGpioOnWatchdog=false` default disables outputs during application recovery;
+`true` retains ordinary output/OE state. SPI boot pins 3..5 are always released
+during recovery, then reinitialized by ROM; an external pull-up holds flash CS.
+All application words are firmware-owned and reset with the application.
 Host mutations are rejected during application reset; coherent reads remain
 available when the service clock runs. In-progress loader state is retained.
 Watchdog reason survives until external reset and is synchronized for host reads.
@@ -474,8 +485,8 @@ a recovery-episode counter, not an LF expiration counter: multiple expirations
 while the service clock is absent may coalesce or go unobserved. Normal repeated
 crash/restart cycles increment separately even though RESET_REASON remains 2.
 A stopped service source requests
-restart but the board cannot observe new inputs while that source remains failed;
-its outputs are retained, not asynchronously forced off by the watchdog. Elapsed
+restart but new input observation requires that source to recover. Output
+retention follows the generic option above; there is no fixed power policy. Elapsed
 time catches up after recovery and sample ages expose staleness. Stopping both
 clocks is outside this digital watchdog's coverage.
 
@@ -487,36 +498,12 @@ hold, while LF reset remains asserted. Watchdog resets do not reset the LF
 oscillator or this POR counter. See [clock/reset circuits](../analog/gf180-clock-reset/README.md)
 for supply thresholds, detection latency and physical limitations.
 
-## Groundlark permanent policy
+## Application policy
 
-[GroundlarkBoard](../profiles/src/main/scala/riscay/profiles/GroundlarkBoard.scala)
-selects an immutable power policy. `FourPhaseSupervisor` and `ClickSupervisor`
-implement it in separate native state-token loops without uploaded firmware.
-The native state, dedicated bridges, acquisition history and output projection
-are POR-owned; no application watchdog reset clears them. GPIO 0/1 are permanently owned outputs;
-GPIO 2 remains the halt input. Firmware cannot override their ownership. Stable
-inactive ACK must be observed after each power-on before a subsequent stable
-active ACK is accepted. A stale active ACK blocks initial startup.
-
-Reusing the generator with `GenericBoard` permits firmware-owned GPIO and
-application words. Reusing a fabricated Groundlark-specific build preserves its
-immutable power policy and pin ownership; uploading a new image does not turn
-those three pins into unrestricted GPIO.
-
-States: OFF=0, RUN=1, SHUTDOWN=2, LATCHED=3. Qualified recovery permits startup;
-low voltage requires confirmation. Invalid/stale/out-of-range sensing requests
-shutdown immediately while running. Power stays on until qualified ACK or a
-bounded timeout. Minimum-off timing applies before restart. Three unacknowledged
-shutdown timeouts latch off until reset. Power-enable telemetry reports a command,
-not measured 5 V or host readiness.
-
-Fault codes: 0 none, 1 policy disabled, 2 confirmed low voltage, 3 invalid sensing,
-4 forced timeout, 5 acknowledged halt. Timeout count is reset-scoped. Policy is
-validated at elaboration against Groundlark's numeric bounds. **Default emission
-uses a disabled policy and never powers the Pi.** Supply qualified values and
-enable the policy deliberately for any tapeout build; the reference emitters
-are not a deployment configuration. Tests use explicit enabled fixtures, with
-accelerated milliseconds; these values are not a battery recommendation.
+Profiles describe pins, measurement units and capacities only. Groundlark power
+control is an ordinary application responsibility; absent a valid image, the MCU
+waits for upload with generic GPIO reset behavior. This MCU change does not port
+or modify Groundlark firmware or its board repository.
 
 ## Remaining qualification
 

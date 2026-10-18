@@ -191,9 +191,13 @@ end endtask
     val params=SocParameters(config,watchdogCycles=32,watchdogHoldCycles=2,
       lowPower=Some(LowPowerParameters.gf180Slow.copy(stopServiceClock=false)))
     ClockedSimulation.run(resetFixture(params),"reset-crossing","""
-      heartbeatEnabled=1; #100000;
+      heartbeatEnabled=1;
+      @(negedge serviceClock); request_valid=1; request_bits_operation=1;
+      request_bits_address=32'h30000000; request_bits_mask=15;
+      #100000;
       read_words(0,0,8); if(supported !== 1 || snapshot[0+:32] !== 0) $fatal(1,"POR_COUNTED_AS_CRASH");
       for(crashes=1;crashes<=3;crashes=crashes+1) begin
+        @(negedge serviceClock); request_valid=0;
         write_bus(32'h30000018,1);
         // Park at the boot wait so the retained gate closes between LF ticks.
         @(negedge serviceClock); request_valid=1; request_bits_operation=1;
@@ -204,7 +208,8 @@ end endtask
         #0.001; if(gpioOut[0]) $fatal(1,"RESET_PINS_WAITED_FOR_SYNCHRONIZER");
         heartbeatEnabled=1;
         wait(resetObserved); wait(!systemReset); wait(!resetObserved);
-        @(negedge serviceClock); request_valid=0;
+        // Remain parked while the host reads: an active generic ROM must kick
+        // explicitly and receives no automatic idle-loader heartbeat.
         read_words(0,0,8);
         if(supported !== 1 || snapshot[0+:32] !== crashes) $fatal(1,"REPEAT_CRASH_COUNT");
       end

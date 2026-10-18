@@ -1,7 +1,7 @@
 # Area ledger
 
 This is the running item/batch ledger from the 11b1 baseline. Use the same
-Groundlark low-power profile, three GF180 SRAM macros, pinned standard-cell
+reference capacities and low-power configuration, three GF180 SRAM macros, pinned standard-cell
 libraries, mapper and accepted repair flow for matched production comparisons.
 Full routed physical requalification remains migration item 17.
 
@@ -32,11 +32,50 @@ receipts. The earlier PR10 maps fail current receipt validation with
 
 ## Counting rules and evidence
 
+### Generic MCU correction (digital and structural verification complete)
+
+The generic SPI ROM and removal of fixed application supervision have completed
+matched mapping and graph-preserving electrical repair on the final arbitration
+graph. Affected RTL regressions, four generation audits, both production RDC
+proofs and independent review pass. Physical timing qualification remains open.
+
+| Batch | Mapped logic | Repaired logic | Guards | Allowances | DLYD | Periodic clock sinks |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| Generic SPI boot / supervisor removal | 2.100657 / 2.894444 | 2.283901 / 3.099576 | 0.398209 / 0.927310 | 0 / 0 | 0.392440 / 0.918854 | 4,125 / 4,179 |
+
+Against `90ce9f7`, mapped logic falls by 0.128738 / 0.153980 mm²
+(5.77% / 5.05%); repaired logic falls by 0.128481 / 0.152817 mm².
+Periodic sinks fall by 685 / 686. These are net changes: removed supervisor
+owners/transport and redundant housekeeping state, plus the 2,096-byte ROM,
+loader ingress/status and generic SPI claim/arbitration. They are not an
+isolated ROM or supervisor area estimate. SRAM footprints are unchanged.
+
+Reports: `build/generic-mcu-r10/area-bd.json` and `area-click.json`;
+accepted graph proofs are under the matching `map-*/electrical-repair/`.
+Earlier R2 reports predate the final arbitration and are superseded here.
+The initial repair failed on an added orphan tie. Applying the existing strict
+orphan-tie cleanup before the initial graph comparison removes only the unused
+tie on padded GPIO input lanes; all original/protected cells remain intact.
+Raw, pruned and failed inputs are retained. Full physical qualification is open.
+
+| DLYD purpose | BD cells / mm² | Click cells / mm² |
+| --- | ---: | ---: |
+| Custom ordering and reset | 3,533 / 0.263692 | 8,956 / 0.668447 |
+| Bundling / request and pulse | 937 / 0.069935 | 835 / 0.062322 |
+| Seed reset admission | 100 / 0.007464 | 0 / 0 |
+| Publication / output and pulse | 688 / 0.051350 | 1,960 / 0.146288 |
+| ACK and pulse | 0 / 0 | 560 / 0.041797 |
+
+The exact purpose names and input hashes are in the reports. These DLYD costs
+overlap guards; they are not additional area. No guard was shortened in this batch.
+
+### Counting conventions
+
 - Logic excludes all three SRAM macro footprints (0.466240659 mm² LEF total).
   Do not mix LEF footprints with the macros' different Liberty area values.
 - Guards are the exact native matched-control adapters with model delay above
   1 ns. This accounting convention does not classify shortening eligibility.
-  The current separate 1 ns functional-adapter costs are 0.042196 / 0.053598 mm².
+  The current separate 1 ns functional-adapter costs are 0.041094 / 0.053308 mm².
 - Allowances include every whole-transform-allowance adapter. Named
   `data_delay` instances are a subset, never an additional cost.
 - DLYD counts every such mapped leaf, regardless of role. It overlaps guards

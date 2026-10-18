@@ -11,8 +11,8 @@ The [SoC contract](soc-contract.md) specifies their wire/MMIO behavior.
 | Layer | Owns |
 | --- | --- |
 | Shared definitions | ISA definitions, memory/host wire schemas, parameters, fixed macro models and verification utilities |
-| Four-phase or Click implementation | Separate CPU and SoC runtime logic: native handshakes/state, loader, GPIO/events/measurements, arithmetic, permanent supervision, service endpoints, timing and reset composition |
-| Board/application profile | Logical pin roles, safe reset levels, sensor meanings/units, application registers, immutable startup policy and firmware |
+| Four-phase or Click implementation | Separate CPU and SoC runtime logic: native handshakes/state, loader, GPIO/events/measurements, arithmetic, service endpoints, timing and reset composition |
+| Board/application profile | Pin names, sensor meanings/units, register names and capacities; no hardware behavior |
 | Physical implementation | Actual pads, analog frontend, LF and restartable fast oscillators, POR, memory macros and electrical/power-domain qualification |
 
 The host can be a Pi, another processor or a development adapter. I2C is the
@@ -73,18 +73,15 @@ Pi fields. This adds a common record format, not new sensor hardware.
 
 Keep validity, staleness, source faults, calibration, age and sequence with every
 sample. Capture coherent read snapshots, preserve the timestamp of a retained
-old value on failure, and never let reads make data appear fresh. Boot/application
-producer ownership is profile-specific; the host endpoint remains readable
+old value on failure, and never let reads make data appear fresh. Producer ownership is explicit peripheral configuration; the host endpoint remains readable
 independently of the application, with explicit unavailable/stale values when
-the producer has not run or has stopped. Groundlark requires permanent sensing
-before its application is loaded.
+the producer has not run or has stopped. No application policy runs before a validated image starts.
 
 Generic digital integration uses GPIO input, output and output-enable vectors.
-Profile pin roles determine ownership and safe reset values; they are not Pi
-BCM numbers. Board-required reset safety cannot depend on downloaded code.
-No runtime pin-mux fabric is added by these declarations. Host access to physical
-controls is only through explicitly defined application behavior; read-only
-telemetry must not become a way to override the Groundlark supervisor.
+Pin roles are metadata, not ownership or reset overrides. Every GPIO is an input
+at POR; external board resistors define the safe state. The optional generic SPI
+boot assignment aliases shared SCLK/MISO and adds MOSI and a separate flash CS.
+MISO remains readable but is excluded from GPIO event/wake detection.
 
 ## Build configuration and boot policy
 
@@ -96,25 +93,21 @@ memory/peripheral blocks and their host-reported capacities.
 
 Memory/GPIO/channel capacities are hardware parameters: changing them creates a
 hardware variant. Another application can reuse an existing chip within those
-limits, using its own firmware and application data definitions. Its immutable
-boot policy and electrical reset behavior must also suit that board; reloading
+limits, using its own firmware and application data definitions. The generic
+boot interface and electrical reset behavior must also suit that board; reloading
 RAM cannot change boot ROM or pad characteristics. Both async variants use
 identical configuration and
 workload in any comparison. Physical ROM/pads and the ADC connection remain
 unresolved; a measurement channel is not itself an ADC macro.
 
-Every profile provides permanent boot behavior. An independently powered host
-can upload while the MCU waits in ROM. If the MCU controls power to its own host,
-its permanent profile bootstrap must start and supervise that host before upload.
-Groundlark implements the latter policy; another project need not inherit it.
-The common protocol knows nothing about battery thresholds or Pi shutdown GPIOs.
-Full MCU reset clears programming lock/validity; output reset values come from
-the build's board profile. Host-only and bus resets do not clear the lock.
-Application watchdog recovery resets the CPU/bridges and software-owned state,
-preserving the permanent controller, image validity and lock. It returns a started
-image to READY and requires an explicit host START before execution resumes.
-Only profile-declared software-owned application words allocate storage; sparse
-word IDs are legal, holes reject, and hardware-owned words use controller outputs.
+The generic boot ROM reads a compatible CRC-checked external SPI image, or waits
+for I2C upload if none is valid. It has no profile behavior. Full MCU reset clears
+programming lock/validity and disables GPIO outputs. Application watchdog recovery
+preserves image validity, lock and generic sensing; SPI ROM restarts the retained
+image unless ENTER_LOADER requested recovery. GPIO output retention on watchdog
+is a generic build option, default false. All profile-declared application words
+are software writable; sparse IDs are legal and holes reject. See
+[generic boot](generic-boot-contract.md) for image format and explicit persistence.
 
 ## Verification
 
@@ -124,5 +117,5 @@ configurations. Both CPU protocol suites remain required. SocSpec additionally
 runs generic and Groundlark configurations through each complete SoC's I2C pins.
 FabricSpec covers service-bus behavior, sample failures/staleness and zero-channel
 builds. SleepSpec covers both protocols' retention, timing, wake, interval changes,
-watchdog recovery and permanent Groundlark supervision during sleep. These
+watchdog recovery and sampling during sleep. These
 complement the independent ISA/routing and later physical qualification.

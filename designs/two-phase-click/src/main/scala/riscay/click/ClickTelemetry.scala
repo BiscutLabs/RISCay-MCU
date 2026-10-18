@@ -40,8 +40,11 @@ class ClickTelemetry(p: SocParameters, words: Vector[Int], domain: ResetDomain) 
     r.recovery := c.recovery
     val n = r.state
     when(c.kind === TelemetryKind.ResetApplication.U) {
-      n.output := TelemetryState.initial(p, words.size).output
-      n.enable := TelemetryState.initial(p, words.size).enable
+      if(!p.retainGpioOnWatchdog) {
+        n.output := 0.U; n.enable := 0.U
+      } else if(p.spiBoot) {
+        n.output := s.output & "hffffffc7".U; n.enable := s.enable & "hffffffc7".U
+      }
       n.application.foreach(_.foreach(_ := 0.U))
     }
     n.pending := (Mux(c.kind === TelemetryKind.ResetApplication.U, 0.U, s.pending) & ~c.clear) | c.events

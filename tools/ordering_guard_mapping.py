@@ -2,6 +2,7 @@
 """Apply measured guard counts before synthesis, retaining contract identities."""
 from collections import defaultdict
 import math
+import json
 import re
 from gf180_physical import nodes, key
 
@@ -19,14 +20,10 @@ def specialize(export, manifest, groups, policy, variant, floor, *, candidate=Fa
             policy['statistical_qualification'] is False, 'MISMATCH_POLICY')
     owners = list(nodes(manifest['design']))
     primitives = {p['rtl_path']: (n,p) for n in owners for p in n['primitives']}
-    actual = {manifest['top']: manifest['top']}
-    for owner in owners:
-        rtl = (export / (actual[owner['rtl_path']] + '.sv')).read_text()
-        for child in owner['children']:
-            path = child['contract']['rtl_path']
-            matches = re.findall(r'\b(\w+)\s+' + re.escape(path.split('.')[-1]) + r'\s*\(', rtl)
-            require(len(matches) == 1, 'OWNER_INSTANCE')
-            actual[path] = matches[0]
+    # The caller validates this generation audit before any physical rewrite.
+    # Its typed compiler hierarchy resolves deduplicated module names directly.
+    actual=json.loads((export/'structure.json').read_text())['owner_modules']
+    require(set(actual)=={n['rtl_path'] for n in owners},'OWNER_INVENTORY')
     requested = {}
     for row in policy['variants'][variant]:
         instance = row['instance']

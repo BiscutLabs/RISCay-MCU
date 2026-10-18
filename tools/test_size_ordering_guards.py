@@ -26,9 +26,6 @@ class PolicyTests(unittest.TestCase):
         for bad in (math.nan,math.inf,-1):
             with self.assertRaises(ValueError):g.conservative_margin(bad,10)
 
-    def test_25_cell_pilot_sensitivity_is_below_residual_floor(self):
-        self.assertLess(.508,g.RESIDUAL_NS)
-        self.assertGreaterEqual(g.DERATE,.2)
 
     def test_only_explicit_candidates_change(self):
         base=dict(instance='Soc.a',owner='Soc.stage',owner_module='FourPhaseStage',

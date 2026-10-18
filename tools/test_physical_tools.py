@@ -6,11 +6,8 @@ from pathlib import Path
 import tempfile
 import unittest
 from unittest.mock import patch
-from types import SimpleNamespace
 
 import physical_tools as p
-from check_control_relative_controls import verify_runtime
-from gf180_physical import sha
 
 
 class RuntimeTests(unittest.TestCase):
@@ -65,14 +62,6 @@ class RuntimeTests(unittest.TestCase):
             with self.subTest(value=value),self.assertRaisesRegex(ValueError,"PHYSICAL_TOOL_TIMEOUT"):
                 tool.command([],timeout=value)
 
-    def test_fault_campaign_rejects_different_runtime(self):
-        with tempfile.TemporaryDirectory() as directory:
-            original=Path(directory)/"original";other=Path(directory)/"other"
-            original.write_text("same bytes");other.write_text("same bytes")
-            frozen={str(original.resolve()):sha(original)}
-            self.assertEqual(verify_runtime(SimpleNamespace(input_files=lambda:[original]),frozen),frozen)
-            with self.assertRaisesRegex(ValueError,"RELATIVE_CONTROL_RUNTIME_CHANGED"):
-                verify_runtime(SimpleNamespace(input_files=lambda:[other]),frozen)
 
 
 if __name__=="__main__":unittest.main()

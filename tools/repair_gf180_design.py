@@ -22,7 +22,8 @@ from repair_gf180_control import require
 from characterize_gf180_liberty import CORNERS
 
 EVIDENCE=('proof.json','repair.tcl','repair.log','candidate/netlist-audit.json',
-          'reference/readback.json','tied.v','tied.json','prepared.v','prepared.json','preparation.json',
+          'reference/readback.json','tied.v','tied.json','tied-pruned.json','preparation-orphan-ties.json',
+          'prepared.v','prepared.json','preparation.json',
           'repaired-raw.v','serializer-corrected.v','serializer-readback.json','serializer-corrections.json',
           'pruned.json','orphan-ties.json','sram-clock-drivers.json','before-electrical.rpt','after-electrical.rpt')
 
@@ -582,6 +583,12 @@ def repair(mapping,*,timeout=600):
     require(not original_proof['added_buffers'] and not original_proof['added_ties'] and not original_proof['resized'],
         'REPAIR_SOURCE_GRAPH_MISMATCH')
     tied=read_verilog_json(reference/'netlist.v',out/'tied.json','RiscayMcuDigital',yosys,pdk,before,tie_verilog=out/'tied.v')
+    # hilomap also inserts ties on unused ordinary wrapper input padding (for
+    # example GPIO[31:7]). Prune those added dead cells with the same exact
+    # consumer/native-boundary rule used after repair; never waive the proof.
+    initial_orphans=prune_added_orphan_ties(before,tied,'RiscayMcuDigital',protected,libs)
+    write_json(out/'preparation-orphan-ties.json',dict(status='removed-added-unused-ties-requires-graph-proof',cells=initial_orphans))
+    write_json(out/'tied-pruned.json',tied)
     tie_proof=graph_proof(before,tied,'RiscayMcuDigital',protected,libs)
     require(not tie_proof['added_buffers'] and not tie_proof['resized'],'REPAIR_TIE_PREPARATION_CHANGED_GRAPH')
     reset_free_aliases=[]

@@ -19,7 +19,7 @@ class FourPhaseSoc(p: SocParameters, board: SocParameters => BoardProfile = p =>
       t.controls.values.map(_.max.fs)).forall(_ <= ApplicationResetContract.digitalDelayLimitFs)),
     "custom stage timing exceeds supported digital timing-policy limit")
   val core = asyncChild("core")(d => new FourPhaseCore(d, timing=timing, executeTiming=executeTiming))
-  val transactions = asyncChild("transactions")(d => new FourPhaseFabric(p.config, timing, d))
+  val transactions = asyncChild("transactions")(d => new FourPhaseFabric(p.config, timing, d, p.bootWords))
   val requestBridge = asyncChild("request_bridge")(d => new FourPhaseQuiescingReceipt(new MemoryRequest,d))
   transactions.reset:=nativeApplicationReset.asAsyncReset
   core.reset:=nativeCoreReset.asAsyncReset
@@ -36,8 +36,8 @@ class FourPhaseSoc(p: SocParameters, board: SocParameters => BoardProfile = p =>
 object EmitFourPhaseSoc extends App {
   require(args.length == 1, "Usage: EmitFourPhaseSoc output-directory")
   val p = SocParameters(Groundlark.configuration, staleMs = 3000, watchdogCycles = 32, watchdogHoldCycles = 2,
-    adc = Some(AdcParameters(intervalCycles = 10000000)), lowPower = Some(LowPowerParameters.gf180Slow))
-  ExportDesign.emit(new FourPhaseSoc(p, p => new GroundlarkBoard(p, PowerPolicy())), Paths.get(args(0)))
+    adc = Some(AdcParameters(intervalCycles = 10000000)), lowPower = Some(LowPowerParameters.gf180Slow), spiBoot=true)
+  ExportDesign.emit(new FourPhaseSoc(p, p => new GenericBoard(p)), Paths.get(args(0)))
   SramInventory.write(Paths.get(args(0)), p.config)
   ChipWrapper.write(Paths.get(args(0)), p.lowPower.get)
 }

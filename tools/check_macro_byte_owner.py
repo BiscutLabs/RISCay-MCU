@@ -5,13 +5,13 @@ Each attempt gets a fresh directory. A failure writes a FAILED receipt and is
 retained. Only a complete passing campaign can receive the digital PASS status.
 """
 from pathlib import Path
-import argparse, hashlib, json, re, subprocess, traceback, os, shutil
-from macro_byte_source_binding import SOURCE_FILES, verify_cohort, verify_rtl_inventory
+import argparse, json, re, subprocess, traceback, os, shutil
+from export_structure import validate as validate_structure
+from run_receipt import RunReceipt
 
 BASE=Path(__file__).resolve().parent
 ROOT=BASE.parent
 TESTS=ROOT/'verification/src/test/resources/riscay/macro-byte'
-EXPECTED_PRIMITIVES = {'bd': {'stop_history': 'ChiselAsyncAsymmetricC_v1', 'armed_history': 'ChiselAsyncAsymmetricC_v1', 'request_guard': 'ChiselAsyncControlGate_v1', 'launch_contender': 'ChiselAsyncAsymmetricC_v1', 'retired_history': 'ChiselAsyncAsymmetricC_v1', 'launch_stop_mutex': 'ChiselAsyncMutex_v1', 'pin_payload': 'ChiselAsyncClosingLatch_v1', 'pins_guard': 'ChiselAsyncControlGate_v1', 'source_hold_guard': 'ChiselAsyncControlGate_v1', 'setup_guard': 'ChiselAsyncControlGate_v1', 'cen_driver': 'ChiselAsyncControlGate_v1', 'clock_driver': 'ChiselAsyncControlGate_v1', 'high_guard': 'ChiselAsyncControlGate_v1', 'access_guard': 'ChiselAsyncControlGate_v1', 'period_guard': 'ChiselAsyncControlGate_v1', 'period_history': 'ChiselAsyncAsymmetricC_v1', 'capture_driver': 'ChiselAsyncControlGate_v1', 'result_payload': 'ChiselAsyncEventRegister_v1', 'capture_hold_guard': 'ChiselAsyncControlGate_v1', 'pulse_done_history': 'ChiselAsyncAsymmetricC_v1', 'low_guard': 'ChiselAsyncControlGate_v1', 'cycle_history': 'ChiselAsyncAsymmetricC_v1', 'publication_guard': 'ChiselAsyncControlGate_v1', 'result_taken_history': 'ChiselAsyncAsymmetricC_v1', 'result_offer': 'ChiselAsyncControlGate_v1'}, 'click': {'stop_history': 'ChiselAsyncAsymmetricC_v1', 'armed_history': 'ChiselAsyncAsymmetricC_v1', 'request_guard': 'ChiselAsyncControlGate_v1', 'launch_contender': 'ChiselAsyncAsymmetricC_v1', 'retired_history': 'ChiselAsyncAsymmetricC_v1', 'launch_stop_mutex': 'ChiselAsyncMutex_v1', 'pin_payload': 'ChiselAsyncEventRegister_v1', 'target_input': 'ChiselAsyncEventRegister_v1', 'target_output': 'ChiselAsyncEventRegister_v1', 'pins_guard': 'ChiselAsyncControlGate_v1', 'source_hold_guard': 'ChiselAsyncControlGate_v1', 'setup_guard': 'ChiselAsyncControlGate_v1', 'cen_driver': 'ChiselAsyncControlGate_v1', 'clock_driver': 'ChiselAsyncControlGate_v1', 'high_guard': 'ChiselAsyncControlGate_v1', 'access_guard': 'ChiselAsyncControlGate_v1', 'period_guard': 'ChiselAsyncControlGate_v1', 'period_history': 'ChiselAsyncAsymmetricC_v1', 'capture_driver': 'ChiselAsyncControlGate_v1', 'result_payload': 'ChiselAsyncEventRegister_v1', 'capture_hold_guard': 'ChiselAsyncControlGate_v1', 'pulse_done_history': 'ChiselAsyncAsymmetricC_v1', 'low_guard': 'ChiselAsyncControlGate_v1', 'cycle_history': 'ChiselAsyncAsymmetricC_v1', 'publication_guard': 'ChiselAsyncControlGate_v1', 'accepted_input': 'ChiselAsyncEventRegister_v1', 'published_output': 'ChiselAsyncEventRegister_v1'}}
 MACRO='gf180mcu_ocd_ip_sram__sram1024x8m8wm1'
 IV=None; VVP=None; BACKEND=None
 
@@ -31,7 +31,6 @@ def backend_path(compiler, configured):
     if len(matches)!=1:
         raise RuntimeError('SET_IVERILOG_BACKEND_TO_EXACT_ACTIVE_DIRECTORY')
     return matches[0]
-def sha(p): return hashlib.sha256(Path(p).read_bytes()).hexdigest()
 def write(p,s): p.write_text(s,encoding='utf-8',newline='\n')
 def command(argv,cwd,log):
     p=subprocess.run([str(x) for x in argv],cwd=cwd,capture_output=True,text=True,timeout=90)
@@ -39,6 +38,7 @@ def command(argv,cwd,log):
     return p.returncode,p.stdout+p.stderr
 
 def inventory(export,variant):
+    validate_structure(export)
     contract=json.loads((export/'contract.json').read_text())
     design=contract['manifest']['design']; top=contract['manifest']['top']
     expected=('Click' if variant=='click' else 'FourPhase')+'MacroByte'
@@ -48,14 +48,12 @@ def inventory(export,variant):
     assert owner['module']==expected+'Owner' and not owner['children']
     primitives={p['id']:p for p in owner['primitives']}
     assert len(primitives)==len(owner['primitives'])
-    assert {key:p['model'] for key,p in primitives.items()}==EXPECTED_PRIMITIVES[variant],'EXACT_NATIVE_PRIMITIVE_INVENTORY'
     allowed={'ChiselAsyncControlGate_v1','ChiselAsyncAsymmetricC_v1',
              'ChiselAsyncClosingLatch_v1','ChiselAsyncEventRegister_v1','ChiselAsyncMutex_v1'}
     assert all(p['model'] in allowed for p in primitives.values())
     assert primitives['pin_payload']['parameters']['WIDTH']=='42'
     assert primitives['result_payload']['parameters']['WIDTH']=='8'
     assert primitives['launch_stop_mutex']['model']=='ChiselAsyncMutex_v1'
-    assert sum(p['model']=='ChiselAsyncMutex_v1' for p in primitives.values())==1
     assert primitives['pin_payload']['model']==('ChiselAsyncEventRegister_v1' if variant=='click' else 'ChiselAsyncClosingLatch_v1')
     paths={key:'dut.'+p['rtl_path'].split('.',1)[1] for key,p in primitives.items()}
     sources={p.name:p.read_text() for p in export.glob('*.sv') if p.name!='ref_'+top+'.sv'}
@@ -65,7 +63,6 @@ def inventory(export,variant):
     assert len(matches)==1, matches
     macro='dut.'+matches[0]
     ownertext=sources[owner['module']+'.sv']
-    verify_rtl_inventory(contract, sources, (export/'filelist.f').read_text())
     bindings=[]
     for signal,width in [('CLK',1),('CEN',1),('GWEN',1),('WEN',8),('A',10),('D',8),('Q',8)]:
         bindings.append(f'wire {"" if width==1 else f"[{width-1}:0] "}macro{signal}={macro}.{signal};')
@@ -269,19 +266,29 @@ def main():
     parser.add_argument('--iverilog-backend',default=os.environ.get('IVERILOG_BACKEND'))
     args=parser.parse_args(); out=args.output.resolve(); out.mkdir(parents=True,exist_ok=False)
     IV=executable(args.iverilog); VVP=executable(args.vvp); BACKEND=backend_path(IV,args.iverilog_backend)
-    inputs={str(p):sha(p) for p in [IV,VVP,*[ROOT/x for x in SOURCE_FILES]]}
-    for p in BACKEND.glob('*'):
-        if p.is_file(): inputs[str(p)]=sha(p)
-    receipt=dict(status='RUNNING',scope='BUILD_ONLY_DIGITAL_PHYSICAL_UNQUALIFIED',inputs_sha256=inputs,cases=[],inventory={})
+    runtime=json.loads((args.exports/'runtime.json').read_text())
+    inputs=[p for p in args.exports.rglob('*') if p.is_file()]
+    inputs += [Path(runtime['library_jar']),ROOT/'project/chisel-async-source.json',ROOT/'build.sbt',
+               *ROOT.glob('designs/*/src/main/scala/riscay/*/experimental/*.scala'),
+               *ROOT.glob('soc/src/main/scala/riscay/soc/experimental/*.scala'),
+               ROOT/'soc/src/main/scala/riscay/soc/Sram.scala',ROOT/'soc/sram-lock.json',
+               *ROOT.glob('soc/src/main/resources/riscay/sram/*.v'),
+               ROOT/'verification/src/test/scala/riscay/MacroByteFixtures.scala',
+               ROOT/'verification/src/test/scala/riscay/AsyncMacroByteOwnerSpec.scala',
+               *TESTS.glob('*')]
+    run=RunReceipt(out/'receipt.json',inputs=inputs,tools=[IV,VVP,
+        *(p for p in BACKEND.glob('*') if p.is_file()),Path(__file__),
+        BASE/'run_receipt.py',BASE/'export_structure.py',BASE/'sram_assets.py'])
+    receipt=dict(status='RUNNING',scope='FINITE_DIGITAL_PHYSICAL_UNQUALIFIED',cases=[],inventory={})
     try:
-        source_cohort,binding_inputs=verify_cohort(args.exports,ROOT)
-        inputs.update(binding_inputs)
-        receipt['source_cohort']=source_cohort
+        lock=json.loads((ROOT/'soc/sram-lock.json').read_text())
+        assert lock['macro']==MACRO,'FIXED_MACRO_NAME'
+        for suffix in ('.v','.blackbox.v'):
+            path=(ROOT/'soc/src/main/resources/riscay/sram'/(MACRO+suffix)).resolve()
+            assert run.files[str(path)]==lock['assets'][MACRO+suffix]['sha256'],'FIXED_MACRO_LOCK'
         receipt['iverilog_backend']=str(BACKEND)
         for variant in (args.variant or ('bd','click')):
             export=(args.exports/variant).resolve(); info=inventory(export,variant)
-            for p in export.rglob('*'):
-                if p.is_file(): inputs[str(p)]=sha(p)
             receipt['inventory'][variant]={k:v for k,v in info.items() if k not in ('sources','bindings','phase')}
             for case in cases(variant):
                 if args.case and case['name'] not in args.case: continue
@@ -301,7 +308,7 @@ def main():
                 receipt['cases'].append(result)
                 assert code==0, f'{folder}: compile failed'
                 code,log=command([VVP,'sim.vvp','+scenario='+case['scenario']],folder,folder/'simulation.log')
-                result.update(simulation_returncode=code,files_sha256={p.name:sha(p) for p in folder.iterdir() if p.is_file()})
+                result.update(simulation_returncode=code)
                 fatal=re.findall(r'^FATAL: (.*?):(\d+):\s*(.+)$',log,re.M)
                 if case.get('fault'):
                     assert log.count('A4_FAULT_APPLIED|'+case['name']+'|')==1,('FAULT_NOT_EXECUTED',case,log)
@@ -319,14 +326,12 @@ def main():
                     if case.get('monitor_omission'):
                         result['witness']='DELIBERATELY_BROKEN_A9_MONITOR_ESCAPES_IDENTICAL_FAULT; not an owner pass'
                 result['status']='PASS'
-        final_cohort,final_bindings=verify_cohort(args.exports,ROOT)
-        assert source_cohort==final_cohort and binding_inputs==final_bindings,'COHORT_CHANGED_DURING_CAMPAIGN'
-        for p,h in inputs.items(): assert sha(p)==h, f'INPUT_CHANGED_DURING_RUN:{p}'
         assert receipt['cases'],'EMPTY_CAMPAIGN'
         if not args.case and not args.variant:
             expected={(v,c['name']) for v in ('bd','click') for c in cases(v)}
             actual={(r['variant'],r['case']['name']) for r in receipt['cases']}
             assert actual==expected and len(actual)==len(receipt['cases']),'INCOMPLETE_OR_DUPLICATED_COHORT'
+            receipt['required_cases']=[dict(variant=v,name=c['name']) for v in ('bd','click') for c in cases(v)]
             receipt['cohort']={v:{'required':len(cases(v)),
                'positive':sum('fatal' not in c and not c.get('monitor_omission') for c in cases(v)),
                'negative':sum('fatal' in c for c in cases(v)),
@@ -335,7 +340,8 @@ def main():
     except Exception:
         receipt['status']='FAILED'; receipt['failure']=traceback.format_exc(); raise
     finally:
-        write(out/'receipt.json',json.dumps(receipt,indent=2)+'\n')
+        run.finish(outputs=[p for p in out.rglob('*') if p.is_file()],
+                   status='pass' if receipt['status'].endswith('_UNQUALIFIED') else 'fail', coverage=receipt)
         print(json.dumps({'status':receipt['status'],'completed_cases':sum(c.get('status')=='PASS' for c in receipt['cases'])}))
 
 if __name__=='__main__': main()

@@ -28,12 +28,24 @@ object ApplicationResetContract {
 final case class SocParameters(config: McuConfiguration, serviceHz: Int = 10000000,
     i2cAddress: Int = 0x35, staleMs: Int = 100, watchdogCycles: Int = 32768,
     watchdogHoldCycles: Int = 8, adc: Option[AdcParameters] = None,
-    lowPower: Option[LowPowerParameters] = None, i2cIdleCycles: Int = 262144) {
+    lowPower: Option[LowPowerParameters] = None, i2cIdleCycles: Int = 262144,
+    retainGpioOnWatchdog: Boolean = false, spiBoot: Boolean = false) {
   require(serviceHz >= 1000 && serviceHz <= ApplicationResetContract.maximumServiceHz && serviceHz % 1000 == 0)
   require(i2cAddress >= 8 && i2cAddress < 120)
   require(i2cIdleCycles >= 256)
   require(staleMs > 0 && watchdogCycles > watchdogHoldCycles + 4 && watchdogHoldCycles >= 2)
   require(adc.isEmpty || config.measurements.nonEmpty)
+  require(!spiBoot || (config.gpioCount >= 7 && config.workingRamBytes >= 256),
+    "generic SPI ROM needs GPIO 3..6 and at least 256 bytes of working RAM")
+  require(!spiBoot || config.programBytes <= 0x1000000-40,
+    "24-bit SPI image including header must fit the address space")
+  require(!spiBoot || adc.isEmpty || lowPower.nonEmpty,
+    "shared boot SPI requires explicitly scheduled ADC acquisition")
+  def bootWords: Vector[Long] = if(spiBoot) GenericBootRom.words else MemoryMap.boot
+  // SPI alternate-function pins remain readable for ROM bit-banging but never
+  // become GPIO event sources. ADC completion has its own event.
+  def gpioEventMask: BigInt = ((BigInt(1) << config.gpioCount) - 1) &
+    (if(spiBoot) BigInt("ffffff87",16) else BigInt("ffffffff",16))
   lowPower.foreach { _ => adc.foreach { a =>
     require(defaultSampleMs >= minimumSampleMs && defaultSampleMs <= maximumSampleMs,
       "sample period must accommodate conversion and leave freshness margin")
@@ -99,8 +111,5 @@ class Acquisition extends Bundle {
 }
 /** Immutable board binding; runtime controllers belong to each native design. */
 abstract class BoardProfile(val parameters: SocParameters) {
-  def ownedRegisters: Set[Int] = Set.empty
-  def mask: BigInt = 0
-  def enables: BigInt = 0
 }
 class GenericBoard(p: SocParameters) extends BoardProfile(p)

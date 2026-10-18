@@ -18,6 +18,7 @@ class OrderingMappingSpec(unittest.TestCase):
         top=dict(rtl_path='Top',module='Top',primitives=[],children=[dict(contract=one),dict(contract=two)])
         (directory/'Top.sv').write_text('module Top(); Shared one(); Shared two(); endmodule')
         (directory/'Shared.sv').write_text('module Shared(); ChiselAsyncControlGate_v1 #(.WIDTH(1), .OP(0)) guard(); endmodule')
+        (directory/'structure.json').write_text(json.dumps(dict(owner_modules={'Top':'Top','Top.one':'Shared','Top.two':'Shared'})))
         row=dict(instance='Top.one.guard',owner='Top.one',owner_module='FourPhaseStage',primitive_id='output_delay',
                  original_parameters={k:int(v) for k,v in params.items()},stages=8,previous_stages=38,purpose='ordering-publication')
         policy=dict(schema='riscay-gf180-ordering-guards-v1',status='locally-measured',engineering_derate=.2,

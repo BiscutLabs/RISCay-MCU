@@ -26,6 +26,10 @@ class ControlState(programBytes: Int) extends Bundle {
   val imageLength = UInt(countWidth.W); val entry = UInt(entryWidth.W); val received = UInt(countWidth.W)
   val imageId = UInt(32.W); val expectedCrc = UInt(32.W); val crc = UInt(32.W)
   val loaderPending = Bool(); val loaderWord = UInt(32.W)
+  // Explicit ownership of the ROM/MMIO streaming upload. Header fields reuse
+  // invalidated image metadata; no second wide command/header bank is needed.
+  val bootSession = Bool(); val bootIndex = UInt(4.W)
+  val loaderHold = Bool(); val persistPending = Bool(); val persisted = Bool()
   val selector = UInt(24.W)
   val sampleIndex = UInt(4.W); val sampleValue = UInt(32.W); val appIndex = UInt(6.W)
 }
@@ -35,6 +39,8 @@ object ControlState {
     _.lastError -> 0.U, _.imageLength -> 0.U, _.entry -> 0.U, _.received -> 0.U,
     _.imageId -> 0.U, _.expectedCrc -> 0.U, _.crc -> "hffffffff".U,
     _.loaderPending -> false.B, _.loaderWord -> 0.U, _.selector -> 0.U,
+    _.bootSession -> false.B, _.bootIndex -> 0.U,
+    _.loaderHold -> false.B, _.persistPending -> false.B, _.persisted -> false.B,
     _.sampleIndex -> 0.U, _.sampleValue -> 0.U, _.appIndex -> 0.U)
 }
 /** Internal feedback token. The speculative CRC never appears in the public

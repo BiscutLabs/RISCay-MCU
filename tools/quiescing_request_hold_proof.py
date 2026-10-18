@@ -39,6 +39,19 @@ FIXTURE_FABRIC = {
     'bd': 'aaa0c271ed06a37f09de4c70e90d5365d6210aec94dc3b791fc5d826a030137b',
     'click': 'd48d3ce84c6f5bbe1e62e7b38a3d6d1c9f91de7d72ece46b39de1a43556d41ef',
 }
+# Generic SPI ROM review: 524 words and the 128-byte MMIO aperture change only
+# the ROM data and local/service decode cones. Native identities, parameters,
+# storage/return history and the 70-bit source lifetime remain unchanged.
+# These exact constants are independently reviewed, never learned at runtime.
+GENERIC_ROM_FABRIC = {
+    'bd': '96f9ea8fab6150f5c98ba9eedfa723ceda92be43fc0dceb82ee6d6a938fb5663',
+    'click': '16f5d7dab638315bfee217616e8e5c68bd20aeddfeb4aacf39f35dcd3e702700',
+}
+# Independently reviewed reset fixtures: legacy ROM, generic MMIO aperture.
+GENERIC_FIXTURE_FABRIC = {
+    'bd': '2b61765e1f631ab7b97a0180063d1faa1fbae73e0c0db575c60270f5da172c1d',
+    'click': 'b2bb0a25138e3a9b4f66c4988d6dfd9e4adab0118eef2abb5f0372a07de3e6ec',
+}
 
 
 def need(value, reason):
@@ -146,8 +159,9 @@ def prove_request_hold(database, top, capacities):
         need(cone.bits(owner+'.reset')==cone.bits(reset_name), 'RESET_ALIAS_'+owner)
     signatures=source_signatures(database,top)
     for owner,signature in signatures.items():
-        expected=({FIXTURE_FABRIC[protocol]} if fixture and owner=='fabric' else
+        expected=({FIXTURE_FABRIC[protocol], GENERIC_FIXTURE_FABRIC[protocol]} if fixture and owner=='fabric' else
                   {EXPECTED[protocol][owner], PASSIVE_EXPECTED[protocol][owner]})
+        if not fixture and owner=='fabric': expected.add(GENERIC_ROM_FABRIC[protocol])
         need(signature['sha256'] in expected, 'OWNER_TOPOLOGY_'+owner)
     return dict(prefix=address, consumer_prefix=receipt, status='pass', protocol=protocol, source=address+'.ca_primitive_payload',
         source_width=70, signatures=signatures, capacities=capacities, phase_aliases=aliases,

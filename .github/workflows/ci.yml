@@ -1,0 +1,61 @@
+name: MCU fast verification
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: mcu-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: '3.12.13'
+      - name: Fetch exact library source
+        run: |
+          python - <<'PY'
+          import json, subprocess
+          pin=json.load(open('project/chisel-async-source.json'))
+          subprocess.run(['git','clone',pin['repository'],'.tools/chisel-async'],check=True)
+          subprocess.run(['git','checkout','--detach',pin['commit']],cwd='.tools/chisel-async',check=True)
+          PY
+      - name: Bootstrap pinned compiler and library
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc libmpc3 autoconf gperf bison flex g++ make python3-tk
+          python .tools/chisel-async/tools/bootstrap_jdk.py
+          python .tools/chisel-async/tools/bootstrap.py
+          python .tools/chisel-async/tools/setup_simulator.py --output build/simulator-setup
+          python - <<'PY'
+          import json, os, pathlib, subprocess
+          library=pathlib.Path('.tools/chisel-async').resolve()
+          java=next((library/'.tools/jdk21').rglob('bin/java')).parent.parent
+          firtool=next((library/'.tools/firtool-1.160.0').rglob('bin/firtool')).parent
+          env=dict(os.environ,JAVA_HOME=str(java),CHISEL_FIRTOOL_PATH=str(firtool))
+          with open(os.environ['GITHUB_ENV'],'a') as stream:
+              stream.write(f'JAVA_HOME={java}\nCHISEL_FIRTOOL_PATH={firtool}\n')
+              simulator=json.load(open('build/simulator-setup/setup.json'))
+              for key in ('CA_IVERILOG','CA_VVP'):
+                  stream.write(f'{key}={simulator[key]}\n')
+          pin=json.load(open('project/chisel-async-source.json'))
+          subprocess.run(['python','tools/sbt.py','--bootstrap',*pin['publish_tasks']],cwd=library,env=env,check=True)
+          PY
+          python tools/build_firmware.py --bootstrap --app event_loop --output build/ci-bootstrap
+      - name: Python properties and fast chip simulations
+        run: python tools/ci.py --output build/ci
+      - name: Retain test results and the run receipt
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: mcu-fast-verification
+          path: |
+            build/ci/
+            verification/target/test-reports/
+            physical/target/test-reports/

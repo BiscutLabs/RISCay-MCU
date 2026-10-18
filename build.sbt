@@ -4,7 +4,7 @@ ThisBuild / version := "0.1.0-SNAPSHOT"
 
 lazy val settings = Seq(
   libraryDependencies ++= Seq(
-    "io.github.biscutlabs" %% "chisel-async" % "0.1.0-RC2-06b1216-SNAPSHOT",
+    "io.github.biscutlabs" %% "chisel-async" % "0.1.0-RC2-83d6468-SNAPSHOT",
     "org.scalatest" %% "scalatest" % "3.2.20" % Test
   ),
   addCompilerPlugin("org.chipsalliance" % "chisel-plugin" % "7.16.0" cross CrossVersion.full),

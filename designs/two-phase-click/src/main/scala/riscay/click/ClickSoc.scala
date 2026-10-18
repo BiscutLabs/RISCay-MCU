@@ -19,7 +19,7 @@ class ClickSoc(p: SocParameters, board: SocParameters => BoardProfile = p => new
   OwnerTiming.check(resolvedExecuteTiming)
   val core = asyncChild("core")(d => new ClickCore(d, timing=timing, executeData=executeData,
     executeTiming=Some(resolvedExecuteTiming)))
-  val transactions = asyncChild("transactions")(d => new ClickFabric(p.config, timing, d))
+  val transactions = asyncChild("transactions")(d => new ClickFabric(p.config, timing, d, p.bootWords))
   val requestBridge = asyncChild("request_bridge")(d => new ClickQuiescingReceipt(new MemoryRequest,d))
   transactions.reset:=nativeApplicationReset.asAsyncReset
   core.reset:=nativeCoreReset.asAsyncReset
@@ -37,8 +37,8 @@ class ClickSoc(p: SocParameters, board: SocParameters => BoardProfile = p => new
 object EmitClickSoc extends App {
   require(args.length == 1, "Usage: EmitClickSoc output-directory")
   val p = SocParameters(Groundlark.configuration, staleMs = 3000, watchdogCycles = 32, watchdogHoldCycles = 2,
-    adc = Some(AdcParameters(intervalCycles = 10000000)), lowPower = Some(LowPowerParameters.gf180Slow))
-  ExportDesign.emit(new ClickSoc(p, p => new GroundlarkBoard(p, PowerPolicy())), Paths.get(args(0)))
+    adc = Some(AdcParameters(intervalCycles = 10000000)), lowPower = Some(LowPowerParameters.gf180Slow), spiBoot=true)
+  ExportDesign.emit(new ClickSoc(p, p => new GenericBoard(p)), Paths.get(args(0)))
   SramInventory.write(Paths.get(args(0)), p.config)
   ChipWrapper.write(Paths.get(args(0)), p.lowPower.get)
 }

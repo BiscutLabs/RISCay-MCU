@@ -112,14 +112,13 @@ Reads must not clear faults, alter outputs/policy or refresh sample age.
 
 The telemetry endpoint remains accessible before application programming and
 while the programming lock is set. A profile may publish unavailable samples
-until its producer is active; Groundlark requires permanent sensing/bootstrap
-measurements before the application starts. Endpoint availability alone does not
+until its configured producer is active. Endpoint availability alone does not
 guarantee fresh measurements: report stale/invalid data if acquisition or its
 producer stalls. Freshness must not depend on the application claiming it is
 healthy. Loss of the service clock causes an independent watchdog reset; after
 clock recovery, the retained LF count advances sample age to expose staleness;
-the reset reason reports application recovery. The host endpoint needs the service clock to respond. Uploads and
-host reads must not suspend required board safety functions.
+the reset reason reports application recovery. The host endpoint needs the service clock to respond. Firmware owns board safety functions. SPI boot/update temporarily claims the ADC bus;
+age and stale flags continue advancing during that interval.
 
 The programming lock protects application code and metadata, not telemetry
 updates. Normal sampling continues while locked. Age limits are build parameters;
@@ -150,7 +149,7 @@ registers, and a generic channel declaration does not add sensing hardware.
    a substitute for reporting the operation's accepted/completed status.
 4. Successful validation enters READY and sets `PROGRAMMED`. Metadata and the
    validated bytes must describe the same image. A failed upload remains in
-   permanent profile bootstrap with `PROGRAMMED=0`.
+   generic ROM loader fallback with `PROGRAMMED=0`.
    Raw code/metadata writes are permitted only as part of the active LOADING
    session; READY/RUNNING images cannot be modified by ordinary stores, even
    when unlocked. Replacement must begin with an accepted BEGIN that invalidates
@@ -250,3 +249,12 @@ canceling application GPIO/event state. The separate native Supervisor safety
 record consumes the same publications through its own retained ingress and
 bridges, independently of Control/Telemetry backpressure.
 See the [migration scope](async-soc-migration.md#gpioeventstelemetry-scope-and-contract).
+
+## Generic external boot and persistence
+
+SPI-boot builds expose loader word 8 (`BOOT_STATE`): bit 0 loader hold, bit 1
+persistence pending, bit 2 last explicit persistence succeeded, bit 3 CPU boot
+session, bits 7:4 header index. ENTER_LOADER (9) and PERSIST (10) are explicit
+commands. See [generic boot](generic-boot-contract.md); ordinary uploads do not
+erase flash. Persistence failure is LAST_ERROR 9 and does not invalidate the
+verified RAM image. The lock rejects recovery/replacement/persistence.

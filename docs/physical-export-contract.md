@@ -16,14 +16,17 @@ rejected it. Its `CLICK_FABRIC_REQUIRES_SIMULATION_POLICY` guard remains intact
 and has a direct negative test. No native controller receives an unsupported
 policy merely to make export succeed.
 
-The physical emitter retains the enabled Groundlark evaluation policy, ADC,
-source-stopping low-power configuration, independent LF time/watchdog and chip
-reset qualifier. Its threshold defaults are not battery/tapeout settings.
-Ordinary reference emitters keep their existing disabled board policy.
+The physical emitter now builds the generic SPI-boot MCU, with ADC, independent
+LF time/watchdog and the reset qualifier. Neither RTL nor ROM contains Groundlark
+power policy. Profiles supply resources and measurement metadata only.
 
-Every controller's exact timing intent resides in `contract.json`. The current v3
-`physical-policy.json` binds that file and `ports.json` by SHA-256, identifies
-the supported digital policy and explicitly labels qualification as absent.
+Every controller's exact timing intent resides in `contract.json`. The current v4
+`physical-policy.json` binds that file and `ports.json`, identifies `generic-mcu`,
+`profile_behavior=false`, SPI boot and the actual ROM size, and explicitly labels
+qualification as absent. Export generation runs the library structural audit;
+the MCU consumes that audit without rewriting probes. See
+[test-suite cleanup](test-suite-cleanup.md) for retired strict-export coverage.
+Historical campaigns below describe their original revisions.
 `owner_targets_fs` identifies the 80 ns execute request, 100 ns elapsed step
 request and 32 ns BD Control source ACK targets. Constructor parameters keep
 elapsed owner/step and Control owner/update timing independent. These guards
@@ -43,8 +46,8 @@ controls and strict validation of both portable and physical export forms. This
 verification does not close R2b/item 17a3 physical reset qualification.
 
 The mapper rejects stale contract/port hashes, wrong variant/top bindings,
-disabled evaluation policy, unsupported policy names, false qualification labels
-and old v1/v2 policy records. Regenerate old exports with the current emitter;
+profile behavior, unsupported policy names and false qualification labels.
+Historical v3 exports are not generic-MCU evidence. Regenerate old exports with the current emitter;
 do not edit their policy JSON to claim current support. Existing old P&R artifacts
 remain historical and do not qualify the migrated RTL.
 

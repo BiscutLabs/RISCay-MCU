@@ -7,32 +7,22 @@ import org.scalatest.funsuite.AnyFunSuite
 import riscay.soc._
 import riscay.profiles._
 
-class BdSpiAgeFixture(p: SocParameters) extends riscay.bd.FourPhaseSoc(p,x => new GroundlarkBoard(x,PowerPolicy(enabled=true))) {
+class BdSpiAgeFixture(p: SocParameters) extends riscay.bd.FourPhaseSoc(p,x => new GenericBoard(x)) {
   val pauseConsumers=IO(Input(Bool()))
-  val (boardCommand,boardReply)=supervisorBridges.get
-  boardCommand.in.valid:=fabric.boardCommand.valid && !pauseConsumers
-  fabric.boardCommand.ready:=boardCommand.in.ready && !pauseConsumers
   telemetryCommandBridge.in.valid:=fabric.telemetryCommand.valid && !pauseConsumers
   fabric.telemetryCommand.ready:=telemetryCommandBridge.in.ready && !pauseConsumers
-  val queued=IO(Output(new SupervisorCommand)); queued:=fabric.boardCommand.bits
   val hostCapture=IO(Output(new TelemetryCapture)); hostCapture:=fabric.telemetryCommand.bits.captures.get(0)
-  val nativeState=IO(Output(new SupervisorState)); nativeState:=boardReply.out.bits
   val hostSample=IO(Output(new Sample)); hostSample:=BoringUtils.bore(fabric.hostSamples(0))
   val publication=IO(Output(Bool())); publication:=fabric.io.adc.result.valid
   val publicationAge=IO(Output(UInt(32.W))); publicationAge:=fabric.io.adc.age
   val adcBusy=IO(Output(Bool())); adcBusy:=fabric.io.adc.busy
   watchdog.io.heartbeat:=false.B
 }
-class ClickSpiAgeFixture(p: SocParameters) extends riscay.click.ClickSoc(p,x => new GroundlarkBoard(x,PowerPolicy(enabled=true))) {
+class ClickSpiAgeFixture(p: SocParameters) extends riscay.click.ClickSoc(p,x => new GenericBoard(x)) {
   val pauseConsumers=IO(Input(Bool()))
-  val (boardCommand,boardReply)=supervisorBridges.get
-  boardCommand.in.valid:=fabric.boardCommand.valid && !pauseConsumers
-  fabric.boardCommand.ready:=boardCommand.in.ready && !pauseConsumers
   telemetryCommandBridge.in.valid:=fabric.telemetryCommand.valid && !pauseConsumers
   fabric.telemetryCommand.ready:=telemetryCommandBridge.in.ready && !pauseConsumers
-  val queued=IO(Output(new SupervisorCommand)); queued:=fabric.boardCommand.bits
   val hostCapture=IO(Output(new TelemetryCapture)); hostCapture:=fabric.telemetryCommand.bits.captures.get(0)
-  val nativeState=IO(Output(new SupervisorState)); nativeState:=boardReply.out.bits
   val hostSample=IO(Output(new Sample)); hostSample:=BoringUtils.bore(fabric.hostSamples(0))
   val publication=IO(Output(Bool())); publication:=fabric.io.adc.result.valid
   val publicationAge=IO(Output(UInt(32.W))); publicationAge:=fabric.io.adc.age
@@ -173,7 +163,7 @@ end endtask
       """,monitor,referenceHalfPeriodNs=250,serviceHalfPeriodNs=25,
         maximumDelaySubtree=Some("tested_spi_adc"))
     }
-    test(s"$name SPI freshness: delayed physical capture stays old through host and supervisor batching") {
+    test(s"$name SPI freshness: delayed physical capture stays old through host telemetry batching") {
       val p=SocParameters(Groundlark.configuration.copy(programBytes=16,workingRamBytes=16),
         serviceHz=1000,staleMs=500,watchdogCycles=64,watchdogHoldCycles=32,
         adc=Some(AdcParameters(2,100)))
@@ -187,26 +177,24 @@ end endtask
         wait(publication); oldAge=publicationAge;
         if(oldAge<500) $fatal(1,"SPI_BUFFERED_AGE_NOT_OLD");
         @(posedge serviceClock); #1;
-        if(queued_capture_tailAge !== oldAge || hostCapture_tailAge !== oldAge)
+        if(hostCapture_tailAge !== oldAge)
           $fatal(1,"SPI_PUBLICATION_AGE_NOT_CAPTURED");
-        // Keep the consumer paused for the next fresh frame. The stale gap
-        // must survive compaction, even though the latest tail is fresh.
+        // The latest successful capture replaces age, while sequence counts both
+        // captures even when the telemetry consumer is paused.
         wait(!publication); wait(publication); freshAge=publicationAge;
         if(freshAge>=500) $fatal(1,"SPI_FRESH_FRAME_PRECONDITION");
         @(posedge serviceClock); #1;
-        if(queued_capture_count!==2 || queued_capture_maximumGap<500 ||
-           queued_capture_tailAge!==freshAge || hostCapture_tailAge!==freshAge)
+        if(hostCapture_count!==2 || hostCapture_tailAge!==freshAge)
           $fatal(1,"SPI_STALE_GAP_ERASED");
         wait(!adcBusy);
         force dut.ca_child_spi_adc.ca_child_wave_bridge.state=0;
         pauseConsumers=0;
-        wait(hostSample_sequence==2 && nativeState_sample_sequence==2); #1;
-        if(hostSample_value!==13592 || nativeState_sample_value!==13592 ||
-           hostSample_age<freshAge || nativeState_sample_age<freshAge || gpioOut[0])
-          $fatal(1,"SPI_FRESHNESS_HOST_OR_SUPERVISOR");
+        wait(hostSample_sequence==2); #1;
+        if(hostSample_value!==13592 || hostSample_age<freshAge)
+          $fatal(1,"SPI_FRESHNESS_HOST");
         #50000;
         if(hostSample_valid && hostSample_age<500) $fatal(1,"SPI_HOST_AGE_STOPPED");
-        if(gpioOut[0] || resets<2) $fatal(1,"SPI_SUPERVISOR_STALE_OR_RESET_COVERAGE");
+        if(resets<2) $fatal(1,"SPI_RESET_COVERAGE");
         release dut.ca_child_spi_adc.ca_child_wave_bridge.state;
       ""","""
 reg [15:0] shift; reg [31:0] oldAge,freshAge; integer resets=0;

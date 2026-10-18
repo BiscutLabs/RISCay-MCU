@@ -5,10 +5,21 @@ import json
 from pathlib import Path
 import tempfile
 import unittest
-from gf180_physical import inventory, physical_policy, sha
+from gf180_physical import inventory, physical_policy, sha, gpio_pad_binding
 
 
 class PhysicalExportPolicy(unittest.TestCase):
+    def test_spi_pins_are_shared_not_extra_package_pads(self):
+        indices,binding=gpio_pad_binding(7,True)
+        self.assertEqual(indices,[0,1,2,4,5])
+        self.assertEqual(binding.count("1'bz"),5)
+        self.assertIn('gpioSense[3] = adcSclk',binding)
+        self.assertIn('gpioSense[6] = adcMiso',binding)
+        for pad,logical in enumerate(indices):
+            self.assertIn(f'gpioSense[{logical}] = gpio[{pad}]',binding)
+        self.assertEqual(gpio_pad_binding(3,False)[0],[0,1,2])
+        with self.assertRaisesRegex(ValueError,'SPI_BOOT_GPIO_COUNT'):gpio_pad_binding(6,True)
+
     def test_exact_contract_ports_variant_and_unqualified_scope(self):
         with tempfile.TemporaryDirectory() as folder:
             out = Path(folder)
@@ -26,6 +37,14 @@ class PhysicalExportPolicy(unittest.TestCase):
                     (out / "physical-policy.json").write_text(json.dumps(value))
                     return physical_policy(out, dict(top=top))
                 self.assertEqual(check(policy), policy)
+                generic=dict(policy,schema='riscay-physical-policy-v4',architecture='generic-mcu',
+                    profile_behavior=False,spi_boot=True,rom_bytes=2084)
+                del generic['policy_enabled']
+                self.assertEqual(check(generic),generic)
+                for field,value in (('architecture','groundlark'),('profile_behavior',True),
+                                    ('spi_boot',False),('rom_bytes',12),('policy_enabled',False)):
+                    with self.subTest(field=field),self.assertRaisesRegex(ValueError,'INVALID_GENERIC_MCU_POLICY'):
+                        check(dict(generic,**{field:value}))
                 mutations = [
                     ("schema", "riscay-physical-policy-v1", "PHYSICAL_POLICY_REEXPORT_REQUIRED"),
                     ("policy_enabled", False, "DISABLED_ESTIMATE_POLICY"),
@@ -72,17 +91,6 @@ class PhysicalExportPolicy(unittest.TestCase):
                     with self.assertRaises(ValueError):
                         physical_policy(out, dict(top=top), comparison_baseline=True)
 
-    def test_assertion_layer_label_does_not_admit_unregistered_sources(self):
-        with tempfile.TemporaryDirectory() as folder:
-            out = Path(folder)
-            root = dict(module="FourPhaseSoc", rtl_path="FourPhaseSoc", children=[], primitives=[], timing=[])
-            (out / "contract.json").write_text(json.dumps(dict(manifest=dict(top="FourPhaseSoc", design=root))))
-            (out / "FourPhaseSoc.sv").write_text("module FourPhaseSoc(); endmodule\n")
-            for source in ("verification/assert/FourPhaseSoc_Verification_Assert.sv", "unregistered.sv", "../FourPhaseSoc.sv"):
-                (out / "filelist.f").write_text("FourPhaseSoc.sv\n" + source + "\n")
-                with self.assertRaisesRegex(ValueError, "^UNREGISTERED_SOURCE$"): inventory(out)
-            (out / "filelist.f").write_text("FourPhaseSoc.sv\n")
-            self.assertEqual(inventory(out)[0]["top"], "FourPhaseSoc")
 
 
 if __name__ == "__main__": unittest.main()

@@ -16,8 +16,8 @@ object TelemetryState {
     val sample = (new Sample).Lit(_.value -> 0.U, _.valid -> false.B, _.calibrated -> false.B,
       _.age -> 0.U, _.sequence -> 0.U, _.never -> true.B, _.fault -> false.B)
     val fields: Seq[TelemetryState => (Data, Data)] = Seq(
-      _.output -> p.config.application.pins.filter(_.resetHigh).map(x => BigInt(1) << x.index).sum.U(32.W),
-      _.enable -> p.config.application.pins.filter(_.output).map(x => BigInt(1) << x.index).sum.U(32.W),
+      _.output -> 0.U(32.W),
+      _.enable -> 0.U(32.W),
       _.pending -> 0.U)
     val application: Seq[TelemetryState => (Data, Data)] = if(words == 0) Seq.empty else
       Seq(_.application.get -> Vec.Lit((0 until words).map(_ => 0.U(32.W)): _*))

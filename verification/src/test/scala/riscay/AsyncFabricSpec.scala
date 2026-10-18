@@ -22,7 +22,7 @@ class AsyncFabricSpec extends AnyFunSuite {
     Tx(0,8,0,15,false,0x00010067L), Tx(2,0,0x55,15,false,0,true),
     Tx(0,12,0,15,false,0,true), Tx(0,0x20000000L,0,15,false,0,true),
     Tx(2,0x10000000L,0x55,15,false,0,true), Tx(1,0x10000010L,0,15,false,0,true),
-    Tx(1,0x20000010L,0,15,false,0,true), Tx(1,0x3000004cL,0,15,false,0,true),
+    Tx(1,0x20000010L,0,15,false,0,true), Tx(1,0x30000080L,0,15,false,0,true),
     Tx(1,0x30000011L,0,15,false,0,true), Tx(0,0x30000000L,0,15,false,0,true),
     Tx(1,0xfffffffcL,0,15,false,0,true), Tx(2,0x80000000L,0,15,false,0,true)) ++
     (0 until 15).flatMap(m => Seq(0L,16L).map(offset => Tx(1,0x30000000L+offset,0,m,false,0,true)))
@@ -31,7 +31,10 @@ class AsyncFabricSpec extends AnyFunSuite {
     Tx(1,0x1000000cL,0,15,true,0,true), // Dynamic image protection is endpoint-owned.
     Tx(1,0x2000000cL,0,15,true,0x11223344L),
     Tx(2,0x20000000L,0xaabbccddL,5,true,0),
-    Tx(1,0x30000010L,0,15,true,4), Tx(2,0x3000003cL,30000,15,true,0))
+    Tx(1,0x30000010L,0,15,true,4), Tx(2,0x3000003cL,30000,15,true,0)) ++
+    (76 until 128 by 4).flatMap(offset => Seq(
+      Tx(1,0x30000000L+offset,0,15,true,offset),
+      Tx(2,0x30000000L+offset,offset,15,true,0,true))) // Endpoint owns register permissions.
   private val transactions = local.zipWithIndex.flatMap { case(t,i) =>
     Seq(t, endpoints(i % endpoints.size), t, endpoints((i+1) % endpoints.size))
   }

@@ -14,7 +14,8 @@ import riscay.soc.MemoryMap
   * Input remains held until the selected reply has been captured. A busy output
   * stalls both local ROM accesses and endpoint dispatch without changing data.
   */
-class ClickFabric(config: McuConfiguration, timing: ClickTiming, domain: ResetDomain)
+class ClickFabric(config: McuConfiguration, timing: ClickTiming, domain: ResetDomain,
+    bootWords: Vector[Long] = MemoryMap.boot)
     extends AsyncModule(domain) {
   // This composed controller has a separately checked digital envelope. Do not
   // accept arbitrary stage policies until their cell bounds/pulse distribution
@@ -64,17 +65,17 @@ class ClickFabric(config: McuConfiguration, timing: ClickTiming, domain: ResetDo
     g
   }
   private val r = request.bits
-  private val rom = r.address < (MemoryMap.boot.size * 4).U
+  private val rom = r.address < (bootWords.size * 4).U
   private val program = r.address >= MemoryMap.program.U && r.address < (MemoryMap.program + config.programBytes).U &&
     r.operation =/= Operation.Write.U
   private val ram = r.address >= MemoryMap.ram.U && r.address < (MemoryMap.ram + config.workingRamBytes).U &&
     r.operation =/= Operation.Fetch.U
-  private val mmio = r.address >= MemoryMap.mmio.U && r.address < (MemoryMap.mmio + 76).U &&
+  private val mmio = r.address >= MemoryMap.mmio.U && r.address < (MemoryMap.mmio + MemoryMap.mmioBytes).U &&
     r.operation =/= Operation.Fetch.U && r.address(1,0) === 0.U && r.mask === 15.U
   private val local = r.operation =/= Operation.Halt.U && (rom || !(program || ram || mmio))
   private val localReply = Wire(new MemoryResponse)
   localReply.data := Mux(rom && r.operation =/= Operation.Write.U,
-    VecInit(MemoryMap.boot.map(_.U(32.W)))(r.address(3,2)), 0.U)
+    VecInit(bootWords.map(_.U(32.W)))(r.address(log2Ceil(bootWords.size).max(1)+1,2)), 0.U)
   localReply.error := !rom || r.operation === Operation.Write.U
   private val accepted = phase("accepted_phase")
   private val issuedPhase = phase("service_request_phase")

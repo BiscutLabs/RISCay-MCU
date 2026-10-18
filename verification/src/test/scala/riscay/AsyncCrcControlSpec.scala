@@ -63,7 +63,7 @@ class AsyncCrcControlSpec extends AnyFunSuite {
   private case class Bindings(crcCapture: String, crcD: String, crcQ: String,
     stateCapture: String, stateD: String, stateQ: String, statePending: String,
     stateWord: String, stateCrc: String, stateReceived: String, stateCandidate: String,
-    updateCapture: String, updateQ: String, contextWidth: Int,
+    updateCapture: String, updateQ: String, contextWidth: Int, stateWidth: Int,
     crcReq: String, crcAck: String, resultReq: String, stateReq: String, stateAck: String,
     forkAck: String, offerGuard: String, stateGuard: String, crcAckGuard: String)
   private def bindings(directory: Path, click: Boolean): Bindings = {
@@ -73,7 +73,17 @@ class AsyncCrcControlSpec extends AnyFunSuite {
     val storage=if(click) state else child(child(state,"stage0"),"storage")
     val model=if(click) "ChiselAsyncEventRegister_v1" else "ChiselAsyncClosingLatch_v1"
     val cp=path(primitive(crc,"payload",model,32)("rtl_path").str)
-    val sp=path(primitive(storage,"payload",model,255)("rtl_path").str)
+    val layouts=storage("channels").arr.filter(_("id").str=="out")
+    require(layouts.size==1,"CRC_BINDING_STATE_CHANNEL")
+    val lanes=layouts.head("layout").arr.sortBy(_("lsb").num.toInt)
+    var stateWidth=0
+    lanes.foreach { field =>
+      val width=field("width").num.toInt
+      require(width>0 && field("lsb").num.toInt==stateWidth,"CRC_BINDING_STATE_LAYOUT")
+      stateWidth+=width
+    }
+    require(stateWidth>0,"CRC_BINDING_EMPTY_STATE")
+    val sp=path(primitive(storage,"payload",model,stateWidth)("rtl_path").str)
     val up=primitive(update,"payload",model); val uq=path(up("rtl_path").str)
     for(id <- Seq("crc_context_request","crc_context_return")) {
       val gate=primitive(n,id,"ChiselAsyncAsymmetricC_v1")
@@ -91,7 +101,7 @@ class AsyncCrcControlSpec extends AnyFunSuite {
       slice(storage,"out","bits.state.crc",sp+".d",32),
       slice(storage,"out","bits.state.received",sp+".d",5),
       slice(storage,"out","bits.pendingCrc",sp+".d",32),
-      uq+capture,uq+".q",up("parameters")("WIDTH").str.toInt,
+      uq+capture,uq+".q",up("parameters")("WIDTH").str.toInt,stateWidth,
       port(abi,crc,"in.req"),port(abi,crc,"in.ack"),port(abi,crc,"out.req"),
       port(abi,state,"in.req"),port(abi,state,"in.ack"),port(abi,fork,if(click) "left.ack" else "out[0].ack"),
       guard(crc,if(click) "output_guard" else "output_delay"),guard(storage,"request_delay"),
@@ -251,7 +261,7 @@ class AsyncCrcControlSpec extends AnyFunSuite {
             integer crc_captures=0, state_captures=0, update_captures=0, before_reset_replies=0;
             reg tracking=0, request_blocked=0, state_blocked=0, return_blocked=0, hold_context=0;
             reg [${b.contextWidth-1}:0] held_context;
-            reg [254:0] saved_state; // Fixed 16-byte fixture: independently checked 255-bit token.
+            reg [${b.stateWidth-1}:0] saved_state; // Compare every declared state lane at real capture.
             ${observers(b,phase,click)}
             ${if(click) "start=1;" else ""}
             $begin $pad

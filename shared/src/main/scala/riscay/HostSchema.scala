@@ -39,7 +39,8 @@ final case class MeasurementChannel(index: Int, label: String, unit: Int, scale1
   require(scale10 >= -9 && scale10 <= 9, "decimal scale must be in -9..9")
 }
 
-/** Logical GPIO bindings; physical pads and electrical characteristics are board work. */
+/** Pin labels and desired board-level conventions only; these fields never
+  * grant RTL ownership or change GPIO POR input state. */
 final case class PinRole(index: Int, name: String, output: Boolean, activeLow: Boolean = false,
     resetHigh: Boolean = false) {
   require(index >= 0 && index < 32, "GPIO index must be in 0..31")
@@ -79,7 +80,7 @@ object HostSchema {
   val device: Vector[HostRegister] = words("ABI_VERSION", "APPLICATION_ID", "APPLICATION_VERSION",
     "PROGRAM_BYTES", "WORKING_RAM_BYTES", "GPIO_COUNT", "MEASUREMENT_COUNT", "RESET_REASON", "CRASH_COUNT")
   val loader: Vector[HostRegister] = words("MODE", "PROGRAMMED", "PROGRAM_LOCKED", "CAN_PROGRAM",
-    "BUSY", "LAST_ERROR", "IMAGE_ID", "RECEIVED_BYTES")
+    "BUSY", "LAST_ERROR", "IMAGE_ID", "RECEIVED_BYTES", "BOOT_STATE")
   val measurement: Vector[HostRegister] = words("VALUE", "FLAGS", "AGE_MS", "SEQUENCE", "UNIT", "SCALE10")
   val timing: Vector[HostRegister] = words("FEATURES", "NOW_MS", "SAMPLE_PERIOD_MS", "WAKE_MASK",
     "SLEEP_REMAINING_MS", "PENDING", "SLEEP_ENTRIES", "TIMING_STATUS")

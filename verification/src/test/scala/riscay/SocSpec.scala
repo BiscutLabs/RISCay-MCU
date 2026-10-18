@@ -141,56 +141,6 @@ end
         if(systemReset || programmed) $$fatal(1,"STOPPED_CLOCK_RECOVERY");
       """)
     }
-    test(s"$name Groundlark: unprogrammed cold start, SPI sensing, protected outputs, shutdown ACK and timeout latch") {
-      val params = SocParameters(Groundlark.configuration, serviceHz = 1000, staleMs = 500,
-        watchdogCycles = 100000, adc = Some(AdcParameters(2,100)))
-      val program = Seq(0x300000b7L, store(1,0,24,2), store(1,0,28,2), breakpoint)
-      val adcModel = """
-reg [11:0] adcCode=2200;
-reg [15:0] adcShift;
-always @(negedge adcCsN) begin adcShift={4'b0,adcCode}; adcMiso=adcShift[15]; end
-always @(negedge adcSclk) if(!adcCsN) begin adcShift=adcShift<<1; adcMiso=adcShift[15]; end
-"""
-      ClockedSimulation.run(top(click, params, x => new GroundlarkBoard(x, PowerPolicy(enabled=true))),
-        name + "-groundlark", s"""
-        if(gpioOut[0] || programmed) $$fatal(1,"UNQUALIFIED_BOOT");
-        gpioIn=0;
-        #3100000;
-        if(gpioOut[0]) $$fatal(1,"STALE_ACK_ALLOWED_BOOT");
-        gpioIn=4; #150000;
-        if(!gpioOut[0] || gpioOut[1] || programmed || gpioOe !== 3) begin
-          read_words(2,0,0); $$display("BOOT_SAMPLE %h out=%h oe=%h",snapshot,gpioOut,gpioOe);
-          read_words(128,0,0); $$fatal(1,"CIRCULAR_BOOT state=%h",snapshot);
-        end
-        read_words(2,0,0);
-        if(snapshot[0+:32] !== 13592 || !snapshot[32] || snapshot[36] || snapshot[128+:32] !== 1 ||
-          snapshot[160+:32] !== 32'hfffffffd || supported !== 63) $$fatal(1,"ADC_TELEMETRY %h",snapshot);
-        ${upload(program)}
-        #50000;
-        if(!gpioOut[0] || gpioOe !== 3 || !locked) $$fatal(1,"HANDOFF_OR_GPIO_OVERRIDE");
-        adcCode=1500;
-        wait(gpioOut[1]);
-        if(!gpioOut[0]) $$fatal(1,"EARLY_POWER_CUT");
-        gpioIn=0; #10000;
-        if(gpioOut[0] || gpioOut[1]) $$fatal(1,"ACK_NOT_HONORED");
-        gpioIn=4; adcCode=2200;
-        #2000000; if(gpioOut[0]) $$fatal(1,"MINIMUM_OFF_IGNORED");
-        wait(gpioOut[0]);
-        // Three unacknowledged requests cause bounded forced-off then latch.
-        repeat(3) begin
-          adcCode=1500; wait(gpioOut[1]); wait(!gpioOut[0]);
-          adcCode=2200;
-          #3200000;
-        end
-        if(gpioOut[0]) $$fatal(1,"TIMEOUTS_DID_NOT_LATCH");
-        read_words(128,0,0);
-        if(snapshot[0+:32] !== 3 || snapshot[160+:32] !== 3 || snapshot[128+:32] !== 4) $$fatal(1,"BAD_LATCH_TELEMETRY %h",snapshot);
-        read_words(2,0,0);
-        if(!snapshot[32] || snapshot[96+:32] < 20) $$fatal(1,"LOCK_STOPPED_SAMPLING");
-        reset=1; #1000;
-        if(gpioOut[0] || programmed || locked) $$fatal(1,"RESET_NOT_FAIL_OFF");
-      """, adcModel)
-    }
   }
   test("SoC harness rejects a deliberately wrong host ABI expectation") {
     val failure = intercept[IllegalArgumentException] {

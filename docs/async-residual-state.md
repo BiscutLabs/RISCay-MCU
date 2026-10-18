@@ -1,5 +1,12 @@
 # Remaining clocked-state audit
 
+The generic-MCU correction removes fixed supervisor ownership and transport.
+Its current matched maps contain **4,125 BD / 4,179 Click periodic sinks**,
+including SRAM clocks; digital/export verification is in progress. The older
+inventories below describe their named revisions. See the
+[area ledger](area-ledger.md) and [generic boot review](reviews/generic-mcu-boot.md)
+for the net cost of removals plus the generic ROM, SPI claim and loader ingress.
+
 ## Follow-up source review, 2026-10-13
 
 Two independent audits of `535f781` found no new periodic-clock storage inside

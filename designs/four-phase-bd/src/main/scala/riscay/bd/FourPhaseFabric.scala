@@ -18,7 +18,7 @@ import riscay.soc.MemoryMap
   * transaction cannot release that return until BOTH endpoint handshakes drain.
   */
 class FourPhaseFabric(config: McuConfiguration, timing: BundledTiming,
-    domain: ResetDomain) extends AsyncModule(domain) {
+    domain: ResetDomain, bootWords: Vector[Long] = MemoryMap.boot) extends AsyncModule(domain) {
   val request = fourPhaseInput("request", new MemoryRequest)
   val response = fourPhaseOutput("response", new MemoryResponse)
   val serviceRequest = fourPhaseOutput("service_request", new MemoryRequest)
@@ -43,17 +43,17 @@ class FourPhaseFabric(config: McuConfiguration, timing: BundledTiming,
     gate(id, GateOperation.Invert, either)
   }
   private val r = request.bits
-  private val rom = r.address < (MemoryMap.boot.size * 4).U
+  private val rom = r.address < (bootWords.size * 4).U
   private val program = r.address >= MemoryMap.program.U && r.address < (MemoryMap.program + config.programBytes).U &&
     r.operation =/= Operation.Write.U
   private val ram = r.address >= MemoryMap.ram.U && r.address < (MemoryMap.ram + config.workingRamBytes).U &&
     r.operation =/= Operation.Fetch.U
-  private val mmio = r.address >= MemoryMap.mmio.U && r.address < (MemoryMap.mmio + 76).U &&
+  private val mmio = r.address >= MemoryMap.mmio.U && r.address < (MemoryMap.mmio + MemoryMap.mmioBytes).U &&
     r.operation =/= Operation.Fetch.U && r.address(1,0) === 0.U && r.mask === 15.U
   private val local = r.operation =/= Operation.Halt.U && (rom || !(program || ram || mmio))
   private val localReply = Wire(new MemoryResponse)
   localReply.data := Mux(rom && r.operation =/= Operation.Write.U,
-    VecInit(MemoryMap.boot.map(_.U(32.W)))(r.address(3,2)), 0.U)
+    VecInit(bootWords.map(_.U(32.W)))(r.address(log2Ceil(bootWords.size).max(1)+1,2)), 0.U)
   localReply.error := !rom || r.operation === Operation.Write.U
   private val guarded = gate("request_guard", GateOperation.Buffer, request.req, delay=timing.matchedDelay)
   serviceRequest.bits := r

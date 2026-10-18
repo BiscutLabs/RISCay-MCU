@@ -20,7 +20,7 @@ the 32-bit delta width, not by the number of missed ticks. No general multiplier
 or divider is instantiated. The [elapsed contract](native-elapsed-contract.md)
 separates maintenance throughput targets from physical qualification.
 A clocked scaler boundary publishes one coalesced elapsed observation. Independent
-measurement/supervisor ingress consumes it immediately; the separate native
+measurement ingress consumes it immediately; the separate native
 Housekeeping loop orders it with timer/cadence writes. Only the final housekeeping
 publication advances consumedGray; native internal completion and the earlier
 scaler publication cannot acknowledge LF work.
@@ -38,14 +38,10 @@ calibration. Nominal time wraps at 2^32 ms; deadline offsets must be below 2^31 
 The source tick counter wraps independently; a complete source-counter wrap during
 a service outage cannot be reconstructed.
 
-Groundlark minimum-off, shutdown grace and confirmation durations use the
-fastest-reference lower elapsed-time bound, so they cannot be shortened by a
-fast oscillator within the assumed envelope. Confirmations accrue only across
-consecutive matching observations, reset on observed changes, and do not credit
-missed ticks after a service outage. A 20 ms ACK qualification therefore takes
-multiple coarse observations; sub-tick pulses are not guaranteed to be captured.
-Shutdown response and off-time can be substantially longer at the slow corner.
-These timing consequences must be included in board/hold-up qualification.
+Application firmware chooses its policy and must account for the published
+oscillator bounds and coarse time resolution. No shutdown, restart or halt-line
+qualification policy is implemented in hardware or mask ROM. GPIO changes can
+wake the CPU independently of the LF tick; firmware owns any subsequent filtering.
 
 Sample ages accrue the slowest-reference upper time bound. Freshness reserves an
 additional sub-tick phase margin. The production configuration uses a nominal
@@ -61,13 +57,11 @@ The complete waveform runs without native per-edge feedback, so a stalled native
 consumer cannot stretch SCLK. Busy covers admission, waveform, buffered capture,
 native processing, publication and crossing return; none may be gated halfway.
 Conversion age accumulates upper-bound elapsed time from admission and survives
-publication stalls and application reset. Both host and supervisor captures retain
+publication stalls and application reset. Both host and CPU reads retain
 that age, including a coincident publication tick. The unstalled digital allowance
 is 32 half-periods plus 32 service edges and 2 us of native processing; it still
 requires physical qualification. CPU and I2C service boundaries also use the fast source.
-The disabled-by-default Groundlark policy remains disabled until qualified board
-values are supplied; this cadence is an integration configuration, not an approved
-battery policy.
+This cadence is generic measurement configuration, not application policy.
 
 ## Fast-clock shutdown and wake
 
@@ -195,14 +189,12 @@ Digital tests exercise watchdog edges between service edges and check complete
 gated pulses; analog metastability and physical gate timing still need closure.
 The device service's word 8 reports a saturating service-observed crash counter;
 it is POR-only and distinguishes successive application recoveries.
-The board controller and GPIO override, ADC/samples, elapsed-time accumulator,
-loader/image/lock and LF counter retain state. RUNNING/FAULT returns to READY;
-the host may explicitly restart the validated image without unlocking it.
-The supervisor still requests orderly shutdown on low battery during a crash.
-Each native supervisor has its own POR-only ingress and command/reply bridges;
-pending input, outstanding state updates and response drainage keep the service
-gate open. This work is independent of stalled Control/Telemetry consumers.
-The permanent output projection remains retained while application GPIO resets.
+ADC/samples, elapsed-time accumulator, loader/image/lock and LF counter retain
+state. The generic boot ROM restarts a retained valid image unless ENTER_LOADER
+requested a hold. GPIO outputs default to disabled on watchdog recovery; the
+generic retention option preserves ordinary GPIOs, while shared SPI outputs are
+always released before ROM reclaims the bus. There is no board-owned output path
+or permanent application controller. See the [boot contract](generic-boot-contract.md).
 Watchdog reset **does not reset the LF oscillator**. Only POR/brownout reset drives its
 `rst_n`. The analog candidate requires reset low during the supply ramp and at
 least 5 ms after valid supply. The wrapper now connects the supply-monitor macro

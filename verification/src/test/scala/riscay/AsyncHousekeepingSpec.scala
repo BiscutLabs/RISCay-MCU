@@ -66,7 +66,7 @@ class AsyncHousekeepingSpec extends AnyFunSuite {
         Step(time(1),state("now"->101)++Map("due"->0L)),
         Step(write(8,99),state("armed"->0)++Map("due"->1L)),
         Step(write(8,200),state("armed"->1)),
-        Step(time(5)++Map("resetApplication"->1L),state("now"->106,"boardNow"->106,"deadline"->0,
+        Step(time(5)++Map("resetApplication"->1L),state("now"->106,"deadline"->0,
           "armed"->0,"lease"->0,"wakeMask"->15,"period"->10)++Map("due"->0L,"leaseExpired"->0L)),
         Step(write(60,3),state("lease"->3)),
         Step(write(8,120),state("armed"->1)),
@@ -109,7 +109,10 @@ class AsyncHousekeepingSpec extends AnyFunSuite {
         Step(time(2)++Map("parked"->1L),state("lease"->0)++Map("kick"->1L,"leaseExpired"->1L)),
         Step(time(1)++Map("parked"->1L),Map("kick"->0L)),
         Step(Map("resetApplication"->1L),state("lease"->0)++Map("kick"->0L)),
-        Step(time(1)++Map("started"->0L),Map("kick"->1L)),
+        // An active/hung ROM gets no implicit kick; only the deliberate idle wait does.
+        Step(time(1)++Map("started"->0L),Map("kick"->0L)),
+        Step(time(1)++Map("started"->0L,"parked"->1L),Map("kick"->1L)),
+        Step(time(1)++Map("resetApplication"->1L),Map("kick"->1L)),
         Step(write(60,10),state("lease"->10)++Map("kick"->0L)),
         Step(time(1),state("lease"->9)++Map("kick"->0L)))
       AsyncTest.run(top(click),1L to 16L,fresh(name+"-watchdog")) { _ =>

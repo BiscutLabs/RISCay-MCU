@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-"""State-conditioned, pin-bound Control timing pilot. Never physical signoff.
+"""Shared state-conditioned, pin-bound stage timing. Never physical signoff.
 
 Separate contexts preserve request-to-capture propagation and common-event
 capture/ACK skew. An analysis clock describes one event; its period is never
@@ -326,49 +326,3 @@ def margins(results, plan, cell):
                 unresolved=["Join storage Q/request launch alignment", "Execute RF source launch and retention/hold", "Elapsed owner/admission launch and retention/hold", "BD pending admission and both returns",
                             "Click feedback pulse and phase self-hold", "local variation/mismatch", "wire RC and reset", "electrical limits"],
                 physical_qualification=False)
-
-
-def run(mapping, repaired, output, variant, corners, slews, period=1000):
-    require(not output.exists(),"RELATIVE_OUTPUT_EXISTS")
-    pdk=ROOT/".tools/physical/pdk";pdk_verify(pdk)
-    receipt=json.loads((repaired/"repair.json").read_text())
-    require(receipt["variant"]==variant and receipt["status"]=="repaired-unqualified","RELATIVE_REPAIR_RECEIPT")
-    for f,h in receipt["files_sha256"].items():require(sha(repaired/f)==h,"RELATIVE_REPAIR_CHANGED")
-    for f,h in receipt["source_sha256"].items():require(sha(mapping/f)==h,"RELATIVE_SOURCE_CHANGED")
-    plan=make_plan(json.loads((repaired/"netlist.json").read_text()),json.loads((mapping/"mapping.json").read_text()),variant)
-    files=[repaired/"netlist.v",repaired/"netlist.json",repaired/"repair.json",mapping/"mapping.json",PROBE,Path(__file__)]
-    files += [ROOT/"tools"/f for f in ("characterize_gf180_control_native.py","screen_gf180_control_repair.py",
-        "characterize_gf180_liberty.py","gf180_estimate.py","gf180_physical.py","gf180_implement.py","repair_gf180_control.py")]
-    files += [pdk/(SC+c+".lib") for c in CORNERS]
-    sta=tool("sta")
-    files += sta.input_files()
-    frozen={str(p.resolve()):sha(p) for p in files}
-    output.mkdir(parents=True); write_json(output/"plan.json",dict(plan=plan,inputs_sha256=frozen,period_ns=period))
-    cases=[]
-    for corner in corners:
-        cell=aperture(library(pdk/(SC+corner+".lib")),variant)
-        for slew in slews:
-            key=f"{corner}-s{slew}"; results={}
-            for ctx in plan["contexts"]:
-                name=key+"-"+ctx["id"]; tcl=output/(name+".tcl");log=output/(name+".log")
-                tcl.write_text(script(repaired/"netlist.v",corner,slew,plan,ctx,period,path=sta.path),newline="\n")
-                with log.open("w") as stream:
-                    subprocess.run(sta.command(["-no_init","-exit",sta.path(tcl)],timeout=55),stdout=stream,stderr=subprocess.STDOUT,check=True,timeout=65)
-                results[ctx["id"]]=parse(log.read_text(),plan,ctx)
-            summary=margins(results,plan,cell)
-            write_json(output/(key+".json"),dict(results=results,aperture=cell,summary=summary))
-            cases.append(dict(key=key,corner=corner,slew_ns=slew,summary={k:v for k,v in summary.items() if k!="lanes"}))
-            print(json.dumps(cases[-1]),flush=True)
-    require(all(sha(Path(p))==h for p,h in frozen.items()),"RELATIVE_INPUT_CHANGED")
-    write_json(output/"results.json",dict(status="CONDITIONAL_LOCAL_MEASUREMENTS",physical_qualification=False,
-        cases=cases,inputs_sha256=frozen,files_sha256={p.name:sha(p) for p in sorted(output.iterdir()) if p.is_file()}))
-
-
-if __name__=="__main__":
-    p=argparse.ArgumentParser(description=__doc__)
-    for name in ("mapping","repaired","output"):p.add_argument(name,type=Path)
-    p.add_argument("--variant",required=True,choices=("bd","click"))
-    p.add_argument("--campaign",action="store_true")
-    p.add_argument("--period",type=int,choices=(1000,2000),default=1000)
-    a=p.parse_args();run(a.mapping,a.repaired,a.output,a.variant,CORNERS if a.campaign else CORNERS[:1],
-                        [0.02,2.0] if a.campaign else [0.2],a.period)

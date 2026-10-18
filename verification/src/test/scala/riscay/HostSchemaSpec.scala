@@ -2,17 +2,10 @@
 package riscay
 
 import org.scalatest.funsuite.AnyFunSuite
-import riscay.profiles.{Groundlark, PowerPolicy}
+import riscay.profiles.Groundlark
 
 class HostSchemaSpec extends AnyFunSuite {
-  test("Groundlark policy requires valid bounds and hysteresis before enabling") {
-    assert(!PowerPolicy().enabled)
-    assert(PowerPolicy(enabled=true).enabled)
-    intercept[IllegalArgumentException](PowerPolicy(enabled=true, restartMv=10100))
-    intercept[IllegalArgumentException](PowerPolicy(enabled=true, shutdownMv=8000))
-    intercept[IllegalArgumentException](PowerPolicy(enabled=true, shutdownTimeoutMs=9999))
-    intercept[IllegalArgumentException](PowerPolicy(enabled=true, minimumOffMs=29999))
-  }
+
   // Deliberately unrelated fixture: no Pi, battery, ADC or switched-host dependency.
   private val counter = McuConfiguration(1024, 128, 1,
     Vector(MeasurementChannel(0, "event_count", MeasurementUnit.Count, 0)),
@@ -29,6 +22,7 @@ class HostSchemaSpec extends AnyFunSuite {
       assert(read(c, 0, 0, 8).contains("CRASH_COUNT"))
       assert(read(c, 1, 0, 1).contains("PROGRAMMED"))
       assert(read(c, 1, 0, 2).contains("PROGRAM_LOCKED"))
+      assert(read(c, 1, 0, 8).contains("BOOT_STATE"))
       assert(read(c, 2, 0, 0).contains("VALUE"))
       assert(read(c, 3, 0, 0).contains("FEATURES"))
       assert(read(c, 3, 0, 2).contains("SAMPLE_PERIOD_MS"))
@@ -45,7 +39,7 @@ class HostSchemaSpec extends AnyFunSuite {
     for(c <- Seq(counter, Groundlark.configuration)) {
       for(space <- 0 to 255; instance <- 0 to 2; word <- Seq(0, 5, 8, 9, 63, 255)) {
         val known = (space == 0 && instance == 0 && word < 9) ||
-          (space == 1 && instance == 0 && word < 8) ||
+          (space == 1 && instance == 0 && word < 9) ||
           (space == 2 && instance == 0 && word < 6) ||
           (space == 3 && instance <= 1 && word < 8) ||
           (space == 128 && instance == 0 && word < (if(c == counter) 1 else 6))
@@ -59,7 +53,7 @@ class HostSchemaSpec extends AnyFunSuite {
     val board = Groundlark.configuration
     val reused = board.copy(application = counter.application, measurements = counter.measurements)
     assert((reused.programBytes, reused.workingRamBytes, reused.gpioCount, reused.measurements.size) ==
-      (2048, 1024, 3, 1))
+      (2048, 1024, 7, 1))
     assert(read(reused, 128, 0, 0).contains("COUNTER_MODE"))
     assert(read(reused, 128, 0, 1).isEmpty)
     assert(reused.application.id != board.application.id)

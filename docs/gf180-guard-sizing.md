@@ -142,12 +142,13 @@ counts converted to nanoseconds**. The unchanged whole-SoC oracle passes in
 both variants. All selected instances are modified; this does not claim event
 coverage of every instance or replace the per-instance physical campaign.
 
-`tools/seal_ordering_guards.py` requires every selected owner at all five corners
-and both source slews exactly once. It checks the mapped counts, required margin
-metrics, campaign inputs and repair evidence before producing a local evidence
-seal. Exact executed helper snapshots may preserve older source versions; a
-changed PDK, graph or tool input cannot use that fallback. The seal does not
-approve the policy or claim the separately unmeasured compositions.
+The seal-ordering campaign is retired. `tools/size_ordering_guards.py` now
+checks every selected owner at all five corners and both source slews exactly
+once, using the shared `timing_properties.validate_cases` acceptance rule. Missing,
+nonfinite or negative setup/hold/publication/pulse/rearm evidence fails. It records
+one run receipt. Successor snapshots and seal attestations are not accepted;
+changed inputs require a new run. Local passes do not qualify unmeasured source
+compositions, mismatch or routed timing.
 
 The pinned OpenSTA build crashes or times out in its synchronous common-clock
 pessimism-removal calculation for five BD cases across three owners. Those

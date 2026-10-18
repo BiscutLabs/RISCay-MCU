@@ -174,9 +174,9 @@ end endtask
       ClockedSimulation.run(fixture(p.copy(serviceHz=1000)),name+"-recovery-maintenance","""
         #10000; settled; checkpoint;
         @(negedge serviceClock); applicationReset=1;
-        #2000; oldTime=timeNow;oldBoard=boardTime;oldMaintenance=maintenance;oldKicks=kicks;
+        #2000; oldTime=timeNow;oldBoard=projectedTime;oldMaintenance=maintenance;oldKicks=kicks;
         #50000;
-        if(!qualifiedReset || nativeDebt !== 3 || returnFence !== 3 || timeNow <= oldTime || boardTime <= oldBoard ||
+        if(!qualifiedReset || nativeDebt !== 3 || returnFence !== 3 || timeNow <= oldTime || projectedTime <= oldBoard ||
             maintenance <= oldMaintenance+3 || kicks <= oldKicks+3 || gpioOut !== 0 || projectedEvents !== 0 || visibleMask !== 15)
           $fatal(1,"RECOVERY_PROLONGED_RESET_STOPPED_MAINTENANCE");
         for(n=0;n<2;n=n+1) if(commands[n] != baseCommands[n])

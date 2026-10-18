@@ -33,10 +33,8 @@ object PhysicalTiming {
 object PhysicalSocExport {
   val parameters = SocParameters(Groundlark.configuration, staleMs=3000, watchdogCycles=32,
     watchdogHoldCycles=2, adc=Some(AdcParameters(intervalCycles=10000000)),
-    lowPower=Some(LowPowerParameters.gf180Slow))
-  // Preserve the complete supervisor in implementation experiments. These
-  // defaults are deliberately NOT a board-qualified battery/tapeout policy.
-  private def board(p: SocParameters) = new GroundlarkBoard(p,PowerPolicy(enabled=true))
+    lowPower=Some(LowPowerParameters.gf180Slow),spiBoot=true)
+  private def board(p: SocParameters) = new GenericBoard(p)
   private def sha(path: Path): String = MessageDigest.getInstance("SHA-256")
     .digest(Files.readAllBytes(path)).map(b => f"${b & 0xff}%02x").mkString
 
@@ -54,9 +52,11 @@ object PhysicalSocExport {
       SramInventory.write(out,p.config)
       ChipWrapper.write(out,p.lowPower.get)
       Files.writeString(out.resolve("physical-policy.json"),ujson.write(ujson.Obj(
-        "schema" -> "riscay-physical-policy-v3", "variant" -> variant,
-        "purpose" -> "enabled evaluation fixture; not qualified for a battery or tapeout",
-        "policy_enabled" -> true, "gpio_count" -> p.config.gpioCount,
+        "schema" -> "riscay-physical-policy-v4", "variant" -> variant,
+        "purpose" -> "generic MCU evaluation fixture; not qualified for tapeout",
+        "architecture" -> "generic-mcu", "profile_behavior" -> false,
+        "spi_boot" -> true, "rom_bytes" -> p.bootWords.size*4,
+        "gpio_count" -> p.config.gpioCount,
         "service_max_hz" -> ApplicationResetContract.maximumServiceHz, "lf_max_hz" -> 12,
         "timing_policy" -> "current-supported-digital", "qualification" -> "unqualified",
         "owner_targets_fs" -> ujson.Obj("execute_request" -> "80000000",

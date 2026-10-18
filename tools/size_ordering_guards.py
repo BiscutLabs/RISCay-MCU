@@ -20,8 +20,9 @@ import subprocess
 import control_relative_timing as relative
 import native_leaf_timing as leaf
 import native_stage_timing as stage
-from experiment_elapsed_guard import narrow_chain
-from experiment_passive_stage import write_verilog, partition
+from physical_graph_edits import narrow_chain, write_verilog, partition
+from timing_properties import validate_cases
+from run_receipt import RunReceipt
 from gf180_physical import ROOT, SC, nodes, sha, write_json
 from gf180_implement import instances
 from gf180_estimate import direct_groups
@@ -38,52 +39,6 @@ PURE_BD = {
     ('FourPhaseProgramReturn','request_guard'),('FourPhaseProgramReturn','output_delay'),
     ('FourPhaseRamReturn','request_guard'),('FourPhaseRamReturn','output_delay'),
     ('FourPhasePublicationSource','request_delay'),('FourPhaseCompletion','request_guard'),('FourPhaseFabric','request_guard')}
-
-
-def validate_historical_receipt(mapping, revision='2f5aa54'):
-    """Validate old graph evidence while mapper helpers evolve in this batch.
-
-    Only repository helper files may use their hash-exact recorded Git blob.
-    Netlists, PDK, executables, tool configuration and every evidence file must
-    still match the original receipt at their actual paths.
-    """
-    from repair_gf180_design import EVIDENCE, input_files
-    mapping = Path(mapping).resolve()
-    require(re.fullmatch(r'[0-9a-f]{7,40}', revision) is not None, 'GUARD_REVISION')
-    receipt = json.loads((mapping/'electrical-repair/receipt.json').read_text())
-    out = mapping/'electrical-repair'
-    require(receipt.get('schema') == 'riscay-electrical-repair-v1' and
-            receipt['status'] == 'structurally-accepted-electrically-unqualified' and
-            receipt['physical_qualification'] is False, 'GUARD_REPAIR_RECEIPT_STATUS')
-    require(set(receipt['evidence_sha256']) == set(EVIDENCE) and
-            set(receipt['inputs_sha256']) == {str(p.resolve()) for p in input_files(mapping)},
-            'GUARD_REPAIR_INVENTORY')
-    for name,key in (('netlist.v','repaired_verilog_sha256'), ('netlist.json','repaired_json_sha256')):
-        require(sha(mapping/name) == receipt[key], 'GUARD_REPAIRED_GRAPH_CHANGED')
-    require(sha(mapping/'netlist-audit.json') == receipt['evidence_sha256']['candidate/netlist-audit.json'],
-            'GUARD_REPAIRED_AUDIT_CHANGED')
-    for name,digest in receipt['evidence_sha256'].items():
-        path = (out/name).resolve()
-        require(path.is_relative_to(out) and sha(path) == digest, 'GUARD_REPAIR_EVIDENCE_CHANGED')
-    history = []
-    for name,digest in receipt['inputs_sha256'].items():
-        path = Path(name)
-        if path.parent == mapping and path.name in ('netlist.v', 'netlist.json', 'netlist-audit.json'):
-            path = out/'reference'/path.name
-        if sha(path) == digest:
-            continue
-        require(path.parent == ROOT/'tools', 'GUARD_NONHELPER_INPUT_CHANGED')
-        relative_path = path.relative_to(ROOT).as_posix()
-        blob = subprocess.run(['git', 'show', revision+':'+relative_path], cwd=ROOT,
-                              capture_output=True, check=True).stdout
-        # Repository checkout uses CRLF; the recorded receipt hashes those bytes.
-        forms = (blob, blob.replace(b'\r\n', b'\n').replace(b'\n', b'\r\n'))
-        require(any(hashlib.sha256(value).hexdigest() == digest for value in forms),
-                'GUARD_HISTORICAL_HELPER_MISMATCH')
-        history.append(dict(path=str(path), measured_hash=digest, current_hash=sha(path),
-                            source_commit=revision))
-    receipt['historical_helpers'] = history
-    return receipt
 
 
 def family(name):
@@ -438,7 +393,7 @@ def measure_case(netlist, plan, index, directory, corner, slew, sta):
 def run(mapping, output, variant, *, candidate=False, paths=(), workers=2, focused=False):
     require(not output.exists(), 'GUARD_OUTPUT_EXISTS')
     mapping = mapping.resolve()
-    receipt = validate_historical_receipt(mapping)
+    receipt = validate_receipt(mapping)
     rows, manifest, record = inventory(mapping)
     audit = json.loads((mapping/'netlist-audit.json').read_text())
     original = stage.receipt_original(mapping, receipt)
@@ -453,7 +408,6 @@ def run(mapping, output, variant, *, candidate=False, paths=(), workers=2, focus
     changes = candidate_counts(rows) if candidate else []
     output.mkdir(parents=True)
     write_json(output/'inventory.json', dict(rows=rows, purpose_counts=dict(Counter(r['purpose'] for r in rows))))
-    write_json(output/'retained-receipt.json', receipt)
     write_json(output/'changes.json', changes)
     plans = []
     for path in selected:
@@ -475,20 +429,14 @@ def run(mapping, output, variant, *, candidate=False, paths=(), workers=2, focus
     else:
         netlist = mapping/'netlist.v'; index = source_index
     files = [mapping/f for f in ('netlist.v', 'netlist.json', 'mapping.json', 'netlist-audit.json', 'timing-intent.json')]
+    files += [mapping/'electrical-repair/receipt.json', mapping/'electrical-repair/proof.json',
+              mapping/'electrical-repair/reference/netlist.json']
     files += [Path(__file__), ROOT/'tools/native_stage_timing.py', ROOT/'tools/native_leaf_timing.py',
-              ROOT/'tools/control_relative_timing.py', ROOT/'tools/experiment_elapsed_guard.py',
-              ROOT/'tools/experiment_passive_stage.py', relative.PROBE, *sta.input_files(), *yosys.input_files()]
+              ROOT/'tools/control_relative_timing.py', ROOT/'tools/physical_graph_edits.py',
+              ROOT/'tools/timing_properties.py', ROOT/'tools/run_receipt.py', relative.PROBE, *sta.input_files(), *yosys.input_files()]
     files += [ROOT/'.tools/physical/pdk'/(SC+c+'.lib') for c in relative.CORNERS]
     files += [ROOT/'.tools/gf180-sram'/(leaf.SRAM+'__tt_025C_3v30.lib')]
-    frozen = {str(p.resolve()):sha(p) for p in files}
-    # Preserve the exact executed helpers even if this long campaign is later
-    # interrupted or a subsequent implementation changes the working tree.
-    snapshot=output/'source-snapshot';snapshot.mkdir()
-    for path in files:
-        if path.parent.resolve()==(ROOT/'tools').resolve():
-            shutil.copyfile(path,snapshot/path.name)
-            require(sha(snapshot/path.name)==frozen[str(path.resolve())],'GUARD_SNAPSHOT_CHANGED')
-    write_json(output/'inputs.json',frozen)
+    run_receipt=RunReceipt(output/'receipt.json',inputs=files,tools=[])
     tasks = []
     with ThreadPoolExecutor(max_workers=workers) as pool:
         for i,plan in enumerate(plans):
@@ -505,14 +453,25 @@ def run(mapping, output, variant, *, candidate=False, paths=(), workers=2, focus
                 print(json.dumps(dict(failure=failures[-1])),flush=True);continue
             results.append(result)
             print(json.dumps(result), flush=True)
-    require(all(sha(Path(p)) == digest for p,digest in frozen.items()), 'GUARD_INPUT_CHANGED')
-    final_receipt=validate_historical_receipt(mapping)
-    write_json(output/'results.json', dict(engineering_derate=DERATE, residual_ns=RESIDUAL_NS,
-        statistical_qualification=False, routed_qualification=False, candidate=candidate,
-        status='COMPLETE_MEASURED' if not failures else 'INCOMPLETE_FAILURES',focused=focused,
-        cases=results, failures=failures, changes=changes, input_sha256=frozen, post_run_receipt=final_receipt,
-        files_sha256={str(p.relative_to(output)).replace('\\','/'):sha(p)
-                      for p in output.rglob('*') if p.is_file()}))
+    summary=None
+    try:
+        require(not failures, 'GUARD_CAMPAIGN_INCOMPLETE')
+        # Preserve the acceptance checks formerly buried in the sealing tool.
+        # Standard publication, elapsed request and Click ACK each retain their
+        # own metric set; custom retained guards are not silently qualified.
+        selected_owners={p['descriptor']['instance'] for p in plans}
+        adopted=[selection['requested'] for binding in record['bindings']
+                 for selection in binding.get('guard_policy',{}).values() if selection.get('requested')]
+        measured=[r for r in (changes if candidate else adopted) if r['owner'] in selected_owners]
+        summary=validate_cases(measured,results,RESIDUAL_NS,relative.CORNERS,(.02,2.))
+    finally:
+        write_json(output/'results.json',dict(engineering_derate=DERATE,residual_ns=RESIDUAL_NS,
+            statistical_qualification=False,routed_qualification=False,candidate=candidate,
+            status='LOCAL_GUARD_CHECKS_PASS' if summary else 'INCOMPLETE_FAILURES',focused=focused,
+            cases=results,failures=failures,changes=changes,summary=summary))
+        run_receipt.finish(outputs=[p for p in output.rglob('*') if p.is_file()],
+            status='pass' if summary else 'fail',coverage=dict(scope='local guard checks',summary=summary))
+
 
 
 if __name__ == '__main__':

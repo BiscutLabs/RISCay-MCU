@@ -186,58 +186,6 @@ end endtask
       """,monitor,referenceHalfPeriodNs=1000000,onChipOscillator=true,
         chipParameters=lp,serviceStartupNs=100000,deadlineNs=250000000)
     }
-    test(s"$name slow-clock Groundlark cold boot, confirmation and shutdown with stopped fast source") {
-      val params=p.copy(config=Groundlark.configuration.copy(programBytes=16,workingRamBytes=32))
-      ClockedSimulation.run(top(click,params,x => new GroundlarkBoard(x,PowerPolicy(enabled=true))),
-        name+"-deep-board",s"""
-        // 361 fastest-bound ticks are needed for 30 s off time. The accelerated
-        // reference is 2 ms/tick here; nominal ms must not shorten that minimum.
-        #650000000;
-        if(gpioOut[0] || programmed) $$fatal(1,"MINIMUM_OFF_USED_NOMINAL_TIME");
-        #90000000;
-        if(!gpioOut[0] || programmed || sleepEntries < 100) $$fatal(1,"DEEP_CIRCULAR_BOOT");
-        // Keep the production ratio (32 LF edges, two-edge reset hold). EBREAK
-        // halts the uploaded application and deliberately stops its heartbeat.
-        ${upload(Seq(breakpoint))}
-        guardPower=1;
-        wait(systemReset); #0.001;
-        if(!gpioOut[0] || gpioOut[1] || !locked || !programmed) $$fatal(1,"WATCHDOG_CUT_PI_OR_UNLOCKED");
-        // Persistent MODE must consume the synchronized reset, not raw expiry.
-        repeat(2) begin
-          @(posedge serviceClock); #0.001;
-          if(mode !== 4) $$fatal(1,"MODE_USED_RAW_WATCHDOG_RESET");
-        end
-        @(posedge serviceClock); #0.001;
-        if(mode !== 2) $$fatal(1,"MODE_MISSED_SYNCHRONIZED_RESET");
-        wait(!systemReset); #5000;
-        if(mode !== 2) $$fatal(1,"CRASH_NOT_READY_FOR_RESTART");
-        read_words(0,0,8);
-        if(supported !== 1 || snapshot[0+:32] !== 1) $$fatal(1,"FIRST_CRASH_COUNT");
-        read_words(2,0,0);
-        if(!snapshot[32]) $$fatal(1,"CRASH_STOPPED_SENSING");
-        begin_image(4,0,0,32'h00010000); expect_error(2);
-        command(5); // crash again while the permanent controller is shutting down
-        adcCode=1500; wait(gpioOut[1]);
-        if(!gpioOut[0]) $$fatal(1,"DEEP_EARLY_CUT");
-        wait(systemReset); #1;
-        if(!gpioOut[0] || !gpioOut[1] || !locked || !programmed) $$fatal(1,"CRASH_LOST_SHUTDOWN");
-        wait(!systemReset); read_words(0,0,8);
-        if(supported !== 1 || snapshot[0+:32] !== 2) $$fatal(1,"SECOND_CRASH_COUNT");
-        gpioIn=0; #1000;
-        if(!gpioOut[0]) $$fatal(1,"ACK_NOT_CONFIRMED");
-        guardPower=0;
-        #7000000;
-        if(gpioOut[0] || gpioOut[1]) $$fatal(1,"DEEP_ACK_LOST");
-        wait(!serviceClockEnable); reset=1; #1;
-        if(gpioOut[0] || programmed || locked || !serviceClockEnable) $$fatal(1,"DEEP_POR_STATE");
-      """,monitor+"""
-reg guardPower=0;
-always @(negedge gpioOut[0]) if(guardPower) $fatal(1,"UNREQUESTED_POWER_CUT");
-""",referenceHalfPeriodNs=1000000,onChipOscillator=true,
-        // Unchanged BD/Click replays took 251/282 host seconds. Allow host
-        // variation; retain the 1.2 s simulated deadline and all assertions.
-        chipParameters=lp,serviceStartupNs=100000,deadlineNs=1200000000,processTimeoutSeconds=600)
-    }
   }
   test("slow elapsed time carries fractional milliseconds and bounds sample age across service outages") {
     val params=p.copy(adc=None,watchdogCycles=1000,lowPower=Some(lp.copy(stopServiceClock=false)))

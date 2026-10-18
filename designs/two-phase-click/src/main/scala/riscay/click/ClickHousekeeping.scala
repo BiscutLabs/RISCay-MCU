@@ -38,7 +38,7 @@ class ClickHousekeeping(p: SocParameters,domain: ResetDomain) extends AsyncModul
     val n=r.state; val elapsed=c.elapsed(0); val tick=elapsed =/= 0.U || c.elapsedOverflow
     r.timeValid:=c.timeValid; r.tick:=tick; r.single:=c.single; r.elapsed:=c.elapsed
     r.resetApplication:=c.resetApplication; r.cpuCompletion:=c.cpuCompletion
-    n.now:=s.now+elapsed; n.boardNow:=s.boardNow+c.elapsed(1)
+    n.now:=s.now+elapsed
     when(c.timeValid) { n.consumed:=c.target }
     val expired=s.lease =/= 0.U && (c.elapsedOverflow || elapsed >= s.lease)
     n.lease:=Mux(expired,0.U,Mux(elapsed >= s.lease,0.U,s.lease-elapsed))
@@ -55,7 +55,7 @@ class ClickHousekeeping(p: SocParameters,domain: ResetDomain) extends AsyncModul
     when(c.write && c.offset === 56.U) { n.wakeMask:=c.data }
     // Policy emits a retained kick effect. Phase/ACK handling belongs to the
     // independent LF crossing, so ACK retries cannot serialize timer updates.
-    r.kick:=(c.write && c.offset === 32.U) || (tick && (!c.started || (c.parked && s.lease =/= 0.U)))
+    r.kick:=(c.write && c.offset === 32.U) || (tick && (c.resetApplication || (c.parked && (!c.started || s.lease =/= 0.U))))
     if(p.lowPower.nonEmpty && p.adc.nonEmpty) {
       r.startAdc:=s.requested && !c.adcBusy
       when(r.startAdc) { n.requested:=false.B }

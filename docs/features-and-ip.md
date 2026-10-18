@@ -17,11 +17,11 @@ separates common MCU/loader/measurement resources from its battery/Pi behavior.
 The inventory below includes both reusable IP and Groundlark's required bindings;
 other profiles do not inherit its pin names, battery thresholds or power policy.
 
-Both implementations are SoCs with on-chip boot ROM, executable RAM and working
-RAM. No external memory chip is required. Host-assisted application reload after
-power loss is in scope. Groundlark's bootstrap must start its Pi without the
-missing application; each profile owns its boot policy. See the
-[memory architecture](memory-architecture.md).
+Both implementations use on-chip executable/working SRAM and generic boot ROM.
+The ROM loads and validates an image from external SPI boot flash, with I2C host
+fallback. No profile-specific behavior is fixed in silicon, including mask ROM.
+See [generic boot](generic-boot-contract.md) for implementation status and
+[memory architecture](memory-architecture.md) for storage and reset contracts.
 
 ## Application and scope
 
@@ -35,9 +35,9 @@ The board uses three digital control signals and one battery measurement:
 
 | Function | Current connection | RISCay requirement |
 | --- | --- | --- |
-| Pi power enable | PA3 / RUN | Defined output on power-on, CPU reset, watchdog and brownout |
+| Pi power enable | PA3 / RUN | Board pull defines POR/brownout state; firmware controls GPIO after boot; generic watchdog retention is selectable |
 | Shutdown request | PA4 through Q130 to Pi BCM6 | Request output compatible with the existing transistor interface |
-| Halt acknowledgement | Pi BCM13 through Q131 to PA5 / ACK_N | Active-low MCU input, qualified for the current boot |
+| Halt acknowledgement | Pi BCM13 through Q131 to PA5 / ACK_N | Active-low GPIO input; current-boot qualification belongs to firmware |
 | Battery voltage | PA27 / ADC0.0 through R135/R136 | Numeric voltage measurement with validity and calibration |
 
 These functions are confirmed by the [target firmware][groundlark-target] and
@@ -58,20 +58,18 @@ every analog or timing function to be integrated on the MCU die.
 | Required | RISC-V instruction engine | RV32E baseline; sequential execution with one instruction in flight. Sixteen 32-bit architectural registers, including constant x0. No cache or speculative execution. |
 | Required | Datapath and register storage | Register file, PC, decoder/immediates, ALU, shifts/comparisons, branch/jump logic and load/store unit. Use the same simple 32-bit datapath in both initial implementations; datapath-width experiments are on hold. |
 | Deferred | Compressed instruction decoder | C extension and mixed 16/32-bit fetch; outside the current baseline. |
-| Required | Program storage and boot | 12-byte permanent on-chip boot ROM, fixed loader and permanent profile controller. Configurable on-chip executable RAM, initially 2 KiB for Groundlark. A host supplies the image after power loss. No external memory chip; fixed ROM is not reprogrammable. |
-| Required | Host firmware loader | I2C target initially; common device/loader ABI, explicit image/application compatibility, transfer bounds and validation. Groundlark shares its Pi's existing bus; other hosts use the same protocol. Profile bootstrap keeps required control functions active while loading. |
+| Required | Program storage and boot | Generic RV32E ROM, external SPI boot flash, CRC/compatibility validation, I2C fallback and on-chip executable SRAM. No application policy in ROM. |
+| Required | Host firmware loader | Existing I2C target and common device/loader ABI. Serialized ROM/MMIO ingress uses the same validation and CRC owner. |
 | Required | Loader status and programming lock | Readable mode, validated-image flag, running state, programming availability, lock and last error on the same host interface. Hardware lock blocks image/metadata modification until full MCU reset or MCU power loss; Pi reboot and I2C reset do not clear it. See the [loader contract](loader-status-and-lock.md). |
 | Required | Data RAM | On-chip, 1 KiB Groundlark baseline for application state and stack, separately from program RAM and architectural registers. Compiled sizing fixtures support a 128-byte stack reserve plus 16-byte guard within that budget. Both writable banks use pinned GF180 SRAM macros with byte sequencing. Explicit initialization, byte writes, alignment and access-error behavior. Recheck budgets when firmware changes. |
 | Required | Memory/MMIO fabric | Small address decoder and request/response interfaces with one outstanding transaction; defined ordering, byte enables, errors and commit points. Avoid a full bus fabric unless an actual peripheral requires it. |
-| Required | Generic GPIO | Input, output and output-enable vectors with profile-defined roles, qualification and safe reset values. Groundlark binds three GPIOs to power enable, shutdown request and ACK_N; both protocols use identical bindings. |
+| Required | Generic GPIO | Software-owned input/output/OE vectors. POR resets all outputs to inputs; optional generic watchdog retention. Profile labels never change electrical reset behavior. |
 | Groundlark required | Battery measurement frontend | 12-bit receive-only SPI ADC controller and generic measurement channel 0. Default conversion is nominal/uncalibrated. Analog frontend qualification remains; another profile may have zero analog channels. |
 | Required | Independent timebase and deadlines | Low-frequency tick input or oscillator/RTC subsystem, monotonic counter and next-deadline compare. Supports sampling, voltage confirmation, shutdown timeout and minimum off interval while the CPU is inactive. |
 | Required | Retained sleep | Implemented slow-tick timebase, stopped service-source control, I2C wake probe, wake masks, finite watchdog-serviced sleeps and programmable sampling. See [sleep and clocks](sleep-and-clock.md). LF, fast oscillator and supply-monitor schematic candidates exist; chip wrappers implement reset qualification. Layout and physical qualification remain. |
 | Required | Event capture and wait | Pending event bits, atomic acknowledge and a blocking MMIO wait candidate; no lost wakeup when event, clear and sleep coincide. Defined pulse-width or held-level contracts at every input. |
 | Required | Independent watchdog | Detect stalled CPU/firmware and recover while the core is quiescent or a transaction is stuck. To cover loss of the primary timebase, it needs a separate reference or an external watchdog. |
-| Required | Reset and output policy | Power-on/brownout input, reset distribution and handshake initialization. Reset forces RUN off in the Groundlark compatibility profile; retained RUN is on hold. |
-| Required | Validated configuration | Voltage thresholds, hysteresis, confirmation times, timeout and minimum off time. Bootstrap must contain sufficient qualified policy to start and supervise the Pi before upload; invalid/disabled policy cannot start it. Separate configuration updates remain on hold. |
-| Required | Permanent supervisor policy | Fixed hardware implements battery recovery/start, run, shutdown request, acknowledgement, timeout, minimum-off wait and latched fault. No application is needed to power its programming host. Distinguish acknowledged shutdown from forced removal. |
+| Required | Reset and output policy | POR/brownout disables GPIO outputs. Independent watchdog returns to generic boot; image and lock remain retained. Board pulls determine safe state. |
 | Required | Status and fault registers | Current mode, measurement validity, timeout count and reset/fault reason. Define which fields survive CPU reset; persistence across complete power loss is optional. |
 | Required | Host-readable telemetry | Generic channels expose value, unit/scale, validity, age/sequence and calibration flags. Versioned application registers expose profile-specific state. Groundlark maps these to battery/supervisor data. Coherent read-only snapshots remain accessible while locked. |
 | Required for development | Observation and test interfaces | Instruction retirement and committed MMIO trace, channel monitors, memory preload/readback and deterministic fault injection. Simulation visibility is not a promise of a hardware debug port. |
@@ -115,7 +113,7 @@ README show that a prototype exists, with physical qualification still pending.
 | --- | --- | --- | --- |
 | Pi profile | Pi 4 HAT | Pi 5 proposed first | Start with the actual Groundlark Pi 4 profile. |
 | Supply sensing | ADC voltage measurement | External threshold/event input | Preserve voltage measurement; integration is a separate decision. |
-| MCU reset | RUN falls off via pulldown | Retain power supervision on application reset | Manual/POR/brownout remains fail-off; application watchdog reset preserves permanent policy, its outputs, image and lock in both implementations. |
+| MCU reset | GPIO inputs; external pulls define level | Generic watchdog GPIO retention option | POR always disables output; no fixed power decision. |
 | Missing shutdown ACK | Cut power after timeout; latch off after three such timeouts | Preserve power by default; forced-off optional | Represent the current bounded forced-off behavior explicitly; no timeout is reported as graceful shutdown. |
 | Host health | Halt acknowledgement; no separate ready/heartbeat path | Ready and heartbeat monitoring | Optional extensions requiring Pi/software/interface changes. |
 
@@ -205,20 +203,13 @@ they are not supplied merely by generating RTL.
 
 ## Verification and next design gates
 
-1. Freeze the Groundlark signal/policy profile and MCU execution environment.
-   Use identical fail-off reset and bounded shutdown-timeout behavior in both designs.
-2. Extend the [compiler-built RV32E sizing corpus](../firmware/README.md) as actual
-   application requirements grow. Retain ELF, image, map, disassembly, helper
-   routines and stack measurements; enforce or revise memory budgets.
-   Baseline supervisor policy already runs in fixed logic.
-3. Implement CPU and peripheral contracts with independent instruction and
-   supervisor-policy references. Reused production C tests establish porting
-   consistency, not an independent oracle by themselves.
-4. Verify normal and OS-initiated shutdown, voltage hysteresis, ADC timeout/stale
-   samples, missing/stale ACK, repeated timeout lockout, timer wrap, watchdog,
-   reset at every handshake phase and simultaneous event/clear/wait. Pin firmware
-   and stimuli; check committed MMIO effects exactly once and never assume reset
-   can undo a switch command that already committed.
+1. Keep the MCU generic: metadata/capacities in profiles, no application behavior
+   in hardware or ROM.
+2. Reproduce the generic RV32E ROM and audit instructions, stack and byte size.
+3. Test external flash validity, compatibility, CRC, I2C fallback, lock and POR
+   during loading in both independent implementations.
+4. Preserve ADC freshness, GPIO/event wake, watchdog recovery, SRAM retention and
+   exactly-once effects. Application policy tests belong to its firmware project.
 5. Exercise randomized legal delays and backpressure, and demonstrate checkers
    reject dropped events, duplicate writes and premature power cuts. Compare
    architectural effects, not internal cycles. Test both binary and compressed

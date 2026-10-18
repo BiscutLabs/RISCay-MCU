@@ -6,6 +6,7 @@ import json
 from pathlib import Path
 import tempfile
 import unittest
+import unittest.mock
 from unittest.mock import patch
 
 from gf180_control_roles import CONTROL, DATA, MODEL, load_catalogue, resolve_roles
@@ -76,7 +77,7 @@ class ControlRoles(unittest.TestCase):
                 contract_sha256=sha(export / "contract.json"), ports_sha256=sha(export / "ports.json"))))
             def shell(_export, out, _manifest, _policy):
                 for name in ("RiscayMcuDigital.sv", "riscay_reset_hold.sv"): (out / name).write_text("// shell stub\n")
-            with patch("gf180_physical.ROOT", base), patch("gf180_physical.pdk_verify"), \
+            with patch("gf180_physical.ROOT", base), patch("export_structure.validate"), patch("gf180_physical.pdk_verify"), \
                  patch("gf180_physical.guard_floor", return_value=1.4), patch("gf180_physical.physical_top", side_effect=shell):
                 out = base / "mapped"
                 self.assertEqual(prepare(export, out, base), 2)

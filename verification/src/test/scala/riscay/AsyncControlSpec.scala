@@ -26,7 +26,9 @@ class AsyncControlSpec extends AnyFunSuite {
   private def frame(op: Int, words: Long*) = Seq(op) ++ words.flatMap(w => (0 until 4).map(i => ((w >>> (8*i)) & 255).toInt))
   private val initial = Map("mode"->0L,"programmed"->0L,"locked"->0L,"started"->0L,"lastError"->0L,
     "imageLength"->0L,"entry"->0L,"received"->0L,"imageId"->0L,"expectedCrc"->0L,"crc"->0xffffffffL,
-    "loaderPending"->0L,"loaderWord"->0L,"selector"->0L,"sampleIndex"->0L,"sampleValue"->0L,"appIndex"->0L)
+    "loaderPending"->0L,"loaderWord"->0L,"bootSession"->0L,"bootIndex"->0L,
+    "loaderHold"->0L,"persistPending"->0L,"persisted"->0L,
+    "selector"->0L,"sampleIndex"->0L,"sampleValue"->0L,"appIndex"->0L)
   private def campaign: Seq[Step] = {
     val words=Seq(0x89abcdefL,0x12345678L,0x00000073L)
     val checksum=new CRC32
@@ -139,8 +141,9 @@ class AsyncControlSpec extends AnyFunSuite {
     }
     // Offsets of the resized fields come from the explicit capacity table below.
     val state=Seq(("appIndex",0,6),("sampleValue",6,32),("sampleIndex",38,4),
-      ("selector",42,24),("loaderWord",66,32),("loaderPending",98,1),("crc",99,32),
-      ("expectedCrc",131,32),("imageId",163,32),("received",195,countBits),
+      ("selector",42,24),("persisted",66,1),("persistPending",67,1),("loaderHold",68,1),
+      ("bootIndex",69,4),("bootSession",73,1),("loaderWord",74,32),("loaderPending",106,1),("crc",107,32),
+      ("expectedCrc",139,32),("imageId",171,32),("received",203,countBits),
       ("entry",entryLo,entryBits),("imageLength",lengthLo,countBits),("lastError",errorLo,8),
       ("started",errorLo+8,1),("locked",errorLo+9,1),("programmed",errorLo+10,1),("mode",errorLo+11,3))
     require(state.map(_._3).sum==stateBits && errorLo+14==stateBits,"CAPACITY_ORACLE_STATE")
@@ -236,9 +239,9 @@ class AsyncControlSpec extends AnyFunSuite {
   for(click <- Seq(false,true)) {
     val name=if(click) "click" else "bd"
     for((capacity,countBits,entryBits,stateBits,tokenBits,replyBits,entryLo,lengthLo,errorLo) <- Seq(
-        (4,3,2,217,249,288,198,200,203), (12,4,4,221,253,292,199,203,207),
-        (1024,11,10,241,273,312,206,216,227), (1028,11,11,242,274,313,206,217,228),
-        (2048,12,11,244,276,315,207,218,230), (3072,12,12,245,277,316,207,219,231))) {
+        (4,3,2,225,257,296,206,208,211), (12,4,4,229,261,300,207,211,215),
+        (1024,11,10,249,281,320,214,224,235), (1028,11,11,250,282,321,214,225,236),
+        (2048,12,11,252,284,323,215,226,238), (3072,12,12,253,285,324,215,227,239))) {
       test(s"$name native loader retains full-capacity $capacity-byte accounting without host truncation") {
         val steps=capacityCampaign(capacity,countBits,entryBits)
         val directory=fresh(name+s"-capacity-$capacity")

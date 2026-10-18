@@ -194,7 +194,7 @@ if(houseRecoveryLoans<1) $fatal(1,"HOUSEKEEPING_RECOVERY_ROLE_NOT_EXERCISED");
 @(negedge serviceClock);pauseNative=2;pauseReturn=2;savedHouse=houseLoans;savedCaptures=houseCaptures;
 advance(1,17);wait(houseLoans==savedHouse+1);#500;
 advance(2,5);#1000;
-if(consumed || timeNow || houseSenderIdle || houseCaptures!=savedCaptures || boardTime!=22)
+if(consumed || timeNow || houseSenderIdle || houseCaptures!=savedCaptures || projectedTime!=22)
   $fatal(1,"HOUSEKEEPING_BORROW_STALLED_NATIVE");
 start_bus();write_byte(8'h6a);write_byte(7);write_word(20);stop_bus();wait(periodWaiting);#1000;
 if(periodEffects || houseNative_elapsed_0!=17 || houseNative_target!=1)
@@ -205,7 +205,7 @@ stopWorkClock=0;wait(workRunning);wait(consumed==1);#1000;
 if(timeNow!=17 || periodEffects || !periodWaiting || houseSenderIdle)
   $fatal(1,"HOUSEKEEPING_PUBLICATION_REUSED_LIVE_BANK");
 pauseReturn=0;wait(periodEffects==1);wait(consumed==3);wait(idle);#1000;
-if(timeNow!=22 || boardTime!=22 || periodEffects!=1 || houseState_nextPeriod!=20)
+if(timeNow!=22 || projectedTime!=22 || periodEffects!=1 || houseState_nextPeriod!=20)
   $fatal(1,"HOUSEKEEPING_BORROW_FINAL_STATE");
 issue(32'h30000038,4);answer;wait(idle);
 if(visibleMask!=4) $fatal(1,"HOUSEKEEPING_ORDERED_BORROW");
@@ -224,7 +224,7 @@ stopWorkClock=0;wait(workRunning);wait(consumed==1);#1000;
 if(timeNow!=17 || houseSenderIdle || houseNative_resetApplication)
   $fatal(1,"HOUSEKEEPING_RESET_REWROTE_RETAINED_PAYLOAD");
 pauseReturn=0;wait(idle);#1000;
-if(timeNow!=17 || boardTime!=17 || consumed!=1 || response_valid || visibleMask!=15 || houseRecoveryLoans<=savedRecoveries)
+if(timeNow!=17 || projectedTime!=17 || consumed!=1 || response_valid || visibleMask!=15 || houseRecoveryLoans<=savedRecoveries)
   $fatal(1,"HOUSEKEEPING_RESET_LOST_PERSISTENT_TIME");
 issue(32'h30000038,4);answer;wait(idle);
 if(visibleMask!=4) $fatal(1,"HOUSEKEEPING_RESET_BORROW_RECOVERY");

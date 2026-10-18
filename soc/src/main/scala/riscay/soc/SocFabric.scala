@@ -10,6 +10,7 @@ object MemoryMap {
   val program = 0x10000000L
   val ram = 0x20000000L
   val mmio = 0x30000000L
+  val mmioBytes = 128
   // lui x1,0x30000; lw x2,0(x1) (wait for START); jalr x0,x2,0
   val boot = Vector(0x300000b7L, 0x0000a103L, 0x00010067L)
 }
@@ -24,6 +25,7 @@ abstract class ServiceEndpoint(programBytes: Int) extends Module with InlineInst
     val housekeepingSource = new PublicationSourceBoundaryPort
     val elapsedScaling = Flipped(new ElapsedScalingPort(3))
     val adc = Flipped(new SpiAdcPort)
+    val spiClaimed = Output(Bool())
     val controlCommand = Decoupled(new ControlCommand)
     val controlCommandIdle = Input(Bool())
     val housekeepingCommandIdle = Input(Bool())
@@ -59,7 +61,7 @@ abstract class ServiceEndpoint(programBytes: Int) extends Module with InlineInst
     val clockRunning = Input(Bool()); val sleepEntries = Input(UInt(32.W))
     val canSleep = Output(Bool()); val activity = Output(Bool())
     val drainDemand = Output(Bool()); val telemetryDraining = Input(Bool())
-    val boardDraining = Input(Bool()); val housekeepingDraining = Input(Bool())
+    val housekeepingDraining = Input(Bool())
     val observedGpio = Output(UInt(32.W))
     val commit = Valid(new MemoryRequest)
   })

@@ -3,11 +3,12 @@
 Implemented first RTL milestone, 2026-10-07. Both variants implement the same
 sequential RV32E execution engine. They are CPU cores with memory service ports;
 these ports are intended for internal SoC connections. The completed SoC must
-boot from permanent on-chip ROM and execute a host-loaded application from on-chip
-RAM, with no external memory chip. A board profile supplies bootstrap behavior;
-Groundlark powers its Pi independently of the application when a qualified policy
-is enabled. Both complete SoC wrappers now implement memory and loader integration;
-see the [SoC contract](soc-contract.md).
+boot from generic on-chip ROM and execute a validated application from on-chip
+RAM. The ROM reads external SPI boot flash and falls back to the I2C host loader
+when no valid image is present. Profiles supply metadata and capacities, never
+bootstrap or application behavior. Both complete SoC wrappers implement memory
+and loader integration; see the [SoC contract](soc-contract.md) and
+[generic boot contract](generic-boot-contract.md).
 
 ## ISA and state
 

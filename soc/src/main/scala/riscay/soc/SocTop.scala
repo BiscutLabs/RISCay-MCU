@@ -7,7 +7,7 @@ import chiselasync.core.AsyncModule
 import riscay._
 
 /** Watchdog recovery resets the application CPU and its transaction frontier.
-  * Permanent power supervision, sensing and loader protection are POR-only. Release
+  * Sensing, timebase and loader protection are POR-only. Release
   * into the service clock also delays Click startup; async assertion is immediate.
   */
 abstract class SocTop(val p: SocParameters) extends AsyncModule {

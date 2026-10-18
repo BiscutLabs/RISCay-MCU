@@ -1,5 +1,17 @@
 # Asynchronous SoC migration checklist
 
+**Current verification gates:** completed-step checker commands below are
+historical. The [test-suite cleanup](test-suite-cleanup.md) retires those campaigns;
+use [build and test](build-and-test.md) for the current generation, RTL and physical
+checks. This does not waive the remaining physical obligations.
+
+**Current architecture correction:** the generic SPI bootloader replaces the
+historical fixed Groundlark supervisor. Earlier supervisor entries below are
+historical evidence, not active silicon requirements. The replacement checklist,
+reset/persistence semantics and MCU-only scope are in
+[generic boot](generic-boot-contract.md). All application policy is external
+firmware; profiles supply metadata only.
+
 This checklist is the migration boundary, not a claim that all peripheral RTL is
 asynchronous. The latest work order groups compatible 11b–14 ownership removals
 into one verification cycle, retaining each item's ownership and fault checks.
@@ -12,15 +24,15 @@ when no next item has been chosen. Both implementations remain active throughout
 
 - Four-phase bundled-data implementation: `designs/four-phase-bd/src/main/scala/riscay/bd/`.
 - Native two-phase Click implementation: `designs/two-phase-click/src/main/scala/riscay/click/`.
-- Each owns its Fabric, Completion, Admission, RAM/program sources, Control, Telemetry, Supervisor, Housekeeping, SRAM sequencing, I2C and SPI ADC protocol,
+- Each owns its Fabric, Completion, Admission, RAM/program sources, Control, Telemetry, Housekeeping, SRAM sequencing, I2C and SPI ADC protocol,
   Services, Platform, ClockedPeripherals, ConstantScaling,
   I2cTarget, SleepTiming and SramBank code. Copying the former service island into
   these directories establishes ownership; it does not migrate its state machines.
 - Share port schemas, parameter/ISA definitions, fixed macro models and verification
   utilities. Keep protocol controllers separate; Click must not use hidden RTZ adapters.
 - Preserve the host/firmware ABI, programming lock, validated image, accepted SRAM
-  effects and retention, retained sleep, application-reset isolation, and permanent
-  Groundlark power supervision. Keep an independent timebase/watchdog even as
+  effects and retention, retained sleep and application-reset isolation. Application
+  behavior belongs to uploaded firmware, not silicon. Keep an independent timebase/watchdog even as
   service-clock work is removed. Never relax tests to accept implementation bugs.
 
 ## Current work order after PR10 (2026-10-17)

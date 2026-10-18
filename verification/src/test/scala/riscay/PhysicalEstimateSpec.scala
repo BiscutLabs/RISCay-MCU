@@ -10,7 +10,7 @@ import java.nio.file.{Files, Paths}
 import java.util.zip.CRC32
 
 /** Activity evidence only: native timing models, not a mapped timing/power test.
-  * Enabled board policy is an estimate fixture, never a deployment qualification.
+  * Generic workload fixture, never a deployment qualification.
   */
 class PhysicalEstimateSpec extends AnyFunSuite {
   import Assembly._
@@ -19,9 +19,8 @@ class PhysicalEstimateSpec extends AnyFunSuite {
     test(s"$name full-capacity GF180 estimate has bounded maintenance, ADC and firmware wakes") {
       val p=SocParameters(Groundlark.configuration,staleMs=3000,watchdogCycles=32,watchdogHoldCycles=2,
         adc=Some(AdcParameters(intervalCycles=10000000)),lowPower=Some(LowPowerParameters.gf180Slow))
-      val policy=PowerPolicy(enabled=true)
-      val top=if(click) () => new ClickSoc(p,x => new GroundlarkBoard(x,policy))
-        else () => new FourPhaseSoc(p,x => new GroundlarkBoard(x,policy))
+      val top=if(click) () => new ClickSoc(p,x => new GenericBoard(x))
+        else () => new FourPhaseSoc(p,x => new GenericBoard(x))
       // Each iteration: wait for a deadline, acknowledge consumed events, read GPIO,
       // perform 32 integer additions, store the result, renew the lease and park.
       val setup=Seq(0x300000b7L,0x20000137L,0x574451b7L,i(0x13,3,0,3,-185),

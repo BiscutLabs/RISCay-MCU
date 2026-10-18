@@ -3,9 +3,7 @@ package riscay.profiles
 
 import riscay._
 
-/** Groundlark descriptors. GroundlarkBoard selects design-owned permanent control;
-  * physical pads and qualified battery policy are separate board decisions.
-  */
+/** Descriptors only. Application firmware owns every power decision. */
 object Groundlark {
   val application = ApplicationProfile(
     id = 0x474c524bL, version = 1, name = "groundlark",
@@ -19,10 +17,14 @@ object Groundlark {
     pins = Vector(
       PinRole(0, "pi_power_enable", output = true),
       PinRole(1, "pi_shutdown_request", output = true),
-      PinRole(2, "pi_halted_n", output = false, activeLow = true)))
+      PinRole(2, "pi_halted_n", output = false, activeLow = true),
+      PinRole(3, "spi_sclk", output = true),
+      PinRole(4, "boot_mosi", output = true),
+      PinRole(5, "boot_cs_n", output = true, activeLow = true),
+      PinRole(6, "spi_miso", output = false)))
 
   val configuration = McuConfiguration(
-    programBytes = 2048, workingRamBytes = 1024, gpioCount = 3,
+    programBytes = 2048, workingRamBytes = 1024, gpioCount = 7,
     measurements = Vector(MeasurementChannel(0, "battery_voltage", MeasurementUnit.Volt, -3)),
     application = application)
 }

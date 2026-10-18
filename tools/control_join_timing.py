@@ -6,6 +6,7 @@ are explicit: destination reachability alone cannot prove source coverage.
 """
 from copy import deepcopy
 from collections import defaultdict
+from run_receipt import RunReceipt
 import argparse
 import json
 import math
@@ -665,39 +666,41 @@ def run(mapping,output,variant,campaign=False,*,target="control"):
         'gf180_physical.py','gf180_implement.py','gf180_estimate.py','characterize_gf180_liberty.py')]
     files += [relative.PROBE]+sta.input_files()+yosys.input_files()+[pdk/(SC+c+'.lib') for c in relative.CORNERS]
     files += [ROOT/'.tools/gf180-sram'/(leaf.SRAM+'__tt_025C_3v30.lib')]
-    frozen={str(p.resolve()):sha(p) for p in files}
-    output.mkdir(parents=True);stages.roundtrip(mapping,output,netlist,yosys,pdk)
-    write_json(output/'plan.json',plan);cases=[]
-    for corner in (relative.CORNERS if campaign else relative.CORNERS[:1]):
-        aperture=relative.aperture(relative.library(pdk/(SC+corner+'.lib')),variant)
-        for slew in ([0.02,2.0] if campaign else [0.2]):
-            key=corner+'-s'+str(slew);results={};failure=None
-            for ctx in plan['contexts']:
-                tcl=output/(key+'-'+ctx['id']+'.tcl');log=tcl.with_suffix('.log')
-                dq=results[ctx['side']+'-input']['dq'] if ctx['kind']=='launch' and variant=='bd' else None
-                if ctx['kind']=='launch' and variant=='click':
-                    a,b=results[f"{ctx['side']}-request-{ctx['phase']}"]['event_slews']
-                    ctx['root_slew_ns']=dict(min=a,max=b)
-                tcl.write_text(script(mapping/'netlist.v',corner,slew,plan,ctx,sta=sta,dq=dq),newline='\n')
-                with log.open('w') as stream:
-                    subprocess.run(sta.command(['-no_init','-exit',sta.path(tcl)],timeout=55),stdout=stream,stderr=subprocess.STDOUT,check=True,timeout=65)
-                try:results[ctx['id']]=parse(log.read_text(),plan,ctx,cells=index.after['cells'])
-                except ValueError as e:failure=dict(context=ctx['id'],diagnostic=str(e));break
-            summary=None if failure else margins(results,plan,aperture)
-            fields=('maximum_input_data_lag_ns','minimum_conditional_setup_margin_ns','return_after_source_close_ns')
-            negative=[] if failure else [dict(side=s['side'],phase=s['phase'],metric=k) for s in summary for k in fields if s[k] is not None and s[k]<0]
-            case=dict(key=key,corner=corner,slew_ns=slew,status='UNRESOLVED' if failure else 'CONDITIONAL_SETUP_MEASUREMENTS',
-                      negative_metrics=negative,failure=failure,summary=summary)
-            write_json(output/(key+'.json'),dict(case=case,results=results,aperture=aperture))
-            cases.append(case);print(json.dumps(case),flush=True)
-    require(all(sha(Path(p))==h for p,h in frozen.items()),'JOIN_INPUT_CHANGED')
-    validate_receipt(mapping)
-    write_json(output/'results.json',dict(physical_qualification=False,target=target,
-        uncomposed_side_input_bits=plan['uncomposed_side_input_bits'],whole_stage_setup_established=False,
-        side_input_obligation='Stable throughout each measured Join launch and sink aperture; launch/hold not measured here. Symbolic boundary slew equals the case input slew.',
-        cases=cases,inputs_sha256=frozen,
-        files_sha256={str(p.relative_to(output)).replace('\\','/'):sha(p) for p in sorted(output.rglob('*')) if p.is_file()}))
-    require(all(c['status']!='UNRESOLVED' for c in cases),'JOIN_CAMPAIGN_UNRESOLVED')
+    run_receipt=RunReceipt(output/'receipt.json',inputs=files,tools=[ROOT/'tools/run_receipt.py'])
+    status='fail'
+    try:
+        output.mkdir(parents=True);stages.roundtrip(mapping,output,netlist,yosys,pdk)
+        write_json(output/'plan.json',plan);cases=[]
+        for corner in (relative.CORNERS if campaign else relative.CORNERS[:1]):
+            aperture=relative.aperture(relative.library(pdk/(SC+corner+'.lib')),variant)
+            for slew in ([0.02,2.0] if campaign else [0.2]):
+                key=corner+'-s'+str(slew);results={};failure=None
+                for ctx in plan['contexts']:
+                    tcl=output/(key+'-'+ctx['id']+'.tcl');log=tcl.with_suffix('.log')
+                    dq=results[ctx['side']+'-input']['dq'] if ctx['kind']=='launch' and variant=='bd' else None
+                    if ctx['kind']=='launch' and variant=='click':
+                        a,b=results[f"{ctx['side']}-request-{ctx['phase']}"]['event_slews']
+                        ctx['root_slew_ns']=dict(min=a,max=b)
+                    tcl.write_text(script(mapping/'netlist.v',corner,slew,plan,ctx,sta=sta,dq=dq),newline='\n')
+                    with log.open('w') as stream:
+                        subprocess.run(sta.command(['-no_init','-exit',sta.path(tcl)],timeout=55),stdout=stream,stderr=subprocess.STDOUT,check=True,timeout=65)
+                    try:results[ctx['id']]=parse(log.read_text(),plan,ctx,cells=index.after['cells'])
+                    except ValueError as e:failure=dict(context=ctx['id'],diagnostic=str(e));break
+                summary=None if failure else margins(results,plan,aperture)
+                fields=('maximum_input_data_lag_ns','minimum_conditional_setup_margin_ns','return_after_source_close_ns')
+                negative=[] if failure else [dict(side=s['side'],phase=s['phase'],metric=k) for s in summary for k in fields if s[k] is not None and s[k]<0]
+                case=dict(key=key,corner=corner,slew_ns=slew,status='UNRESOLVED' if failure else 'CONDITIONAL_SETUP_MEASUREMENTS',
+                          negative_metrics=negative,failure=failure,summary=summary)
+                write_json(output/(key+'.json'),dict(case=case,results=results,aperture=aperture))
+                cases.append(case);print(json.dumps(case),flush=True)
+        write_json(output/'results.json',dict(physical_qualification=False,target=target,
+            uncomposed_side_input_bits=plan['uncomposed_side_input_bits'],whole_stage_setup_established=False,
+            side_input_obligation='Stable throughout each measured Join launch and sink aperture; launch/hold not measured here. Symbolic boundary slew equals the case input slew.',
+            cases=cases))
+        require(all(c['status']!='UNRESOLVED' for c in cases),'JOIN_CAMPAIGN_UNRESOLVED')
+        status='pass'
+    finally:
+        run_receipt.finish(outputs=[p for p in output.rglob('*') if p.is_file()],status=status)
 
 
 if __name__=='__main__':

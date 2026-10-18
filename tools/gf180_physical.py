@@ -62,7 +62,8 @@ def audit_alias_binding(binding, body):
     if ports['q']['bits']!=ports['a']['bits']:
         raise ValueError('PASSIVE_ALIAS_CONNECTION')
 
-def inventory(export):
+def legacy_inventory(export):
+    """Read old comparison-baseline exports only; never the current design."""
     manifest = json.loads((export/"contract.json").read_text())["manifest"]
     ns = list(nodes(manifest["design"]))
     primitives = [p for n in ns for p in n["primitives"]]
@@ -91,6 +92,23 @@ def inventory(export):
     for ps in groups.values():
         if any(p["ports"] != ps[0]["ports"] for p in ps): raise ValueError("INCONSISTENT_PORTS")
     return manifest, sources, groups
+
+
+def inventory(export, *, comparison_baseline=False):
+    if comparison_baseline:
+        return legacy_inventory(export)
+    from export_structure import validate, inside
+    validate(export)  # Generation owns structural rules, including deduplication.
+    manifest=json.loads((export/'contract.json').read_text())['manifest']
+    sources=[inside(export,s.strip()) for s in (export/'filelist.f').read_text().splitlines() if s.strip()]
+    groups=defaultdict(list)
+    for node in nodes(manifest['design']):
+        for primitive in node['primitives']:
+            groups[key(primitive)].append(primitive)
+    for group in groups.values():
+        if any(p['ports'] != group[0]['ports'] for p in group):
+            raise ValueError('INCONSISTENT_PORTS')
+    return manifest,sources,groups
 
 class Circuit:
     """Explicit standard-cell graph, also used to generate SPICE test circuits."""
@@ -322,9 +340,15 @@ def physical_policy(export, manifest, *, comparison_baseline=False):
             policy.get("source_commit") != "8637099bb603543b4d8e1d76de2bf165bbaa171a" or
             policy.get("application_reset") != "historical-raw-reset-without-R1-R2"):
             raise ValueError("UNSUPPORTED_COMPARISON_BASELINE")
-    elif policy.get("schema")!="riscay-physical-policy-v3":
+    elif policy.get("schema") not in {"riscay-physical-policy-v3", "riscay-physical-policy-v4"}:
         raise ValueError("PHYSICAL_POLICY_REEXPORT_REQUIRED")
-    if policy.get("policy_enabled") is not True: raise ValueError("DISABLED_ESTIMATE_POLICY")
+    if policy.get("schema") == "riscay-physical-policy-v4":
+        if (policy.get("architecture") != "generic-mcu" or policy.get("profile_behavior") is not False
+                or policy.get("spi_boot") is not True or policy.get("rom_bytes",0) <= 12
+                or "policy_enabled" in policy):
+            raise ValueError("INVALID_GENERIC_MCU_POLICY")
+    elif policy.get("policy_enabled") is not True:
+        raise ValueError("DISABLED_ESTIMATE_POLICY") # Historical comparison exports only.
     if (policy.get("timing_policy")!="current-supported-digital" or
         policy.get("qualification")!="unqualified" or policy.get("verification_layers")!="inline" or
         policy.get("timing_intent")!="contract.json"):
@@ -352,7 +376,7 @@ def prepare(export,out,pdk, *, comparison_baseline=False,candidate_guards=False)
     lock=json.loads((ROOT/"soc/sram-lock.json").read_text())
     for name,asset in lock["assets"].items():
         verify((ROOT/".tools/gf180-sram"/name).read_bytes(),asset["sha256"])
-    manifest,sources,groups=inventory(export)
+    manifest,sources,groups=inventory(export,comparison_baseline=comparison_baseline)
     roles=resolve_roles(manifest["design"])
     policy=physical_policy(export,manifest,comparison_baseline=comparison_baseline)
     floor=guard_floor(pdk)
@@ -441,6 +465,18 @@ def prepare(export,out,pdk, *, comparison_baseline=False,candidate_guards=False)
         qualification="PVT, extracted relative timing, pulse/aperture, reset and C-element checks required"))
     return len(bindings)
 
+def gpio_pad_binding(count, spi_boot):
+    if spi_boot and count < 7: raise ValueError('SPI_BOOT_GPIO_COUNT')
+    indices=[i for i in range(count) if not spi_boot or i not in (3,6)]
+    lines=[]
+    for pad,logical in enumerate(indices):
+        lines += [f"  assign gpio[{pad}] = gpioOe[{logical}] ? gpioOut[{logical}] : 1'bz;",
+                  f"  assign gpioSense[{logical}] = gpio[{pad}];"]
+    if spi_boot:
+        lines += ['  assign gpioSense[3] = adcSclk;', '  assign gpioSense[6] = adcMiso;']
+    return indices,'\n'.join(lines)
+
+
 def physical_top(export,out,manifest,policy):
     ports=json.loads((export/"ports.json").read_text())["nodes"][0]["ports"]
     names=[p["source"].split('>')[-1].replace('.','_').replace('[','_').replace(']','') for p in ports]
@@ -468,14 +504,17 @@ def physical_top(export,out,manifest,policy):
     text+=manifest["top"]+" soc ("+",\n".join(connections)+");\nendmodule\n"
     (out/"RiscayMcuDigital.sv").write_text(text)
     shutil.copyfile(export/"chip/riscay_reset_hold.sv",out/"riscay_reset_hold.sv")
+    indices,pad_binding=gpio_pad_binding(n,policy.get('spi_boot',False))
     shell=(ROOT/"physical/gf180/RiscayMcuChip.sv").read_text().replace("@GPIO_COUNT@",str(n))
+    shell=shell.replace('@GPIO_PAD_COUNT@',str(len(indices))).replace('@GPIO_PAD_BINDINGS@',pad_binding)
     (out/"RiscayMcuChip.sv").write_text(shell)
     for f in ("riscay_supply_monitor.v","riscay_lf_osc.v","riscay_service_osc.v"):
         shutil.copyfile(export/"chip"/f,out/f)
     shutil.copyfile(ROOT/"physical/gf180/power.tcl",out/"power.tcl")
     shutil.copyfile(ROOT/"physical/gf180/base.sdc",out/"base.sdc")
-    write_json(out/"pins.json",dict(gpio_count=n,package_signals=["reset","scl","sda","adcMiso","adcCsN","adcSclk"]+
-        [f"gpio[{i}]" for i in range(n)],supplies=["VDD","VSS"],
+    write_json(out/"pins.json",dict(gpio_count=n,gpio_pad_logical_indices=indices,
+        package_signals=["reset","scl","sda","adcMiso","adcCsN","adcSclk"]+
+        [f"gpio[{i}]" for i in range(len(indices))],supplies=["VDD","VSS"],
         internal_analog_boundary=["serviceClock","watchdogClock","powerGood","serviceClockEnable","porReleased"],
         pad_status="logical shell only; GF180 I/O cells, ESD and padframe still required"))
 

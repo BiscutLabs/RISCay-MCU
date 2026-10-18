@@ -1,8 +1,15 @@
 # RV32E firmware and memory sizing
 
-These are compiler-built sizing and execution fixtures for the existing SoC.
-They do not replace Groundlark's permanent hardware supervisor or add optional
-peripherals. `event_loop` exercises deadline/leased WAIT, GPIO reads and application
+The generic MCU has no fixed application supervisor in RTL or mask ROM.
+`boot/` contains its generic external-SPI bootloader and I2C-loader fallback;
+application policy belongs in uploaded firmware. Build the checked-in RV32E ROM
+with `python tools/build_boot_rom.py`; its source hashes, size and stack bound
+are recorded in `boot/rom-report.json`. See the
+[generic boot contract](../docs/generic-boot-contract.md) for the image format,
+shared SPI pins, update/lock behavior and reset semantics.
+
+The remaining programs are compiler-built sizing and execution fixtures.
+`event_loop` exercises deadline/leased WAIT, GPIO reads and application
 registers. `runtime_stress` exercises nested stack frames, initialized data, BSS,
 constants, byte stores and unsigned software division. Both deliberately return
 after finite workloads, causing the startup EBREAK; they are not deployment images.

@@ -1,5 +1,11 @@
 # GF180 area, standby and wake-energy estimates
 
+The current generic-MCU correction is measured in the [area ledger](area-ledger.md):
+2.100657 / 2.894444 mm² mapped logic and 2.283901 / 3.099576 mm² repaired logic
+(BD / Click), excluding SRAM. Earlier leakage/power estimates below have not been
+rerun for the changed boot ROM and removed supervisor; they are historical bounds,
+not current deep-sleep power measurements.
+
 The [matched service comparison](gf180-matched-comparison.md) supersedes the
 cross-method comparisons below. Its mapped area/activity and completed P&R runs
 are independently audited. The subsequent corrective work targets redundant

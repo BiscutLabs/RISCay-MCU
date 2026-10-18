@@ -19,8 +19,11 @@ class PhysicalExportSpec extends AnyFunSuite {
     for((variant,top) <- Seq("bd" -> "FourPhaseSoc", "click" -> "ClickSoc")) {
       val out=root.resolve(variant)
       val policy=ujson.read(Files.readString(out.resolve("physical-policy.json")))
-      assert(policy("schema").str == "riscay-physical-policy-v3")
-      assert(policy("variant").str == variant && policy("policy_enabled").bool)
+      assert(policy("schema").str == "riscay-physical-policy-v4")
+      assert(policy("variant").str == variant)
+      assert(policy("architecture").str == "generic-mcu" && !policy("profile_behavior").bool)
+      assert(policy("spi_boot").bool && policy("rom_bytes").num == riscay.soc.GenericBootRom.words.size * 4)
+      assert(!policy.obj.contains("policy_enabled"))
       assert(policy("timing_policy").str == "current-supported-digital")
       assert(policy("qualification").str == "unqualified")
       val resetPolicy=policy("application_reset")

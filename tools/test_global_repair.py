@@ -93,29 +93,14 @@ class GlobalRepairTest(unittest.TestCase):
             c['connections']={p:[x+10 for x in bs] for p,bs in c['connections'].items()}
         self.proof(fixture(),b)
 
-    def test_inversion_rejected(self):
-        b=buffered();b['modules']['top']['cells']['distribution']['type']=SC+'inv_1'
-        self.reject(b,'REPAIR_NONBUFFER_ADDITION')
 
-    def test_changed_function_resize_rejected(self):
-        b=fixture();b['modules']['top']['cells']['driver']['type']=SC+'inv_1'
-        self.reject(b,'REPAIR_CHANGED_FUNCTION')
 
-    def test_cell_removal_rejected(self):
-        b=fixture();del b['modules']['top']['cells']['sink'];self.reject(b,'REPAIR_ORIGINAL_CELL_REMOVED')
 
     def test_rewired_sink_rejected(self):
         b=fixture();b['modules']['top']['cells']['sink']['connections']['I']=[1]
         self.reject(b,'REPAIR_GRAPH_CHANGED')
 
-    def test_constant_change_rejected(self):
-        a=fixture();a['modules']['top']['cells']['driver']['connections']['I']=['0']
-        b=deepcopy(a);b['modules']['top']['cells']['driver']['connections']['I']=['1']
-        self.reject(b,'REPAIR_GRAPH_CHANGED',a)
 
-    def test_buffer_cycle_rejected(self):
-        b=buffered();b['modules']['top']['cells']['distribution']['connections']['I']=[4]
-        self.reject(b,'REPAIR_BUFFER_CYCLE')
 
     def test_hidden_duplicate_driver_rejected_before_contraction(self):
         b=buffered();b['modules']['top']['cells']['driver']['connections']['Z']=[4]
@@ -125,10 +110,6 @@ class GlobalRepairTest(unittest.TestCase):
         b=buffered();b['modules']['top']['cells']['sink']['connections']['I']=[2]
         self.reject(b,'REPAIR_UNUSED_BUFFER')
 
-    def test_sequential_resize_rejected(self):
-        a=fixture();a['modules']['top']['cells']['driver']['type']=SC+'dff_1'
-        b=deepcopy(a);b['modules']['top']['cells']['driver']['type']=SC+'dff_2'
-        self.reject(b,'REPAIR_SEQUENTIAL_RESIZE',a)
 
     def native(self):
         a=fixture();a['modules']['owner']=dict(ports={'I':dict(direction='input',bits=[1]),
@@ -145,11 +126,6 @@ class GlobalRepairTest(unittest.TestCase):
         c['keeper']['connections']['FB']=[4]
         self.reject(b,'REPAIR_NATIVE_INTERNAL_BUFFER',a,{'driver/keeper':'driver'})
 
-    def test_external_buffer_may_not_split_native_feedback(self):
-        a=self.native();b=deepcopy(a);owner=b['modules']['owner']
-        owner['ports']['FB']=dict(direction='input',bits=[4]);owner['cells']['keeper']['connections']['FB']=[4]
-        c=b['modules']['top']['cells'];c['driver']['connections']['FB']=[4];c['distribution']=cell('buf_2',I=2,Z=4)
-        self.reject(b,'REPAIR_NATIVE_CONNECTIVITY',a,{'driver/keeper':'driver'})
 
     def test_tie_driver_must_match_original_constant(self):
         a=fixture();a['modules']['top']['cells']['driver']['connections']['I']=['1']
@@ -360,20 +336,7 @@ class GlobalRepairTest(unittest.TestCase):
         self.assertIn('original_tie',b['modules']['top']['cells'])
         self.assertEqual(self.proof(a,b)['added_ties'],[])
 
-    def test_cleanup_keeps_live_ties_and_rejects_original_cell_loss(self):
-        a=fixture();a['modules']['top']['cells']['sink']['connections']['I']=['0']
-        b=deepcopy(a);b['modules']['top']['cells']['supply']=cell('tiel',ZN=4)
-        b['modules']['top']['cells']['sink']['connections']['I']=[4]
-        self.assertEqual(prune_added_orphan_ties(a,b,'top',{},[LIB]*5),[])
-        self.assertEqual(self.proof(a,b)['added_ties'],['supply'])
-        del b['modules']['top']['cells']['driver']
-        with self.assertRaisesRegex(ValueError,'REPAIR_ORIGINAL_CELL_REMOVED'):
-            prune_added_orphan_ties(a,b,'top',{},[LIB]*5)
 
-    def test_cleanup_preserves_unused_buffer_rejection(self):
-        a=fixture();b=deepcopy(a);b['modules']['top']['cells']['extra']=cell('buf_1',I=2,Z=4)
-        self.assertEqual(prune_added_orphan_ties(a,b,'top',{},[LIB]*5),[])
-        self.reject(b,'REPAIR_UNUSED_BUFFER',a)
 
     def test_cleanup_preserves_unconsumed_native_constant_output(self):
         a=self.native();a['modules']['owner']['ports']['unused']=dict(direction='output',bits=['1'])

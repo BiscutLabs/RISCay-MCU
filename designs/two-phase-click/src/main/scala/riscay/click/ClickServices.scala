@@ -28,16 +28,9 @@ private class ControlMailbox extends Module with InlineInstance {
 class ClickServices(p: SocParameters, boardFactory: SocParameters => BoardProfile) extends ServiceEndpoint(p.config.programBytes) {
   val config = p.config
   val board = boardFactory(p)
-  require(board.ownedRegisters.subsetOf(config.application.registers.map(_.word).toSet))
-  val telemetryWords = config.application.registers.filterNot(r => board.ownedRegisters(r.word)).map(_.word).toVector
+  val telemetryWords = config.application.registers.map(_.word).toVector
   val telemetryCommand = IO(Decoupled(new TelemetryCommand(config.measurements.size)))
   val telemetryReply = IO(Flipped(Decoupled(new TelemetryReply(config.measurements.size, telemetryWords.size))))
-  val boardCommand = IO(Decoupled(new SupervisorCommand))
-  val boardReply = IO(Flipped(Decoupled(new BoardResult)))
-  val boardResult = RegInit(0.U.asTypeOf(new BoardResult))
-  val boardWork = WireDefault(false.B)
-  boardCommand.valid := false.B; boardCommand.bits := 0.U.asTypeOf(new SupervisorCommand)
-  boardReply.ready := false.B
   val program = Module(new SramBank(config.programBytes))
   val ram = Module(new SramBank(config.workingRamBytes))
   program.io.request <> io.program.bytes; io.program.completions <> program.io.response
@@ -68,7 +61,7 @@ class ClickServices(p: SocParameters, boardFactory: SocParameters => BoardProfil
   val loaderWrite = WireDefault(false.B)
   val controlBusy = Wire(Bool())
   val memoryBusy = io.program.busy || io.ram.busy || loaderPending
-  val rom = VecInit(MemoryMap.boot.map(_.U(32.W)))
+  val rom = VecInit(p.bootWords.map(_.U(32.W)))
   val telemetryOutstanding = RegInit(false.B)
   val telemetryRecoveryBlocked = io.telemetrySource.recoveryDebt || io.telemetrySource.returnFence
   val telemetryCommitPending = applicationReg(false.B)
@@ -99,7 +92,7 @@ class ClickServices(p: SocParameters, boardFactory: SocParameters => BoardProfil
   val imageLength = controlState.imageLength; val entry = controlState.entry
   val received = controlState.received; val imageId = controlState.imageId
   io.mode := mode; io.programmed := programmed; io.locked := locked
-  val canProgram = !locked && !started && !io.applicationCancel && !io.program.busy && !loaderPending && !controlBusy
+  val canProgram = !locked && !started && !controlState.bootSession && !controlState.persistPending && !io.applicationCancel && !io.program.busy && !loaderPending && !controlBusy
 
   val housekeepingCommand = IO(Decoupled(new HousekeepingCommand))
   val housekeepingReply = IO(Flipped(Decoupled(new HousekeepingReply)))
@@ -119,10 +112,6 @@ class ClickServices(p: SocParameters, boardFactory: SocParameters => BoardProfil
   val housekeepingWork = Wire(Bool())
   val housekeepingAction = WireDefault(0.U.asTypeOf(new HousekeepingCommand))
   val now = housekeepingState.now; io.now := now
-  // This projection includes retained ingress that the native owner has not
-  // published yet. Sampling history must progress independently of that owner.
-  val boardNow = housekeepingState.boardNow + housekeepingQueued.elapsed(1) +
-    Mux(housekeepingOrderedPending,housekeepingOrdered.elapsed(1),0.U) + housekeepingInFlight.elapsed(1)
   val wakeMask = Mux(housekeepingRecoveryBlocked,15.U,housekeepingState.wakeMask)
   val sleepRemaining = Mux(housekeepingRecoveryBlocked,0.U,housekeepingState.lease)
   val deadline = Mux(housekeepingRecoveryBlocked,0.U,housekeepingState.deadline)
@@ -130,6 +119,15 @@ class ClickServices(p: SocParameters, boardFactory: SocParameters => BoardProfil
   val heartbeat = RegInit(false.B); io.heartbeat := heartbeat
   val kickPending = applicationReg(false.B)
   val ack0 = RegNext(io.watchdogAck,false.B); val ack = RegNext(ack0,false.B)
+  val spiClaimRequested = if(p.spiBoot) RegInit(true.B) else WireDefault(false.B)
+  // This state belongs to the physical SPI boundary. Native transaction state
+  // is not clocked here; the grant waits for its complete busy/return envelope.
+  val spiClaimed = if(p.spiBoot) RegInit(true.B) else WireDefault(false.B)
+  io.spiClaimed := spiClaimed
+  if(p.spiBoot) {
+    when(spiClaimRequested && !io.adc.busy) { spiClaimed := true.B }
+    when(io.applicationCancel) { spiClaimRequested := true.B }
+  }
   val adcLaunchPending = RegInit(false.B)
   io.elapsedScaling.target := Cat((0 until 32).reverse.map(i => io.timeGray(31,i).xorR))
   val rawElapsed = Wire(Vec(3,UInt(32.W)))
@@ -150,12 +148,14 @@ class ClickServices(p: SocParameters, boardFactory: SocParameters => BoardProfil
   val housekeepingPublished = housekeepingReply.fire
   val kick=housekeepingPublished && housekeepingReply.bits.kick &&
     (!housekeepingRecoveryBlocked || housekeepingReply.bits.resetApplication)
-  when(kick || kickPending) {
+  // ENTER_LOADER deliberately expires the existing independent watchdog.
+  // Once its reset retires the old application, ROM/idle-loader kicks resume.
+  // No new reset-domain crossing or request-derived clock is introduced.
+  when((kick || kickPending) && !(controlState.loaderHold && controlState.started)) {
     when(ack === heartbeat) { heartbeat:= !heartbeat; kickPending:=false.B }
       .otherwise { kickPending:=true.B }
   }
-  val elapsed = rawElapsed(0); val lowerElapsed = rawElapsed(1); val upperElapsed = rawElapsed(2)
-  val observationMs = Mux(rawSingle,lowerElapsed,0.U)
+  val elapsed = rawElapsed(0); val upperElapsed = rawElapsed(2)
   val tick = elapsed =/= 0.U
   val leaseExpired = housekeepingPublished && !housekeepingRecoveryBlocked && housekeepingReply.bits.leaseExpired
   val scalingBusy = io.elapsedScaling.busy || housekeepingWork || rawTimeValid
@@ -164,17 +164,17 @@ class ClickServices(p: SocParameters, boardFactory: SocParameters => BoardProfil
   }
   io.observedGpio := gpio
   val gpioPrevious = RegNext(gpio, 0.U)
-  val output = applicationReg(config.application.pins.filter(_.resetHigh).map(x => BigInt(1) << x.index).sum.U(32.W))
-  val enable = applicationReg(config.application.pins.filter(_.output).map(x => BigInt(1) << x.index).sum.U(32.W))
+  val output = if(p.retainGpioOnWatchdog) RegInit(0.U(32.W)) else applicationReg(0.U(32.W))
+  val enable = if(p.retainGpioOnWatchdog) RegInit(0.U(32.W)) else applicationReg(0.U(32.W))
   val gpioMask = ((BigInt(1) << config.gpioCount) - 1).U(32.W)
   val application = telemetryWords.map(word => word -> applicationReg(0.U(32.W))).toMap
   val appIndex = controlState.appIndex
   def applicationWord(word: UInt): UInt = MuxLookup(word, "hffffffff".U(32.W))(
     config.application.registers.map(r => r.word.U ->
-      (if(board.ownedRegisters(r.word)) boardResult.registers(r.word) else application(r.word))))
+      application(r.word)))
   def applicationExists(word: UInt): Bool = config.application.registers.map(r => word === r.word.U).foldLeft(false.B)(_ || _)
 
-  // Both native consumers receive the same retained acquisition stream.
+  // Native telemetry receives the retained acquisition stream.
   val publish = Wire(Vec(config.measurements.size, Valid(new Acquisition)))
   publish.foreach { x => x.valid := false.B; x.bits := 0.U.asTypeOf(new Acquisition) }
   val sampleIndex = controlState.sampleIndex; val sampleValue = controlState.sampleValue
@@ -190,61 +190,17 @@ class ClickServices(p: SocParameters, boardFactory: SocParameters => BoardProfil
   p.adc.foreach { adcParameters =>
     adcBusy := io.adc.busy
     if(p.lowPower.nonEmpty) {
-      io.adc.start := adcLaunchPending && !io.adc.busy
+      io.adc.start := adcLaunchPending && !io.adc.busy && !spiClaimRequested
       when(io.adc.start) { adcLaunchPending := false.B }
-      adcBusy := io.adc.busy || adcLaunchPending || housekeepingState.requested || periodPending
+      adcBusy := io.adc.busy || (!spiClaimRequested && (adcLaunchPending || housekeepingState.requested || periodPending))
     }
     publish(0) := io.adc.result; publishAge(0) := io.adc.age
   }
-  // POR-owned input history. No power policy or qualification counter is
-  // clocked here. Min/max, validity gaps and GPIO discontinuities prevent a
-  // stalled native consumer from fabricating stable observations.
-  if(board.ownedRegisters.nonEmpty) {
-    val outstanding=RegInit(false.B); val needed=RegInit(true.B)
-    val queued=RegInit(0.U.asTypeOf(new SupervisorCommand))
-    // Retain the complete registered ABI even when a board's ADC fixes flags.
-    dontTouch(queued.capture)
-    val previousGpio=RegNext(gpio,0.U)
-    val changes=(gpio ^ previousGpio) & gpioMask
-    val ageStep=Mux(tick,upperElapsed,0.U)
-    val pub=publish(0)
-    boardCommand.valid := needed && !outstanding
-    boardCommand.bits := queued; boardCommand.bits.now := boardNow
-    boardCommand.bits.power := boardResult.outputs(0); boardCommand.bits.shutdown := boardResult.outputs(1)
-    boardReply.ready := outstanding
-    when(boardCommand.fire) { outstanding := true.B; needed := false.B }
-    when(boardReply.fire) { outstanding := false.B; boardResult := boardReply.bits }
-    when(tick || changes.orR || pub.valid) { needed := true.B }
-    val base=Mux(boardCommand.fire,0.U.asTypeOf(new SupervisorCommand),queued)
-    queued := base; queued.gpio := gpio; queued.gpioChanged := base.gpioChanged | changes
-    queued.tick := base.tick || tick
-    queued.elapsedUpper := saturatingAdd(base.elapsedUpper,ageStep)
-    queued.observationMs := saturatingAdd(base.observationMs,Mux(tick,observationMs,0.U))
-    when(tick && !base.tick) { queued.firstObservationMs := observationMs }
-    queued.observationGap := base.observationGap || (tick && observationMs === 0.U)
-    val capture=queued.capture; val prior=base.capture
-    val ageAtPublication=saturatingAdd(prior.tailAge,ageStep)
-    capture.tailAge := ageAtPublication
-    when(pub.valid) {
-      capture.seen := true.B; capture.count := prior.count+1.U
-      capture.valid := pub.bits.valid; capture.calibrated := pub.bits.calibrated
-      capture.failed := prior.failed || !pub.bits.valid
-      when(pub.bits.valid) {
-        capture.hadValid := true.B; capture.value := pub.bits.value; capture.tailAge := publishAge(0)
-        capture.minimum := Mux(!prior.hadValid || pub.bits.value < prior.minimum,pub.bits.value,prior.minimum)
-        capture.maximum := Mux(!prior.hadValid || pub.bits.value > prior.maximum,pub.bits.value,prior.maximum)
-        when(!prior.hadValid) { capture.firstAge := ageAtPublication }
-          .otherwise { capture.maximumGap := Mux(ageAtPublication > prior.maximumGap,ageAtPublication,prior.maximumGap) }
-      }
-    }
-    boardWork := needed || outstanding || io.boardDraining
-  }
-  val gpioOutputView = ((output & ~board.mask.U(32.W)) | (boardResult.outputs & board.mask.U(32.W))) & gpioMask
-  val gpioEnableView = ((enable & ~board.mask.U(32.W)) | (board.enables.U(32.W) & board.mask.U(32.W))) & gpioMask
-  val isolatedOutput=config.application.pins.filter(_.resetHigh).map(x => BigInt(1) << x.index).sum.U(32.W)
-  val isolatedEnable=config.application.pins.filter(_.output).map(x => BigInt(1) << x.index).sum.U(32.W)
-  io.gpioOut:=Mux(io.cpuReset,((isolatedOutput & ~board.mask.U(32.W)) | (boardResult.outputs & board.mask.U(32.W))) & gpioMask,gpioOutputView)
-  io.gpioOe:=Mux(io.cpuReset,((isolatedEnable & ~board.mask.U(32.W)) | (board.enables.U(32.W) & board.mask.U(32.W))) & gpioMask,gpioEnableView)
+  // Generic GPIO reset policy; profile pin descriptors never drive hardware.
+  val gpioOutputView = output & gpioMask
+  val gpioEnableView = enable & gpioMask
+  io.gpioOut := (if(p.retainGpioOnWatchdog) Mux(io.cpuReset, gpioOutputView & (if(p.spiBoot) "hffffffc7".U else "hffffffff".U), gpioOutputView) else Mux(io.cpuReset, 0.U, gpioOutputView))
+  io.gpioOe := (if(p.retainGpioOnWatchdog) Mux(io.cpuReset, gpioEnableView & (if(p.spiBoot) "hffffffc7".U else "hffffffff".U), gpioEnableView) else Mux(io.cpuReset, 0.U, gpioEnableView))
 
   val pendingState = applicationReg(0.U(6.W))
   // Captured sets are irrevocable and visible while awaiting native commit.
@@ -259,7 +215,7 @@ class ClickServices(p: SocParameters, boardFactory: SocParameters => BoardProfil
   val hostWake = WireDefault(false.B)
   val due = housekeepingPublished && !housekeepingRecoveryBlocked && !replaceDeadline && housekeepingReply.bits.due
   val acquisition = if(config.measurements.isEmpty) false.B else publish.map(_.valid).reduce(_ || _)
-  val gpioActivity = ((gpio ^ gpioPrevious) & gpioMask).orR
+  val gpioActivity = ((gpio ^ gpioPrevious) & p.gpioEventMask.U(32.W)).orR
   val events = Cat(0.U(26.W), hostWake, leaseExpired, acquisition, gpioActivity, due, tick)
   // Native validation adds a handshake window before the peripheral commit.
   // Preserve every event raised during that window against a software clear.
@@ -269,7 +225,7 @@ class ClickServices(p: SocParameters, boardFactory: SocParameters => BoardProfil
   // Control dispatch. Otherwise extra return latency loses a coincident GPIO.
   val mmioObserved = applicationReg(false.B)
   val observingMmio = io.request.valid && io.request.bits.address >= MemoryMap.mmio.U &&
-    io.request.bits.address < (MemoryMap.mmio + 76).U && io.request.bits.operation =/= Operation.Halt.U
+    io.request.bits.address < (MemoryMap.mmio + MemoryMap.mmioBytes).U && io.request.bits.operation =/= Operation.Halt.U
   when(observingMmio) {
     mmioEvents := Mux(mmioObserved,mmioEvents,0.U) | events
     mmioObserved := true.B
@@ -361,14 +317,23 @@ class ClickServices(p: SocParameters, boardFactory: SocParameters => BoardProfil
   when(io.programSource.decision.fire && !io.programSource.decision.bits) {
     assert(!io.programSource.grant.bits && !io.program.request.fire,"PROGRAM_SOURCE_CANCELLED_EFFECT")
   }
-  val bootWait = isRead && fullWord && req.address === MemoryMap.mmio.U && !started
+  val bootWait = isRead && fullWord && !started &&
+    (req.address === MemoryMap.mmio.U ||
+      (req.address === (MemoryMap.mmio+80).U && !controlState.persistPending))
   val waitingRead = isRead && fullWord && req.address === (MemoryMap.mmio + 16).U
   val eventWait = waitingRead && (pendingView & (wakeMask | "h30".U)) === 0.U
-  parked := io.request.valid && eventWait
+  parked := io.request.valid && (eventWait || bootWait)
   val parkedForSleep = p.lowPower.nonEmpty.B && io.request.valid &&
     (bootWait || (eventWait && sleepRemaining =/= 0.U)) && io.admissionGrant.valid && !adcBusy && !memoryBusy && !controlBusy
-  io.canSleep := parkedForSleep && !io.programSource.draining && !io.ramSource.draining && !scalingBusy && !tick && !telemetryWork && !boardWork
-  val nativeMmio = req.address >= MemoryMap.mmio.U && req.address < (MemoryMap.mmio + 76).U &&
+  io.canSleep := parkedForSleep && !io.programSource.draining && !io.ramSource.draining && !scalingBusy && !tick && !telemetryWork
+  if(p.spiBoot) {
+    when(io.request.fire && isWrite && req.address === (MemoryMap.mmio+88).U &&
+        !io.controlReply.bits.memory.error) {
+      spiClaimRequested := req.data(0)
+      when(!req.data(0)) { spiClaimed := false.B }
+    }
+  }
+  val nativeMmio = req.address >= MemoryMap.mmio.U && req.address < (MemoryMap.mmio + MemoryMap.mmioBytes).U &&
     req.operation =/= Operation.Halt.U
   val mmioComplete = io.controlReply.fire && io.controlReply.bits.kind === ControlKind.Mmio.U && mmioCurrent
   val cpuAvailable = completionAvailable && !io.applicationCancel && !resetRecovery && io.clockRunning && io.admissionGrant.valid && !bootWait && !eventWait &&
@@ -432,8 +397,8 @@ class ClickServices(p: SocParameters, boardFactory: SocParameters => BoardProfil
     when(nativeMmio && housekeepingWriteRequired && req.address(6,0) =/= 64.U) { housekeepingAction.write := true.B }
     response.data := 0.U; response.error := true.B
     when(req.operation === Operation.Halt.U) { haltPending := true.B }
-      .elsewhen(req.address < (MemoryMap.boot.size * 4).U && !isWrite) {
-        response.data := rom(req.address(3, 2)); response.error := false.B
+      .elsewhen(req.address < (p.bootWords.size * 4).U && !isWrite) {
+        response.data := rom(req.address(log2Ceil(p.bootWords.size).max(1)+1, 2)); response.error := false.B
       }.elsewhen(req.address >= MemoryMap.program.U && req.address < (MemoryMap.program + config.programBytes).U) {
         when(programCpuOperation) {
           io.program.request.valid := true.B
@@ -443,7 +408,7 @@ class ClickServices(p: SocParameters, boardFactory: SocParameters => BoardProfil
       }.elsewhen(ramOperation) {
         io.ram.request.valid := true.B
         waitRam := true.B
-      }.elsewhen(!isFetch && req.address >= MemoryMap.mmio.U && req.address < (MemoryMap.mmio + 76).U && fullWord) {
+      }.elsewhen(!isFetch && req.address >= MemoryMap.mmio.U && req.address < (MemoryMap.mmio + MemoryMap.mmioBytes).U && fullWord) {
         val offset = req.address(6, 0)
         response := io.controlReply.bits.memory
         when(isWrite && !io.controlReply.bits.memory.error) {
@@ -480,7 +445,7 @@ class ClickServices(p: SocParameters, boardFactory: SocParameters => BoardProfil
       }
   }
 
-  io.activity := io.programSource.draining || io.ramSource.draining || scalingBusy || io.i2c.busy || gpioActivity || memoryBusy || controlBusy || telemetryWork || boardWork
+  io.activity := io.programSource.draining || io.ramSource.draining || scalingBusy || io.i2c.busy || gpioActivity || memoryBusy || controlBusy || telemetryWork
   // The normal seven-edge guard may drain while native maintenance is busy;
   // canSleep/activity still keep the gate open until that work actually drains.
   io.drainDemand := !parkedForSleep || io.i2c.busy || gpioActivity
@@ -524,20 +489,29 @@ class ClickServices(p: SocParameters, boardFactory: SocParameters => BoardProfil
   // A stalled Control computation still permits independent timer maintenance.
   val cpuTimingTurn=io.request.valid && nativeMmio && !bootWait && !eventWait && !io.applicationCancel &&
     (!controlOutstanding || (mmioCurrent && io.controlReply.valid))
-  // A queued Host retains priority while its native head receipt settles.
-  val mmioLaunch = io.request.valid && nativeMmio && cpuAvailable && !hostFrames.io.deq.valid
-  controlBusy := controlOutstanding || hostRetiring || io.programSource.stored.valid || mmioCommitPending || resetPending || haltPending || hostFrames.io.deq.valid
+  // Bounded host/CPU turns; a continuous host cannot starve ROM progress.
+  val cpuTurn = RegInit(true.B)
+  // A queued host descriptor owns an already offered turn until dispatch;
+  // a CPU arriving later cannot steal it while the native head is stalled.
+  when(io.request.fire || ((hostFrames.io.deq.valid || hostFrames.io.enq.fire) && !io.request.valid)) { cpuTurn := false.B }
+  when(io.controlCommand.fire && io.controlCommand.bits.kind === ControlKind.Host.U) { cpuTurn := true.B }
+  // Stack accesses need a bounded ROM turn too; a held program reservation
+  // must still yield to loader invalidation before its commit decision.
+  val cpuAdmissionTurn = cpuTurn && io.request.valid && (nativeMmio || ramOperation) && !bootWait && !eventWait
+  val hostTurn = hostHeadValid && !cpuAdmissionTurn
+  val mmioLaunch = io.request.valid && nativeMmio && cpuAvailable && (!hostFrames.io.deq.valid || cpuTurn)
+  controlBusy := controlOutstanding || hostRetiring || io.programSource.stored.valid || mmioCommitPending || resetPending || haltPending || (hostFrames.io.deq.valid && !cpuAdmissionTurn)
   io.controlCommand.valid := !controlOutstanding &&
-    (io.programSource.stored.valid || mmioCommitPending || resetPending || (haltPending && !io.applicationCancel) || hostHeadValid || mmioLaunch)
+    (io.programSource.stored.valid || mmioCommitPending || resetPending || (haltPending && !io.applicationCancel) || hostTurn || mmioLaunch)
   io.controlCommand.bits := 0.U.asTypeOf(new ControlCommand)
   io.controlCommand.bits.kind := Mux(io.programSource.stored.valid, ControlKind.Stored.U,
     Mux(mmioCommitPending, ControlKind.MmioCommit.U, Mux(resetPending, ControlKind.ResetApplication.U,
-      Mux(haltPending && !io.applicationCancel, ControlKind.Halt.U, Mux(hostHeadValid, ControlKind.Host.U, ControlKind.Mmio.U)))))
+      Mux(haltPending && !io.applicationCancel, ControlKind.Halt.U, Mux(hostTurn, ControlKind.Host.U, ControlKind.Mmio.U)))))
   io.controlCommand.bits.frame := Mux(hostFrames.io.deq.valid, hostHead.bits.ingress.frame, 0.U.asTypeOf(new HostFrame))
   io.controlCommand.bits.cpuResetActive := io.applicationCancel ||
-    (hostFrames.io.deq.valid && (hostFrames.io.deq.bits.resetActive || hostHead.bits.resetEpoch =/= io.i2c.currentEpoch))
+    (hostTurn && (hostFrames.io.deq.bits.resetActive || hostHead.bits.resetEpoch =/= io.i2c.currentEpoch))
   io.controlCommand.bits.programBusy := io.program.busy ||
-    (hostFrames.io.deq.valid && hostFrames.io.deq.bits.programBusy)
+    (hostTurn && hostFrames.io.deq.bits.programBusy)
   io.controlCommand.bits.memory := req
   io.controlCommand.bits.applicationWritable := application.keys.toSeq.map(i => appIndex === i.U).foldLeft(false.B)(_ || _)
   io.controlCommand.bits.peripheralData := MuxLookup(req.address(6,0), 0.U(32.W))(Seq(
@@ -545,7 +519,9 @@ class ClickServices(p: SocParameters, boardFactory: SocParameters => BoardProfil
     20.U -> (gpio & gpioMask), 24.U -> gpioOutputView, 28.U -> gpioEnableView,
     52.U -> applicationWord(appIndex), 56.U -> wakeMask, 60.U -> sleepRemaining,
     64.U -> samplePeriod, 68.U -> Cat(0.U(28.W), periodPending, sleepRemaining =/= 0.U, !io.clockRunning, p.lowPower.nonEmpty.B),
-    72.U -> io.sleepEntries))
+    72.U -> io.sleepEntries,
+    88.U -> Cat(0.U(29.W), output(5) && enable(5) && !output(3), io.adc.busy, spiClaimed),
+    92.U -> (MemoryMap.ram + config.workingRamBytes).U(32.W)))
   when(mmioCommitPending && !io.programSource.stored.valid) {
     io.controlCommand.bits := mmioCommit
   }
@@ -609,7 +585,7 @@ class ClickServices(p: SocParameters, boardFactory: SocParameters => BoardProfil
     (housekeepingAction.write || housekeepingAction.waitAccepted || periodUpdate.valid)
   val housekeepingBarrier = housekeepingAction.write || housekeepingAction.waitAccepted || periodUpdate.valid
   val housekeepingQueuedWork = housekeepingQueued.timeValid || housekeepingQueued.discard
-  val housekeepingRetry = housekeepingState.requested && !io.adc.busy && !adcLaunchPending
+  val housekeepingRetry = housekeepingState.requested && !io.adc.busy && !adcLaunchPending && !spiClaimRequested
   val queueBase=housekeepingQueued
   val queueNext=WireDefault(queueBase)
   val nominalSum=queueBase.elapsed(0) +& rawElapsed(0)
@@ -701,7 +677,7 @@ class ClickServices(p: SocParameters, boardFactory: SocParameters => BoardProfil
     housekeepingQueuedWork || housekeepingRetry || io.housekeepingDraining || io.housekeepingSource.draining
 
   // POR ingress compacts every publication and elapsed interval independently
-  // of native backpressure. The separate native supervisor receives the same
+  // of native backpressure. Telemetry retains the complete
   // publications through independent POR-owned ingress and crossings.
   val ageStep = Mux(tick, upperElapsed, 0.U)
   telemetryElapsed := saturatingAdd(Mux(telemetryCommand.fire, 0.U, telemetryElapsed), ageStep)
@@ -785,6 +761,14 @@ class ClickServices(p: SocParameters, boardFactory: SocParameters => BoardProfil
     }
   }
 
+  // Retain ordinary pads only. Highest-priority synchronous cancellation
+  // prevents pre-reset SPI enables reappearing when raw isolation releases.
+  if(p.retainGpioOnWatchdog && p.spiBoot) {
+    when(io.applicationCancel) {
+      output := output & "hffffffc7".U; enable := enable & "hffffffc7".U
+    }
+  }
+
   // Snapshot the selected service bank once, then share one word mux across
   // byte boundaries. This retains coherent read transactions without eight
   // parallel copies of the entire host-address decoder.
@@ -800,8 +784,8 @@ class ClickServices(p: SocParameters, boardFactory: SocParameters => BoardProfil
       fields.zipWithIndex.foreach { case (value, i) => bank(i) := value }
     }
     when(space === 1.U && instance === 0.U) {
-      val fields = Seq(mode, programmed.asUInt, locked.asUInt, canProgram.asUInt, (loaderPending || loaderControlPending).asUInt, lastError,
-        imageId, received)
+      val fields = Seq(mode, programmed.asUInt, locked.asUInt, canProgram.asUInt, (loaderPending || loaderControlPending || controlState.persistPending).asUInt, lastError,
+        imageId, received, Cat(0.U(24.W),controlState.bootIndex,controlState.bootSession,controlState.persisted,controlState.persistPending,controlState.loaderHold))
       fields.zipWithIndex.foreach { case (value, i) => bank(i) := value }
     }
     when(space === 3.U && instance === 0.U) {
@@ -841,7 +825,7 @@ class ClickServices(p: SocParameters, boardFactory: SocParameters => BoardProfil
     val space = selector(23,16); val instance = selector(15,8); val word = selector(7,0) +& i.U
     val appWord = config.application.registers.map(r => word === r.word.U).foldLeft(false.B)(_ || _)
     (instance === 0.U && space === 0.U && word < HostSchema.device.size.U) ||
-      (instance === 0.U && space === 1.U && word < 8.U) ||
+      (instance === 0.U && space === 1.U && word < HostSchema.loader.size.U) ||
       (space === 3.U && instance <= 1.U && word < 8.U) ||
       (space === 2.U && instance < config.measurements.size.U && word < 6.U) ||
       (space === 128.U && instance === 0.U && appWord)

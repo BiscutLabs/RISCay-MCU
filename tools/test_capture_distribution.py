@@ -3,21 +3,10 @@ import unittest
 import tempfile
 from pathlib import Path
 from measure_capture_distribution import parse
-from check_capture_distribution_controls import compare, require_baseline_inputs
 from gf180_physical import sha
 
 
 class CaptureDistributionTest(unittest.TestCase):
-    def test_control_requires_the_same_mapping_and_runtime_paths_and_bytes(self):
-        with tempfile.TemporaryDirectory() as d:
-            paths=[Path(d)/n for n in ('netlist.v','sta-config.json','different-netlist.v','different-config.json')]
-            for p in paths:p.write_text('identical bytes')
-            baseline=dict(inputs_sha256={str(p.resolve()):sha(p) for p in paths[:2]})
-            require_baseline_inputs(baseline,paths[:2])
-            for changed in ([paths[2],paths[1]],[paths[0],paths[3]]):
-                with self.assertRaisesRegex(ValueError,'BASELINE_BINDING'):require_baseline_inputs(baseline,changed)
-            paths[0].write_text('changed mapping')
-            with self.assertRaisesRegex(ValueError,'BASELINE_BINDING'):require_baseline_inputs(baseline,paths[:2])
 
     def fixture(self):
         plan=[dict(instance='frame',root='frame/root/I',targets=['frame/bit0/CLK','frame/bit1/CLK'],latch=False,
@@ -52,12 +41,6 @@ class CaptureDistributionTest(unittest.TestCase):
         for diagnostic in ('Warning: invalid endpoint','ERROR: timing failed'):
             with self.assertRaisesRegex(ValueError,'DISTRIBUTION_TIMING_INCOMPLETE'):parse(diagnostic+'\n'+log,plan,2)
 
-    def test_actual_arc_comparison_cannot_count_unaffected_or_missing_rows(self):
-        base={'a':[0,1,1,1,2],'b':[0,2,2,2,2]};mutant={'a':[0,1000,1000,1000,2],'b':base['b']}
-        self.assertEqual(compare(base,mutant,{'a'}),1)
-        with self.assertRaisesRegex(ValueError,'UNEXPECTED_CHANGE'):compare(base,mutant,set())
-        with self.assertRaisesRegex(ValueError,'NO_DELAY'):compare(base,base,{'a'})
-        with self.assertRaisesRegex(ValueError,'COVERAGE'):compare(base,{'a':mutant['a']},{'a'})
 
 
 if __name__=='__main__':unittest.main()

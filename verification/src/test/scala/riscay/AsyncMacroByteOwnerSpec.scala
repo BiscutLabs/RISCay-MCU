@@ -21,8 +21,14 @@ class AsyncMacroByteOwnerSpec extends AnyFunSuite {
     Files.writeString(cohort.resolve("campaign.log"), log.toString)
     assert(code == 0, s"Native byte campaign failed; retained evidence at $cohort\n$log")
     val receipt = ujson.read(Files.readString(output.resolve("receipt.json")))
-    assert(receipt("status").str == "FINITE_DIGITAL_CANDIDATE_CAMPAIGN_PASS_PHYSICAL_UNQUALIFIED")
-    assert(receipt("cases").arr.size == 76)
-    assert(receipt("cohort")("bd")("required").num == 35 && receipt("cohort")("click")("required").num == 41)
+    assert(receipt("status").str == "pass")
+    val coverage = receipt("coverage")
+    assert(coverage("status").str == "FINITE_DIGITAL_CANDIDATE_CAMPAIGN_PASS_PHYSICAL_UNQUALIFIED")
+    val expected = coverage("required_cases").arr.map(r => (r("variant").str, r("name").str)).toSet
+    val cases = coverage("cases").arr
+    val actual = cases.map(r => (r("variant").str, r("case")("name").str))
+    assert(expected.nonEmpty && expected.map(_._1) == Set("bd", "click"))
+    assert(actual.toSet == expected && actual.distinct.size == actual.size)
+    assert(cases.forall(_("status").str == "PASS"))
   }
 }
