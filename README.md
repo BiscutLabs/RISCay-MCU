@@ -1,89 +1,102 @@
 # RISCay-MCU
 
-A small reusable RV32E microcontroller built in Chisel with
-[chisel-async](https://github.com/BiscutLabs/chisel-async). Two independent SoC
-implementations are maintained: [four-phase bundled data](designs/four-phase-bd/README.md)
-and [native two-phase Click](designs/two-phase-click/README.md). **BD is the selected
-tape-out implementation; Click is frozen as a tested functional reference.**
-Physical qualification is still required. They share the ISA,
-interface schemas, fixed SRAM models and verification utilities. Click has no
-hidden four-phase adapters.
+RISCay-MCU is an asynchronous RV32E microcontroller built in Chisel with
+[chisel-async](https://github.com/BiscutLabs/chisel-async), targeting the GF180MCU
+process. It combines a small RISC-V CPU, on-chip SRAM, firmware loading, GPIO,
+measurement interfaces and event-driven sleep.
 
-RISCay is a generic MCU. Application policy belongs in uploaded firmware, including
-Groundlark power supervision. Profiles supply pin names, measurement metadata and
-capacities; neither RTL nor mask ROM contains profile-specific behavior.
+The project has two independent implementations: **four-phase bundled data (BD)**
+and **native two-phase Click**. BD is the primary implementation for physical
+development; Click is maintained as a functional reference. Both use the same
+ISA and software interfaces.
 
-## Boot, memory and peripherals
+## Features
 
-The generic boot ROM validates an image in external SPI NOR flash using the
-existing compatibility rules and CRC, then runs it from executable SRAM. Blank,
-corrupt or incompatible storage falls back to the I2C host loader. Explicit,
-unlocked persistence can write a host-uploaded image back to flash. SPI is
-bit-banged through ordinary GPIOs, with a generic claim/drain/release interface
-when sharing the ADC bus. See the [boot contract](docs/generic-boot-contract.md).
+| Component | Capabilities |
+| --- | --- |
+| CPU | RV32E, sixteen 32-bit registers, one instruction in flight; no cache, compressed instructions or hardware multiply/divide |
+| Memory | 2 KiB executable SRAM and 1 KiB working SRAM in the reference build; configurable capacities |
+| Boot | ROM bootloader reads and validates firmware from external SPI NOR flash, with I²C host-loader fallback |
+| Programming | CRC and image-compatibility checks, programming lock, optional flash persistence |
+| I/O | GPIO inputs, outputs and events; external SPI ADC interface; measurement value, validity and age |
+| Timing | Independent low-frequency timebase and watchdog, deadlines, wake events and retained sleep |
 
-The reference capacity is 2 KiB executable SRAM plus 1 KiB working SRAM, implemented
-with three pinned GF180 macros. Capacities remain build parameters. GPIO, events,
-measurements, deadlines, sleep leases and application registers use the common
-[MMIO/host contract](docs/soc-contract.md). The programming lock lasts until POR;
-SRAM, image and lock retention across watchdog recovery are explicit. POR makes
-all GPIOs inputs. A generic option controls ordinary GPIO retention on watchdog
-reset; SPI recovery always releases its outputs. Board pull resistors define the
-safe electrical state.
+Application behavior lives in firmware. Board profiles describe pin assignments,
+measurement metadata and capacities.
 
-The independent LF timebase/watchdog and reset qualifier remain clocked. Native
-owners implement CPU/fabric, loader/MMIO state, telemetry, arithmetic and protocol
-sequencing; service coordination, some publication boundaries, wire sampling and
-production SRAM macro access still use clocks. The
-[remaining-state ledger](docs/async-residual-state.md) records those boundaries.
-Experimental self-timed SRAM is isolated from the production path.
+The CPU and major SoC datapaths use native request/acknowledge handshakes.
+The low-frequency timebase, watchdog, reset qualification, service coordination,
+wire sampling and production SRAM access still use clocks. See the
+[architecture and remaining clocked boundaries](docs/async-residual-state.md).
 
-## Verification
+## Build and test
 
-```text
+Use Python 3.12, JDK 21, firtool 1.160.0 and Icarus Verilog 13. Firmware tests also
+use the pinned RISC-V GCC toolchain. Follow the [setup guide](docs/build-and-test.md)
+to install the tools and configure their paths, then run:
+
+```sh
 python tools/ci.py --output build/ci-local
 ```
 
-[Build and test](docs/build-and-test.md) describes the pinned JDK, firtool, simulator
-and library setup. The GitHub workflow runs Python properties and fast Scala RTL suites on
-main pushes and pull requests once published; the first hosted run is pending.
-Extended boot, SRAM, reset and firmware suites
-remain required when those subsystems change.
+Choose a fresh output directory for each run. This runs the Python tests and fast
+RTL simulation suites; CI uses the same command on pushes to `main` and pull
+requests. The build fetches chisel-async at a pinned Git revision automatically.
 
-The [test-suite cleanup](docs/test-suite-cleanup.md) reduces 1,202 Python tests to
-292 and replaces completed-step checker campaigns with generation-time library
-rules, mapped graph proofs and behavioral chip tests. It explicitly lists coverage
-that was retired. Current export checks consume a typed structural audit without
-rewriting generated testbenches. This audit is separate from reset-domain and
-physical timing checks.
+To generate the BD SoC RTL and its interface/timing contracts:
 
-## Physical status
+```sh
+python tools/sbt.py --bootstrap "fourPhaseBd/runMain riscay.bd.EmitFourPhaseSoc build/export/bd"
+```
+
+The [build guide](docs/build-and-test.md) also covers Click exports, extended
+simulation suites and the physical toolchain. Run only one sbt process at a time.
+
+## Firmware and integration
+
+Firmware targets `rv32e` with the `ilp32e` ABI. The repository includes startup
+code, linker scripts, a generic bootloader and example test workloads in
+[`firmware/`](firmware/README.md).
+
+At power-on, the bootloader validates an image in external SPI NOR flash and
+loads it into executable SRAM. If no valid image is available, it waits for an
+I²C upload. GPIOs start as inputs; board pull resistors determine their electrical
+state. Watchdog recovery preserves the image and programming lock, with GPIO
+retention available as a generic build option.
+
+- [Boot image format and flash programming](docs/generic-boot-contract.md)
+- [Memory map and storage](docs/memory-architecture.md)
+- [MMIO and I²C host protocol](docs/soc-contract.md)
+- [Sleep, wake events and reset behavior](docs/sleep-and-clock.md)
+
+## Repository layout
+
+| Directory | Contents |
+| --- | --- |
+| [`designs/four-phase-bd/`](designs/four-phase-bd/README.md) | BD CPU and SoC implementation |
+| [`designs/two-phase-click/`](designs/two-phase-click/README.md) | Native Click CPU and SoC implementation |
+| [`shared/`](shared/README.md), [`soc/`](soc/README.md) | ISA, interface definitions, parameters and fixed SRAM models |
+| [`profiles/`](profiles/README.md) | Board pin and measurement metadata |
+| [`firmware/`](firmware/README.md) | Boot ROM, runtime and firmware fixtures |
+| [`verification/`](verification/) | RTL simulation and integration tests |
+| [`physical/`](physical/), [`analog/`](analog/) | GF180 implementation flow and analog candidates |
+| [`tools/`](tools/) | Build, verification and implementation scripts |
+
+## Physical implementation
 
 ![BD routed digital layout on a 1.94 × 2.53 mm die](docs/images/bd-layout-1940x2530.png)
 
-The current **BD digital top is placed and routed on a 1.94 × 2.53 mm outline**
-(4.9082 mm²). **One Metal2 short remains; routing is not DRC-clean.** Cell footprints
-total **3.494 mm²**, including **2.902 mm² logic**, **0.466 mm² SRAM** and
-**0.125 mm² taps/endcaps**. The image comes directly from the routed OpenROAD
-database; the three SRAM macros are across the top. Pads and analog blocks are
-not included. See the [run and reproduction notes](docs/gf180-bd-1940x2530-pnr.md).
+The current BD digital layout uses a **1.94 × 2.53 mm** outline. Cell footprints
+total **3.494 mm²**, including the three SRAM macros across the top. Pads and
+analog blocks are not included.
 
-**Physical timing is unqualified.** Nominal/minimum/maximum wire RC extraction is
-complete, but electrical violations and full async timing, mismatch, reset,
-macro and analog/pad qualification remain open. The [area ledger](docs/area-ledger.md)
-separates mapped, repaired and routed costs; these are not measured deep-sleep
-power. The [original routed experiment](docs/gf180-first-pnr.md) remains historical.
+**This is a development design, not ready for fabrication.** One Metal2 short
+remains in the routed layout, and physical timing is not yet qualified. See the
+[layout results](docs/gf180-bd-1940x2530-pnr.md), [area ledger](docs/area-ledger.md)
+and [development roadmap](docs/architecture-followups.md) for measurements and
+remaining work.
 
-The [migration checklist](docs/async-soc-migration.md) and
-[native area plan](docs/native-area-reduction.md) track the remaining work. Historical
-measurements and reviews stay in the documentation; active verification commands
-live in the build guide. The [GF180 estimates](docs/gf180-estimates.md) distinguish
-area and listed-state leakage estimates from measured whole-chip power.
+## License
 
-Groundlark is an external firmware/application integration. Its MCU pin metadata,
-shared ADC/boot-flash wiring and pin budget are documented in
-[Groundlark I/O](docs/groundlark-io.md) and its [profile](profiles/groundlark/README.md).
-This workstream does not modify or port the Groundlark application repository.
-
-Project licensing is recorded in [LICENSE](LICENSE). Reused third-party material
-retains its own license and attribution.
+[Apache License 2.0](LICENSE). Third-party IP retains its own licenses and
+attribution.
