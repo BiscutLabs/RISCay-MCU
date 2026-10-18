@@ -59,14 +59,14 @@ physical timing checks.
 
 ## Physical status
 
-![BD routed digital layout on a 3.93 × 2.53 mm die](docs/images/bd-layout-3930x2530.png)
+![BD routed digital layout on a 1.94 × 2.53 mm die](docs/images/bd-layout-1940x2530.png)
 
-The current **BD digital top is placed and routed on a 3.93 × 2.53 mm outline**
-(9.9429 mm²), with zero detailed-router DRC violations. Cell footprints total
-**3.629 mm²**, including **2.896 mm² logic**, **0.466 mm² SRAM** and
-**0.267 mm² taps/endcaps**. The image comes directly from the routed OpenROAD
+The current **BD digital top is placed and routed on a 1.94 × 2.53 mm outline**
+(4.9082 mm²). **One Metal2 short remains; routing is not DRC-clean.** Cell footprints
+total **3.494 mm²**, including **2.902 mm² logic**, **0.466 mm² SRAM** and
+**0.125 mm² taps/endcaps**. The image comes directly from the routed OpenROAD
 database; the three SRAM macros are across the top. Pads and analog blocks are
-not included. See the [run and reproduction notes](docs/gf180-bd-rectangular-pnr.md).
+not included. See the [run and reproduction notes](docs/gf180-bd-1940x2530-pnr.md).
 
 **Physical timing is unqualified.** Nominal/minimum/maximum wire RC extraction is
 complete, but electrical violations and full async timing, mismatch, reset,

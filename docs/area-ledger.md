@@ -25,21 +25,27 @@ exceeds it, revise the budget or architecture; do not waive a failing path. The
 
 ### BD rectangular P&R
 
-The current generic-MCU BD mapping has now completed P&R on a **3.93 × 2.53 mm**
-outline (9.9429 mm²), with zero detailed-router DRC violations and nominal/min/max
-RC extraction. **Physical timing remains unqualified.**
+The current generic-MCU BD mapping has completed detailed routing on a
+**1.94 × 2.53 mm** outline (4.9082 mm²), with **one unresolved Metal2 short**.
+Nominal/minimum/maximum wire RC extraction is complete. **Physical timing remains
+unqualified.** The larger comparison run completed with zero detailed-router DRC
+violations.
 
 | Source / physical run | Mapped logic | Pre-placement repaired logic | Routed logic | SRAM | Taps/endcaps | Total cell footprints | Periodic sinks |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| `baec57b`, `pnr-bd-1940x2530-r1` (BD only, one router short) | 2.100657 | 2.283901 | 2.901978 | 0.466241 | 0.125372 | 3.493590 | 4,125 |
 | `517c272`, `pnr-bd-3930x2530-r1` (BD only) | 2.100657 | 2.283901 | 2.895688 | 0.466241 | 0.266857 | 3.628786 | 4,125 |
 
 All areas are mm². Routed logic includes the added ties, electrical repair and
-CTS. Placement repair adds 0.416245 mm², CTS 0.048053 mm² and global-route repair
-0.133606 mm²; guard, allowance and DLYD inventories are unchanged from the
+CTS. On the smaller outline, placement repair adds 0.404505 mm², CTS 0.050450 mm²
+and global-route repair 0.149238 mm². Total cell footprints fall 0.135196 mm²
+relative to the larger outline because there are fewer taps/endcaps; logic grows
+0.006289 mm². Guard, allowance and DLYD inventories are unchanged from the
 generic-MCU row below. No RTL, physical timing recipe or wake workload changes.
 The 0.05 mm² targeted hold-repair reserve remains separate and unspent. This is
 a new physical implementation, not a matched architecture-area comparison with
-the original baseline. [Run details and layout](gf180-bd-rectangular-pnr.md).
+the original baseline. [Smaller-outline run details](gf180-bd-1940x2530-pnr.md);
+the [larger run](gf180-bd-rectangular-pnr.md) remains a historical comparison.
 
 ### Mapped batch history
 

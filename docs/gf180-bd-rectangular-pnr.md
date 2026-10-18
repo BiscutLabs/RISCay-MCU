@@ -1,5 +1,8 @@
 # BD layout on a 3.93 × 2.53 mm outline
 
+Historical comparison run. The [1.94 × 2.53 mm rerun](gf180-bd-1940x2530-pnr.md)
+uses the same mapping and physical recipes on a narrower outline.
+
 This run places and routes the generic MCU digital top, `RiscayMcuDigital`, in
 GF180MCU-D. BD is the only implementation run. The outline is **3,930 × 2,530 µm**
 (**9.9429 mm²**), with a 30 µm core inset and a 0.60 placement-density target.
@@ -21,7 +24,7 @@ from global-route repair: 36.50% of the die or 37.96% of the core. This is not a
 foundry DRC/LVS or timing-closure result.
 
 All six stages complete, including independent nominal/minimum/maximum wire RC
-extractions. The [README image](images/bd-layout-3930x2530.png) is the unmodified
+extractions. The [original image](images/bd-layout-3930x2530.png) is the unmodified
 2,400 × 1,545 pixel OpenROAD render of `route.odb`, visually checked for the full
 outline and all three SRAMs.
 
@@ -67,7 +70,7 @@ retains stage databases, graph proofs, clock coverage, per-corner electrical
 reports and nominal/minimum/maximum RC extraction evidence. The renderer reads
 `route.odb` directly with the same OpenROAD GUI in offscreen mode. Its receipt
 binds the input database, tool and PNG; the image dimensions are checked against
-the requested outline. The README image is a copy of that PNG.
+the requested outline. The archived documentation image is a copy of that PNG.
 
 The 295 Python tests pass (`build/pnr-bd-3930x2530-python-r2/`), including the
 rectangular-geometry property and existing graph/clock/provenance controls.
