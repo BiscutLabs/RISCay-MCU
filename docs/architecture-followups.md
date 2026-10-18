@@ -1,63 +1,36 @@
 # Architecture-first follow-ups
 
-BD is selected for tape-out, subject to physical qualification. Click remains
-a native, independently implemented functional reference. Keep its regressions
-and correctness/ABI fixes; stop Click-specific sizing and physical campaigns.
-An architecture change may diverge internally while preserving the common ABI.
-Record that divergence rather than silently calling both implementations equal.
+The [open migration checklist](async-soc-migration.md) owns sequencing and status.
+This document expands its boundary decisions; the proposals below are not
+implemented by this documentation change. Completed build/characterization work
+is in the [migration log](history/migration-log.md#source-build-and-mismatch-screen-follow-up).
 
-## Current baseline and order
+RISCay is a generic MCU. Neither RTL nor ROM contains application policy. BD is
+the tape-out target; native Click remains a frozen functional reference with
+regressions and shared correctness/ABI fixes. New ownership and physical work
+focuses on BD. Document internal divergence and any approved ABI transition.
 
-1. **Done locally:** generic SPI boot, removal of all fixed application policy,
-   and Python suite cleanup (1,202 to 292 tests) plus a main-push CI workflow.
-   Commit `d690e8f` is verified and local. GitHub publication and the first hosted
-   CI run await a credential with `workflow` scope. Groundlark firmware is outside
-   this repository's workstream.
-2. **Build reproducibility:** consume exact chisel-async source `83d6468` directly
-   in sbt. This includes `06b1216`'s passive primitives and the structural audit.
-   No local SNAPSHOT publication is needed.
-3. **Always-on/application split:** establish reset, ownership and demand
-   boundaries before moving state. The initial proposal below uses one supply;
-   physical power gating requires a separate isolation/retention implementation.
-4. **Register-pointer loader:** define the host wire ABI before implementing it.
-   The initial proposal adds it alongside the framed interface, preserving current
-   hosts. It must reuse the same native loader owner and compatibility/CRC rules.
-5. **BD request guards:** regenerate the inventory after those architecture changes,
-   then size every surviving canonical request guard in one same-corner campaign.
-   The historical 89 count predates supervisor removal. Include source launch,
-   data/setup, feedback hold, ACK, reset and throughput; keep absolute pulse floors.
-6. **Full routed qualification:** electrical repair, composed min/max-RC timing,
-   reset distribution, macro timing and measured mismatch envelope. Locally
-   measured counts can be adopted beforehand; shorten nothing on simulation alone.
+## Work order
 
-The [statistical screen](../analog/gf180-guard-variation/README.md) passes 192
-samples with both ratio tails checked and timestep/seed controls. It supports
-keeping the engineering derate. It does not qualify all stages for shortening
-or change the architecture-first order.
+1. Decide B's replacement host ABI before resuming any 11a2b credit/admission work.
+2. Implement A's always-on/application split and B's register-pointer interface,
+   moving each producer/consumer pair together. Preserve reset and commit ownership.
+3. Add resilient external boot storage and factory provisioning. Measure full-capacity
+   boot and firmware wake activity; no application policy moves into silicon.
+4. Regenerate the BD request-guard inventory and size surviving guards at each
+   corner. Historical guard counts are not the inventory for the new architecture.
+5. Run item 16 once on the integrated architecture and supported configurations,
+   then regenerate 17a3 and close the BD tape-out gate, including full R2b reset
+   distribution and targeted routed hold repair.
 
-## Verified follow-up batch
+Local measurements and affected verification accompany each implementation batch.
+Record mapped/repaired logic, clock sinks and wake activity/duration in the
+[area ledger](area-ledger.md), against the immediate parent and original baseline.
+Full extracted-RC qualification remains item 17. Physical prerequisites may be
+resolved earlier when they determine a design choice; optional 15a–c research is
+not on the tape-out critical path.
 
-- A fresh source tree, empty Ivy repository and fresh sbt Git staging directory
-  build the exact library source and pass 31 core/schema/fabric tests
-  (`build/source-clean-r1.log`). No locally published library is used.
-- The full fast gate passes 292 Python and 166 Scala cases with the source-built
-  JAR in its receipt (`build/followup-ci-r1`). After adding two statistical-screen
-  property checks, all 294 Python tests pass on Windows and Linux
-  (`build/followup-python-r2`, `build/followup-linux-python-r1`). Linux has only the
-  documented Windows-path skip. The 31 clean-build tests overlap the 166; do not
-  add them to claim a larger distinct test count.
-- The final Monte Carlo screen is `build/guard-mismatch-r3`; the first convergence
-  failure and the superseded one-tail r2 result remain available.
-- Fresh independent review corrected two-tail statistical acceptance and the
-  proposed ownership table's reset semantics. No review blocker remains.
-
-This follow-up changes build resolution, characterization and planning only. It
-adds no RTL, guard cells or clocks, and claims no new mapped/P&R measurement.
-The latest area remains the generic-MCU batch in the ledger. The island and
-register-pointer sections below remain proposals awaiting their boundary/ABI
-decisions; no architecture migration is counted as complete here.
-
-## Proposed ownership split
+## A. Always-on/application ownership split
 
 The implementation currently has a service clock, a gated work clock and native
 POR/application owners, but they are interleaved in Platform/Services. Moving
@@ -87,36 +60,113 @@ because the CPU resets. Wake demand must include return/rearm, not just valid.
 
 First implementation gate: assign every retained state owner and every periodic
 clock sink to a side; move producer and consumer together. Reuse existing channel
-schemas, with one ownership crossing per subsystem where possible. Do not add a
+schemas, with one ownership crossing per subsystem; move its producer and consumer
+as a unit rather than adding a crossing per message type. Do not add a
 payload mirror merely to cross the new module hierarchy. Verify reset during host
 upload, ADC completion, CPU RAM traffic and sleep, including repeated watchdogs.
-Measure area, sinks and wake activity before accepting any migration.
+Measure mapped/repaired area, periodic sinks and wake activity/duration for each batch.
+This absorbs C1e2, the remaining 10b ownership/debt, 11b dispatch, 13a state
+projections and 14 temporary round trips. Remove obsolete grant/drain copies,
+receipts and gate demand together with their migrated clients.
 
 This is a proposed logical boundary, not implemented power gating. Separate rails
 would additionally require isolation, retention cells, supply sequencing and an
 external-memory/pad strategy before RTL work starts.
 
-## Proposed register-pointer loader
+## B. Register-pointer host interface
 
-Preserve the existing framed loader until the host ABI decision is settled.
-Reserve a distinct extension opcode so old SELECT/BEGIN/WRITE/COMMIT/START/LOCK
-frames remain unambiguous. The pointer identifies a byte-addressed register
-window; repeated START reads a coherent snapshot and advances the read position.
-Stage multibyte command fields, and commit a command only after its complete
-write is accepted. Partial writes, STOP, timeout and reset must never partially
-program RAM, release the lock or start an image. Report errors through existing
-status. Range overflow must reject, not wrap into another register window.
+The target is a **replacement for the framed loader**, not an additional permanent
+protocol. The existing framed ABI remains the implemented interface until the
+new ABI and host transition are specified and verified. Decide protocol version,
+register allocation, pointer units/increment/wrap, command commit, status/error
+behavior and migration of existing host tools before changing RTL. Keep 11a2b and
+its occupancy/descriptor/admission substeps paused until that decision.
 
-The register front end must drive the existing native Control loader path,
-including full metadata validation, image CRC, programming serialization and lock
-enforcement. It must not create a second image store, policy engine or independent
-programming owner. Explicit persistence remains subject to the generic boot
-contract. Gate acceptance on the real consumer edge and keep payloads held through
-native completion. Add wire-level repeated-START, partial/oversized write, pointer
-boundary, busy, lock, reset and old-host compatibility tests in both variants.
+Use repeated START for coherent register reads. Define the snapshot's atomic point
+and retain bytes through the read. Stage multibyte command fields and commit only
+a complete accepted write. Specify partial writes, STOP, timeout, pointer bounds,
+busy/overflow and application/POR reset behavior; none may partially program RAM,
+release the lock or start an unvalidated image. Preserve accepted persistent work
+and the association of each command with its admission-time reset/busy context.
 
-Exact register allocation and command framing remain to be specified before RTL
-changes; this document does not claim a new host interface already exists.
+Reuse the native Control loader owner, full-width image validation, CRC and SRAM
+serialization. Do not create a second image store or programming owner. Keep
+explicit flash persistence subject to the generic boot contract and source
+payloads stable through actual consumer acceptance and native return.
+
+This replaces the old 11a2/11a2b frame-admission and 13c snapshot plan. Decide
+whether frame banks are needed at all. Only surviving banks need the R5 epoch/
+stale-history redesign and the R6 private frame-route AND replacement with public
+primitives. Remove obsolete banks, copies and receipts with the protocol. Test
+wire-level repeated START, partial/oversized writes, pointer limits, lock, busy,
+reset, coherent snapshots and the chosen host transition in both implementations.
+Shared ABI fixes apply to Click without reopening its architecture optimization.
+
+## External boot resilience and provisioning
+
+The current ROM has one flash slot and I²C fallback. A/B selection and golden-image
+recovery are new work, not existing guarantees. Specify the flash layout, golden
+image placement/protection, versioned selection/commit metadata and bounded boot
+attempt/fallback rules. Keep generic boot decisions separate from application
+behavior; a golden application belongs in external storage, never mask ROM.
+
+Factory programming must produce a bootable image set and verify read-back,
+compatibility and CRC before release. Define how field updates preserve a usable
+fallback and how loader locks apply. Test blank/corrupt slots, interrupted erase/
+program/metadata commits, POR and watchdog resets, including failure of the chosen
+slot and golden-image recovery. The programming lock is not protection against
+arbitrary firmware GPIO writes to flash; any physical write protection must be
+specified separately.
+
+Measure reset-to-entry and worst-case fallback time at full configured capacity,
+including flash transfer, CRC validation, SRAM copy and shared ADC-bus drainage.
+Record work-clock edges and elapsed time for boot and ordinary firmware wakes.
+
+## Retained services and arbitration (11c, 12, 13b)
+
+Use a native MUTEX only for independent asynchronous requesters meeting in the
+native domain; qualify metastability containment and ownership. Arbitration on
+a real receiving clock is acceptable after the requests safely cross into it.
+Neither approach may compromise fairness, accepted work or reset containment.
+
+Acquisition has one consumer: the retained measurement/telemetry owner. CPU and
+host read its coherent view; no independent Supervisor history or fan-out exists.
+Keep elapsed ordering/reduction (12a) and GPIO/event history (12c) only for retained
+application services, with bounded capacity, sample validity/age, set-wins events
+and correct cancellation lifetimes. Retained residence does not imply POR-only
+lifetime for every field. Output publication (13b) concerns generic GPIO and cadence,
+POR input defaults, optional watchdog GPIO retention and mandatory SPI recovery
+release. There is no board-owned power output or application-policy feedback path.
+
+## Residual audit configuration matrix
+
+Run item 16 once after A and B are integrated. Audit emitted owners, native/event/
+periodic storage, reset domains, chip-wrapper state and actual clock sinks. Record
+conditional owners and exclude unsupported combinations explicitly; do not revive
+removed supervisor-policy configurations.
+
+| Configuration axis | Required coverage |
+| --- | --- |
+| Production reference | Generic 2 KiB program / 1 KiB working SRAM, SPI boot, scheduled ADC and source-stopping LF sleep |
+| Boot | Valid external image, I²C fallback and supported I²C-only builds; A/B/golden paths once implemented |
+| Acquisition | ADC disabled/zero measurement channels, scheduled ADC, and autonomous ADC in supported legacy builds |
+| Time and sleep | LF with service stopping on/off, plus legacy service-derived time without retained-sleep support |
+| Capacity and schema | Supported minimum/non-power-of-two/reference capacities; generic GPIO/channel counts and sparse application words |
+| Reset | GPIO retention on/off, SPI release, POR, repeated watchdogs and reset during committed work |
+| Implementation | Full BD inventory; frozen native Click reference and common correctness/ABI regressions |
+
+SPI boot requires at least seven logical GPIOs and 256 bytes of working RAM.
+SPI boot plus ADC requires explicitly scheduled acquisition; the autonomous ADC
+combination is currently rejected. Use the actual parameter validators when
+constructing the matrix. Reconcile the final inventory with item 17 clock/reset
+constraints and retain a written reason for each clocked boundary.
+
+## External application dependency
+
+Groundlark firmware, its policy tests and board integration are maintained outside
+this MCU workstream. Application compatibility is an integration dependency, not
+permission to restore power policy, profile-owned GPIO masks or a supervisor in
+RTL/ROM. Generic MCU verification uses generic firmware and peripheral stimuli.
 
 ## Routed hold repair
 

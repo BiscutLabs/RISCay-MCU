@@ -240,15 +240,15 @@ exercise the implemented host, loader, memory, reset, telemetry, board and retai
 sleep paths; these directed suites are not exhaustive reset/timing or physical
 qualification.
 
-During item 3, native Telemetry state owns host measurement records. Clocked
+Native Telemetry state owns host measurement records. Clocked
 POR-owned ingress retains publication attempts, latest status, last good value
 and elapsed age while native replies stall. A pending acquisition suppresses
 fresh-valid until commit; snapshots conservatively account for buffered elapsed
 time. Application reset preserves accepted samples and sequence counts while
-canceling application GPIO/event state. The separate native Supervisor safety
-record consumes the same publications through its own retained ingress and
-bridges, independently of Control/Telemetry backpressure.
-See the [migration scope](async-soc-migration.md#gpioeventstelemetry-scope-and-contract).
+canceling application GPIO/event state. The generic MCU has no separate Supervisor
+consumer or application policy in silicon.
+See the [historical migration scope](history/migration-log.md#gpioeventstelemetry-scope-and-contract)
+and [current ownership plan](architecture-followups.md#retained-services-and-arbitration-11c-12-13b).
 
 ## Generic external boot and persistence
 

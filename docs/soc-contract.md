@@ -15,14 +15,16 @@ only final housekeeping publication advances consumedGray. Native SPI loops own
 conversion credit, frame definition, assembly, priming, scaling and retirement;
 item 8 passes digital verification and strict exports. Their surrounding clocked
 boundary still owns launch/admission, active/pending state and age accumulation,
-as well as pin timing and capture; these remain candidates under item 15c.
+as well as pin timing and capture; the ownership split addresses bookkeeping,
+while replacing the timed pin boundary is optional research under item 15c.
 Separate native SRAM word sequencing passes the
 item 6 digital regressions and strict exports. Application policy is uploaded firmware;
 no profile controller or GPIO ownership override exists in silicon.
-ROM/static faults complete in the native fabric. The Control integration passes
-the digital regressions and strict exports documented in the current checklist.
-See the [migration checklist and handshake contract](async-soc-migration.md). Its
-default clock is 10 MHz. Reference emitters stop that source during retained sleep
+ROM/static faults complete in the native fabric. Historical digital regressions
+and handshake scopes are in the [migration log](history/migration-log.md); use
+[build and test](build-and-test.md) for current verification and the
+[open checklist](async-soc-migration.md) for planned work. The default service clock
+is 10 MHz. Reference emitters stop that source during retained sleep
 and use nominal 7.7307 Hz for the always-on timer and watchdog (32-cycle timeout,
 two-cycle reset hold). The portable tops expose both clocks and a service-source
 enable; generated chip wrappers contain both on-die oscillator boundaries.
@@ -294,7 +296,7 @@ one rejection event to source-wake policy, so an old rejection cannot cancel a
 later START. The separate native BD/Click controllers own protocol/byte/serializer
 state. SCL/SDA sampling, captured-edge ingress, inactivity timing, coherent host
 bank capture and frame/read-start publication remain explicit clocked boundaries.
-See the [migration contract](async-soc-migration.md#i2c-scope-and-timing-contract).
+See the [historical migration contract](history/migration-log.md#i2c-scope-and-timing-contract).
 
 A write transaction begins with an opcode, followed by the exact payload below.
 All multi-byte numbers are unsigned little-endian words unless described

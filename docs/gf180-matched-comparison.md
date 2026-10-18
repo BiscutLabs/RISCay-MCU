@@ -3,7 +3,7 @@
 This comparison initially froze further service-island migration. The user's
 subsequent direction on 2026-10-13 authorizes correcting redundant storage and
 clocked coordination around the native services; see the
-[corrective checklist](async-soc-migration.md#corrective-gates-from-the-independent-reviews).
+[historical corrective checklist](history/migration-log.md#corrective-gates-from-the-independent-reviews).
 The comparison results below remain the measured baseline. Matching the mapper, SRAMs, native
 core timing and workload confirms that the migrated services cost substantially
 more area and active-clock work. Keep both native CPUs and all later correctness
