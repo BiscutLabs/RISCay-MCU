@@ -15,17 +15,20 @@ class SpiRecipeReplayFixture(click: Boolean, halfCycles: Int) extends FabricFixt
   val conversionBusy=IO(Output(Bool())); val conversionDone=IO(Output(Bool()))
   val sampleValid=IO(Output(Bool())); val value=IO(Output(UInt(32.W))); val age=IO(Output(UInt(32.W)))
   watchdog.io.heartbeat:=false.B
+  private val time = withClockAndReset(serviceClock,reset) { val t=RegInit(0.U(64.W)); t:=t+ageStep; t }
+  private val timeNext=time+ageStep
+  private def ageOf(timestamp: UInt): UInt = {val elapsed=timeNext-chisel3.util.experimental.BoringUtils.bore(timestamp); Mux(elapsed(63,32).orR,"hffffffff".U,elapsed(31,0))}
   private val pAdc=AdcParameters(halfCycles,50*halfCycles,25300,4095,offset = -100)
   if(click) {
     val adc=asyncChild("tested_spi_adc")(d => new riscay.click.SpiAdc(pAdc,false,d))
-    adc.clock:=serviceClock; adc.io.start:=conversionStart; adc.io.ageStep:=ageStep; adc.miso:=adcMiso
+    adc.clock:=serviceClock; adc.io.start:=conversionStart; adc.io.upperTime:=timeNext; adc.miso:=adcMiso
     conversionBusy:=adc.io.busy; conversionDone:=adc.io.done; sampleValid:=adc.io.result.valid
-    value:=adc.io.result.bits.value; age:=adc.io.age; adcCsN:=adc.csN; adcSclk:=adc.sclk
+    value:=adc.io.result.bits.value; age:=ageOf(adc.native.timestamp); adcCsN:=adc.csN; adcSclk:=adc.sclk
   } else {
     val adc=asyncChild("tested_spi_adc")(d => new riscay.bd.SpiAdc(pAdc,false,d))
-    adc.clock:=serviceClock; adc.io.start:=conversionStart; adc.io.ageStep:=ageStep; adc.miso:=adcMiso
+    adc.clock:=serviceClock; adc.io.start:=conversionStart; adc.io.upperTime:=timeNext; adc.miso:=adcMiso
     conversionBusy:=adc.io.busy; conversionDone:=adc.io.done; sampleValid:=adc.io.result.valid
-    value:=adc.io.result.bits.value; age:=adc.io.age; adcCsN:=adc.csN; adcSclk:=adc.sclk
+    value:=adc.io.result.bits.value; age:=ageOf(adc.native.timestamp); adcCsN:=adc.csN; adcSclk:=adc.sclk
   }
 }
 

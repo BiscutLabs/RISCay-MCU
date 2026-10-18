@@ -102,7 +102,29 @@ def inventory(cells, aliases, pins, original_cells=None, original_aliases=None):
                 owners=dict(sorted(owners.items())), sinks=rows)
 
 
-def report(mapping, output):
+def register_breakdown(sinks, selected_owner):
+    """Partition by local Q aliases, retaining ambiguity without double counting.
+
+    Aliases may overlap after synthesis. Each physical sink contributes exactly
+    once to its complete alias set; an unnamed register stays explicitly named
+    by its cell path rather than disappearing from the totals.
+    """
+    grouped = {}
+    for sink in sinks:
+        if sink['owner'] != selected_owner:
+            continue
+        aliases = tuple(sink['state_aliases'])
+        identity = aliases or (sink['path'],)
+        key = sink['domain'], identity
+        row = grouped.setdefault(key, dict(domain=sink['domain'], aliases=list(aliases),
+            identity=list(identity), sinks=0, clock_input_pf=0.0, cells=[]))
+        row['sinks'] += 1
+        row['clock_input_pf'] += sink['clock_input_pf']
+        row['cells'].append(sink['path'])
+    return sorted(grouped.values(), key=lambda r: (-r['sinks'], r['domain'], r['identity']))
+
+
+def report(mapping, output, register_owner=None):
     netlist = mapping / 'netlist.json'
     reference = mapping / 'electrical-repair/reference/netlist.json'
     libraries = [ROOT / '.tools/physical/pdk' / (SC + 'tt_025C_3v30.lib'),
@@ -116,6 +138,11 @@ def report(mapping, output):
             for lib in libraries for kind, cell in groups(lib.read_text(), 'cell') if kind in used}
     original_cells, original_aliases = graph(json.loads(reference.read_text())['modules'])
     result = inventory(cells, aliases, pins, original_cells, original_aliases)
+    if register_owner is not None:
+        if register_owner not in result['owners']:
+            raise ValueError('CLOCK_OWNER_UNKNOWN_OWNER: ' + register_owner)
+        result['register_owner'] = register_owner
+        result['registers'] = register_breakdown(result['sinks'], register_owner)
     result['scope'] = 'Mapped clock connectivity and local storage aliases; not timing qualification'
     result['inputs_sha256'] = hashes
     if any(sha(Path(p)) != h for p, h in hashes.items()):
@@ -130,5 +157,6 @@ def report(mapping, output):
 if __name__ == '__main__':
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument('mapping', type=Path); p.add_argument('output', type=Path)
+    p.add_argument('--registers', metavar='OWNER', help='rank local register alias sets for this owner')
     a = p.parse_args()
-    print(json.dumps(report(a.mapping, a.output), indent=2))
+    print(json.dumps(report(a.mapping, a.output, a.registers), indent=2))

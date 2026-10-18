@@ -25,11 +25,14 @@ class BdHousekeepingFixture(p: SocParameters) extends FabricFixture(p) {
     fabric.io.elapsedScaling.elapsed(0):=Mux(injectTime,injectElapsed,0.U)
     fabric.io.elapsedScaling.elapsed(1):=Mux(injectTime,injectElapsed,0.U)
     fabric.io.elapsedScaling.elapsed(2):=Mux(injectTime,injectUpper,0.U)
+    fabric.io.elapsedScaling.publicationElapsed(0):=injectElapsed
+    fabric.io.elapsedScaling.publicationElapsed(1):=injectElapsed
+    fabric.io.elapsedScaling.publicationElapsed(2):=injectUpper
     fabric.io.timeGray:=injectTarget ^ (injectTarget >> 1)
   }
-  val publications=BoringUtils.drive(fabric.publish)
-  publications(0).valid:=injectSample; publications(0).bits.value:=sampleValue
-  publications(0).bits.valid:=true.B; publications(0).bits.calibrated:=true.B
+  // Test stimulus enters the actual ADC admission, never a removed Telemetry accumulator.
+  spiAdc.foreach(adc => adc.io.start:=fabric.io.adc.start || injectSample)
+  val adcActive=IO(Output(Bool()));adcActive:=fabric.io.adc.busy
   val housePending=IO(Output(Bool())); housePending:=housekeepingReplyBridge.out.valid
   val houseAccepted=IO(Output(Bool())); houseAccepted:=fabric.housekeepingCommand.fire
   val houseCommand=IO(Output(new HousekeepingCommand)); houseCommand:=fabric.housekeepingCommand.bits
@@ -39,6 +42,7 @@ class BdHousekeepingFixture(p: SocParameters) extends FabricFixture(p) {
   val projectedTime=IO(Output(UInt(32.W))); projectedTime:=(BoringUtils.bore(fabric.housekeepingState).now + BoringUtils.bore(fabric.housekeepingQueued).elapsed(0) +
     Mux(BoringUtils.bore(fabric.housekeepingOrderedPending),BoringUtils.bore(fabric.housekeepingOrdered).elapsed(0),0.U) +
     BoringUtils.bore(fabric.housekeepingInFlight).elapsed(0))
+  val upperTimeView=IO(Output(UInt(64.W))); upperTimeView:=BoringUtils.bore(fabric.upperTime)
   val consumed=IO(Output(UInt(32.W))); consumed:=fabric.io.consumedGray
   val idle=IO(Output(Bool())); idle:= !BoringUtils.bore(fabric.housekeepingWork) &&
     !BoringUtils.bore(fabric.telemetryWork) && !BoringUtils.bore(fabric.controlBusy)
@@ -76,8 +80,7 @@ task advance(input [31:0] target,input [31:0] amount,input [31:0] upper); begin
   @(posedge serviceClock); #1; injectTime=0;
 end endtask
 task publish; begin
-  @(negedge serviceClock); injectSample=1; sampleValue=12345;
-  @(posedge serviceClock); #1; injectSample=0;
+  write_bus(32'h30000028,12345);write_bus(32'h3000002c,3);
 end endtask
 """
   for(click <- Seq(false,true)) {
@@ -85,17 +88,30 @@ end endtask
     def fixture(p: SocParameters): SocTop = if(click) new ClickHousekeepingFixture(p) else new BdHousekeepingFixture(p)
     def parameters = SocParameters(config,staleMs=100,watchdogCycles=64,watchdogHoldCycles=32,
       lowPower=Some(LowPowerParameters()))
-    test(s"$name housekeeping: deadline commit joins unequal consumer completions exactly once") {
+    test(s"$name housekeeping: unqualified retained elapsed payload cannot update timestamp state") {
+      ClockedSimulation.run(fixture(parameters),name+"-elapsed-qualification","""
+        manualTime=1;referenceEnabled=0;wait(idle);savedUpper=upperTimeView;
+        for(n=0;n<64;n=n+1) begin
+          @(negedge serviceClock);injectElapsed=$random;injectUpper=$random;
+          @(posedge serviceClock);#1;
+          if(upperTimeView !== savedUpper) $fatal(1,"UNQUALIFIED_ELAPSED_CAPTURE");
+        end
+        advance(1,1,7);
+        if(upperTimeView !== savedUpper+7) $fatal(1,"QUALIFIED_ELAPSED_NOT_CAPTURED");
+      """,tasks+"\nreg [63:0] savedUpper;\n",referenceHalfPeriodNs=10000000,deadlineNs=200000)
+    }
+    test(s"$name housekeeping: deadline commits exactly once and is independent of the CPU Telemetry reply path") {
       ClockedSimulation.run(fixture(parameters),name+"-housekeeping-completions","""
         manualTime=1; referenceEnabled=0; wait(idle);
         for(n=0;n<2;n=n+1) begin
           savedCommits=commits; savedReplies=replies;
-          @(negedge serviceClock); pauseHouseReply=(n==0); pauseTelemetry=(n==1);
+          @(negedge serviceClock); pauseHouseReply=1; pauseTelemetry=(n==1);
           issue(2,32'h30000008,100+n);
           #5000;
           if(response_valid || commits != savedCommits+1 || replies != savedReplies)
             $fatal(1,"HOUSEKEEPING_EARLY_OR_DUPLICATE_COMPLETION");
-          pauseHouseReply=0; pauseTelemetry=0; answer;
+          // Timer completion must not require a Telemetry transaction.
+          pauseHouseReply=0; answer;pauseTelemetry=0;
           #5000;
           if(response_valid || commits != savedCommits+1 || replies != savedReplies+1)
             $fatal(1,"HOUSEKEEPING_REPLAYED_COMPLETION");
@@ -212,11 +228,14 @@ class ClickHousekeepingFixture(p: SocParameters) extends ClickFabricFixture(p) {
     fabric.io.elapsedScaling.elapsed(0):=Mux(injectTime,injectElapsed,0.U)
     fabric.io.elapsedScaling.elapsed(1):=Mux(injectTime,injectElapsed,0.U)
     fabric.io.elapsedScaling.elapsed(2):=Mux(injectTime,injectUpper,0.U)
+    fabric.io.elapsedScaling.publicationElapsed(0):=injectElapsed
+    fabric.io.elapsedScaling.publicationElapsed(1):=injectElapsed
+    fabric.io.elapsedScaling.publicationElapsed(2):=injectUpper
     fabric.io.timeGray:=injectTarget ^ (injectTarget >> 1)
   }
-  val publications=BoringUtils.drive(fabric.publish)
-  publications(0).valid:=injectSample; publications(0).bits.value:=sampleValue
-  publications(0).bits.valid:=true.B; publications(0).bits.calibrated:=true.B
+  // Test stimulus enters the actual ADC admission, never a removed Telemetry accumulator.
+  spiAdc.foreach(adc => adc.io.start:=fabric.io.adc.start || injectSample)
+  val adcActive=IO(Output(Bool()));adcActive:=fabric.io.adc.busy
   val housePending=IO(Output(Bool())); housePending:=housekeepingReplyBridge.out.valid
   val houseAccepted=IO(Output(Bool())); houseAccepted:=fabric.housekeepingCommand.fire
   val houseCommand=IO(Output(new HousekeepingCommand)); houseCommand:=fabric.housekeepingCommand.bits
@@ -226,6 +245,7 @@ class ClickHousekeepingFixture(p: SocParameters) extends ClickFabricFixture(p) {
   val projectedTime=IO(Output(UInt(32.W))); projectedTime:=(BoringUtils.bore(fabric.housekeepingState).now + BoringUtils.bore(fabric.housekeepingQueued).elapsed(0) +
     Mux(BoringUtils.bore(fabric.housekeepingOrderedPending),BoringUtils.bore(fabric.housekeepingOrdered).elapsed(0),0.U) +
     BoringUtils.bore(fabric.housekeepingInFlight).elapsed(0))
+  val upperTimeView=IO(Output(UInt(64.W))); upperTimeView:=BoringUtils.bore(fabric.upperTime)
   val consumed=IO(Output(UInt(32.W))); consumed:=fabric.io.consumedGray
   val idle=IO(Output(Bool())); idle:= !BoringUtils.bore(fabric.housekeepingWork) &&
     !BoringUtils.bore(fabric.telemetryWork) && !BoringUtils.bore(fabric.controlBusy)

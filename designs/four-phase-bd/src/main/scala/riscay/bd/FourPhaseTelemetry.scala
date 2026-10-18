@@ -21,47 +21,44 @@ class TelemetryRegisters(gpios: Int, words: Int) extends Bundle {
 /** Application/GPIO state lives only in the closed bank, not in the feedback token. */
 class TelemetryFeedback(channels: Int) extends Bundle {
   val credit=Bool()
-  val samples=if(channels>0) Some(Vec(channels,new Sample)) else None
 }
 
 class TelemetryUpdate(channels: Int,gpios: Int,words: Int) extends Bundle {
   val state=new TelemetryFeedback(channels)
   val command=new TelemetryCommand(channels)
   val registers=new TelemetryRegisters(gpios,words)
+  val samples=if(channels>0) Some(Vec(channels,new SampleRecord)) else None
 }
 
 /** POR-owned native telemetry. Application reset remains an ordered command. */
 class FourPhaseTelemetry(p: SocParameters, words: Vector[Int], domain: ResetDomain, qualifyCommit: Boolean=false) extends AsyncModule(domain) {
-  val command = fourPhaseInput("command", new TelemetryCommand(p.config.measurements.size))
-  val reply = fourPhaseOutput("reply", new TelemetryReply(p.config.measurements.size, words.size))
+  val command = fourPhaseInput("command", new TelemetryCommand(p.softwareSampleChannels.size))
+  val reply = fourPhaseOutput("reply", new TelemetryReply(p.softwareSampleChannels.size, words.size))
   val view=IO(Output(new TelemetryRegisters(p.config.gpioCount,words.size)))
+  val sampleView=IO(Output(Vec(p.softwareSampleChannels.size,new SampleRecord)))
   val commitAck=if(qualifyCommit) Some(IO(Input(Bool()))) else None
   commitAck.foreach(contract.endpoint("commit_ack",_))
   private val timing=OwnerTiming.base
   private val cell=ModelTime.ps(1000)
   private val resetRef=contract.endpoint("reset",reset)
   contract.endpoint("register_view",view)
-  private val feedback=new TelemetryFeedback(p.config.measurements.size)
-  private val initialFields: Seq[TelemetryFeedback => (Data,Data)]=Seq[TelemetryFeedback => (Data,Data)](_.credit -> false.B) ++
-    (if(p.config.measurements.isEmpty) Seq.empty else Seq[TelemetryFeedback => (Data,Data)](
-      _.samples.get -> Vec.Lit(p.config.measurements.indices.map(_ => (new Sample).Lit(
-        _.value -> 0.U, _.valid -> false.B, _.calibrated -> false.B, _.age -> 0.U,
-        _.sequence -> 0.U, _.never -> true.B, _.fault -> false.B)): _*)))
-  private val initial=feedback.Lit(initialFields: _*)
-  private val state=asyncChild("state")(d => new FourPhaseFifo(new TelemetryFeedback(p.config.measurements.size),1,
+  private val feedback=new TelemetryFeedback(p.softwareSampleChannels.size)
+  private val initial=feedback.Lit(_.credit -> false.B)
+  private val state=asyncChild("state")(d => new FourPhaseFifo(new TelemetryFeedback(p.softwareSampleChannels.size),1,
     timing,Seq(initial),cell,d))
-  private val join=asyncChild("join")(d => new FourPhaseJoin(new TelemetryFeedback(p.config.measurements.size),
-    new TelemetryCommand(p.config.measurements.size),timing,cell,d))
+  private val join=asyncChild("join")(d => new FourPhaseJoin(new TelemetryFeedback(p.softwareSampleChannels.size),
+    new TelemetryCommand(p.softwareSampleChannels.size),timing,cell,d))
   private val update=asyncChild("update")(d => new FourPhaseStage(
-    new TelemetryUpdate(p.config.measurements.size,p.config.gpioCount,words.size),
-    new TelemetryReply(p.config.measurements.size,words.size),
-    (x: TelemetryUpdate) => transition(x.state,x.command,x.registers),timing,d))
-  private val fork=asyncChild("fork")(d => new FourPhaseFork(new TelemetryReply(p.config.measurements.size,words.size),2,cell,d))
+    new TelemetryUpdate(p.softwareSampleChannels.size,p.config.gpioCount,words.size),
+    new TelemetryReply(p.softwareSampleChannels.size,words.size),
+    (x: TelemetryUpdate) => transition(x.command,x.registers,x.samples),timing,d))
+  private val fork=asyncChild("fork")(d => new FourPhaseFork(new TelemetryReply(p.softwareSampleChannels.size,words.size),2,cell,d))
   dontTouch(fork.out(0))
   FourPhase.connect(join.left,state.out); FourPhase.connect(join.right,command)
   update.in.req:=join.out.req;join.out.ack:=update.in.ack
   update.in.bits.state:=join.out.bits.left;update.in.bits.command:=join.out.bits.right
   update.in.bits.registers:=view
+  update.in.bits.samples.foreach(_ := sampleView)
 
   // The existing receipt ACK rises after the actual work-clock acceptance
   // edge. Commit the closed bank once at that event; no periodic clock enters
@@ -75,9 +72,17 @@ class FourPhaseTelemetry(p: SocParameters, words: Vector[Int], domain: ResetDoma
   contract.primitive("register_bank",stored,Map("WIDTH"->BigInt(view.getWidth),"DELAY_FS"->BigInt(cell.fs),
     "RESET_VALUE"->BigInt(0)),resetRef,"sole application/GPIO state; closed outputs; one capture per committed update")
   view:=stored.q.asTypeOf(view)
+  if(p.softwareSampleChannels.nonEmpty) {
+    val samples=Module(new EventRegister(sampleView.getWidth,cell))
+    samples.reset:=reset;samples.trigger:=reply.ack
+    samples.d:=fork.out(1).bits.state.samples.get.asUInt
+    sampleView:=samples.q.asTypeOf(sampleView)
+    contract.primitive("sample_bank",samples,Map("WIDTH"->BigInt(sampleView.getWidth),"DELAY_FS"->BigInt(cell.fs),
+      "RESET_VALUE"->BigInt(0)),resetRef,"POR software samples; accepted publications survive application cancellation")
+  } else {sampleView:=0.U.asTypeOf(sampleView)}
+  if(p.softwareSampleChannels.nonEmpty) {contract.endpoint("sample_view",sampleView)}
   FourPhase.connect(fork.in,update.out)
   state.in.bits.credit:=false.B
-  state.in.bits.samples.foreach(_ := fork.out(0).bits.state.samples.get)
   // The feedback token cannot permit another transform until the closed bank
   // has captured. The fork retains its full data through both ACK phases.
   private val returned=Module(new AsymmetricCElement(2,0,0,cell))
@@ -93,12 +98,12 @@ class FourPhaseTelemetry(p: SocParameters, words: Vector[Int], domain: ResetDoma
     "relative bank capture-to-feedback ordering model; requires its own same-corner sizing")
   state.in.req:=settled.q.asBool;fork.out(0).ack:=state.in.ack
   FourPhase.connect(reply,fork.out(1))
-  private def transition(s: TelemetryFeedback, c: TelemetryCommand, registers: TelemetryRegisters): TelemetryReply = {
-    val r = WireDefault(0.U.asTypeOf(new TelemetryReply(p.config.measurements.size, words.size)))
+  private def transition(c: TelemetryCommand, registers: TelemetryRegisters, samples: Option[Vec[SampleRecord]]): TelemetryReply = {
+    val r = WireDefault(0.U.asTypeOf(new TelemetryReply(p.softwareSampleChannels.size, words.size)))
     r.kind := c.kind
     r.state.output := registers.output.pad(32); r.state.enable := registers.enable.pad(32)
     r.state.application.foreach(_ := registers.application.get)
-    r.state.samples.foreach(_ := s.samples.get)
+    r.state.samples.foreach(_ := samples.get)
     r.recovery := c.recovery
     val n = r.state
     when(c.kind === TelemetryKind.ResetApplication.U) {
@@ -118,18 +123,16 @@ class FourPhaseTelemetry(p: SocParameters, words: Vector[Int], domain: ResetDoma
         } }
       }
     }
-    for(i <- p.config.measurements.indices) {
-      val capture = c.captures.get(i)
-      val old = s.samples.get(i); val next = n.samples.get(i)
-      val aged = old.age +& c.elapsedUpper
-      next.age := Mux(aged(32), "hffffffff".U, aged(31,0))
-      when(capture.seen) {
-        next.sequence := old.sequence + capture.count
-        next.valid := capture.valid; next.fault := !capture.valid
-        next.calibrated := capture.valid && capture.calibrated
-      }
-      when(capture.hadValid) {
-        next.value := capture.value; next.never := false.B; next.age := capture.tailAge
+    for((channel,index) <- p.softwareSampleChannels.zipWithIndex) {
+      val capture=c.sample.get
+      val next=n.samples.get(index)
+      when(c.kind === TelemetryKind.Commit.U && c.offset === 44.U && capture.index === channel.U) {
+        next.sequence:=samples.get(index).sequence+1.U
+        next.valid:=c.data(0);next.fault:= !c.data(0)
+        next.calibrated:=c.data(0) && c.data(1)
+        when(c.data(0)) {
+          next.value:=capture.value;next.timestamp:=capture.timestamp;next.seen:=true.B
+        }
       }
     }
     r

@@ -11,10 +11,12 @@ class BdSpiAgeFixture(p: SocParameters) extends riscay.bd.FourPhaseSoc(p,x => ne
   val pauseConsumers=IO(Input(Bool()))
   telemetryCommandBridge.in.valid:=fabric.telemetryCommand.valid && !pauseConsumers
   fabric.telemetryCommand.ready:=telemetryCommandBridge.in.ready && !pauseConsumers
-  val hostCapture=IO(Output(new TelemetryCapture)); hostCapture:=fabric.telemetryCommand.bits.captures.get(0)
   val hostSample=IO(Output(new Sample)); hostSample:=BoringUtils.bore(fabric.hostSamples(0))
   val publication=IO(Output(Bool())); publication:=fabric.io.adc.result.valid
-  val publicationAge=IO(Output(UInt(32.W))); publicationAge:=fabric.io.adc.age
+  private val adcOwner=spiAdc.get
+  val publicationAge=IO(Output(UInt(32.W)))
+  private val age=fabric.io.adc.upperTime-BoringUtils.bore(adcOwner.native.timestamp)
+  publicationAge:=Mux(age(63,32).orR,"hffffffff".U,age(31,0))
   val adcBusy=IO(Output(Bool())); adcBusy:=fabric.io.adc.busy
   watchdog.io.heartbeat:=false.B
 }
@@ -22,10 +24,12 @@ class ClickSpiAgeFixture(p: SocParameters) extends riscay.click.ClickSoc(p,x => 
   val pauseConsumers=IO(Input(Bool()))
   telemetryCommandBridge.in.valid:=fabric.telemetryCommand.valid && !pauseConsumers
   fabric.telemetryCommand.ready:=telemetryCommandBridge.in.ready && !pauseConsumers
-  val hostCapture=IO(Output(new TelemetryCapture)); hostCapture:=fabric.telemetryCommand.bits.captures.get(0)
   val hostSample=IO(Output(new Sample)); hostSample:=BoringUtils.bore(fabric.hostSamples(0))
   val publication=IO(Output(Bool())); publication:=fabric.io.adc.result.valid
-  val publicationAge=IO(Output(UInt(32.W))); publicationAge:=fabric.io.adc.age
+  private val adcOwner=spiAdc.get
+  val publicationAge=IO(Output(UInt(32.W)))
+  private val age=fabric.io.adc.upperTime-BoringUtils.bore(adcOwner.native.timestamp)
+  publicationAge:=Mux(age(63,32).orR,"hffffffff".U,age(31,0))
   val adcBusy=IO(Output(Bool())); adcBusy:=fabric.io.adc.busy
   watchdog.io.heartbeat:=false.B
 }
@@ -37,19 +41,23 @@ class SpiAdcFixture(click: Boolean) extends FabricFixture(SocParameters(McuConfi
   val conversionBusy=IO(Output(Bool())); val conversionDone=IO(Output(Bool()))
   val sampleValid=IO(Output(Bool())); val value=IO(Output(UInt(32.W))); val age=IO(Output(UInt(32.W)))
   val calibrated=IO(Output(Bool()))
+  val bankReady=IO(Output(Bool()));val nativeClick=IO(Output(Bool()));nativeClick:=click.B
   watchdog.io.heartbeat := false.B
+  private val time = withClockAndReset(serviceClock,reset) { val t=RegInit(0.U(64.W)); t:=t+ageStep; t }
+  private val timeNext=time+ageStep
+  private def ageOf(timestamp: UInt): UInt = {val elapsed=timeNext-chisel3.util.experimental.BoringUtils.bore(timestamp); Mux(elapsed(63,32).orR,"hffffffff".U,elapsed(31,0))}
   private val pAdc=AdcParameters(2,100,25300,4095,offset = -100,calibrated=true)
   if(click) {
     val adc=asyncChild("tested_spi_adc")(d => new riscay.click.SpiAdc(pAdc,false,d))
-    adc.clock:=serviceClock; adc.io.start:=conversionStart; adc.io.ageStep:=ageStep; adc.miso:=adcMiso
-    conversionBusy:=adc.io.busy; conversionDone:=adc.io.done; sampleValid:=adc.io.result.valid
-    value:=adc.io.result.bits.value; age:=adc.io.age; calibrated:=adc.io.result.bits.calibrated
+    adc.clock:=serviceClock; adc.io.start:=conversionStart; adc.io.upperTime:=timeNext; adc.miso:=adcMiso
+    conversionBusy:=adc.io.busy; conversionDone:=adc.io.done; sampleValid:=adc.io.result.valid;bankReady:=adc.io.sampleReady
+    value:=adc.io.result.bits.value; age:=ageOf(adc.native.timestamp); calibrated:=adc.io.result.bits.calibrated
     adcCsN:=adc.csN; adcSclk:=adc.sclk
   } else {
     val adc=asyncChild("tested_spi_adc")(d => new riscay.bd.SpiAdc(pAdc,false,d))
-    adc.clock:=serviceClock; adc.io.start:=conversionStart; adc.io.ageStep:=ageStep; adc.miso:=adcMiso
-    conversionBusy:=adc.io.busy; conversionDone:=adc.io.done; sampleValid:=adc.io.result.valid
-    value:=adc.io.result.bits.value; age:=adc.io.age; calibrated:=adc.io.result.bits.calibrated
+    adc.clock:=serviceClock; adc.io.start:=conversionStart; adc.io.upperTime:=timeNext; adc.miso:=adcMiso
+    conversionBusy:=adc.io.busy; conversionDone:=adc.io.done; sampleValid:=adc.io.result.valid;bankReady:=adc.io.sampleReady
+    value:=adc.io.result.bits.value; age:=ageOf(adc.native.timestamp); calibrated:=adc.io.result.bits.calibrated
     adcCsN:=adc.csN; adcSclk:=adc.sclk
   }
 }
@@ -60,6 +68,14 @@ integer edges=0,frames=0,replies=0,resets=0,savedFrames,savedReplies,savedResets
 reg tracking=0,expectBusy=0;
 reg [31:0] savedAge,wanted;
 real edgeAt,frameAt,admitted,latestIdle=0;
+integer bankEdge=0,lastBankEdge=-1;
+always @(posedge reset) lastBankEdge=-1;
+always @(posedge serviceClock) if(!reset) begin
+  bankEdge=bankEdge+1;
+  if(!nativeClick && lastBankEdge>=0 && bankEdge>lastBankEdge && bankEdge-lastBankEdge<5 && bankReady)
+    $fatal(1,"ADC_BANK_READER_REOPENED_BEFORE_FULL_RETURN");
+  if(conversionDone) lastBankEdge=bankEdge;
+end
 always @(posedge systemReset) if(!reset) resets=resets+1;
 always @(posedge serviceClock) if(!reset) begin
   if(expectBusy && !conversionBusy) $fatal(1,"SPI_BUSY_DROPPED");
@@ -163,7 +179,7 @@ end endtask
       """,monitor,referenceHalfPeriodNs=250,serviceHalfPeriodNs=25,
         maximumDelaySubtree=Some("tested_spi_adc"))
     }
-    test(s"$name SPI freshness: delayed physical capture stays old through host telemetry batching") {
+    test(s"$name SPI freshness: delayed physical capture stays old and publishes independently of CPU telemetry") {
       val p=SocParameters(Groundlark.configuration.copy(programBytes=16,workingRamBytes=16),
         serviceHz=1000,staleMs=500,watchdogCycles=64,watchdogHoldCycles=32,
         adc=Some(AdcParameters(2,100)))
@@ -176,19 +192,16 @@ end endtask
         release dut.ca_child_spi_adc.ca_child_reply_bridge.state;
         wait(publication); oldAge=publicationAge;
         if(oldAge<500) $fatal(1,"SPI_BUFFERED_AGE_NOT_OLD");
-        @(posedge serviceClock); #1;
-        if(hostCapture_tailAge !== oldAge)
-          $fatal(1,"SPI_PUBLICATION_AGE_NOT_CAPTURED");
-        // The latest successful capture replaces age, while sequence counts both
-        // captures even when the telemetry consumer is paused.
+        wait(hostSample_sequence==1); #1;
+        if(hostSample_age < oldAge) $fatal(1,"SPI_PUBLICATION_AGE_NOT_CAPTURED");
+        // Each physical publication commits to the ADC-owned bank even while
+        // the CPU Telemetry command path remains paused.
         wait(!publication); wait(publication); freshAge=publicationAge;
         if(freshAge>=500) $fatal(1,"SPI_FRESH_FRAME_PRECONDITION");
-        @(posedge serviceClock); #1;
-        if(hostCapture_count!==2 || hostCapture_tailAge!==freshAge)
-          $fatal(1,"SPI_STALE_GAP_ERASED");
+        wait(hostSample_sequence==2); #1;
+        if(hostSample_age<freshAge || hostSample_age>=500) $fatal(1,"SPI_STALE_GAP_ERASED");
         wait(!adcBusy);
         force dut.ca_child_spi_adc.ca_child_wave_bridge.state=0;
-        pauseConsumers=0;
         wait(hostSample_sequence==2); #1;
         if(hostSample_value!==13592 || hostSample_age<freshAge)
           $fatal(1,"SPI_FRESHNESS_HOST");

@@ -48,7 +48,8 @@ serial transaction. All other ABI fields and errors are unchanged.
    isolation, never a retained register's data or enable qualifier.
 5. Event clear and deadline replacement reserve no Telemetry publication. GPIO
    outputs, application writes and samples retain their separate publication
-   rules. Time/sample aging can still legitimately trigger Observe transactions.
+   rules. Time/sample aging no longer triggers Telemetry transactions; see the
+   [single-writer sample contract](single-writer-telemetry.md).
 
 The service/work edge is the intentional arbitration decision. The rejected
 saturated Gray-counter scheme cannot distinguish a late event from no late event

@@ -29,8 +29,8 @@ class ClickServices(p: SocParameters, boardFactory: SocParameters => BoardProfil
   val config = p.config
   val board = boardFactory(p)
   val telemetryWords = config.application.registers.map(_.word).toVector
-  val telemetryCommand = IO(Decoupled(new TelemetryCommand(config.measurements.size)))
-  val telemetryReply = IO(Flipped(Decoupled(new TelemetryReply(config.measurements.size, telemetryWords.size))))
+  val telemetryCommand = IO(Decoupled(new TelemetryCommand(p.softwareSampleChannels.size)))
+  val telemetryReply = IO(Flipped(Decoupled(new TelemetryReply(p.softwareSampleChannels.size, telemetryWords.size))))
   val program = Module(new SramBank(config.programBytes))
   val ram = Module(new SramBank(config.workingRamBytes))
   program.io.request <> io.program.bytes; io.program.completions <> program.io.response
@@ -64,9 +64,15 @@ class ClickServices(p: SocParameters, boardFactory: SocParameters => BoardProfil
   val rom = VecInit(p.bootWords.map(_.U(32.W)))
   val telemetryOutstanding = RegInit(false.B)
   val telemetryRecoveryBlocked = io.telemetrySource.recoveryDebt || io.telemetrySource.returnFence
-  val telemetryCommitPending = applicationReg(false.B)
-  val telemetryCommit = Reg(new TelemetryCommand(config.measurements.size))
-  io.telemetryCommitFields.elements.foreach { case (name, field) => field := telemetryCommit.elements(name) }
+  // Accepted effects keep the existing MMIO payload loan through cancellation
+  // and complete native return. App/GPIO authorization remains independently revoked.
+  val telemetryCommitPending = RegInit(false.B)
+  io.telemetryCommitFields.offset:=mmioCommit.memory.address(6,0)
+  io.telemetryCommitFields.data:=mmioCommit.memory.data
+  io.telemetryCommitFields.appIndex:=mmioCommit.peripheralData(5,0)
+  val softwareCommit=IO(Output(new SoftwareSampleCommit))
+  val softwareTimestamp=if(p.softwareSampleChannels.nonEmpty) RegInit(0.U(64.W)) else WireDefault(0.U(64.W))
+  val softwarePublicationPending=if(p.softwareSampleChannels.nonEmpty) RegInit(false.B) else WireDefault(false.B)
   val telemetryBarrier = telemetryOutstanding || telemetryRecoveryBlocked || telemetryCommitPending || !io.telemetryCommandIdle || io.telemetryDraining
   // Clocked completion of the existing native bank turn. Before receipt
   // acceptance the old bank is stable; afterward readers wait for completion.
@@ -74,12 +80,8 @@ class ClickServices(p: SocParameters, boardFactory: SocParameters => BoardProfil
   val bankReadReady=IO(Output(Bool()))
   val telemetryWork = Wire(Bool())
   val telemetryAccepted = WireDefault(false.B)
-  val telemetryElapsed = RegInit(0.U(32.W))
-  val telemetryCaptures = RegInit(0.U.asTypeOf(Vec(config.measurements.size, new TelemetryCapture)))
-  // Retain the complete registered boundary, including profile-constant flags.
-  telemetryCaptures.foreach(dontTouch(_))
-  val telemetryInFlight = RegInit(0.U.asTypeOf(new TelemetryCommand(config.measurements.size)))
-  val hostSamples = RegInit(TelemetryState.initial(p, telemetryWords.size).samples.getOrElse(0.U.asTypeOf(Vec(0, new Sample))))
+  val sampleView=IO(Input(Vec(p.softwareSampleChannels.size,new SampleRecord)))
+  val hostSamples=Wire(Vec(config.measurements.size,new Sample))
   def saturatingAdd(a: UInt, b: UInt): UInt = {
     val sum = a +& b; Mux(sum(32), "hffffffff".U(32.W), sum(31,0))
   }
@@ -159,6 +161,32 @@ class ClickServices(p: SocParameters, boardFactory: SocParameters => BoardProfil
   }
   val elapsed = rawElapsed(0); val upperElapsed = rawElapsed(2)
   val tick = elapsed =/= 0.U
+  // The single conservative time coordinate is independent of sample writers.
+  // It advances at the existing elapsed-time receiving boundary, with POR lifetime.
+  // Prepare the arithmetic from the retained reply while the receipt settles.
+  // Keep its late valid/accept pulse at the final mux, out of the carry cone.
+  // No register observes this unqualified bus when tick is false.
+  val ageOperand=if(p.lowPower.nonEmpty) io.elapsedScaling.publicationElapsed(2) else upperElapsed
+  val upperTime=if(config.measurements.nonEmpty) RegInit(0.U(64.W)) else WireDefault(0.U(64.W))
+  val upperTimeNext=Mux(tick,TimestampMath.advance(upperTime,ageOperand),upperTime)
+  if(config.measurements.nonEmpty) {upperTime:=upperTimeNext}
+  // Track only while the existing loan is idle. The acceptance edge captures
+  // upperTimeNext before pending freezes it; no deep admission decode drives
+  // this wide bank's enable. Hold through dispatch, reply and full return.
+  val softwareTimestampTracking= !softwarePublicationPending && !telemetryCommitPending &&
+    !telemetryOutstanding && io.telemetryCommandIdle && !io.telemetryDraining
+  if(p.softwareSampleChannels.nonEmpty) {
+    when(softwareTimestampTracking) {softwareTimestamp:=upperTimeNext}
+  }
+  for(i <- config.measurements.indices) {
+    val record=if(i == 0 && p.adc.nonEmpty) io.adc.sample else sampleView(p.softwareSampleChannels.indexOf(i))
+    val age=TimestampMath.saturatedAge(upperTime,record.timestamp)
+    val sample=hostSamples(i)
+    sample.value:=record.value;sample.sequence:=record.sequence
+    sample.valid:=record.valid;sample.calibrated:=record.calibrated
+    sample.never:= !record.seen;sample.fault:=record.fault
+    sample.age:=age
+  }
   val leaseExpired = housekeepingPublished && !housekeepingRecoveryBlocked && housekeepingReply.bits.leaseExpired
   val scalingBusy = io.elapsedScaling.busy || housekeepingWork || rawTimeValid
   val gpio = withClock(io.frontClock) {
@@ -180,6 +208,7 @@ class ClickServices(p: SocParameters, boardFactory: SocParameters => BoardProfil
   val publish = Wire(Vec(config.measurements.size, Valid(new Acquisition)))
   publish.foreach { x => x.valid := false.B; x.bits := 0.U.asTypeOf(new Acquisition) }
   val sampleIndex = controlState.sampleIndex; val sampleValue = controlState.sampleValue
+  softwareCommit.index:=sampleIndex;softwareCommit.value:=sampleValue;softwareCommit.timestamp:=softwareTimestamp
   val periodUpdate = Wire(Valid(UInt(32.W))); periodUpdate.valid := false.B; periodUpdate.bits := 0.U
   val samplePeriod = housekeepingState.period
   val periodPending = housekeepingState.periodPending ||
@@ -187,8 +216,7 @@ class ClickServices(p: SocParameters, boardFactory: SocParameters => BoardProfil
   val adcBusy = WireDefault(false.B)
   def validPeriod(value: UInt): Bool = (p.lowPower.nonEmpty && p.adc.nonEmpty).B &&
     value >= p.minimumSampleMs.U && value <= p.maximumSampleMs.max(0).U
-  val publishAge=Wire(Vec(config.measurements.size,UInt(32.W))); publishAge.foreach(_ := 0.U)
-  io.adc.start := false.B; io.adc.ageStep := Mux(tick,upperElapsed,0.U)
+  io.adc.start := false.B; io.adc.upperTime := upperTimeNext
   p.adc.foreach { adcParameters =>
     adcBusy := io.adc.busy
     if(p.lowPower.nonEmpty) {
@@ -196,7 +224,7 @@ class ClickServices(p: SocParameters, boardFactory: SocParameters => BoardProfil
       when(io.adc.start) { adcLaunchPending := false.B }
       adcBusy := io.adc.busy || (!spiClaimRequested && (adcLaunchPending || housekeepingState.requested || periodPending))
     }
-    publish(0) := io.adc.result; publishAge(0) := io.adc.age
+    publish(0) := io.adc.result
   }
   // Generic GPIO reset policy; profile pin descriptors never drive hardware.
   // Pads are continuous: keep isolation through native capture and full return,
@@ -541,6 +569,8 @@ class ClickServices(p: SocParameters, boardFactory: SocParameters => BoardProfil
     mmioCommit := 0.U.asTypeOf(new ControlCommand)
     mmioCommit.kind := ControlKind.MmioCommit.U; mmioCommit.memory := req
     mmioCommit.applicationWritable := io.controlCommand.bits.applicationWritable
+    // Only offset52 borrows this otherwise-zero field; offset88 has its own semantics.
+    when(req.address(6,0) === 52.U) {mmioCommit.peripheralData:=appIndex}
   }
   hostFrames.io.deq.ready := io.controlCommand.fire && io.controlCommand.bits.kind === ControlKind.Host.U
   when(io.controlCommand.fire) {
@@ -688,57 +718,42 @@ class ClickServices(p: SocParameters, boardFactory: SocParameters => BoardProfil
   housekeepingWork:=housekeepingOutstanding || housekeepingOrderedPending || housekeepingRecoveryBlocked ||
     housekeepingQueuedWork || housekeepingRetry || io.housekeepingDraining || io.housekeepingSource.draining
 
-  // POR ingress compacts every publication and elapsed interval independently
-  // of native backpressure. Telemetry retains the complete
-  // publications through independent POR-owned ingress and crossings.
-  val ageStep = Mux(tick, upperElapsed, 0.U)
-  telemetryElapsed := saturatingAdd(Mux(telemetryCommand.fire, 0.U, telemetryElapsed), ageStep)
-  for(i <- config.measurements.indices) {
-    val capture = telemetryCaptures(i)
-    val base = Mux(telemetryCommand.fire, 0.U.asTypeOf(new TelemetryCapture), capture)
-    capture := base
-    capture.tailAge := saturatingAdd(base.tailAge, ageStep)
-    when(publish(i).valid) {
-      capture.seen := true.B; capture.count := base.count + 1.U
-      capture.valid := publish(i).bits.valid; capture.calibrated := publish(i).bits.calibrated
-      when(publish(i).bits.valid) {
-        capture.hadValid := true.B; capture.value := publish(i).bits.value; capture.tailAge := publishAge(i)
-      }
-    }
-  }
-  val capturesPending = telemetryCaptures.map(_.seen).foldLeft(false.B)(_ || _)
-  val observationPending = telemetryElapsed.orR || capturesPending
-  telemetryWork := telemetryBarrier || observationPending || io.telemetryDraining || io.telemetrySource.draining
+  // Only accepted CPU effects and ordered recovery use this owner. Time and
+  // physical ADC publication have no Telemetry command or periodic payload copy.
+  telemetryWork := telemetryBarrier || io.telemetryDraining || io.telemetrySource.draining
   telemetryAccepted := io.request.fire && nativeMmio && telemetryRequired
   when(telemetryAccepted) {
     assert(io.telemetryCommandIdle && !telemetryOutstanding,"TELEMETRY_COMMIT_BORROW_OVERWRITE")
-    telemetryCommitPending := true.B
-    telemetryCommit := 0.U.asTypeOf(new TelemetryCommand(config.measurements.size))
-    telemetryCommit.kind := TelemetryKind.Commit.U; telemetryCommit.offset := req.address(6,0)
-    telemetryCommit.data := req.data; telemetryCommit.appIndex := appIndex
+    telemetryCommitPending:=true.B
+    if(p.softwareSampleChannels.nonEmpty) {
+      when(req.address(6,0) === 44.U) {
+        assert(softwareTimestampTracking,"SOFTWARE_TIMESTAMP_ACCEPT_OUTSIDE_IDLE")
+        softwarePublicationPending:=true.B
+      }
+    }
   }
-  // CPU validation has priority over background batching. In particular a tick
-  // on every service edge cannot prevent forward progress at serviceHz=1000.
   val telemetryRecoveryReady=io.telemetrySource.grant.valid &&
     io.telemetrySource.grant.bits.recovery && io.telemetrySource.ownerRecovery &&
     io.telemetrySource.eligible && io.telemetrySource.recoveryDebt &&
     io.telemetrySource.decision.ready && !telemetryCommitPending && !io.telemetryDraining
   telemetryCommand.valid := !telemetryOutstanding && !io.applicationCancel && !io.telemetryDraining &&
-    (telemetryCommitPending || telemetryRecoveryReady ||
-      (!io.telemetrySource.occupied && !telemetryRecoveryBlocked &&
-        observationPending && !cpuTimingTurn && !mmioCurrent && !mmioLaunch && !io.request.fire))
-  telemetryCommand.bits := 0.U.asTypeOf(new TelemetryCommand(config.measurements.size))
-  when(telemetryCommitPending) { telemetryCommand.bits := telemetryCommit }
+    (telemetryCommitPending || telemetryRecoveryReady)
+  telemetryCommand.bits := 0.U.asTypeOf(new TelemetryCommand(p.softwareSampleChannels.size))
+  when(telemetryCommitPending) {
+    telemetryCommand.bits.kind:=TelemetryKind.Commit.U
+    telemetryCommand.bits.offset:=io.telemetryCommitFields.offset
+    telemetryCommand.bits.data:=io.telemetryCommitFields.data
+    telemetryCommand.bits.appIndex:=io.telemetryCommitFields.appIndex
+    telemetryCommand.bits.sample.foreach(_ := softwareCommit)
+  }
   when(telemetryRecoveryReady) {
-    telemetryCommand.bits.kind := TelemetryKind.ResetApplication.U
-    telemetryCommand.bits.recovery := true.B
+    telemetryCommand.bits.kind:=TelemetryKind.ResetApplication.U
+    telemetryCommand.bits.recovery:=true.B
   }
   telemetryRecoveryCommit:=telemetryCommand.fire && telemetryCommand.bits.recovery
-  telemetryCommand.bits.elapsedUpper := telemetryElapsed
-  telemetryCommand.bits.captures.foreach(_ := telemetryCaptures)
   when(telemetryCommand.fire) {
-    telemetryOutstanding := true.B; telemetryInFlight := telemetryCommand.bits
-    when(telemetryCommand.bits.kind === TelemetryKind.Commit.U) { telemetryCommitPending := false.B }
+    telemetryOutstanding:=true.B
+    when(telemetryCommand.bits.kind === TelemetryKind.Commit.U) {telemetryCommitPending:=false.B}
   }
   val telemetryOwnedReply=telemetryReply.bits.kind === TelemetryKind.Commit.U || telemetryReply.bits.recovery
   telemetryReply.ready := telemetryOutstanding && (!telemetryOwnedReply || io.telemetrySource.publication.ready)
@@ -752,9 +767,10 @@ class ClickServices(p: SocParameters, boardFactory: SocParameters => BoardProfil
       (!telemetryReply.bits.recovery && !telemetryRecoveryBlocked))
   when(telemetryReply.fire) {
     val result = telemetryReply.bits
-    telemetryOutstanding := false.B; telemetryInFlight := 0.U.asTypeOf(new TelemetryCommand(config.measurements.size))
-    result.state.samples.foreach(hostSamples := _)
-    assert(result.recovery === telemetryInFlight.recovery,"TELEMETRY_RECOVERY_ATTRIBUTION")
+    telemetryOutstanding := false.B
+    if(p.softwareSampleChannels.nonEmpty) {
+      when(result.kind === TelemetryKind.Commit.U) {softwarePublicationPending:=false.B}
+    }
     when(telemetryOwnedReply) {
       assert(result.recovery === io.telemetrySource.ownerRecovery && io.telemetrySource.publication.fire,
         "TELEMETRY_PUBLICATION_IDENTITY")
@@ -810,8 +826,9 @@ class ClickServices(p: SocParameters, boardFactory: SocParameters => BoardProfil
     for(i <- config.measurements.indices) {
       when(space === 2.U && instance === i.U) {
         val s = hostSamples(i)
-        val age = saturatingAdd(saturatingAdd(s.age, telemetryInFlight.elapsedUpper), telemetryElapsed)
-        val uncommitted = telemetryCaptures(i).seen || telemetryInFlight.captures.get(i).seen
+        val age = s.age
+        val uncommitted = if(i == 0 && p.adc.nonEmpty) !io.adc.sampleReady
+          else softwarePublicationPending && sampleIndex === i.U
         val stale = age >= p.freshLimitMs.max(0).U
         val flags = Cat(0.U(27.W), s.calibrated, s.fault, s.never, stale, s.valid && !s.never && !stale && !uncommitted)
         val fields = Seq(s.value, flags, Mux(s.never, "hffffffff".U, age), s.sequence,
@@ -837,6 +854,9 @@ class ClickServices(p: SocParameters, boardFactory: SocParameters => BoardProfil
   // selects constant zero, so reset must never block the host receipt.
   bankReadReady:=space =/= 128.U || instance =/= 0.U || io.applicationCancel ||
     telemetryRecoveryBlocked || telemetryBankReady
+  when(space === 2.U) {
+    bankReadReady:=Mux(instance === 0.U && p.adc.nonEmpty.B,io.adc.sampleReady,telemetryBankReady)
+  }
   val snapshot = Reg(Vec(bankSize, UInt(32.W)))
   val snapshotSupported = Reg(UInt(8.W))
   when(io.i2c.readStart) {

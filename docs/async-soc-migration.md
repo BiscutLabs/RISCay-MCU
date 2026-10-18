@@ -19,6 +19,8 @@ The [architecture plan](architecture-followups.md) supplies boundary details.
   The [Telemetry register view](native-app-registers.md) removes application/GPIO
   mirrors in both variants. [Event pending/clear/WAIT](native-events.md) stays at
   its intentional clocked arbitration boundary, without Telemetry transport.
+  The [single-writer sample split](single-writer-telemetry.md) removes time/sample
+  Telemetry traffic and clocked sample projections in both variants.
 - [ ] **B. Register-pointer host interface.** Replace the framed loader; do not
   build a permanent second transport. Decide the versioned wire ABI and host
   transition before RTL. Absorbs 11a2/11a2b, 13c, R5 epoch work and the R6 public
@@ -28,7 +30,8 @@ The [architecture plan](architecture-followups.md) supplies boundary details.
 - [ ] **Boot resilience.** Specify A/B boot slots, golden-image recovery and factory
   programming/verification. Test corrupt/blank slots, interrupted updates, POR,
   watchdog recovery and lock behavior. Measure boot time at full configured image
-  capacity, including validation, SRAM copy and fallback. No application policy in ROM.
+  capacity, including validation, SRAM copy and fallback. **Next priority, ahead
+  of further area tuning.** No application policy in ROM.
 - [ ] **11c. Arbitration.** Use a physically qualified native MUTEX only where
   independent asynchronous requesters meet. Clocked arbitration at a real crossing
   is acceptable; verify fairness, simultaneous arrivals and reset containment.
@@ -54,13 +57,15 @@ The [architecture plan](architecture-followups.md) supplies boundary details.
 | Production SRAM macros and pin controllers | Qualified CLK pulse, address/data setup/hold and read capture |
 | I²C/GPIO pin sampling | Metastability containment, filtering and bounded edge capture |
 | Event pending, clear cutoff and WAIT | One work-clock edge orders all six producers against request arrival; preserves the cutoff ABI without an unqualified native MUTEX |
+| Command scheduling | Receiving-edge arbitration for Control's host/CPU/completion/reset commands, Housekeeping's time/timer/cadence/recovery, and Telemetry's CPU/recovery ordering; no unqualified native MUTEX |
+| Shared upper-time coordinate | One POR time counter on the work-clock side of the existing LF/elapsed receipt; no new clock or per-sample clocked age bank |
 | SPI pin player | Bounded SCLK high/low times and MISO sampling aperture |
 | LF timebase/watchdog | Time and recovery independent of CPU/service progress |
 | Reset qualifier/coordinator and clock gates | Real-time reset holds, receiving-edge close/rebase, safe stop/start |
 
 15a–c (self-timed SRAM, edge-driven pin capture and SPI sequencing) are **optional
-research**, not prerequisites for tape-out. Service scheduling is addressed by A,
-not exempted by this table. Keep the asynchronous SDA wake event. Qualification of
+research**, not prerequisites for tape-out. A still removes avoidable scheduler
+transport and payload copies; the documented receiving-edge arbitration remains. Keep the asynchronous SDA wake event. Qualification of
 15d/e (time/watchdog, reset/wake/gating) belongs to 17.
 
 ## BD tape-out gate (17 + R2b)

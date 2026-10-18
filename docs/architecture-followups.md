@@ -14,14 +14,14 @@ Document temporary internal divergence and any approved ABI transition.
 
 ## Work order
 
-1. Decide B's replacement host ABI before resuming any 11a2b credit/admission work.
-2. Implement A's always-on/application split and B's register-pointer interface,
-   moving each producer/consumer pair together. Preserve reset and commit ownership.
-3. Add resilient external boot storage and factory provisioning. Measure full-capacity
-   boot and firmware wake activity; no application policy moves into silicon.
-4. Regenerate the BD request-guard inventory and size surviving guards at each
-   corner. Historical guard counts are not the inventory for the new architecture.
-5. Run item 16 once on the integrated architecture and supported configurations,
+1. Complete resilient external boot storage: A/B slots, an external golden image,
+   factory programming/read-back, and full-capacity boot/fallback timing. This
+   precedes further area tuning; no application policy moves into silicon.
+2. Decide B's replacement host ABI before resuming 11a2b credit/admission work,
+   then continue A/B with producers and consumers moved together.
+3. Regenerate the BD request-guard inventory and size surviving guards at each
+   corner. Historical counts are not the new architecture's inventory.
+4. Run item 16 once on the integrated architecture and supported configurations,
    then regenerate 17a3 and close the BD tape-out gate, including full R2b reset
    distribution and targeted routed hold repair.
 
@@ -78,8 +78,10 @@ external-memory/pad strategy before RTL work starts.
 ### Implemented slice: retained Telemetry view and clocked event arbitration
 
 Both variants remove Services' application/GPIO payload mirrors. Telemetry keeps
-one closed native architectural bank; Services retains sample publication state,
-command scheduling and the existing CPU MMIO crossing. BD captures on the qualified
+one closed native architectural bank and the existing CPU MMIO crossing. The
+[single-writer sample split](single-writer-telemetry.md) assigns physical samples
+to the ADC loop and software publications to the CPU, using retained timestamps
+in place of time-driven Telemetry updates. BD captures on the qualified
 receipt ACK and waits for full return. Click uses its own standard Click bank,
 launched by both receipt ACK phases, with its native completion phase synchronized
 for clocked readers. Click has no four-phase adapter. See the
@@ -92,6 +94,12 @@ that cutoff. No event travels through Telemetry. The six-bit bank is the sole
 pending state, shared by MMIO, WAIT/sleep and the host snapshot. This is a generic
 arbitration boundary, not an application policy. The [event contract](native-events.md)
 records the sources, exact cutoff/reset rules and shared executable oracle.
+
+The remaining Control scheduler orders host, CPU, programming-completion and reset
+commands on the receiving edge. Housekeeping similarly orders time, CPU timer/
+cadence actions and recovery. These are intentional clocked arbitration points;
+this batch does not require a GF180 MUTEX. Any native replacement must qualify
+arbitration before moving the competing sources.
 
 ## B. Register-pointer host interface
 
@@ -150,7 +158,7 @@ native domain; qualify metastability containment and ownership. Arbitration on
 a real receiving clock is acceptable after the requests safely cross into it.
 Neither approach may compromise fairness, accepted work or reset containment.
 
-Acquisition has one consumer: the retained measurement/telemetry owner. CPU and
+Acquisition has one publication path into the ADC's retained sample bank. CPU and
 host read its coherent view; no independent Supervisor history or fan-out exists.
 Keep elapsed ordering/reduction (12a) and GPIO/event history (12c) only for retained
 application services, with bounded capacity, sample validity/age, set-wins events

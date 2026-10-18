@@ -9,6 +9,9 @@ class ElapsedScalingPort(lanes: Int) extends Bundle {
   val target = Input(UInt(32.W)); val consumed = Output(UInt(32.W)); val publicationTarget = Output(UInt(32.W))
   val valid = Output(Bool()); val single = Output(Bool()); val busy = Output(Bool())
   val elapsed = Output(Vec(lanes, UInt(32.W)))
+  // Direct retained payload for combinational preparation. Undefined when !valid;
+  // every state update depending on this view must be qualified by valid.
+  val publicationElapsed = Output(Vec(lanes, UInt(32.W)))
 }
 class SampleScalingPort extends Bundle {
   // Capture value on done. The held native payload is unspecified when !done.

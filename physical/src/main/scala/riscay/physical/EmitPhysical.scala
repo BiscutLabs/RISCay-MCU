@@ -38,10 +38,10 @@ object PhysicalSocExport {
   private def sha(path: Path): String = MessageDigest.getInstance("SHA-256")
     .digest(Files.readAllBytes(path)).map(b => f"${b & 0xff}%02x").mkString
 
-  def emit(root: Path): Unit = {
+  def emit(root: Path, p: SocParameters = parameters, variants: Seq[String] = Seq("bd","click")): Unit = {
     require(!Files.exists(root), "PHYSICAL_EXPORT_ALREADY_EXISTS")
-    val p = parameters
-    Seq("bd", "click").foreach { variant =>
+    require(variants.nonEmpty && variants.forall(Set("bd","click")), "PHYSICAL_VARIANT")
+    variants.foreach { variant =>
       val out = root.resolve(variant)
       // Keep verification bodies in their owning module. The mapper still
       // rejects arbitrary/extracted sources; SYNTHESIS removes assertions.

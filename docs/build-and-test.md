@@ -19,7 +19,7 @@ python tools/ci.py --output build/ci-local
 ```
 
 The output directory must be new. This runs Python discovery, then one sbt process
-for the selected core, fabric, Control, CRC, housekeeping, frame, reset bridge,
+for timestamp arithmetic and the selected core, fabric, Control, CRC, housekeeping, frame, reset bridge,
 retained register-view, event-oracle, sleep and boot-ingress suites, the generic SPI boot cases and physical export/core
 policy suites. It checks fresh, nonempty JUnit results for every requested suite.
 Missing suites, failed cases and unexpected skips fail the run. Linux may skip
@@ -131,10 +131,32 @@ After accepted BD mapping and electrical repair, run:
 
 ```text
 python tools/telemetry_bank_timing.py build/map-bd build/bank-readers
+python tools/telemetry_bank_timing.py build/map-bd build/adc-readers --bank adc
 python tools/native_stage_timing.py build/map-bd build/telemetry-stage --variant bd --stage FourPhaseSoc.ca_child_telemetry.ca_child_update --campaign
 ```
 
-Both outputs must be fresh directories. The first inventories all periodic readers
-of the closed bank and checks their per-cell apertures plus feedback ordering.
-The second uses the existing standard-stage campaign. These zero-wire checks
+All outputs must be fresh directories. The bank commands inventory every periodic
+reader and check per-cell apertures plus feedback ordering. The third command
+uses the existing standard-stage campaign. These zero-wire checks
 complement the reader-qualification assertions; routed skew/RC remains open.
+
+Optional software sample configurations need their own closed-bank screen:
+`physical/Test/runMain riscay.physical.EmitSoftwareSamples <fresh-directory>` emits
+an ADC-plus-software-channel BD fixture. Map/repair it, then run
+`telemetry_bank_timing.py <mapping> <fresh-output> --bank software`.
+Sample runs also inventory all periodic launches into timestamp arithmetic,
+including elapsed-receipt valid gating, and check them against one 50 ns period.
+Native sequential outputs delimit that analysis query; their receipt-launch
+composition remains a separate obligation, not a false path or timing waiver.
+The sample screens also check the shared upper-time counter and every periodic
+reader reached from it against one 50 ns period. The sample bank's conditional
+five-edge read qualification gives no extra time to these clocked paths.
+
+Elapsed operand ports get a separate conditional receiver-side screen: 100 ns
+from synchronized request detection to earliest acceptance, and hypothetical
+immediate source reuse at ACK for hold. Source publication alignment, actual
+loaded source slew and unrelated native admission qualifiers remain separate
+obligations. The tool samples both min/max at each source-slew scenario and
+encloses their combinational arc costs before searching all paths, preserving
+NLDM nonmonotonicity without an endpoint tolerance. Exact cone/profile coverage
+is mandatory. This bounds the sampled mode graphs, not continuous slew or routing.

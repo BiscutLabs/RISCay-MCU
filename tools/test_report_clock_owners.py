@@ -3,7 +3,7 @@ import copy
 import unittest
 
 from gf180_physical import SC, SRAM
-from report_clock_owners import ROOTS, inventory
+from report_clock_owners import ROOTS, inventory, register_breakdown
 
 
 def cell(kind, **pins):
@@ -33,6 +33,23 @@ class ClockOwnerInventory(unittest.TestCase):
         self.assertEqual([x['path'] for x in r['other_clock_sinks']], ['soc/ca_child_native/reg'])
         self.assertEqual(sum(sum(v.values()) for v in r['owners'].values()),
                          sum(r['clock_domains'].values()))
+
+    def test_register_partition_counts_each_sink_once_with_aliases_and_unnamed_state(self):
+        self.cells['soc/fabric_unnamed'] = cell('dffrnq_1', CLK=10, Q=91, D=12)
+        self.cells['soc/reg2'] = cell('dffrnq_1', CLK=10, Q=92, D=12)
+        self.aliases['soc/fabric_application_0'].append(92)
+        self.aliases['soc/fabric_same_word'] = [11,92]
+        result = inventory(self.cells, self.aliases, self.pins)
+        rows = register_breakdown(result['sinks'], 'Services')
+        expected = [r['path'] for r in result['sinks'] if r['owner'] == 'Services']
+        actual = [p for r in rows for p in r['cells']]
+        self.assertCountEqual(actual, expected)
+        self.assertEqual(len(actual), len(set(actual)))
+        self.assertEqual(sum(r['sinks'] for r in rows), len(expected))
+        self.assertEqual(rows[0]['aliases'], ['soc/fabric_application_0','soc/fabric_same_word'])
+        self.assertEqual(rows[-1]['aliases'], [])
+        self.assertEqual(rows[-1]['identity'], ['soc/fabric_unnamed'])
+        self.assertEqual([r['sinks'] for r in rows], sorted((r['sinks'] for r in rows), reverse=True))
 
     def test_repair_output_buffers_do_not_lose_original_owner(self):
         original = copy.deepcopy(self.cells)

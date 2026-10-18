@@ -15,6 +15,9 @@ import riscay.soc._
   * protocol state, scaling or retirement. The clocked player only times slots.
   */
 class FourPhaseSpiAdc(p: AdcParameters,domain: ResetDomain) extends AsyncModule(domain) {
+  val timestamp=IO(Input(UInt(64.W)))
+  val sampleView=IO(Output(new SampleRecord))
+  val sampleComplete=IO(Output(Bool()))
   val command=fourPhaseInput("command",Bool())
   val reply=fourPhaseOutput("reply",new SpiResult)
   val wave=fourPhaseOutput("wave",Bool())
@@ -55,17 +58,38 @@ class FourPhaseSpiAdc(p: AdcParameters,domain: ResetDomain) extends AsyncModule(
   split.out(0).ack:=scale.command.ack
   dontTouch(split.out(0))
   FourPhase.connect(scaled.left,split.out(1)); FourPhase.connect(scaled.right,scale.reply)
-  private val finish=asyncChild("finish")(d => new FourPhaseStage(new Joined(new SpiRaw,UInt(32.W)),new SpiResult,
-    (x: Joined[SpiRaw,UInt]) => {
-      val r=Wire(new SpiResult); r.nextPrimed:=x.left.primed || x.left.complete
-      r.publish:=x.left.primed && x.left.complete
-      r.value:=(x.right+p.offset.S(32.W).asUInt)(31,0); r
+  private val finish=asyncChild("finish")(d => new FourPhaseStage(new SpiFinishWork,new SpiResult,
+    (x: SpiFinishWork) => {
+      val r=Wire(new SpiResult); r.nextPrimed:=x.raw.primed || x.raw.complete
+      r.publish:=x.raw.primed && x.raw.complete
+      r.sample:=x.sample
+      r.sample.value:=(x.scaled+p.offset.S(32.W).asUInt)(31,0)
+      when(r.publish) {
+        r.sample.timestamp:=x.timestamp;r.sample.sequence:=x.sample.sequence+1.U
+        r.sample.valid:=true.B;r.sample.calibrated:=p.calibrated.B;r.sample.seen:=true.B;r.sample.fault:=false.B
+      }
+      r
     },timing,d))
-  FourPhase.connect(finish.in,scaled.out)
-  // Retire only on consumer acceptance. No next waveform may issue before it.
-  state.in.bits:=finish.out.bits.nextPrimed; state.in.req:=reply.ack
-  finish.out.ack:=state.in.ack; reply.req:=finish.out.req; reply.bits:=finish.out.bits
-  dontTouch(state.in); dontTouch(finish.out)
+  finish.in.req:=scaled.out.req;scaled.out.ack:=finish.in.ack
+  finish.in.bits.raw:=scaled.out.bits.left;finish.in.bits.scaled:=scaled.out.bits.right
+  finish.in.bits.sample:=sampleView;finish.in.bits.timestamp:=timestamp
+  val bank=Module(new chiselasync.primitives.EventRegister(sampleView.getWidth,cell))
+  bank.reset:=reset;bank.trigger:=reply.ack;bank.d:=Mux(finish.out.bits.publish,finish.out.bits.sample,sampleView).asUInt
+  sampleView:=bank.q.asTypeOf(sampleView)
+  contract.primitive("sample_bank",bank,Map("WIDTH"->BigInt(sampleView.getWidth),"DELAY_FS"->BigInt(cell.fs),
+    "RESET_VALUE"->BigInt(0)),contract.endpoint("bank_reset",reset),"sole ADC sample state; POR lifetime; closed output")
+  // Relative capture-to-feedback model; size this owner from its own mapped paths.
+  val guard=Module(new chiselasync.primitives.ControlGate(1,chiselasync.primitives.GateOperation.Buffer,ModelTime.ps(10000)))
+  guard.reset:=reset;guard.a:=reply.ack.asUInt;guard.b:=0.U
+  contract.primitive("output_guard",guard,Map("WIDTH"->BigInt(1),"OP"->BigInt(0),"DELAY_FS"->BigInt(10000000),
+    "RESET_VALUE"->BigInt(0)),contract.endpoint("guard_reset",reset),"relative ADC bank-to-feedback ordering")
+  sampleComplete:=guard.q.asBool
+  // No next waveform/sequence update before the closed sample bank publishes.
+  state.in.bits:=finish.out.bits.nextPrimed;state.in.req:=sampleComplete
+  finish.out.ack:=state.in.ack;reply.req:=finish.out.req;reply.bits:=finish.out.bits
+  dontTouch(state.in);dontTouch(finish.out)
+  contract.endpoint("timestamp",timestamp);contract.endpoint("sample_view",sampleView)
+  contract.endpoint("sample_complete",sampleComplete)
   contract.endpoint("reset",reset)
 }
 
@@ -91,11 +115,19 @@ class SpiAdc(p: AdcParameters,autonomous: Boolean,domain: ResetDomain) extends C
   dontTouch(wave.out); dontTouch(reply.out)
   private val returned=synchronizedControl(!reply.in.req) && !reply.in.ack
   private val waveReturned=synchronizedControl(!wave.in.req) && !wave.in.ack
+  val bankReturning=withClockAndReset(clock,localReset) {
+    val returning=RegInit(false.B)
+    when(reply.out.fire) {returning:=true.B}.elsewhen(!reply.in.ack) {returning:=false.B}
+    returning
+  }
+  io.sampleReady:= !bankReturning
+  io.sample:=native.sampleView
   withClockAndReset(clock,localReset) {
     val active=RegInit(false.B); val pending=RegInit(false.B)
     val interval=RegInit(0.U(log2Ceil(p.intervalCycles).W))
-    val age=RegInit(0.U(32.W)); val aged=age +& io.ageStep
-    val ageNow=Mux(aged(32),"hffffffff".U,aged(31,0))
+    // One admission timestamp is held through conversion and complete native
+    // return. It replaces the per-conversion periodic age accumulator.
+    val admissionTime=RegInit(0.U(64.W));native.timestamp:=admissionTime
     val slot=RegInit(0.U(5.W)); val playing=RegInit(false.B)
     // Preserve the recipe's original highest-occupied-slot semantics,
     // including holes or an empty recipe; do not hard-code 32 transfers.
@@ -103,14 +135,13 @@ class SpiAdc(p: AdcParameters,autonomous: Boolean,domain: ResetDomain) extends C
     val divider=RegInit(0.U(log2Ceil(p.halfPeriodCycles).max(1).W))
     val cs=RegInit(true.B); val clockLevel=RegInit(false.B)
     val samples=RegInit(0.U(32.W)); val sampled=RegInit(false.B); val complete=RegInit(false.B)
-    val drained=returned && waveReturned && command.in.ready && capture.in.ready && !playing && !sampled
+    val drained=returned && waveReturned && command.in.ready && capture.in.ready && !playing && !sampled && io.sampleReady
     val launch= !active && drained && (if(autonomous) interval === 0.U else io.start)
     command.in.valid:=pending; command.in.bits:=active
-    when(launch) { active:=true.B; pending:=true.B; interval:=(p.intervalCycles-1).U; age:=0.U }
+    when(launch) { active:=true.B; pending:=true.B; interval:=(p.intervalCycles-1).U; admissionTime:=io.upperTime }
       .elsewhen(!active && drained) { when(interval =/= 0.U) { interval:=interval-1.U } }
-    when(active) { age:=ageNow }
     when(command.in.fire) { pending:=false.B }
-    wave.out.ready:=active && !playing && !sampled && !localReset.asBool
+    wave.out.ready:=active && !playing && !sampled && io.sampleReady && !localReset.asBool
     when(wave.out.fire) {
       slot:=0.U; playing:=recipe.occupied.orR
       cs:=recipe.initialCsN; clockLevel:=recipe.initialSclk
@@ -129,8 +160,8 @@ class SpiAdc(p: AdcParameters,autonomous: Boolean,domain: ResetDomain) extends C
     reply.out.ready:=active
     when(reply.out.fire) { active:=false.B }
     io.done:=reply.out.fire; io.result.valid:=io.done && reply.out.bits.publish
-    io.result.bits.value:=reply.out.bits.value; io.result.bits.valid:=reply.out.bits.publish
-    io.result.bits.calibrated:=p.calibrated.B; io.age:=ageNow
+    io.result.bits.value:=reply.out.bits.sample.value; io.result.bits.valid:=reply.out.bits.publish
+    io.result.bits.calibrated:=p.calibrated.B
     io.busy:=active || pending || !drained || localReset.asBool
     csN:=cs; sclk:=clockLevel
     dontTouch(slot); dontTouch(playing); dontTouch(samples)

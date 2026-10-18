@@ -56,8 +56,9 @@ native SPI controllers own conversion/priming, assembly, scaling and retirement.
 The complete waveform runs without native per-edge feedback, so a stalled native
 consumer cannot stretch SCLK. Busy covers admission, waveform, buffered capture,
 native processing, publication and crossing return; none may be gated halfway.
-Conversion age accumulates upper-bound elapsed time from admission and survives
-publication stalls and application reset. Both host and CPU reads retain
+Conversion age is the difference between the shared upper-time coordinate and
+the retained admission timestamp; it survives publication stalls and application
+reset without time-driven Telemetry transactions. Both host and CPU reads retain
 that age, including a coincident publication tick. The unstalled digital allowance
 is 32 half-periods plus 32 service edges and 2 us of native processing; it still
 requires physical qualification. CPU and I2C service boundaries also use the fast source.
@@ -68,7 +69,7 @@ This cadence is generic measurement configuration, not application policy.
 The work gate retains its two-flop demand synchronization and falling-edge
 update. Ordinary CPU/control, ADC/SRAM, host/GPIO and reset activity reload the
 existing seven-edge grace interval. That interval may expire while explicitly
-tracked elapsed/housekeeping/telemetry maintenance is active; full demand still holds the
+tracked elapsed/housekeeping maintenance or an actual Telemetry commit is active; full demand still holds the
 gate open until publication and bridge drainage finish. This avoids extending
 an already safe maintenance interval by another unconditional seven edges.
 BD telemetry ACK return is a clocked bridge output, already qualified by the
@@ -244,10 +245,13 @@ The analog monitor's approximately 2.22 uA nominal always-on current and measure
 ## Implementation ownership during async migration
 
 Each design now owns its Platform, SleepTiming, Services and clocked peripheral
-implementation, with separate native Fabric, Control, Telemetry, Supervisor,
+implementation, with separate native Fabric, Control, Telemetry,
 scaling, SRAM sequencing, housekeeping, I2C and SPI ADC protocol logic. Native Control owns loader/MMIO
 state and selector/producer staging. Native Telemetry
-owns software GPIO/application words, pending flags and host sample records.
+owns CPU-written GPIO/application words and software-published sample records.
+The ADC owns its sample record; [timestamp-derived age](single-writer-telemetry.md)
+removes sample copies and time-only Telemetry work. Pending events, clear cutoff
+and WAIT remain together at the clocked arbitration edge.
 Native Housekeeping owns time/deadline/lease/wake-mask state, kick authorization
 and low-power cadence. Clocked event capture, independent LF/watchdog timing,
 heartbeat phase/ACK delivery, peripheral ingress and snapshots remain. Every pending command, reply, accepted commit, buffered

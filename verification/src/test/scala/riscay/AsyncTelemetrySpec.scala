@@ -12,34 +12,37 @@ class AsyncTelemetrySpec extends AnyFunSuite {
   private val config = McuConfiguration(16,16,2,Vector(MeasurementChannel(0,"sample",1,0)),
     ApplicationProfile(1,1,"telemetry",Vector(HostRegister(0,"A"),HostRegister(17,"B")),Vector.empty))
   private val p = SocParameters(config)
-  private case class Step(kind: Int = 0, elapsed: Long = 0,
-    offset: Int = 0, data: Long = 0, index: Int = 0,
-    capture: Seq[Long] = Seq(0,0,0,0,0,0,0), changes: Map[String,Long] = Map.empty)
+  private case class Step(kind: Int = 1, offset: Int = 0, data: Long = 0, index: Int = 0,
+    value: Long = 0, timestamp: Long = 0, changes: Map[String,Long] = Map.empty)
   private val initial = Map("output"->0L,"enable"->0L,"application_0"->0L,"application_1"->0L,
-    "samples_0_value"->0L,"samples_0_valid"->0L,"samples_0_calibrated"->0L,"samples_0_age"->0L,
-    "samples_0_sequence"->0L,"samples_0_never"->1L,"samples_0_fault"->0L)
+    "samples_0_value"->0L,"samples_0_valid"->0L,"samples_0_calibrated"->0L,"samples_0_timestamp"->0L,
+    "samples_0_sequence"->0L,"samples_0_seen"->0L,"samples_0_fault"->0L)
   private val steps = Seq(
-    Step(kind=1,offset=24,data=0xdeadbeefL,changes=Map("output"->0xdeadbeefL)),
-    Step(kind=1,offset=28,data=3,changes=Map("enable"->3L)),
-    Step(kind=1,offset=52,index=17,data=123,changes=Map("application_1"->123L)),
-    Step(kind=1,offset=52,index=16,data=999),
-    Step(elapsed=9,capture=Seq(1,1,0,0,1,888,0),changes=Map("samples_0_age"->9L,"samples_0_sequence"->1L,"samples_0_fault"->1L)),
-    // Two successes followed by a failure: latest status differs from last-good data.
-    Step(elapsed=20,capture=Seq(1,3,1,0,1,42,7),changes=Map("samples_0_value"->42L,"samples_0_age"->7L,"samples_0_sequence"->4L,"samples_0_never"->0L)),
-    Step(elapsed=5,capture=Seq(1,1,0,0,0,999,0),changes=Map("samples_0_age"->12L,"samples_0_sequence"->5L)),
-    Step(elapsed=8,capture=Seq(1,1,1,1,1,100,2),changes=Map("samples_0_value"->100L,"samples_0_age"->2L,"samples_0_sequence"->6L,"samples_0_valid"->1L,"samples_0_calibrated"->1L,"samples_0_fault"->0L)),
-    Step(kind=2,elapsed=3,changes=Map("output"->0L,"enable"->0L,"application_1"->0L,"samples_0_age"->5L)),
-    Step(elapsed=0xffffffffL,changes=Map("samples_0_age"->0xffffffffL)),
-    Step(elapsed=2,capture=Seq(1,0xffffffffL,0,0,0,0,0),changes=Map("samples_0_sequence"->5L,"samples_0_valid"->0L,"samples_0_calibrated"->0L,"samples_0_fault"->1L)),
-    Step(capture=Seq(1,2,1,1,0,1234,0),changes=Map("samples_0_sequence"->7L,"samples_0_value"->1234L,"samples_0_age"->0L,"samples_0_valid"->1L,"samples_0_fault"->0L)),
-    Step(kind=1,offset=8))
+    Step(offset=24,data=0xdeadbeefL,changes=Map("output"->0xdeadbeefL)),
+    Step(offset=28,data=3,changes=Map("enable"->3L)),
+    Step(offset=52,index=17,data=123,changes=Map("application_1"->123L)),
+    Step(offset=52,index=16,data=999),
+    Step(offset=44,data=0,value=888,timestamp=9,changes=Map("samples_0_sequence"->1L,"samples_0_fault"->1L)),
+    Step(offset=44,data=3,value=41,timestamp=22,changes=Map("samples_0_value"->41L,"samples_0_timestamp"->22L,
+      "samples_0_sequence"->2L,"samples_0_seen"->1L,"samples_0_valid"->1L,"samples_0_calibrated"->1L,"samples_0_fault"->0L)),
+    Step(offset=44,data=3,value=42,timestamp=29,changes=Map("samples_0_value"->42L,"samples_0_timestamp"->29L,"samples_0_sequence"->3L)),
+    Step(offset=44,data=2,value=999,timestamp=34,changes=Map("samples_0_sequence"->4L,"samples_0_valid"->0L,"samples_0_calibrated"->0L,"samples_0_fault"->1L)),
+    Step(offset=44,data=3,value=100,timestamp=42,changes=Map("samples_0_value"->100L,"samples_0_timestamp"->42L,"samples_0_sequence"->5L,
+      "samples_0_valid"->1L,"samples_0_calibrated"->1L,"samples_0_fault"->0L)),
+    Step(kind=2,changes=Map("output"->0L,"enable"->0L,"application_1"->0L)),
+    // The bank retains the timestamp across time-coordinate wrap and failed attempts.
+    // Age saturation is checked at the Services projection, where time is owned.
+    Step(offset=44,data=0,value=0,timestamp=0x100000001L,changes=Map("samples_0_sequence"->6L,"samples_0_valid"->0L,
+      "samples_0_calibrated"->0L,"samples_0_fault"->1L)),
+    Step(offset=44,data=1,value=1234,timestamp=0x100000002L,changes=Map("samples_0_sequence"->7L,"samples_0_value"->1234L,
+      "samples_0_timestamp"->0x100000002L,"samples_0_valid"->1L,"samples_0_fault"->0L)),
+    Step(offset=8))
   private def source(click: Boolean, campaign: Seq[Step]): String = campaign.zipWithIndex.map { case(s,i) =>
     val phase=if(click) (i+1)%2 else 1
-    val capture=Seq("seen","count","hadValid","valid","calibrated","value","tailAge").zip(s.capture)
-      .map { case(k,v) => s"command_bits_captures_0_$k=32'h${v.toHexString};" }.mkString("\n")
-    s"""command_bits_kind=${s.kind};
-      command_bits_elapsedUpper=32'h${s.elapsed.toHexString}; command_bits_offset=${s.offset};
-      command_bits_data=32'h${s.data.toHexString}; command_bits_appIndex=${s.index}; $capture
+    s"""command_bits_kind=${s.kind}; command_bits_offset=${s.offset};
+      command_bits_data=32'h${s.data.toHexString}; command_bits_appIndex=${s.index};
+      command_bits_sample_index=0; command_bits_sample_value=32'h${s.value.toHexString};
+      command_bits_sample_timestamp=64'h${s.timestamp.toHexString};
       #2; command_req=$phase; wait(command_ack == $phase); #2;
       ${if(click) "" else "command_req=0; wait(!command_ack); #2;"}
     """
@@ -54,7 +57,7 @@ class AsyncTelemetrySpec extends AnyFunSuite {
       }
       val phase=if(click) (i+1)%2 else 1
       val checks=expected.toSeq.sortBy(_._1).map { case(k,v) =>
-        s"if(reply_bits_state_$k !== 32'h${v.toHexString}) $$fatal(1,\"TELEMETRY_${i}_$k actual=%h\",reply_bits_state_$k);"
+        s"if(reply_bits_state_$k !== 64'h${v.toHexString}) $$fatal(1,\"TELEMETRY_${i}_$k actual=%h\",reply_bits_state_$k);"
       }.mkString("\n")
       s"""wait(reply_req == $phase); #2; $checks
         #${(i%5+1)*23000000L}; $checks
@@ -71,12 +74,35 @@ class AsyncTelemetrySpec extends AnyFunSuite {
       val root=Paths.get("build/async-telemetry-tests"); Files.createDirectories(root)
       Files.createTempDirectory(root,name+suffix)
     }
-    test(s"$name native telemetry: clockless commits, coalesced publications, reset retention and reply stalls") {
+    test(s"$name native telemetry: clockless commits, single-writer publications, reset retention and reply stalls") {
       AsyncTest.run(top(),1L to 16L,fresh("-state")) { _ => s"""
         ${if(click) "start=1;" else ""}
         fork begin ${source(click,steps)} end begin ${sink(click,steps)} end join
         #1000000000;
         if(delivered_reply != ${steps.size}) $$fatal(1,"TELEMETRY_EXACTLY_ONCE");
+      """ }
+    }
+    test(s"$name native telemetry: sequence wraps modulo 32 bits without discarding the last good record") {
+      // Seed only the closed-bank read port for one transaction, avoiding four
+      // billion publications. The real transform, capture and return still run.
+      val first=Seq(Step(offset=44,data=3,value=42,timestamp=99,changes=Map("samples_0_value"->42L,
+        "samples_0_timestamp"->99L,"samples_0_sequence"->0xffffffffL,"samples_0_seen"->1L,
+        "samples_0_valid"->1L,"samples_0_calibrated"->1L)))
+      AsyncTest.run(top(),Seq(3L,11L),fresh("-sequence-wrap")) { _ => s"""
+        ${if(click) "start=1;" else ""}
+        force dut.ca_child_update.in_bits_samples_0_sequence=32'hfffffffe;
+        fork begin ${source(click,first)} end begin ${sink(click,first)} end join
+        #1000000000;release dut.ca_child_update.in_bits_samples_0_sequence;#1000000000;
+        if(sampleView_0_sequence!==32'hffffffff) $$fatal(1,"SEQUENCE_SEED_NOT_COMMITTED");
+        command_bits_offset=44;command_bits_data=0;command_bits_sample_value=999;
+        #20000000;command_req=${if(click) 0 else 1};
+        wait(reply_req===${if(click) 0 else 1});#20000000;
+        if(reply_bits_state_samples_0_sequence!==0 || reply_bits_state_samples_0_value!==42 ||
+           reply_bits_state_samples_0_timestamp!==99 || !reply_bits_state_samples_0_fault)
+          $$fatal(1,"SEQUENCE_WRAP_LAST_GOOD");
+        reply_ack=${if(click) 0 else 1};
+        ${if(click) "wait(command_ack===0);" else "wait(command_ack);command_req=0;wait(!reply_req);#37000000;reply_ack=0;wait(!command_ack);"}
+        #1000000000;
       """ }
     }
     test(s"$name native telemetry: POR cancels a stalled response and reinstalls cold state") {

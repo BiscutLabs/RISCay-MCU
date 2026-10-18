@@ -6,9 +6,9 @@ libraries, mapper and accepted repair flow for matched production comparisons.
 Full routed physical requalification remains migration item 17.
 
 The **BD mapped-logic milestone below 2.3 mm² excluding SRAM is achieved**.
-The latest clocked-event/register-view batch maps to **2.053129 / 2.854875 mm²**
-(BD / Click) and repairs to **2.237991 / 3.063397 mm²**, compared with its immediate
-parent at 2.058088 / 2.894444 mapped and 2.242768 / 3.099576 repaired.
+The single-writer Telemetry batch maps to **2.010204 / 2.815021 mm²**
+(BD / Click) and repairs to **2.199751 / 3.032252 mm²**, compared with its immediate
+parent `d0a01c5` at 2.053129 / 2.854875 mapped and 2.237991 / 3.063397 repaired.
 The earlier passive/guard/fusion batch mapped to
 2.229395 / 3.048424 mm² (BD / Click). These are fresh whole-chip results, not summed
 pilot savings. Mapped/repaired numbers exclude the P&R additions tabulated below.
@@ -18,7 +18,7 @@ obligations; the parent's local timing passes do not qualify those paths.
 BD is the tape-out target; Click physical timing/sizing work is frozen, while
 architecture conversions now cover both native implementations. Allocate
 **0.05 mm² of additional standard-cell area for routed hold repair** in the BD
-planning budget (about 2.4% of current mapped logic). This is an allowance, not
+planning budget (about 2.5% of current mapped logic). This is an allowance, not
 inserted area or a predicted requirement, and is separate from electrical/CTS
 repair and placement whitespace. Record actual cell use after routing. If repair
 exceeds it, revise the budget or architecture; do not waive a failing path. The
@@ -28,10 +28,10 @@ exceeds it, revise the budget or architecture; do not waive a failing path. The
 
 ### BD rectangular P&R
 
-The current generic-MCU BD mapping has completed detailed routing on a
+The latest routed generic-MCU BD snapshot (`baec57b`) completed detailed routing on a
 **1.94 × 2.53 mm** outline (4.9082 mm²), with **one unresolved Metal2 short**.
-Nominal/minimum/maximum wire RC extraction is complete. **Physical timing remains
-unqualified.** The larger comparison run completed with zero detailed-router DRC
+Nominal/minimum/maximum wire RC extraction is complete. This snapshot predates the
+ownership batches below. **Physical timing remains unqualified.** The larger comparison run completed with zero detailed-router DRC
 violations.
 
 | Source / physical run | Mapped logic | Pre-placement repaired logic | Routed logic | SRAM | Taps/endcaps | Total cell footprints | Periodic sinks |
@@ -61,6 +61,7 @@ electrical repair; repaired means accepted pre-placement repair, not P&R.
 | 11b2 + 11b3 | 2.792933 / 3.554119 | 2.978974 / 3.757950 | 0.542153 / 1.061831 | 0.413624 / 0.366484 | 0.536041 / 1.052901 | 4,810 / 4,865 |
 | A7b + A8b + A10 SRAM fusion | 2.229395 / 3.048424 | 2.412382 / 3.252393 | 0.404567 / 0.942852 | 0 / 0 | 0.398561 / 0.934080 | 4,810 / 4,865 |
 | Clocked events + both retained register views | 2.053129 / 2.854875 | 2.237991 / 3.063397 | 0.398907 / 0.932315 | 0 / 0 | 0.393112 / 0.923780 | 3,896 / 3,952 |
+| Single-writer Telemetry samples | 2.010204 / 2.815021 | 2.199751 / 3.032252 | 0.399605 / 0.937320 | 0 / 0 | 0.393784 / 0.928706 | 3,557 / 3,614 |
 
 11b1 removes 268 periodic flip-flops per variant. Its complete contract, matched
 parent comparison, wake activity and listed-state leakage bounds remain in the
@@ -68,6 +69,78 @@ parent comparison, wake activity and listed-state leakage bounds remain in the
 accepted graph; it does not replace historical evidence with newly generated
 receipts. The earlier PR10 maps fail current receipt validation with
 `REPAIR_INPUT_CHANGED`; those failures are retained under `build/area-ledger/`.
+
+### Single-writer Telemetry samples
+
+The ADC owns its retained sample bank; CPU software samples have their own bank,
+separate from application/GPIO state. A shared POR upper-time coordinate replaces
+per-sample clocked age/capture/commit projections. Time and ADC publication no
+longer produce Telemetry commands. CPU/recovery command ordering and the event
+cutoff remain at their documented clocked boundaries. No periodic stage is added
+inside a native owner. The [contract and ranked inventory](single-writer-telemetry.md)
+record the independent implementations and remaining arbitration.
+
+| Metric | BD parent → current | Click parent → current |
+| --- | ---: | ---: |
+| Mapped logic, mm² | 2.053129 → 2.010204 (−2.09%) | 2.854875 → 2.815021 (−1.40%) |
+| Repaired logic, mm² | 2.237991 → 2.199751 | 3.063397 → 3.032252 |
+| Guards, mm² | 0.398907 → 0.399605 | 0.932315 → 0.937320 |
+| Allowances, mm² | 0 → 0 | 0 → 0 |
+| DLYD, mm² | 0.393112 → 0.393784 | 0.923780 → 0.928706 |
+| Periodic sinks | 3,896 → 3,557 (−339) | 3,952 → 3,614 (−338) |
+| Whole-chip service / work / LF | 1,203 / 2,615 / 78 → 1,203 / 2,276 / 78 | 1,207 / 2,667 / 78 → 1,207 / 2,329 / 78 |
+| Services service / work / LF | 14 / 1,468 / 0 → 14 / 1,228 / 0 | 14 / 1,468 / 0 → 14 / 1,228 / 0 |
+
+The per-register report partitions every physical sink once, using complete Q
+alias sets; unnamed registers remain visible. Removed Services families total
+310 sinks; the 64-bit time coordinate and six retained application-index bits
+make the net reduction 240. Full reports are `bd-baseline-registers.json`,
+`click-baseline-registers.json`, `bd-registers-r7.json` and `click-registers-r7.json`
+under `build/single-writer-telemetry/`. Work includes the three macro clock pins;
+the unchanged asynchronous SDA event is excluded from periodic totals.
+
+| Current DLYD purpose | BD cells / mm² | Click cells / mm² |
+| --- | ---: | ---: |
+| Custom ordering/reset | 3,551 / 0.265035 | 8,956 / 0.668447 |
+| Bundling / Click request-pulse | 937 / 0.069935 | 855 / 0.063814 |
+| Publication / Click output-pulse | 688 / 0.051350 | 2,016 / 0.150468 |
+| Seed/reset admission | 100 / 0.007464 | — |
+| Click ACK-pulse | — | 616 / 0.045976 |
+| Total | 5,276 / 0.393784 | 12,443 / 0.928706 |
+
+The timestamp nibble hierarchy costs about 0.0102 / 0.0112 mm² above the
+rejected flattened arithmetic. Preserving its group-prefix levels adds another
+0.002393 / 0.005293 mm², preventing serial carry reconstruction without adding
+clock sinks. Guard area grows for the new retained ADC bank's completion/feedback contract.
+Click uses its existing pulse/ACK policy; no Click sizing or timing campaign ran.
+Matched logic is still about 3.49× / 4.74× the original 0.576 / 0.594 mm²
+mostly-clocked baseline. This is an ownership improvement, not area convergence.
+
+Activity uses the same 12 MHz native-model fixture, I²C-loaded 43-instruction
+firmware, `spiBoot=false`, and 27 windows per variant. Production maps retain SPI
+boot. Values below are window means; all measured time/sample-only Telemetry
+traffic disappears. Actual CPU application/GPIO commits still use Telemetry.
+
+| Wake / windows | Telemetry commands, BD / Click | Work edges, BD / Click | Duration ns, BD / Click |
+| --- | ---: | ---: | ---: |
+| Maintenance / 22 | 1 → 0 / 1 → 0 | 24 → 24 / 21 → 18 | 3,147.358 → 3,147.358 / 3,064.024 → 3,064.024 |
+| ADC / 3 | 2 → 0 / 2 → 0 | 217 → 217 / 215 → 214 | 18,439.147 → 18,439.147 / 18,272.479 → 18,189.145 |
+| Firmware / 2 | 1 → 0 / 1 → 0 | 3,243 → 3,241 / 3,200 → 3,197 | 270,607.831 → 270,441.163 / 267,024.469 → 266,774.467 |
+
+Click's maintenance clock extension is removed by eliminating time-only bank
+turns; the completion synchronizer remains for real CPU/reset commits. BD's
+maintenance duration remains limited by the other owners' drainage. These are
+model activity counts, not physical energy estimates.
+
+Evidence: `build/single-writer-telemetry/{bd,click}-area-r7.json`,
+`{bd,click}-registers-r7.json`, `map-bd-r7`, `map-click-r8`, `activity-r7.json`
+and the [independent review](reviews/single-writer-telemetry.md). The software
+sample fixture is a supported-configuration timing check, not the production
+area configuration. Both production maps include the final prefix-tree arithmetic;
+no earlier map substitutes for this RTL. No P&R run is replaced by these
+pre-placement maps. The
+0.05 mm² routed hold-repair reserve remains separate and unspent. Resilient A/B
+external boot, golden recovery and factory programming precede further area work.
 
 ### Clocked event arbitration and both retained register views
 

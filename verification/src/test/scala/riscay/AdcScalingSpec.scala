@@ -13,13 +13,13 @@ class AdcScalingFixture(click: Boolean) extends FabricFixture(SocParameters(McuC
   val scaledValue = IO(Output(UInt(32.W))); val calibrated = IO(Output(Bool()))
   if(click) {
     val adc=asyncChild("tested_spi_adc")(d => new riscay.click.SpiAdc(pAdc,false,d))
-    adc.clock:=serviceClock; adc.io.ageStep:=0.U
+    adc.clock:=serviceClock; adc.io.upperTime:=0.U
     adc.miso := adcMiso; adc.io.start := conversionStart; adcCsN := adc.csN; adcSclk := adc.sclk
     conversionBusy := adc.io.busy; conversionDone := adc.io.done; sampleValid := adc.io.result.valid
     scaledValue := adc.io.result.bits.value; calibrated := adc.io.result.bits.calibrated
   } else {
     val adc=asyncChild("tested_spi_adc")(d => new riscay.bd.SpiAdc(pAdc,false,d))
-    adc.clock:=serviceClock; adc.io.ageStep:=0.U
+    adc.clock:=serviceClock; adc.io.upperTime:=0.U
     adc.miso := adcMiso; adc.io.start := conversionStart; adcCsN := adc.csN; adcSclk := adc.sclk
     conversionBusy := adc.io.busy; conversionDone := adc.io.done; sampleValid := adc.io.result.valid
     scaledValue := adc.io.result.bits.value; calibrated := adc.io.result.bits.calibrated

@@ -47,8 +47,8 @@ class BdCommandBorrowFixture(p: SocParameters, fault: String = "") extends BdHou
   val periodWaiting=IO(Output(Bool())); periodWaiting:=fabric.io.controlReply.valid && fabric.io.controlReply.bits.periodUpdate
   val periodAccepted=IO(Output(Bool())); periodAccepted:=periodWaiting && fabric.io.controlReply.ready
   val telemetryAccepted=IO(Output(Bool())); telemetryAccepted:=fabric.telemetryCommand.fire
-  val telemetryCommandView=IO(Output(new TelemetryCommand(p.config.measurements.size))); telemetryCommandView:=fabric.telemetryCommand.bits
-  val telemetryNative=IO(Output(new TelemetryCommand(p.config.measurements.size))); telemetryNative:=telemetry.command.bits
+  val telemetryCommandView=IO(Output(new TelemetryCommand(p.softwareSampleChannels.size))); telemetryCommandView:=fabric.telemetryCommand.bits
+  val telemetryNative=IO(Output(new TelemetryCommand(p.softwareSampleChannels.size))); telemetryNative:=telemetry.command.bits
   val telemetrySenderIdle=IO(Output(Bool())); telemetrySenderIdle:=telemetryCommandBridge.in.ready
   val telemetryNativeRequest=IO(Output(Bool())); telemetryNativeRequest:=telemetry.command.req
   val telemetryNativeAck=IO(Output(Bool())); telemetryNativeAck:=telemetry.command.ack
@@ -97,8 +97,8 @@ class ClickCommandBorrowFixture(p: SocParameters, fault: String = "") extends Cl
   val periodWaiting=IO(Output(Bool())); periodWaiting:=fabric.io.controlReply.valid && fabric.io.controlReply.bits.periodUpdate
   val periodAccepted=IO(Output(Bool())); periodAccepted:=periodWaiting && fabric.io.controlReply.ready
   val telemetryAccepted=IO(Output(Bool())); telemetryAccepted:=fabric.telemetryCommand.fire
-  val telemetryCommandView=IO(Output(new TelemetryCommand(p.config.measurements.size))); telemetryCommandView:=fabric.telemetryCommand.bits
-  val telemetryNative=IO(Output(new TelemetryCommand(p.config.measurements.size))); telemetryNative:=telemetry.command.bits
+  val telemetryCommandView=IO(Output(new TelemetryCommand(p.softwareSampleChannels.size))); telemetryCommandView:=fabric.telemetryCommand.bits
+  val telemetryNative=IO(Output(new TelemetryCommand(p.softwareSampleChannels.size))); telemetryNative:=telemetry.command.bits
   val telemetrySenderIdle=IO(Output(Bool())); telemetrySenderIdle:=telemetryCommandBridge.in.ready
   val telemetryNativeRequest=IO(Output(Bool())); telemetryNativeRequest:=telemetry.command.req
   val telemetryNativeAck=IO(Output(Bool())); telemetryNativeAck:=telemetry.command.ack
@@ -110,15 +110,23 @@ class ClickCommandBorrowFixture(p: SocParameters, fault: String = "") extends Cl
 
 class CommandBorrowSpec extends AnyFunSuite {
   private val config=McuConfiguration(16,16,1,Vector(MeasurementChannel(0,"sample",1,0)),
-    ApplicationProfile(1,1,"command-borrow",Vector.empty,Vector.empty))
+    ApplicationProfile(1,1,"command-borrow",Vector(HostRegister(0,"A"),HostRegister(17,"B")),Vector.empty))
   private val parameters=SocParameters(config,staleMs=100,watchdogCycles=1000000,
     lowPower=Some(LowPowerParameters()),adc=Some(AdcParameters(halfPeriodCycles=2,intervalCycles=100000)))
   private val monitor="""
 integer houseLoans=0,telemetryLoans=0,houseCaptures=0,telemetryCaptures=0,periodEffects=0,observations=0;
 integer savedHouse,savedTelemetry,savedCaptures,houseRecoveryLoans=0,savedRecoveries;
+reg [31:0] savedSampleSequence;
 reg houseActive=0,telemetryActive=0;
 reg [211:0] heldHouse;
-reg [191:0] heldTelemetry;
+reg [47:0] heldTelemetry;
+reg [15:0] adcShift;
+always @(negedge adcCsN) begin adcShift={4'hf,12'd2200};adcMiso=adcShift[15];end
+always @(negedge adcSclk) if(!adcCsN) begin adcShift=adcShift<<1;adcMiso=adcShift[15];end
+task acquire;begin
+  wait(!adcActive);@(negedge serviceClock);injectSample=1;
+  @(posedge serviceClock);#1;injectSample=0;wait(adcActive);wait(!adcActive);
+end endtask
 wire [211:0] packedHouseCommand={houseCommand_recovery,houseCommand_timeValid,houseCommand_target,houseCommand_single,
   houseCommand_elapsed_0,houseCommand_elapsed_1,houseCommand_elapsed_2,houseCommand_elapsedOverflow,
   houseCommand_resetApplication,houseCommand_started,houseCommand_parked,houseCommand_adcBusy,houseCommand_discard,
@@ -129,18 +137,10 @@ wire [211:0] packedHouseNative={houseNative_recovery,houseNative_timeValid,house
   houseNative_resetApplication,houseNative_started,houseNative_parked,houseNative_adcBusy,houseNative_discard,
   houseNative_write,houseNative_offset,houseNative_data,houseNative_waitAccepted,houseNative_periodUpdate,
   houseNative_period,houseNative_cpuCompletion};
-wire [191:0] packedTelemetryCommand={telemetryCommandView_recovery,telemetryCommandView_kind,
-  telemetryCommandView_elapsedUpper,
-  telemetryCommandView_offset,telemetryCommandView_data,telemetryCommandView_appIndex,
-  telemetryCommandView_captures_0_seen,telemetryCommandView_captures_0_count,telemetryCommandView_captures_0_hadValid,
-  telemetryCommandView_captures_0_valid,telemetryCommandView_captures_0_calibrated,
-  telemetryCommandView_captures_0_value,telemetryCommandView_captures_0_tailAge};
-wire [191:0] packedTelemetryNative={telemetryNative_recovery,telemetryNative_kind,
-  telemetryNative_elapsedUpper,
-  telemetryNative_offset,telemetryNative_data,telemetryNative_appIndex,
-  telemetryNative_captures_0_seen,telemetryNative_captures_0_count,telemetryNative_captures_0_hadValid,
-  telemetryNative_captures_0_valid,telemetryNative_captures_0_calibrated,
-  telemetryNative_captures_0_value,telemetryNative_captures_0_tailAge};
+wire [47:0] packedTelemetryCommand={telemetryCommandView_recovery,telemetryCommandView_kind,
+  telemetryCommandView_offset,telemetryCommandView_data,telemetryCommandView_appIndex};
+wire [47:0] packedTelemetryNative={telemetryNative_recovery,telemetryNative_kind,
+  telemetryNative_offset,telemetryNative_data,telemetryNative_appIndex};
 always @(posedge observedWorkClock) if(!reset) begin
   if(houseAccepted) begin
     heldHouse=packedHouseCommand;houseActive=1;houseLoans=houseLoans+1;
@@ -232,11 +232,12 @@ if(visibleMask!=4) $fatal(1,"HOUSEKEEPING_RESET_BORROW_RECOVERY");
   private val telemetryScenario="""
 manualTime=1;referenceEnabled=0;wait(idle);#1000;
 if(houseRecoveryLoans<1) $fatal(1,"HOUSEKEEPING_RECOVERY_ROLE_NOT_EXERCISED");
+acquire;savedSampleSequence=observedSampleSequence; // ADC owns its publication sequence.
 @(negedge serviceClock);pauseNative=1;pauseReturn=1;savedTelemetry=telemetryLoans;savedCaptures=telemetryCaptures;
 issue(32'h30000018,1);wait(telemetryLoans==savedTelemetry+1);#1000;
 if(telemetryNative_kind!=1 || telemetryNative_data!=1 || telemetrySenderIdle || telemetryCaptures!=savedCaptures)
   $fatal(1,"TELEMETRY_BORROW_STALLED_NATIVE");
-@(negedge serviceClock);injectSample=1;sampleValue=32'h12345678;@(posedge serviceClock);#1;injectSample=0;
+acquire;wait(observedSampleSequence==savedSampleSequence+1);
 savedRecoveries=houseRecoveryLoans;stopWorkClock=1;wait(!workRunning);#500;applicationReset=1;#17;applicationReset=0;#1000;
 if(telemetryNative_data!=1 || telemetrySenderIdle) $fatal(1,"RESET_DISCARDED_TELEMETRY_BORROW");
 pauseNative=0;wait(telemetryCaptures>savedCaptures);#1000;
@@ -244,10 +245,29 @@ if(response_valid || telemetrySenderIdle) $fatal(1,"TELEMETRY_STOPPED_CONSUMER_C
 stopWorkClock=0;wait(workRunning);#3000;
 if(gpioOut!=0 || response_valid || telemetrySenderIdle) $fatal(1,"TELEMETRY_RESET_RESTORED_COMMIT");
 pauseReturn=0;wait(idle);#1000;
-if(gpioOut!=0 || response_valid || observedSampleValue!=32'h12345678 || observedSampleSequence!=1)
+if(gpioOut!=0 || response_valid || observedSampleValue!=13592 || observedSampleSequence!=savedSampleSequence+1)
   $fatal(1,"TELEMETRY_BORROW_LOST_PERSISTENT_OBSERVATION");
 issue(32'h30000018,1);answer;wait(idle);
 if(gpioOut!=1) $fatal(1,"TELEMETRY_BORROW_RECOVERY_PROGRESS");
+"""
+  private val indexedCommitScenario="""
+manualTime=1;referenceEnabled=0;wait(idle);#1000;
+issue(32'h30000030,17);answer;wait(idle);
+@(negedge serviceClock);pauseNative=1;pauseReturn=1;savedTelemetry=telemetryLoans;savedCaptures=telemetryCaptures;
+issue(32'h30000034,32'h12345678);wait(telemetryLoans==savedTelemetry+1);#1000;
+if(telemetryNative_appIndex!=17 || telemetryNative_data!=32'h12345678) $fatal(1,"BORROW_APP_INDEX");
+
+// Host traffic may run while the CPU's architectural update is held.
+start_bus();write_byte(8'h6a);write_byte(7);write_word(20);stop_bus();#1000;
+applicationReset=1;#17;applicationReset=0;#1000;
+if(telemetryNative_appIndex!=17 || telemetryNative_data!=32'h12345678) $fatal(1,"RESET_CHANGED_BORROWED_APP_INDEX");
+pauseNative=0;wait(telemetryCaptures>savedCaptures);#1000;pauseReturn=0;wait(idle);
+if(response_valid) $fatal(1,"INDEXED_COMMIT_STALE_REPLY");
+read_words(128,0,17);if(snapshot[0+:32]!==0) $fatal(1,"INDEXED_RESET_REVOCATION");
+issue(32'h30000030,17);answer;issue(32'h30000034,32'h89abcdef);answer;wait(idle);
+@(negedge serviceClock);request_bits_operation=1;request_bits_address=32'h30000034;request_bits_mask=15;request_valid=1;
+@(posedge serviceClock);while(!request_ready) @(posedge serviceClock);#1;request_valid=0;
+wait(response_valid);if(response_bits_data!==32'h89abcdef) $fatal(1,"INDEXED_COMMIT_RECOVERY");answer;
 """
   for(click <- Seq(false,true)) {
     val name=if(click) "click" else "bd"
@@ -262,6 +282,10 @@ if(gpioOut!=1) $fatal(1,"TELEMETRY_BORROW_RECOVERY_PROGRESS");
     }
     test(s"$name telemetry borrowed commit survives a stopped work clock and application reset") {
       ClockedSimulation.run(fixture(),name+"-telemetry-borrow",telemetryScenario,monitor,
+        referenceHalfPeriodNs=10000000,deadlineNs=2000000)
+    }
+    test(s"$name borrowed sparse application index survives host traffic and application cancellation") {
+      ClockedSimulation.run(fixture(),name+"-indexed-telemetry-borrow",indexedCommitScenario,monitor,
         referenceHalfPeriodNs=10000000,deadlineNs=2000000)
     }
     for((fault,scenario,diagnostic) <- Seq(

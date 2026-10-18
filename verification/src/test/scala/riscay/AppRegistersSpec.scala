@@ -26,8 +26,7 @@ class AppRegisterIntegrationFixture(p: SocParameters) extends FabricFixture(p) {
   val recoveryBlocked=IO(Output(Bool()));recoveryBlocked:=fabric.io.telemetrySource.recoveryDebt || fabric.io.telemetrySource.returnFence
   val observedPending=IO(Output(UInt(6.W)));observedPending:=BoringUtils.bore(fabric.pendingView)
   val replyDraining=IO(Output(Bool()));replyDraining:=fabric.io.telemetryDraining
-  val observeReplyWaiting=IO(Output(Bool()));observeReplyWaiting:=telemetryReplyBridge.out.valid &&
-    telemetryReplyBridge.out.bits.kind === TelemetryKind.Observe.U
+  val observeReplyWaiting=IO(Output(Bool()));observeReplyWaiting:=telemetryReplyBridge.out.valid
 }
 
 class ClickAppRegisterIntegrationFixture(p: SocParameters) extends ClickFabricFixture(p) {
@@ -45,8 +44,7 @@ class ClickAppRegisterIntegrationFixture(p: SocParameters) extends ClickFabricFi
   val recoveryBlocked=IO(Output(Bool()));recoveryBlocked:=fabric.io.telemetrySource.recoveryDebt || fabric.io.telemetrySource.returnFence
   val observedPending=IO(Output(UInt(6.W)));observedPending:=BoringUtils.bore(fabric.pendingView)
   val replyDraining=IO(Output(Bool()));replyDraining:=fabric.io.telemetryDraining
-  val observeReplyWaiting=IO(Output(Bool()));observeReplyWaiting:=telemetryReplyBridge.out.valid &&
-    telemetryReplyBridge.out.bits.kind === TelemetryKind.Observe.U
+  val observeReplyWaiting=IO(Output(Bool()));observeReplyWaiting:=telemetryReplyBridge.out.valid
 }
 
 class AppRegistersSpec extends AnyFunSuite {

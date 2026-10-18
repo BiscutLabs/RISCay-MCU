@@ -62,7 +62,7 @@ class AsyncSpiAdcSpec extends AnyFunSuite {
       s"""
         wait(reply_req == $q);
         repeat(10) begin #97000000;
-          if(reply_bits_value !== 32'h${value.toString(16)} || reply_bits_publish !== ${if(publish) 1 else 0} ||
+          if(reply_bits_sample_value !== 32'h${value.toString(16)} || reply_bits_publish !== ${if(publish) 1 else 0} ||
              reply_bits_nextPrimed !== ${if(primed) 1 else 0}) $$fatal(1,"SPI_NATIVE_RESULT_$n");
           if(delivered_wave != base+${n+1}) $$fatal(1,"SPI_NATIVE_OVERTAKE_$n");
         end

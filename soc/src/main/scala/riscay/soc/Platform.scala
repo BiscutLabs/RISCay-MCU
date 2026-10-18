@@ -41,6 +41,7 @@ final case class SocParameters(config: McuConfiguration, serviceHz: Int = 100000
     "24-bit SPI image including header must fit the address space")
   require(!spiBoot || adc.isEmpty || lowPower.nonEmpty,
     "shared boot SPI requires explicitly scheduled ADC acquisition")
+  def softwareSampleChannels: Vector[Int] = config.measurements.indices.filterNot(i => i == 0 && adc.nonEmpty).toVector
   def bootWords: Vector[Long] = if(spiBoot) GenericBootRom.words else MemoryMap.boot
   // SPI alternate-function pins remain readable for ROM bit-banging but never
   // become GPIO event sources. ADC completion has its own event.

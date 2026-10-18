@@ -9,8 +9,10 @@ provide MMIO with the work clock stopped.
 ## Ownership and ABI
 
 The bank contains only the configured application words and `gpioCount` output/OE
-bits. Feedback carries sample state and a unit credit, not another architectural
-bank. The transform explicitly declares the bank as an input. Public native
+bits. Feedback carries a unit credit, not another architectural bank. ADC and
+CPU-published samples have separate single-writer banks described in
+[single-writer-telemetry.md](single-writer-telemetry.md). The transform explicitly
+declares its retained bank as an input. Public native
 storage and passive data allowances implement it; neither owner contains a
 periodic clock, ordinary register or synchronizer.
 
@@ -46,7 +48,9 @@ ACK before reopening readers. There is no four-phase adapter or level-based RTZ
 loop in this path. This is functional parity with BD, not a Click physical campaign.
 
 **Host.** `readStart` is the actual snapshot receipt acceptance edge. For the
-application bank it requires bank completion; other spaces read clocked state.
+application bank it requires bank completion. Measurement spaces use their
+separately qualified [native sample banks](single-writer-telemetry.md); the
+remaining status spaces read their clocked state.
 Application cancellation/recovery selects constant zero and does not block host
 reads. A snapshot coincident with receipt acceptance captures the complete old
 bank. Reads offered during the subsequent capture/settling interval wait until

@@ -179,6 +179,7 @@ class ElapsedTicks(micros: Seq[Int], domain: ResetDomain,
     // Arithmetic for a once-single tick is retained even if newer ticks queued.
     io.single := io.valid && replyBridge.out.bits.single && replyBridge.out.bits.state.consumed === io.target
     io.elapsed := Mux(io.valid, replyBridge.out.bits.elapsed, 0.U.asTypeOf(io.elapsed))
+    io.publicationElapsed := replyBridge.out.bits.elapsed
     io.busy := active || !returned || !commandBridge.in.ready || io.target =/= consumed
   }
   dontTouch(replyBridge.out)

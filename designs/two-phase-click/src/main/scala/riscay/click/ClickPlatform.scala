@@ -258,10 +258,11 @@ abstract class ClickPlatform(p: SocParameters, board: SocParameters => BoardProf
   housekeeping.start:=controlStart
   fabric.io.housekeepingDraining:= !housekeepingCommandBridge.in.ready
   val telemetry = asyncChild("telemetry")(d => new ClickTelemetry(p, fabric.telemetryWords, d,qualifyCommit=true))
+  fabric.sampleView:=telemetry.sampleView
   val telemetryCommandBridge = asyncChild("telemetry_command_bridge")(d =>
-    new DecoupledToClick(new TelemetryCommandHeader(p.config.measurements.size), d))
+    new DecoupledToClick(new TelemetryCommandHeader(p.softwareSampleChannels.size), d))
   val telemetryReplyBridge = asyncChild("telemetry_reply_bridge")(d =>
-    new ClickTelemetryReceipt(new TelemetryReply(p.config.measurements.size, fabric.telemetryWords.size), d))
+    new ClickTelemetryReceipt(new TelemetryReply(p.softwareSampleChannels.size, fabric.telemetryWords.size), d))
   fabric.telemetryView:=telemetry.view
   telemetry.applyBank.get:=telemetryReplyBridge.bankApply
   telemetryReplyBridge.applyBank:=fabric.telemetryApplyBank
@@ -275,6 +276,8 @@ abstract class ClickPlatform(p: SocParameters, board: SocParameters => BoardProf
     telemetry.command.bits.elements(name):=Mux(telemetryCommandBridge.out.bits.kind === TelemetryKind.Commit.U,
       field,0.U.asTypeOf(field))
   }
+  telemetry.command.bits.sample.foreach(_ := Mux(telemetryCommandBridge.out.bits.kind === TelemetryKind.Commit.U,
+    fabric.softwareCommit,0.U.asTypeOf(fabric.softwareCommit)))
   chiselasync.protocol.TwoPhase.connect(telemetryReplyBridge.in, telemetry.reply)
   telemetryCommandBridge.clock := workClock; telemetryReplyBridge.clock := workClock
   telemetryCommandBridge.in.valid:=fabric.telemetryCommand.valid
@@ -445,15 +448,16 @@ abstract class ClickPlatform(p: SocParameters, board: SocParameters => BoardProf
       fabric.io.elapsedScaling.publicationTarget := 0.U; fabric.io.elapsedScaling.consumed := 0.U; fabric.io.elapsedScaling.valid := false.B
       fabric.io.elapsedScaling.single := false.B; fabric.io.elapsedScaling.busy := false.B
       fabric.io.elapsedScaling.elapsed := 0.U.asTypeOf(fabric.io.elapsedScaling.elapsed)
+      fabric.io.elapsedScaling.publicationElapsed := 0.U.asTypeOf(fabric.io.elapsedScaling.publicationElapsed)
   }
-  p.adc match {
-    case Some(a) =>
-      val adc=asyncChild("spi_adc")(d => new SpiAdc(a,p.lowPower.isEmpty,d))
+  val spiAdc=p.adc.map(a => asyncChild("spi_adc")(d => new SpiAdc(a,p.lowPower.isEmpty,d)))
+  spiAdc match {
+    case Some(adc) =>
       adc.clock:=workClock; adc.io <> fabric.io.adc; adc.miso:=adcMiso
       adcCsN:=adc.csN
       adcSclk := (if(p.spiBoot) Mux(fabric.io.spiClaimed, fabric.io.gpioOut(3) && fabric.io.gpioOe(3), adc.sclk) else adc.sclk)
     case None =>
-      fabric.io.adc.busy:=false.B; fabric.io.adc.done:=false.B; fabric.io.adc.age:=0.U
+      fabric.io.adc.busy:=false.B; fabric.io.adc.done:=false.B; fabric.io.adc.sample:=0.U.asTypeOf(fabric.io.adc.sample);fabric.io.adc.sampleReady:=true.B
       fabric.io.adc.result:=0.U.asTypeOf(fabric.io.adc.result)
       adcCsN:=true.B; adcSclk := (if(p.spiBoot) fabric.io.gpioOut(3) && fabric.io.gpioOe(3) else false.B)
   }

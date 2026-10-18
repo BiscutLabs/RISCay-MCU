@@ -21,7 +21,8 @@
 - No periodic clock may be added to work around native timing. Keep clocks only
   at documented boundaries: independent LF time/watchdog, physical wire sampling,
   bounded serial pin timing, reset qualification and the event arrival/clear
-  arbitration edge. Event pending, cutoff masking and WAIT remain together in
+  arbitration edge, plus documented command/recovery receiving-edge arbitration.
+  Event pending, cutoff masking and WAIT remain together in
   Services; no native counters or MUTEX replace that ordering. Experimental self-timed SRAM
   remains isolated until macro pulse/aperture and ownership checks pass.
 - Preserve the ABI, programming lock, SRAM retention, watchdog/reset isolation,
@@ -96,6 +97,8 @@
 - Record mapped/repaired logic, guard/allowance/DLYD area by purpose, clock sinks
   and wake activity in `docs/area-ledger.md`. Compare the immediate parent and
   original baseline. Keep pre-existing P&R work and historical failure evidence.
+- Finish A/B external boot slots, external golden recovery, factory provisioning
+  and full-capacity boot timing before further area tuning.
 - Apply the architecture-first order in `docs/architecture-followups.md` before
   the next BD request-guard campaign. Reserve routed hold-repair area separately;
   insert hold cells only on failing composed min-RC paths and rerun setup/order.

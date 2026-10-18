@@ -546,6 +546,9 @@
       "bank3_ack_nb": "matched-control-delay",
       "bank3_ack_or": "matched-control-delay",
       "bank3_ack": "matched-control-delay"
+    },
+    "FourPhaseSpiAdc": {
+      "output_guard": "matched-control-delay"
     }
   },
   "schema": "riscay-controlgate-roles-v1",

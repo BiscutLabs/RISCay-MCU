@@ -5,47 +5,50 @@ import chisel3._
 import chisel3.experimental.BundleLiterals._
 import chisel3.experimental.VecLiterals._
 
+/** POR-owned last-good sample. Time is conservative upper milliseconds, not
+  * nominal MMIO time. Read conversion saturates; failed attempts retain stamp.
+  */
+class SampleRecord extends Bundle {
+  val value=UInt(32.W); val timestamp=UInt(64.W); val sequence=UInt(32.W)
+  val valid=Bool(); val calibrated=Bool(); val seen=Bool(); val fault=Bool()
+}
+object SampleRecord {
+  def initial: SampleRecord = (new SampleRecord).Lit(_.value -> 0.U, _.timestamp -> 0.U,
+    _.sequence -> 0.U, _.valid -> false.B, _.calibrated -> false.B, _.seen -> false.B, _.fault -> false.B)
+}
+class SoftwareSampleCommit extends Bundle {
+  val index=UInt(4.W); val value=UInt(32.W); val timestamp=UInt(64.W)
+}
+
 /** Wire formats only. Native state transitions belong to each design. */
 class TelemetryState(channels: Int, words: Int) extends Bundle {
   val output = UInt(32.W); val enable = UInt(32.W)
   val application = if(words > 0) Some(Vec(words, UInt(32.W))) else None
-  val samples = if(channels > 0) Some(Vec(channels, new Sample)) else None
+  val samples = if(channels > 0) Some(Vec(channels, new SampleRecord)) else None
 }
 object TelemetryState {
   def initial(p: SocParameters, words: Int): TelemetryState = {
-    val sample = (new Sample).Lit(_.value -> 0.U, _.valid -> false.B, _.calibrated -> false.B,
-      _.age -> 0.U, _.sequence -> 0.U, _.never -> true.B, _.fault -> false.B)
+    val sample = SampleRecord.initial
     val fields: Seq[TelemetryState => (Data, Data)] = Seq(
       _.output -> 0.U(32.W),
       _.enable -> 0.U(32.W))
     val application: Seq[TelemetryState => (Data, Data)] = if(words == 0) Seq.empty else
       Seq(_.application.get -> Vec.Lit((0 until words).map(_ => 0.U(32.W)): _*))
-    val samples: Seq[TelemetryState => (Data, Data)] = if(p.config.measurements.isEmpty) Seq.empty else
-      Seq(_.samples.get -> Vec.Lit(p.config.measurements.indices.map(_ => sample): _*))
-    (new TelemetryState(p.config.measurements.size, words)).Lit((fields ++ application ++ samples): _*)
+    val samples: Seq[TelemetryState => (Data, Data)] = if(p.softwareSampleChannels.isEmpty) Seq.empty else
+      Seq(_.samples.get -> Vec.Lit(p.softwareSampleChannels.map(_ => sample): _*))
+    (new TelemetryState(p.softwareSampleChannels.size, words)).Lit((fields ++ application ++ samples): _*)
   }
 }
-/** Lossless compaction of publications while a native command is backpressured.
-  * Count wraps exactly like the ABI sequence. Last successful value and its age
-  * are independent of the latest attempt's status.
-  */
-class TelemetryCapture extends Bundle {
-  val seen = Bool(); val count = UInt(32.W); val hadValid = Bool()
-  val valid = Bool(); val calibrated = Bool(); val value = UInt(32.W); val tailAge = UInt(32.W)
-}
-object TelemetryKind { val Observe = 0; val Commit = 1; val ResetApplication = 2 }
+object TelemetryKind { val Commit = 1; val ResetApplication = 2 }
 class TelemetryCommand(channels: Int) extends Bundle {
   val recovery = Bool()
   val kind = UInt(2.W)
-  val elapsedUpper = UInt(32.W)
   val offset = UInt(7.W); val data = UInt(32.W); val appIndex = UInt(6.W)
-  val captures = if(channels > 0) Some(Vec(channels, new TelemetryCapture)) else None
+  val sample = if(channels > 0) Some(new SoftwareSampleCommit) else None
 }
 /** Periodic sender fields; immutable commit operands remain in Services until return. */
 class TelemetryCommandHeader(channels: Int) extends Bundle {
   val recovery = Bool(); val kind = UInt(2.W)
-  val elapsedUpper = UInt(32.W)
-  val captures = if(channels > 0) Some(Vec(channels, new TelemetryCapture)) else None
 }
 class TelemetryCommitFields extends Bundle {
   val offset = UInt(7.W); val data = UInt(32.W); val appIndex = UInt(6.W)
