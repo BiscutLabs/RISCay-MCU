@@ -6,9 +6,11 @@ The remaining proposals are open work. Completed build/characterization work
 is in the [migration log](history/migration-log.md#source-build-and-mismatch-screen-follow-up).
 
 RISCay is a generic MCU. Neither RTL nor ROM contains application policy. BD is
-the tape-out target; native Click remains a frozen functional reference with
-regressions and shared correctness/ABI fixes. New ownership and physical work
-focuses on BD. Document internal divergence and any approved ABI transition.
+the tape-out target. Architecture conversions keep BD and Click functionally equal
+unless the user explicitly requests otherwise. Each variant gets its own native
+implementation and functional regressions. Click physical timing and sizing work
+remains frozen; area and sink accounting still accompany functional changes.
+Document temporary internal divergence and any approved ABI transition.
 
 ## Work order
 
@@ -73,14 +75,19 @@ This is a proposed logical boundary, not implemented power gating. Separate rail
 would additionally require isolation, retention cells, supply sequencing and an
 external-memory/pad strategy before RTL work starts.
 
-### BD divergence: retained Telemetry register view
+### Existing divergence: retained Telemetry register view
 
 BD removes Services' application/GPIO/pending payload mirrors and reads a closed
 bank inside the existing native Telemetry owner. One authorization bit remains at
 the existing reply receipt, with one application-view validity bit in Services.
 CPU write scheduling and the MMIO crossing are unchanged.
-Click retains its previous internal state/projections and ABI regressions. This
-is a bounded item-A slice, not a new owner or completion of the island split.
+Click currently retains its previous internal state/projections. The next native
+event conversion must first supply native app/GPIO MMIO routing in both variants;
+neither Fabric currently provides that endpoint. Keep Telemetry as the existing
+owner, separating its CPU-written bank from sample observations instead of adding
+an independent writer. This is a bounded item-A slice, not completion of the
+island split. The [native event contract](native-events.md) tracks the source
+inventory, exact clear semantics and protocol work that must precede adoption.
 See [the register-view contract](native-app-registers.md) for snapshot atomicity,
 reset isolation and the boundary timing obligations.
 
@@ -111,7 +118,8 @@ stale-history redesign and the R6 private frame-route AND replacement with publi
 primitives. Remove obsolete banks, copies and receipts with the protocol. Test
 wire-level repeated START, partial/oversized writes, pointer limits, lock, busy,
 reset, coherent snapshots and the chosen host transition in both implementations.
-Shared ABI fixes apply to Click without reopening its architecture optimization.
+Implement the replacement natively in both variants; Click physical optimization
+remains frozen.
 
 ## External boot resilience and provisioning
 
@@ -164,7 +172,7 @@ removed supervisor-policy configurations.
 | Time and sleep | LF with service stopping on/off, plus legacy service-derived time without retained-sleep support |
 | Capacity and schema | Supported minimum/non-power-of-two/reference capacities; generic GPIO/channel counts and sparse application words |
 | Reset | GPIO retention on/off, SPI release, POR, repeated watchdogs and reset during committed work |
-| Implementation | Full BD inventory; frozen native Click reference and common correctness/ABI regressions |
+| Implementation | Full BD and Click ownership/sink inventories and functional regressions; BD physical qualification only |
 
 SPI boot requires at least seven logical GPIOs and 256 bytes of working RAM.
 SPI boot plus ADC requires explicitly scheduled acquisition; the autonomous ADC

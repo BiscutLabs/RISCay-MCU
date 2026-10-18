@@ -88,6 +88,7 @@ class PhysicalEstimateSpec extends AnyFunSuite {
       val monitor=s"""
         integer phase=0, fastEdges=0, workEdges=0, retired=0, conversions=0;
         integer idleWakes=0, adcWakes=0, firmwareWakes=0, measured=0;
+        integer telemetryTransactions=0;
         real wakeAt; reg seen=0; reg [15:0] adcShift;
         always @(negedge adcCsN) begin
           adcShift={4'b0,12'd2200}; adcMiso=adcShift[15]; conversions=conversions+1;
@@ -96,6 +97,11 @@ class PhysicalEstimateSpec extends AnyFunSuite {
         always @(posedge serviceClock) fastEdges=fastEdges+1;
         // This POR-owned bridge uses the gated work clock in both variants.
         always @(posedge dut.soc.ca_child_control_command_bridge.clock) workEdges=workEdges+1;
+        // Count accepted owner commands, not phase edges or offered retries.
+        always @(posedge dut.soc.ca_child_telemetry_command_bridge.clock)
+          if(dut.soc.ca_child_telemetry_command_bridge.in_valid &&
+             dut.soc.ca_child_telemetry_command_bridge.in_ready)
+            telemetryTransactions=telemetryTransactions+1;
         initial forever begin
           ${if(click) "wait(traceEvent != seen); seen=traceEvent;" else "wait(traceEvent);"}
           if(trace_valid && trace_pc>=32'h10000000) begin
@@ -105,13 +111,14 @@ class PhysicalEstimateSpec extends AnyFunSuite {
           ${if(click) "#0.001;" else "wait(!traceEvent);"}
         end
         always @(posedge serviceClockEnable) begin
-          fastEdges=0; workEdges=0; retired=0; conversions=0; wakeAt=$$realtime; measured=phase;
+          fastEdges=0; workEdges=0; retired=0; conversions=0; telemetryTransactions=0; wakeAt=$$realtime; measured=phase;
         end
         always @(negedge serviceClockEnable) if(measured>0) begin
           if(fastEdges<10 || workEdges<5 || fastEdges>10000) $$fatal(1,"INVALID_WAKE_ACTIVITY");
           if(retired>0) firmwareWakes=firmwareWakes+1;
           else if(conversions>0) adcWakes=adcWakes+1; else idleWakes=idleWakes+1;
           $$display("WAKE,%0d,%0d,%0d,%0d,%0d,%0.3f",measured,fastEdges,workEdges,retired,conversions,$$realtime-wakeAt);
+          $$display("TELEMETRY_ACTIVITY,%0d,%0d,%0d,%0d",measured,retired,conversions,telemetryTransactions);
         end
       """
       val dir=ClockedSimulation.run(top(),s"$name-physical-estimate",body,monitor+ackMonitor,

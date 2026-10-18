@@ -1,8 +1,9 @@
 # Asynchronous SoC migration: open work
 
 RISCay is a **generic MCU**: ROM contains the bootloader; application policy lives
-in external firmware. **BD is the tape-out target. Click is frozen as a native
-functional reference**, retaining regressions and shared correctness/ABI fixes.
+in external firmware. **BD is the tape-out target. Architecture conversions cover
+both native implementations** unless explicitly scoped otherwise. Click physical
+timing and sizing campaigns remain frozen.
 Completed work and old contracts are in the [migration log](history/migration-log.md).
 The [architecture plan](architecture-followups.md) supplies boundary details.
 
@@ -17,6 +18,8 @@ The [architecture plan](architecture-followups.md) supplies boundary details.
   clock sinks and wake activity/duration against the parent for each batch.
   First slice: [BD Telemetry register view](native-app-registers.md) removes the
   application/GPIO/pending mirrors; command scheduling still crosses the work clock.
+  Next: [native events and WAIT in both variants](native-events.md), including the
+  native app/GPIO routing prerequisite. Baseline/oracle only; protocol not adopted.
 - [ ] **B. Register-pointer host interface.** Replace the framed loader; do not
   build a permanent second transport. Decide the versioned wire ABI and host
   transition before RTL. Absorbs 11a2/11a2b, 13c, R5 epoch work and the R6 public
@@ -42,8 +45,8 @@ The [architecture plan](architecture-followups.md) supplies boundary details.
 - [ ] **16. One residual-state audit after the split and ABI integration.** Cover
   generic SPI boot and I²C fallback, ADC on/off, retained sleep on/off, supported
   time sources/capacities and both GPIO-retention settings. Reconcile native/event/
-  periodic storage, generated wrappers and clock sinks; compare the frozen Click
-  reference without restarting its optimization. [Configuration details](architecture-followups.md#residual-audit-configuration-matrix).
+  periodic storage, generated wrappers and clock sinks in both variants without
+  restarting Click physical optimization. [Configuration details](architecture-followups.md#residual-audit-configuration-matrix).
 
 ## Remains clocked and why (15)
 

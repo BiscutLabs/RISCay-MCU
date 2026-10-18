@@ -15,7 +15,8 @@ pilot savings. Mapped/repaired numbers exclude the P&R additions tabulated below
 Generic boot introduces new ROM/decode timing
 obligations; the parent's local timing passes do not qualify those paths.
 
-BD is now the tape-out target; Click is a frozen functional reference. Allocate
+BD is the tape-out target; Click physical timing/sizing work is frozen, while
+architecture conversions now cover both native implementations. Allocate
 **0.05 mm² of additional standard-cell area for routed hold repair** in the BD
 planning budget (about 2.4% of current mapped logic). This is an allowance, not
 inserted area or a predicted requirement, and is separate from electrical/CTS
@@ -68,6 +69,48 @@ receipts. The earlier PR10 maps fail current receipt validation with
 `REPAIR_INPUT_CHANGED`; those failures are retained under `build/area-ledger/`.
 
 ## Counting rules and evidence
+
+### Native events baseline
+
+This is **step 0 only**, before any native event or routing change. Source is
+`49ca683`. Reuse the accepted BD `build/native-app-registers/map-bd-r2` and
+unchanged Click `build/generic-mcu-r10/map-click` maps; these are not new maps or
+timing qualifications. New per-owner connectivity inventories are in
+`build/native-events/baseline/{bd,click}-clock-owners.json`.
+
+| Metric | BD | Click |
+| --- | ---: | ---: |
+| Mapped logic, mm² | 2.058088 | 2.894444 |
+| Repaired logic, mm² | 2.242768 | 3.099576 |
+| Periodic sinks, total | 3,915 | 4,179 |
+| Whole-chip service / work / LF | 1,203 / 2,634 / 78 | 1,207 / 2,894 / 78 |
+| Services service / work / LF | 14 / 1,481 / 0 | 14 / 1,692 / 0 |
+| Services periodic total | 1,495 | 1,706 |
+
+Work counts include the three macro clock pins in each variant. The independent
+SDA event sink is excluded from periodic totals. No after-area or savings claim
+exists yet.
+
+`PhysicalEstimateSpec` now counts accepted Telemetry commands at the existing
+command crossing. Fresh baseline runs pass on both variants with the same 12 MHz
+native-model fixture and 43-instruction firmware workload. The new counter is
+testbench-only; no RTL instrumentation or new clock sink is added. This retained
+activity fixture loads firmware through I2C (`spiBoot=false`); the production
+area maps above use external SPI boot. It is a matched wake workload, not a flash
+boot-time measurement.
+
+| Wake kind | Windows per variant | Telemetry commands, BD / Click | Work edges, BD / Click | Duration ns, BD / Click |
+| --- | ---: | ---: | ---: | ---: |
+| Maintenance | 22 | 1 / 1 | 24 / 19 | 3,147.358 / 3,064.024 |
+| ADC sample | 3 | 2 / 2 | 217 / 214 | 18,439.147 / 18,189.145 |
+| Firmware | 2 | 4 / 4 | 3,258 / 3,212 | 271,857.841 / 268,024.477 |
+
+Raw activity logs, export pointers and `activity-summary.json` are retained under
+`build/native-events/baseline/`. Counts include all Telemetry command kinds;
+elapsed/sample maintenance will still need transactions after event-only work is
+removed. These are digital-model wake windows, not silicon energy measurements.
+The [event contract](native-events.md) records why the suggested saturated-counter
+protocol has not been adopted and separates oracle checks from RTL verification.
 
 ### BD Telemetry register-view slice
 

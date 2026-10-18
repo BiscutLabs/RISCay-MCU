@@ -13,9 +13,11 @@
   directories. Share schemas, ISA, fixed macro models and verification utilities.
   Keep native Click signaling; do not insert hidden four-phase conversions.
 - BD is the selected tape-out implementation, subject to physical qualification.
-  Freeze Click as a functional reference: retain its native implementation and
-  regressions, apply shared correctness/ABI fixes, but stop Click area/timing tuning
-  and new architecture work unless explicitly requested. Document any divergence.
+  Architecture conversions keep BD and Click functionally equal unless the user
+  explicitly requests an exception. Implement each conversion natively and
+  independently in both variants; document temporary internal divergence.
+  Click receives functional verification and area/sink accounting, but no new
+  physical timing or guard-sizing campaign unless explicitly requested.
 - No periodic clock may be added to work around native timing. Keep clocks only
   at documented boundaries: independent LF time/watchdog, physical wire sampling,
   bounded serial pin timing and reset qualification. Experimental self-timed SRAM
