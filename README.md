@@ -59,12 +59,20 @@ physical timing checks.
 
 ## Physical status
 
-**Physical timing is unqualified.** The [area ledger](docs/area-ledger.md) records
-current mapped and electrically repaired areas, guard costs, clock sinks and wake
-activity. Those are not new P&R results or measured deep-sleep power. The
-[original routed experiment](docs/gf180-first-pnr.md) used older RTL and does not
-qualify the current design. Full extracted min/max-RC, mismatch, reset distribution,
-macro timing and analog/pad qualification remain open.
+![BD routed digital layout on a 3.93 × 2.53 mm die](docs/images/bd-layout-3930x2530.png)
+
+The current **BD digital top is placed and routed on a 3.93 × 2.53 mm outline**
+(9.9429 mm²), with zero detailed-router DRC violations. Cell footprints total
+**3.629 mm²**, including **2.896 mm² logic**, **0.466 mm² SRAM** and
+**0.267 mm² taps/endcaps**. The image comes directly from the routed OpenROAD
+database; the three SRAM macros are across the top. Pads and analog blocks are
+not included. See the [run and reproduction notes](docs/gf180-bd-rectangular-pnr.md).
+
+**Physical timing is unqualified.** Nominal/minimum/maximum wire RC extraction is
+complete, but electrical violations and full async timing, mismatch, reset,
+macro and analog/pad qualification remain open. The [area ledger](docs/area-ledger.md)
+separates mapped, repaired and routed costs; these are not measured deep-sleep
+power. The [original routed experiment](docs/gf180-first-pnr.md) remains historical.
 
 The [migration checklist](docs/async-soc-migration.md) and
 [native area plan](docs/native-area-reduction.md) track the remaining work. Historical

@@ -10,6 +10,20 @@ import report_gf180_pnr as report
 import check_gf180_routed as probe
 from gf180_pnr import bind_flat_interfaces, SC
 
+
+class FloorplanGeometry(unittest.TestCase):
+    def test_rectangle_keeps_macros_inside_core_and_square_default_unchanged(self):
+        for width,height in ((3930,2530),(2530,3930),(1440,1440)):
+            g=pnr.geometry(width,height=height)
+            self.assertEqual(g['die_um'],[0,0,width,height])
+            self.assertEqual(g['core_um'],[30,30,width-30,height-30])
+            for _,x,y in g['macro_locations']:
+                self.assertGreaterEqual(x,30);self.assertGreaterEqual(y,30)
+                self.assertLess(x+301.3,width-30);self.assertLess(y+516,height-30)
+        self.assertEqual(pnr.geometry(1440),pnr.geometry(1440,height=1440))
+        for width,height in ((0,2530),(3930,0),(float('nan'),2530),(3930,float('inf'))):
+            with self.assertRaisesRegex(ValueError,'INVALID_COMMON_OUTLINE'):pnr.geometry(width,height=height)
+
 def design():
     return {
         "RiscayMcuDigital":{"ports":{},"cells":{

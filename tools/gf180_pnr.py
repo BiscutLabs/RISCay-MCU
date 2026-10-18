@@ -37,14 +37,15 @@ RC_CORNERS = ("nom", "min", "max")
 DEFAULT_PLACEMENT_DENSITY = 0.60
 
 
-def geometry(side, density=DEFAULT_PLACEMENT_DENSITY):
-    if not math.isfinite(side) or side < 1440:
+def geometry(side, density=DEFAULT_PLACEMENT_DENSITY, height=None):
+    height = side if height is None else height
+    if any(not math.isfinite(value) or value < 1440 for value in (side, height)):
         raise ValueError("INVALID_COMMON_OUTLINE")
     if not math.isfinite(density) or not 0 < density < 1:
         raise ValueError("INVALID_PLACEMENT_DENSITY")
-    return dict(die_um=[0,0,side,side], core_um=[30,30,side-30,side-30],
+    return dict(die_um=[0,0,side,height], core_um=[30,30,side-30,height-30],
         placement_density=density,
-        macro_locations=[["soc/fabric_"+name, x, side-576]
+        macro_locations=[["soc/fabric_"+name, x, height-576]
             for name,x in zip(("program_macros_0","program_macros_1","ram_macros_0"),
                              (100, (side-301.3)/2, side-400))])
 
@@ -202,7 +203,7 @@ def assets():
                                 source_files=ASSETS,files=observed))
     return dest
 
-def configuration(mapping,out,routing,threads,side=1440,density=DEFAULT_PLACEMENT_DENSITY):
+def configuration(mapping,out,routing,threads,side=1440,density=DEFAULT_PLACEMENT_DENSITY,height=None):
     from repair_gf180_design import validate_receipt
     validate_receipt(mapping)
     accepted=json.loads((mapping/'netlist-audit.json').read_text())
@@ -213,7 +214,7 @@ def configuration(mapping,out,routing,threads,side=1440,density=DEFAULT_PLACEMEN
                           sram=ROOT/".tools/gf180-sram",source=ROOT/"physical/gf180").items():
         lines.append(f'set {name} {brace(linux(path))}')
     lines.extend([f'set threads {threads}',f'set sc {SC}',f'set sram_cell {SRAM}'])
-    g=geometry(side,density)
+    g=geometry(side,density,height)
     lines += ['set die_area {'+' '.join(map(str,g['die_um']))+'}',
               'set core_area {'+' '.join(map(str,g['core_um']))+'}',
               'set placement_density '+str(g['placement_density']),
@@ -308,12 +309,12 @@ def bind_flat_interfaces(modules,sdc):
         return '[concat '+" ".join('[rp '+brace(p)+']' for p in sorted(set(selected)))+']'
     return re.sub(r'\[rbus \{([^}]+)\} (\d+)\]',bind,sdc)
 
-def run(mapping,out,from_stage,to_stage,threads,side=1440,openroad=None,density=DEFAULT_PLACEMENT_DENSITY):
+def run(mapping,out,from_stage,to_stage,threads,side=1440,openroad=None,density=DEFAULT_PLACEMENT_DENSITY,height=None):
     mapping=mapping.resolve(); out=out.resolve()
     from repair_gf180_design import validate_receipt
     validate_receipt(mapping)
     begin,end=STAGES.index(from_stage),STAGES.index(to_stage)
-    g=geometry(side,density)
+    g=geometry(side,density,height)
     if begin>end: raise ValueError("STAGE_ORDER")
     files=[ROOT/"physical/gf180"/n for n in FLOW_INPUTS]
     hashes={file.name:sha(file) for file in files}
@@ -332,7 +333,7 @@ def run(mapping,out,from_stage,to_stage,threads,side=1440,openroad=None,density=
     routing=assets()
     snapshot,hashes=snapshot_flow(out,files)
     if not begin:
-        configuration(mapping,out,routing,threads,side,density)
+        configuration(mapping,out,routing,threads,side,density,height)
         with (out/"config.tcl").open("a") as config: config.write('set source '+brace(linux(snapshot))+'\n')
         meta=dict(status="running-unqualified",source_commit=subprocess.check_output(
         ["git","rev-parse","HEAD"],cwd=ROOT,text=True).strip(),mapping_sha256=sha(mapping/"mapping.json"),
@@ -431,8 +432,14 @@ if __name__=="__main__":
     p.add_argument("--from-stage",choices=STAGES,default="floorplan")
     p.add_argument("--to-stage",choices=STAGES,default="extract")
     p.add_argument("--threads",type=int,default=8)
-    p.add_argument("--die-side-um",type=float,default=1440)
+    p.add_argument("--die-side-um",type=float,help="Square outline (default: 1440 um); excludes width/height")
+    p.add_argument("--die-width-um",type=float,help="Rectangular outline width; requires height")
+    p.add_argument("--die-height-um",type=float,help="Rectangular outline height; requires width")
     p.add_argument("--placement-density",type=float,default=DEFAULT_PLACEMENT_DENSITY,
                    help="Placement target (default: 0.60); comparison variants must retain the same die outline")
     p.add_argument("--openroad",help="P&R-only executable override; mapper runtime and evidence stay unchanged")
-    a=p.parse_args(); run(a.mapping,a.output,a.from_stage,a.to_stage,a.threads,a.die_side_um,a.openroad,a.placement_density)
+    a=p.parse_args()
+    if (a.die_width_um is None) != (a.die_height_um is None):p.error("Specify both die width and height")
+    if a.die_side_um is not None and a.die_width_um is not None:p.error("Use either side or width/height")
+    width=a.die_width_um if a.die_width_um is not None else (1440 if a.die_side_um is None else a.die_side_um)
+    run(a.mapping,a.output,a.from_stage,a.to_stage,a.threads,width,a.openroad,a.placement_density,a.die_height_um)

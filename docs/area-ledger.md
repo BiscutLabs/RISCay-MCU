@@ -9,7 +9,8 @@ The **BD mapped-logic milestone below 2.3 mm² excluding SRAM is achieved**.
 The latest generic-MCU batch maps to **2.100657 / 2.894444 mm²** and repairs to
 **2.283901 / 3.099576 mm²**. Its immediate parent, the passive/guard/fusion batch,
 maps to 2.229395 / 3.048424 mm². These are fresh whole-chip results, not summed
-pilot savings or a new P&R result. Generic boot introduces new ROM/decode timing
+pilot savings. Mapped/repaired numbers exclude the P&R additions tabulated below.
+Generic boot introduces new ROM/decode timing
 obligations; the parent's local timing passes do not qualify those paths.
 
 BD is now the tape-out target; Click is a frozen functional reference. Allocate
@@ -21,6 +22,26 @@ exceeds it, revise the budget or architecture; do not waive a failing path. The
 [repair contract](architecture-followups.md#routed-hold-repair) specifies the gates.
 
 ## Accepted production batches
+
+### BD rectangular P&R
+
+The current generic-MCU BD mapping has now completed P&R on a **3.93 × 2.53 mm**
+outline (9.9429 mm²), with zero detailed-router DRC violations and nominal/min/max
+RC extraction. **Physical timing remains unqualified.**
+
+| Source / physical run | Mapped logic | Pre-placement repaired logic | Routed logic | SRAM | Taps/endcaps | Total cell footprints | Periodic sinks |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| `517c272`, `pnr-bd-3930x2530-r1` (BD only) | 2.100657 | 2.283901 | 2.895688 | 0.466241 | 0.266857 | 3.628786 | 4,125 |
+
+All areas are mm². Routed logic includes the added ties, electrical repair and
+CTS. Placement repair adds 0.416245 mm², CTS 0.048053 mm² and global-route repair
+0.133606 mm²; guard, allowance and DLYD inventories are unchanged from the
+generic-MCU row below. No RTL, physical timing recipe or wake workload changes.
+The 0.05 mm² targeted hold-repair reserve remains separate and unspent. This is
+a new physical implementation, not a matched architecture-area comparison with
+the original baseline. [Run details and layout](gf180-bd-rectangular-pnr.md).
+
+### Mapped batch history
 
 Every area entry is mm² and every pair is **BD / Click**. Mapped means before
 electrical repair; repaired means accepted pre-placement repair, not P&R.
