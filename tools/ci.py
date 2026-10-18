@@ -68,10 +68,6 @@ def main():
     os.environ['PATH'] = os.pathsep.join(dict.fromkeys([*simulator_dirs, os.environ.get('PATH','')]))
     if os.environ.get('JAVA_HOME'):
         tools.append(Path(os.environ['JAVA_HOME'])/'bin'/('java.exe' if os.name == 'nt' else 'java'))
-    pin = json.loads((ROOT/'project/chisel-async-source.json').read_text())
-    version = pin['coordinate'].rsplit(':', 1)[1]
-    jar = Path.home()/'.ivy2/local/io.github.biscutlabs/chisel-async_2.13'/version/'jars/chisel-async_2.13.jar'
-    if jar.is_file(): tools.append(jar)
     run = RunReceipt(args.output/'receipt.json', inputs=inputs, tools=tools)
     suite = unittest.defaultTestLoader.discover(str(ROOT/'tools'))
     if unittest.defaultTestLoader.errors or not suite.countTestCases():
@@ -87,7 +83,7 @@ def main():
         'riscay.GenericBootSpec', 'riscay.physical.PhysicalExportSpec', 'riscay.physical.PhysicalTimingSpec']
     executed = {}; diagnostic = None
     if status == 'pass' and not args.python_only:
-        commands = ['verification/testOnly '+ ' '.join('riscay.'+s for s in FAST_SUITES),
+        commands = ['libraryRuntime', 'verification/testOnly '+ ' '.join('riscay.'+s for s in FAST_SUITES),
                     'verification/testOnly riscay.GenericBootSpec -- -z "generic SPI boot"', 'physical/test']
         started = time.time()
         code = run.command([sys.executable, str(ROOT/'tools/sbt.py'), '--bootstrap', *commands],
@@ -96,6 +92,13 @@ def main():
         if code:
             status = 'fail'
         try:
+            runtime = ROOT/'build/library-runtime.txt'
+            if not runtime.is_file() or runtime.stat().st_mtime < started:
+                raise ValueError('CI_MISSING_FRESH_LIBRARY_RUNTIME')
+            # This tool is compiled during the run, so hash its resulting JAR
+            # alongside the run's outputs rather than an unrelated Ivy cache.
+            run.tools += run.capture([Path(runtime.read_text(encoding='utf-8').strip())])
+            outputs.append(runtime)
             executed.update(reports(ROOT/'verification/target/test-reports', requested[:-3], started))
             executed.update(reports(ROOT/'verification/target/test-reports', ['riscay.GenericBootSpec'],
                                     started, contains='generic SPI boot'))

@@ -3,7 +3,9 @@
 A small reusable RV32E microcontroller built in Chisel with
 [chisel-async](https://github.com/BiscutLabs/chisel-async). Two independent SoC
 implementations are maintained: [four-phase bundled data](designs/four-phase-bd/README.md)
-and [native two-phase Click](designs/two-phase-click/README.md). They share the ISA,
+and [native two-phase Click](designs/two-phase-click/README.md). **BD is the selected
+tape-out implementation; Click is frozen as a tested functional reference.**
+Physical qualification is still required. They share the ISA,
 interface schemas, fixed SRAM models and verification utilities. Click has no
 hidden four-phase adapters.
 
@@ -43,8 +45,9 @@ python tools/ci.py --output build/ci-local
 ```
 
 [Build and test](docs/build-and-test.md) describes the pinned JDK, firtool, simulator
-and library setup. GitHub CI runs Python properties and fast Scala RTL suites on
-every main push and pull request. Extended boot, SRAM, reset and firmware suites
+and library setup. The GitHub workflow runs Python properties and fast Scala RTL suites on
+main pushes and pull requests once published; the first hosted run is pending.
+Extended boot, SRAM, reset and firmware suites
 remain required when those subsystems change.
 
 The [test-suite cleanup](docs/test-suite-cleanup.md) reduces 1,202 Python tests to

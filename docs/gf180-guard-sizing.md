@@ -17,7 +17,13 @@ provides transistor process and mismatch models. The
 distinguishes local random variation from distance/layout-dependent systematic
 variation. Neither supplies a qualified numerical delay derate for this MCU's
 placed standard-cell logic and DLYD chains. A transistor Monte Carlo and layout
-study remains part of item 17. Twenty percent here accelerates the request path
+study remains part of item 17. A small [transistor variation screen](../analog/gf180-guard-variation/README.md)
+now compares actual DLYD cells and a sensitized mixed-gate path using the pinned
+PDK's process/mismatch models. It supports screening the engineering choice,
+not statistical signoff or reducing the derate. The 192-run screen observes a
+worst normalized ratio of 1.049791 in either direction, within the 1.5 envelope;
+the 20/10 ps convergence control changes delays by at most 0.1741%. Keep 20% and
+the 2 ns floor. Twenty percent here accelerates the request path
 while independently slowing the data path; it is more conservative than a
 single 1.2 multiplier on data.
 
@@ -71,6 +77,10 @@ policy explicitly removes their records and retains their baseline inventory.
 | Click standard ACK | 28 | 8 | 73 |
 
 The other 89 active canonical BD request guards retain their original recipes.
+That is the historical adoption inventory. The generic MCU removes supervisor
+owners; regenerate the live count after the architecture work in
+[the current work order](architecture-followups.md), then size all surviving BD
+request guards in one campaign. Click optimization is frozen as a reference.
 The policy is now `locally-measured` after complete local evidence sealing and
 independent review. The default mapper consumes it. Future provisional policies
 marked `candidate-not-yet-accepted` require `--candidate-guards`.

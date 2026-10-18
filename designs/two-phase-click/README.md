@@ -1,7 +1,9 @@
 # Native two-phase Click MCU
 
-Required RISCay-MCU implementation using Chisel and chisel-async native Click
+Frozen functional reference using Chisel and chisel-async native Click
 components. The core and complete digital SoC are implemented.
+BD is selected for tape-out. Keep Click regressions and correctness/ABI fixes;
+new architecture and physical optimization target BD unless explicitly requested.
 [ClickSoc.scala](src/main/scala/riscay/click/ClickSoc.scala) uses
 [native toggle/clocked bridges](src/main/scala/riscay/click/ClockBridges.scala),
 after native `ClickFabric` routing, with no four-phase adapters. ROM/static
@@ -10,7 +12,7 @@ join, transform and fork for loader accounting/lock, MMIO validation and
 selector/producer staging. Its POR-only toggle/clocked crossings, ingress,
 snapshots, reset/status projection and peripheral effects remain explicit in
 `ClickPlatform`/`ClickServices`. This directory owns its peripheral, scaling, sleep
-and SRAM controller implementations. Its native Telemetry, Supervisor, SRAM and
+and SRAM controller implementations. Its native Telemetry, SRAM and
 I2C loops retain separate POR-owned state.
 [ClickSpiAdc.scala](src/main/scala/riscay/click/ClickSpiAdc.scala) owns native
 conversion/priming, frame assembly, scaling and retirement; explicit toggle

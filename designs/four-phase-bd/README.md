@@ -1,6 +1,6 @@
 # Four-phase bundled-data MCU
 
-Required RISCay-MCU implementation using Chisel and chisel-async four-phase
+Selected tape-out implementation, pending physical qualification, using Chisel and chisel-async four-phase
 bundled-data components. The core and complete digital SoC are implemented.
 [FourPhaseSoc.scala](src/main/scala/riscay/bd/FourPhaseSoc.scala) connects the core
 through `FourPhaseFabric` to its own clocked `FourPhaseServices` endpoint via
@@ -10,7 +10,7 @@ selector/producer staging without a periodic clock. Clocked ingress and snapshot
 crossings are explicit; peripheral effects and reset/status projection remain in
 Services. This directory owns its Platform,
 peripheral, scaling, sleep and SRAM controller implementations.
-Its native Telemetry, Supervisor, SRAM and I2C loops retain separate POR-owned
+Its native Telemetry, SRAM and I2C loops retain separate POR-owned
 state. [FourPhaseSpiAdc.scala](src/main/scala/riscay/bd/FourPhaseSpiAdc.scala)
 owns native conversion/priming, frame assembly, scaling and retirement; the
 clocked boundary plays its immutable recipe and buffers the complete frame.

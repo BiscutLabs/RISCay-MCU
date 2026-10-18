@@ -3,8 +3,13 @@
 ## Fast gate
 
 Run one sbt process at a time across RISCay-MCU and chisel-async. The supported
-library source and publication tasks are pinned in
+library source is pinned in
 [`project/chisel-async-source.json`](../project/chisel-async-source.json).
+`build.sbt` reads that pin and uses an exact-commit Git source dependency. sbt
+fetches and compiles it automatically; no sibling checkout or `publishLocal`
+artifact is required. The selected revision is `83d6468`, which retains the
+passive primitives from `06b1216` and adds the generation-time structural audit.
+The first build needs Git/network access and the normal Maven dependencies.
 Use JDK 21, firtool 1.160.0 and Icarus 13. The library provides checksum-verified
 bootstrap scripts for those tools. Set `JAVA_HOME`, `CHISEL_FIRTOOL_PATH`,
 `CA_IVERILOG` and `CA_VVP` to their installed paths.
@@ -22,6 +27,9 @@ only the Windows mounted-drive translation test. CI runs the same entry point on
 every push to main and on pull requests, bootstraps the exact library source and
 pinned simulator, and retains logs, JUnit XML and one run receipt. The 60-minute
 job limit allows a cold compiler/simulator bootstrap; it is not a simulation timeout.
+The single run receipt includes the actual source-built library JAR, recorded by
+the `libraryRuntime` sbt task. Its version label may still say SNAPSHOT; dependency
+resolution is by the full immutable Git SHA, not a SNAPSHOT repository coordinate.
 
 For Python alone:
 

@@ -12,6 +12,10 @@
 - Keep BD and Click as independent implementations under their `designs/`
   directories. Share schemas, ISA, fixed macro models and verification utilities.
   Keep native Click signaling; do not insert hidden four-phase conversions.
+- BD is the selected tape-out implementation, subject to physical qualification.
+  Freeze Click as a functional reference: retain its native implementation and
+  regressions, apply shared correctness/ABI fixes, but stop Click area/timing tuning
+  and new architecture work unless explicitly requested. Document any divergence.
 - No periodic clock may be added to work around native timing. Keep clocks only
   at documented boundaries: independent LF time/watchdog, physical wire sampling,
   bounded serial pin timing and reset qualification. Experimental self-timed SRAM
@@ -28,6 +32,7 @@
   `tools/check_reset_crossings.py` and its proof helpers until typed library
   metadata can express that integration-specific containment proof.
 - Use the source-pinned library in `project/chisel-async-source.json`. Library
+  source is an exact-commit sbt dependency; no `publishLocal` is required. Library
   changes need their own tests and review. Public native primitives and their
   contracts own generic structural rules; avoid new Verilog-name-based checkers.
 
@@ -87,3 +92,6 @@
 - Record mapped/repaired logic, guard/allowance/DLYD area by purpose, clock sinks
   and wake activity in `docs/area-ledger.md`. Compare the immediate parent and
   original baseline. Keep pre-existing P&R work and historical failure evidence.
+- Apply the architecture-first order in `docs/architecture-followups.md` before
+  the next BD request-guard campaign. Reserve routed hold-repair area separately;
+  insert hold cells only on failing composed min-RC paths and rerun setup/order.

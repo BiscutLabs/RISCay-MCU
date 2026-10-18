@@ -2,9 +2,18 @@ ThisBuild / scalaVersion := "2.13.18"
 ThisBuild / organization := "io.github.biscutlabs"
 ThisBuild / version := "0.1.0-SNAPSHOT"
 
+// Build the immutable library revision directly; no local Maven/Ivy publication.
+lazy val asyncLibrary = RootProject(LibrarySource.uri(file("project/chisel-async-source.json")))
+asyncLibrary / Compile / exportJars := true
+lazy val libraryRuntime = taskKey[File]("Record the source-built library artifact used by this run")
+libraryRuntime := {
+  val jar = (asyncLibrary / Compile / packageBin).value
+  IO.write(baseDirectory.value / "build" / "library-runtime.txt", jar.getCanonicalPath + "\n")
+  jar
+}
+
 lazy val settings = Seq(
   libraryDependencies ++= Seq(
-    "io.github.biscutlabs" %% "chisel-async" % "0.1.0-RC2-83d6468-SNAPSHOT",
     "org.scalatest" %% "scalatest" % "3.2.20" % Test
   ),
   addCompilerPlugin("org.chipsalliance" % "chisel-plugin" % "7.16.0" cross CrossVersion.full),
@@ -12,7 +21,7 @@ lazy val settings = Seq(
   Test / parallelExecution := false,
   publish / skip := true
 )
-lazy val shared = project.in(file("shared")).settings(settings)
+lazy val shared = project.in(file("shared")).dependsOn(asyncLibrary).settings(settings)
 lazy val soc = project.in(file("soc")).dependsOn(shared).settings(settings)
 lazy val profiles = project.in(file("profiles")).dependsOn(soc).settings(settings)
 lazy val fourPhaseBd = project.in(file("designs/four-phase-bd")).dependsOn(profiles).settings(settings)

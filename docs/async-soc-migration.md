@@ -12,13 +12,24 @@ reset/persistence semantics and MCU-only scope are in
 [generic boot](generic-boot-contract.md). All application policy is external
 firmware; profiles supply metadata only.
 
+**Latest work order:** [architecture follow-ups](architecture-followups.md)
+supersedes the optimization order below. BD is the selected tape-out target;
+Click is a frozen, regression-tested reference. Generic boot and the 292-test
+Python cleanup are implemented in `d690e8f`; publication of that commit and CI
+activation are blocked by the GitHub credential's missing `workflow` scope.
+Next are the always-on/application ownership split and register-pointer loader,
+then a newly enumerated BD request-guard campaign. The older 89-guard count is
+not an assertion about the generic MCU. Routed hold repair, reset, RC and mismatch
+qualification remain open.
+
 This checklist is the migration boundary, not a claim that all peripheral RTL is
 asynchronous. The latest work order groups compatible 11b–14 ownership removals
 into one verification cycle, retaining each item's ownership and fault checks.
 Obtain a fresh independent agent review, implement fixes, rerun affected checks,
 document, commit and push directly to main for each batch or independent item.
 Continue only to an authorized next item; ask
-when no next item has been chosen. Both implementations remain active throughout.
+when no next item has been chosen. Both implementations remain regression-tested;
+new architecture/physical optimization now targets BD.
 
 ## Ownership and invariants
 

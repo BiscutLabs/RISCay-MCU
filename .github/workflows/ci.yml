@@ -26,7 +26,7 @@ jobs:
           subprocess.run(['git','clone',pin['repository'],'.tools/chisel-async'],check=True)
           subprocess.run(['git','checkout','--detach',pin['commit']],cwd='.tools/chisel-async',check=True)
           PY
-      - name: Bootstrap pinned compiler and library
+      - name: Bootstrap pinned compiler and simulator
         run: |
           sudo apt-get update
           sudo apt-get install -y gcc libmpc3 autoconf gperf bison flex g++ make python3-tk
@@ -34,18 +34,15 @@ jobs:
           python .tools/chisel-async/tools/bootstrap.py
           python .tools/chisel-async/tools/setup_simulator.py --output build/simulator-setup
           python - <<'PY'
-          import json, os, pathlib, subprocess
+          import json, os, pathlib
           library=pathlib.Path('.tools/chisel-async').resolve()
           java=next((library/'.tools/jdk21').rglob('bin/java')).parent.parent
           firtool=next((library/'.tools/firtool-1.160.0').rglob('bin/firtool')).parent
-          env=dict(os.environ,JAVA_HOME=str(java),CHISEL_FIRTOOL_PATH=str(firtool))
           with open(os.environ['GITHUB_ENV'],'a') as stream:
               stream.write(f'JAVA_HOME={java}\nCHISEL_FIRTOOL_PATH={firtool}\n')
               simulator=json.load(open('build/simulator-setup/setup.json'))
               for key in ('CA_IVERILOG','CA_VVP'):
                   stream.write(f'{key}={simulator[key]}\n')
-          pin=json.load(open('project/chisel-async-source.json'))
-          subprocess.run(['python','tools/sbt.py','--bootstrap',*pin['publish_tasks']],cwd=library,env=env,check=True)
           PY
           python tools/build_firmware.py --bootstrap --app event_loop --output build/ci-bootstrap
       - name: Python properties and fast chip simulations

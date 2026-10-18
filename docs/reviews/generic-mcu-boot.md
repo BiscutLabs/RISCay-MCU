@@ -91,9 +91,9 @@ the generic v4 architecture fields, actual ROM byte count and absence of profile
 behavior, retaining all prior reset/timing/Click-purity assertions.
 
 Both final maps and accepted repair proofs are complete. Mapped logic is
-2.100657 / 2.894444 mm² BD / Click; repaired logic is 2.283901 / 3.099576 mm²,
-excluding unchanged 0.466240659 mm² of SRAM. Net mapped reductions from `90ce9f7`
-are 0.128738 / 0.153980 mm². Periodic clock sinks are 4,125 / 4,179, down 685 / 686.
+2.100657 / 2.894444 mmÂ² BD / Click; repaired logic is 2.283901 / 3.099576 mmÂ²,
+excluding unchanged 0.466240659 mmÂ² of SRAM. Net mapped reductions from `90ce9f7`
+are 0.128738 / 0.153980 mmÂ². Periodic clock sinks are 4,125 / 4,179, down 685 / 686.
 See the [area ledger](../area-ledger.md). These are pre-placement costs, not a
 new routed design or leakage/energy estimate. Final reports and graph proofs are
 under `build/generic-mcu-r10/`; logs are `build/generic-regression-r9.log`,

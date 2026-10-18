@@ -6,11 +6,19 @@ libraries, mapper and accepted repair flow for matched production comparisons.
 Full routed physical requalification remains migration item 17.
 
 The **BD mapped-logic milestone below 2.3 mm² excluding SRAM is achieved**.
-The combined passive-allowance, guard-sizing and SRAM-prepare fusion batch maps
-to **2.229395 / 3.048424 mm²** and repairs to **2.412382 / 3.252393 mm²**.
-It passes local timing checks, digital regressions, all four strict exports and
-independent review. These are fresh whole-chip results, not summed pilot savings
-or a new P&R result. The matched 11b2/11b3 parent is 2.792933 / 3.554119 mm².
+The latest generic-MCU batch maps to **2.100657 / 2.894444 mm²** and repairs to
+**2.283901 / 3.099576 mm²**. Its immediate parent, the passive/guard/fusion batch,
+maps to 2.229395 / 3.048424 mm². These are fresh whole-chip results, not summed
+pilot savings or a new P&R result. Generic boot introduces new ROM/decode timing
+obligations; the parent's local timing passes do not qualify those paths.
+
+BD is now the tape-out target; Click is a frozen functional reference. Allocate
+**0.05 mm² of additional standard-cell area for routed hold repair** in the BD
+planning budget (about 2.4% of current mapped logic). This is an allowance, not
+inserted area or a predicted requirement, and is separate from electrical/CTS
+repair and placement whitespace. Record actual cell use after routing. If repair
+exceeds it, revise the budget or architecture; do not waive a failing path. The
+[repair contract](architecture-followups.md#routed-hold-repair) specifies the gates.
 
 ## Accepted production batches
 
