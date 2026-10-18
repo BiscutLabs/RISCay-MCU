@@ -6,6 +6,7 @@ import chisel3.util._
 import chiselasync.clocked.ClockedBridge
 import chiselasync.core.ResetDomain
 import chiselasync.protocol.Channel
+import riscay.soc.TelemetryReply
 
 /** POR-owned receipt of an already retained native payload.
   * The native producer owns every payload bit through downstream acceptance
@@ -40,4 +41,19 @@ class FourPhaseServiceReplyReceipt[T <: Data](gen: T, domain: ResetDomain)
   contract.endpoint("request_sync", request)
   contract.endpoint("local_reset", localReset)
   contract.endpoint("reset", reset)
+}
+
+/** One authorization bit at the existing receipt, never a payload mirror.
+  * Both ACKs rise only after the same actual consumer edge; the bank ACK is
+  * absent for a revoked publication and remains high through full return.
+  */
+class FourPhaseTelemetryReceipt(gen: TelemetryReply,domain: ResetDomain)
+    extends FourPhaseServiceReplyReceipt(gen,domain) {
+  val applyBank=IO(Input(Bool()));val bankAck=IO(Output(Bool()))
+  withClockAndReset(clock,localReset) {
+    val accepted=RegInit(false.B)
+    when(out.fire) { assert(!accepted,"TELEMETRY_BANK_ACK_NOT_RETURNED"); accepted:=applyBank }.elsewhen(!in.ack) { accepted:=false.B }
+    bankAck:=accepted
+  }
+  contract.endpoint("apply_bank",applyBank);contract.endpoint("bank_ack",bankAck)
 }

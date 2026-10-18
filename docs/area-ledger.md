@@ -6,9 +6,11 @@ libraries, mapper and accepted repair flow for matched production comparisons.
 Full routed physical requalification remains migration item 17.
 
 The **BD mapped-logic milestone below 2.3 mm² excluding SRAM is achieved**.
-The latest generic-MCU batch maps to **2.100657 / 2.894444 mm²** and repairs to
-**2.283901 / 3.099576 mm²**. Its immediate parent, the passive/guard/fusion batch,
-maps to 2.229395 / 3.048424 mm². These are fresh whole-chip results, not summed
+The latest BD Telemetry-view batch maps to **2.058088 mm²** and repairs to
+**2.242768 mm²**, compared with its immediate generic-MCU parent at
+2.100657 / 2.283901 mm². Frozen Click remains at 2.894444 / 3.099576 mm²
+mapped/repaired. The earlier passive/guard/fusion batch mapped to
+2.229395 / 3.048424 mm² (BD / Click). These are fresh whole-chip results, not summed
 pilot savings. Mapped/repaired numbers exclude the P&R additions tabulated below.
 Generic boot introduces new ROM/decode timing
 obligations; the parent's local timing passes do not qualify those paths.
@@ -66,6 +68,75 @@ receipts. The earlier PR10 maps fail current receipt validation with
 `REPAIR_INPUT_CHANGED`; those failures are retained under `build/area-ledger/`.
 
 ## Counting rules and evidence
+
+### BD Telemetry register-view slice
+
+The existing native Telemetry owner now supplies application words, GPIO
+output/OE and pending readback without Services payload mirrors. Click is
+unchanged. This is a bounded item-A slice; the MMIO scheduler remains clocked.
+
+| BD metric | Parent `4943239` | This batch | Change |
+| --- | ---: | ---: | ---: |
+| Mapped logic, mm² | 2.100657 | 2.058088 | -0.042569 (-2.03%) |
+| Repaired logic, mm² | 2.283901 | 2.242768 | -0.041134 (-1.80%) |
+| Guards, mm² | 0.398209 | 0.398907 | +0.000698 |
+| Passive allowance cells, mm² | 0 | 0 | 0 |
+| DLYD area, mm² | 0.392440 | 0.393112 | +0.000672 |
+| DLYD cells | 5,258 | 5,267 | +9 |
+| Periodic clock sinks | 4,125 | 3,915 | -210 |
+
+The 212 removed clocked payload bits are 192 application + 14 GPIO + 6 pending.
+One qualified receipt ACK and one application-view-valid flag add two control
+bits. Native feedback also drops the duplicated architectural fields; the closed
+bank lives inside Telemetry. The custom feedback-order guard accounts for the
+nine additional DLYD cells. Its timing obligations are separate from area savings.
+By purpose, DLYD remains 937 bundling, 688 publication and 100 seed/reset cells;
+custom ordering/reset grows from 3,533 to 3,542 cells. No allowance cells return.
+
+| Clock/owner inventory | Before | After |
+| --- | ---: | ---: |
+| Whole-chip service | 1,203 | 1,203 |
+| Whole-chip work (including SRAM pins) | 2,844 | 2,634 |
+| Whole-chip LF | 78 | 78 |
+| Services service-clock storage | 14 | 14 |
+| Services work-clock storage | 1,689 | 1,478 |
+| Services SRAM clock pins | 3 | 3 |
+| Services total periodic sinks | 1,706 | 1,495 |
+
+The separate SDA event sink is unchanged and excluded from periodic totals.
+The frozen Click map remains at 4,179 periodic sinks. SRAM area remains
+0.466241 mm². The original matched clocked-island baseline was about 0.576 mm²
+BD logic; this batch narrows, but does not eliminate, that architecture-area gap.
+
+`tools/report_clock_owners.py` retains the per-owner inventory for item 16. It
+attributes inlined storage using original local Q aliases, so repair buffers
+cannot hide ownership, and lists native/unclassified clocks explicitly.
+Evidence: `build/native-app-registers/baseline-clock-owners-reviewed.json`,
+`area-bd-r2.json` and `clock-owners-r2.json` in that directory. The new map is
+`map-bd-r2`; its complete graph/protected-cell repair proof passes. These are
+pre-placement measurements, not a new P&R or physical qualification.
+The [register-view contract](native-app-registers.md) records functional evidence,
+activity and outstanding aperture/routed timing obligations.
+
+Native-model activity uses the same 12 MHz oscillator fixture and 43-instruction
+firmware wake as the parent. Maintenance and ADC windows are unchanged. The
+firmware wake gains one fast/work edge (83.334 ns, 0.031%) with the added full-return
+admission barrier; retired instructions and the Control ACK transitions are unchanged.
+
+| BD wake | Observations | Work edges before / after | Duration before / after, ns |
+| --- | ---: | ---: | ---: |
+| Maintenance | 22 | 24 / 24 | 3,147.358 / 3,147.358 |
+| ADC sample | 3 | 217 / 217 | 18,439.147 / 18,439.147 |
+| Firmware | 2 | 3,257 / 3,258 | 271,774.507 / 271,857.841 |
+
+Fast edges are 38, 221 and 3,261 before, and 38, 221 and 3,262 after. All 27 frozen
+Click windows are identical, including its 3,212-work-edge firmware wake. These are
+native digital-model windows, not mapped timing or power. Logs and comparison are
+retained in `build/native-app-registers/activity-r2/`, against `baseline-activity/`.
+The final fast gate passes 300 Python and 169 Scala tests; `extended-r2.log` and
+`extended-r2-junit/` record 192 passing tests across 12 affected suites. Independent
+review fixes, generation audits and both RDC proofs are complete. Physical timing
+remains unqualified; the contract records failed/unresolved screens explicitly.
 
 ### Generic MCU correction (digital and structural verification complete)
 

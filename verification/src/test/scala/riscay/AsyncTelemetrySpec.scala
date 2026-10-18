@@ -51,6 +51,11 @@ class AsyncTelemetrySpec extends AnyFunSuite {
     var expected=initial
     campaign.zipWithIndex.map { case(s,i) =>
       expected ++= s.changes
+      // BD stores only implemented GPIO bits. The external MMIO ABI already
+      // masks these bits; Click retains its frozen internal 32-bit layout.
+      if(!click) { val mask=(1L << p.config.gpioCount)-1
+        expected=expected.updated("output",expected("output") & mask).updated("enable",expected("enable") & mask)
+      }
       val phase=if(click) (i+1)%2 else 1
       val checks=expected.toSeq.sortBy(_._1).map { case(k,v) =>
         s"if(reply_bits_state_$k !== 32'h${v.toHexString}) $$fatal(1,\"TELEMETRY_${i}_$k actual=%h\",reply_bits_state_$k);"

@@ -1,8 +1,8 @@
 # Architecture-first follow-ups
 
 The [open migration checklist](async-soc-migration.md) owns sequencing and status.
-This document expands its boundary decisions; the proposals below are not
-implemented by this documentation change. Completed build/characterization work
+This document expands its boundary decisions and records the implemented slices.
+The remaining proposals are open work. Completed build/characterization work
 is in the [migration log](history/migration-log.md#source-build-and-mismatch-screen-follow-up).
 
 RISCay is a generic MCU. Neither RTL nor ROM contains application policy. BD is
@@ -72,6 +72,17 @@ receipts and gate demand together with their migrated clients.
 This is a proposed logical boundary, not implemented power gating. Separate rails
 would additionally require isolation, retention cells, supply sequencing and an
 external-memory/pad strategy before RTL work starts.
+
+### BD divergence: retained Telemetry register view
+
+BD removes Services' application/GPIO/pending payload mirrors and reads a closed
+bank inside the existing native Telemetry owner. One authorization bit remains at
+the existing reply receipt, with one application-view validity bit in Services.
+CPU write scheduling and the MMIO crossing are unchanged.
+Click retains its previous internal state/projections and ABI regressions. This
+is a bounded item-A slice, not a new owner or completion of the island split.
+See [the register-view contract](native-app-registers.md) for snapshot atomicity,
+reset isolation and the boundary timing obligations.
 
 ## B. Register-pointer host interface
 

@@ -15,6 +15,8 @@ The [architecture plan](architecture-followups.md) supplies boundary details.
   committed SRAM/loader effects, lock, retention and close/rebase recovery.
   Start with a logical split on one supply. Measure mapped/repaired area, periodic
   clock sinks and wake activity/duration against the parent for each batch.
+  First slice: [BD Telemetry register view](native-app-registers.md) removes the
+  application/GPIO/pending mirrors; command scheduling still crosses the work clock.
 - [ ] **B. Register-pointer host interface.** Replace the framed loader; do not
   build a permanent second transport. Decide the versioned wire ABI and host
   transition before RTL. Absorbs 11a2/11a2b, 13c, R5 epoch work and the R6 public

@@ -486,6 +486,9 @@
       "output_delay": "matched-control-delay",
       "request_delay": "matched-control-delay"
     },
+    "FourPhaseTelemetry": {
+      "output_guard": "matched-control-delay"
+    },
     "I2cPublication": {
       "acknowledge_guard": "matched-control-delay",
       "byte_data_delay": "whole-transform-allowance",

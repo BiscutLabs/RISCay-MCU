@@ -67,7 +67,7 @@ class FourPhaseServices(p: SocParameters, boardFactory: SocParameters => BoardPr
   val telemetryCommitPending = applicationReg(false.B)
   val telemetryCommit = Reg(new TelemetryCommand(config.measurements.size))
   io.telemetryCommitFields.elements.foreach { case (name, field) => field := telemetryCommit.elements(name) }
-  val telemetryBarrier = telemetryOutstanding || telemetryRecoveryBlocked || telemetryCommitPending || !io.telemetryCommandIdle
+  val telemetryBarrier = telemetryOutstanding || telemetryRecoveryBlocked || telemetryCommitPending || !io.telemetryCommandIdle || io.telemetryDraining
   val telemetryWork = Wire(Bool())
   val telemetryAccepted = WireDefault(false.B)
   val telemetryDispatchedEvents = applicationReg(0.U(6.W))
@@ -164,14 +164,15 @@ class FourPhaseServices(p: SocParameters, boardFactory: SocParameters => BoardPr
   }
   io.observedGpio := gpio
   val gpioPrevious = RegNext(gpio, 0.U)
-  val output = if(p.retainGpioOnWatchdog) RegInit(0.U(32.W)) else applicationReg(0.U(32.W))
-  val enable = if(p.retainGpioOnWatchdog) RegInit(0.U(32.W)) else applicationReg(0.U(32.W))
+  val telemetryView=IO(Input(new TelemetryRegisters(config.gpioCount,telemetryWords.size)))
+  val telemetryViewValid=applicationReg(false.B)
+  val output=telemetryView.output.pad(32);val enable=telemetryView.enable.pad(32)
   val gpioMask = ((BigInt(1) << config.gpioCount) - 1).U(32.W)
-  val application = telemetryWords.map(word => word -> applicationReg(0.U(32.W))).toMap
+  val application=telemetryWords.zip(telemetryView.application.toSeq.flatMap(_.toSeq)).toMap
   val appIndex = controlState.appIndex
   def applicationWord(word: UInt): UInt = MuxLookup(word, "hffffffff".U(32.W))(
     config.application.registers.map(r => r.word.U ->
-      application(r.word)))
+      Mux(io.applicationCancel || telemetryRecoveryBlocked,0.U,application(r.word))))
   def applicationExists(word: UInt): Bool = config.application.registers.map(r => word === r.word.U).foldLeft(false.B)(_ || _)
 
   // Native telemetry receives the retained acquisition stream.
@@ -197,12 +198,20 @@ class FourPhaseServices(p: SocParameters, boardFactory: SocParameters => BoardPr
     publish(0) := io.adc.result; publishAge(0) := io.adc.age
   }
   // Generic GPIO reset policy; profile pin descriptors never drive hardware.
-  val gpioOutputView = output & gpioMask
-  val gpioEnableView = enable & gpioMask
+  // Pads are continuous: keep isolation through native capture and full return,
+  // not just the receipt edge which authorizes the bank write.
+  val gpioRecovery = io.applicationCancel || telemetryRecoveryBlocked
+  val recoveryMask = Mux(gpioRecovery,
+    (if(!p.retainGpioOnWatchdog) 0.U(32.W) else if(p.spiBoot) "hffffffc7".U else "hffffffff".U),"hffffffff".U)
+  val gpioOutputView = output & gpioMask & recoveryMask
+  val gpioEnableView = enable & gpioMask & recoveryMask
   io.gpioOut := (if(p.retainGpioOnWatchdog) Mux(io.cpuReset, gpioOutputView & (if(p.spiBoot) "hffffffc7".U else "hffffffff".U), gpioOutputView) else Mux(io.cpuReset, 0.U, gpioOutputView))
   io.gpioOe := (if(p.retainGpioOnWatchdog) Mux(io.cpuReset, gpioEnableView & (if(p.spiBoot) "hffffffc7".U else "hffffffff".U), gpioEnableView) else Mux(io.cpuReset, 0.U, gpioEnableView))
 
-  val pendingState = applicationReg(0.U(6.W))
+  // During recovery, the attributed publication's event set is already held in
+  // dispatched state. Do not expose the old native bank while its clear arrives.
+  val pendingState = Mux(io.applicationCancel || !telemetryViewValid,0.U,
+    Mux(telemetryRecoveryBlocked,telemetryDispatchedEvents,telemetryView.pending))
   // Captured sets are irrevocable and visible while awaiting native commit.
   // A CPU clear/replacement is serialized against in-flight native work.
   val pendingView = pendingState | telemetryEvents | telemetryDispatchedEvents
@@ -514,7 +523,7 @@ class FourPhaseServices(p: SocParameters, boardFactory: SocParameters => BoardPr
     (hostTurn && hostFrames.io.deq.bits.programBusy)
   io.controlCommand.bits.memory := req
   io.controlCommand.bits.applicationWritable := application.keys.toSeq.map(i => appIndex === i.U).foldLeft(false.B)(_ || _)
-  io.controlCommand.bits.peripheralData := MuxLookup(req.address(6,0), 0.U(32.W))(Seq(
+  val peripheralRead = MuxLookup(req.address(6,0), 0.U(32.W))(Seq(
     4.U -> now, 8.U -> deadline, 12.U -> pendingView, 16.U -> pendingView,
     20.U -> (gpio & gpioMask), 24.U -> gpioOutputView, 28.U -> gpioEnableView,
     52.U -> applicationWord(appIndex), 56.U -> wakeMask, 60.U -> sleepRemaining,
@@ -522,6 +531,10 @@ class FourPhaseServices(p: SocParameters, boardFactory: SocParameters => BoardPr
     72.U -> io.sleepEntries,
     88.U -> Cat(0.U(29.W), output(5) && enable(5) && !output(3), io.adc.busy, spiClaimed),
     92.U -> (MemoryMap.ram + config.workingRamBytes).U(32.W)))
+  // Native view is retained while CPU admission excludes Telemetry work.
+  // Never capture its changing invalid bus in an unrelated host/reset command.
+  io.controlCommand.bits.peripheralData:=Mux(io.controlCommand.bits.kind === ControlKind.Mmio.U &&
+    !telemetryBarrier && !io.applicationCancel,peripheralRead,0.U)
   when(mmioCommitPending && !io.programSource.stored.valid) {
     io.controlCommand.bits := mmioCommit
   }
@@ -711,7 +724,7 @@ class FourPhaseServices(p: SocParameters, boardFactory: SocParameters => BoardPr
     io.telemetrySource.grant.bits.recovery && io.telemetrySource.ownerRecovery &&
     io.telemetrySource.eligible && io.telemetrySource.recoveryDebt &&
     io.telemetrySource.decision.ready && !telemetryCommitPending && !io.telemetryDraining
-  telemetryCommand.valid := !telemetryOutstanding && !io.applicationCancel &&
+  telemetryCommand.valid := !telemetryOutstanding && !io.applicationCancel && !io.telemetryDraining &&
     (telemetryCommitPending || telemetryRecoveryReady ||
       (!io.telemetrySource.occupied && !telemetryRecoveryBlocked &&
         observationPending && !cpuTimingTurn && !mmioCurrent && !mmioLaunch && !io.request.fire))
@@ -725,6 +738,11 @@ class FourPhaseServices(p: SocParameters, boardFactory: SocParameters => BoardPr
   telemetryCommand.bits.events := telemetryEvents
   telemetryCommand.bits.elapsedUpper := telemetryElapsed
   telemetryCommand.bits.captures.foreach(_ := telemetryCaptures)
+  // Make-before-break: native pending captures after the receipt edge. Keep the
+  // dispatched set until full return proves the native bank has settled.
+  when(!telemetryOutstanding && !io.telemetryDraining && !telemetryRecoveryBlocked) {
+    telemetryDispatchedEvents:=0.U
+  }
   when(telemetryCommand.fire) {
     telemetryOutstanding := true.B; telemetryInFlight := telemetryCommand.bits
     telemetryDispatchedEvents := telemetryCommand.bits.events
@@ -736,9 +754,13 @@ class FourPhaseServices(p: SocParameters, boardFactory: SocParameters => BoardPr
   io.telemetrySource.publication.bits:=telemetryReply.bits.state.output(0)
   io.telemetrySource.quiet:= !telemetryOutstanding && !telemetryCommitPending &&
     !io.telemetryDraining && io.telemetrySource.publication.ready
+  val telemetryApplyBank=IO(Output(Bool()))
+  telemetryApplyBank:= !io.applicationCancel &&
+    ((telemetryReply.bits.recovery && io.telemetrySource.ownerRecovery && io.telemetrySource.eligible) ||
+      (!telemetryReply.bits.recovery && !telemetryRecoveryBlocked))
+  when(telemetryReply.fire && telemetryApplyBank) { telemetryViewValid:=true.B }
   when(telemetryReply.fire) {
     val result = telemetryReply.bits
-    telemetryDispatchedEvents := 0.U
     telemetryOutstanding := false.B; telemetryInFlight := 0.U.asTypeOf(new TelemetryCommand(config.measurements.size))
     result.state.samples.foreach(hostSamples := _)
     assert(result.recovery === telemetryInFlight.recovery,"TELEMETRY_RECOVERY_ATTRIBUTION")
@@ -750,22 +772,12 @@ class FourPhaseServices(p: SocParameters, boardFactory: SocParameters => BoardPr
     // Fresh recovery may project before debt retirement; this preserves events
     // carried by that publication. A revoked recovery can only update samples.
     when(!io.applicationCancel && (recovered || (!result.recovery && !telemetryRecoveryBlocked))) {
-      output := result.state.output; enable := result.state.enable; pendingState := result.state.pending
-      for((word,index) <- telemetryWords.zipWithIndex) { application(word) := result.state.application.get(index) }
       when(result.kind === TelemetryKind.Commit.U && !result.recovery &&
           !io.telemetrySource.ownerRecovery && io.telemetrySource.eligible &&
           !telemetryRecoveryBlocked) {
         io.completionTelemetry.valid := true.B
         assert(io.completionTelemetry.ready,"COMPLETION_TELEMETRY_OVERFLOW")
       }
-    }
-  }
-
-  // Retain ordinary pads only. Highest-priority synchronous cancellation
-  // prevents pre-reset SPI enables reappearing when raw isolation releases.
-  if(p.retainGpioOnWatchdog && p.spiBoot) {
-    when(io.applicationCancel) {
-      output := output & "hffffffc7".U; enable := enable & "hffffffc7".U
     }
   }
 

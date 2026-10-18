@@ -15,7 +15,7 @@ from run_receipt import RunReceipt
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 FAST_SUITES = (
-    'CoreSpec', 'HostSchemaSpec', 'AsyncFabricSpec', 'AsyncControlSpec',
+    'AppRegistersSpec', 'AppSnapshotRecoverySpec', 'CoreSpec', 'HostSchemaSpec', 'AsyncFabricSpec', 'AsyncControlSpec',
     'AsyncCrcSpec', 'AsyncHousekeepingSpec', 'AsyncFrameStoreSpec',
     'BootIngressSpec', 'QuiescingReceiptSpec', 'QuiescingBridgeSpec', 'SleepSpec',
 )
