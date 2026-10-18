@@ -53,6 +53,11 @@ class EvidenceTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError,"RELATIVE_QUERY_ID"):r.parse(s+line+"\n",p,c)
 
     def test_nonfinite(self):self.reject("\t12\t12\t12\t","\tnan\tnan\tnan\t","RELATIVE_NUMERIC")
+    def test_signed_data_offset_is_preserved_but_control_delay_is_rejected(self):
+        p,c,s=fixture();s=s.replace("\t12\t12\t12\t","\t-0.03\t-0.03\t-0.03\t")
+        with self.assertRaisesRegex(ValueError,"RELATIVE_NUMERIC"):r.parse(s,p,c)
+        c['kind']='data'
+        self.assertEqual(r.parse(s,p,c)['rows']['c:min']['delay_ns'],-.03)
     def test_nonzero_launch(self):self.reject("\t0\t12\t","\t2\t12\t","RELATIVE_NUMERIC")
     def test_wrong_phase(self):self.reject("\trise\tfall","\tfall\tfall","RELATIVE_PATH_BINDING")
     def test_wrong_source(self):self.reject("\tin_req\tstorage/E","\twrong\tstorage/E","RELATIVE_PATH_BINDING")
@@ -98,6 +103,15 @@ class MarginTests(unittest.TestCase):
         for v in results["request-0"]["rows"].values():v["delay_ns"]+=10000
         after=r.margins(results,plan,cell)
         self.assertEqual(after["minimum_zero_reuse_hold_ns"],before["minimum_zero_reuse_hold_ns"])
+
+    def test_leaf_hold_debits_negative_data_offset_without_positive_credit(self):
+        results,plan,cell=arithmetic();plan['leaf_anchored']=True
+        results['common']['rows']['ack:min:rise'].update(end='ack',receiver_role='source')
+        before=r.margins(results,plan,cell)
+        results['data']['rows']['data:17:min:fall']['delay_ns']=-.03
+        after=r.margins(results,plan,cell)
+        self.assertAlmostEqual(after['minimum_zero_reuse_hold_ns'],before['minimum_zero_reuse_hold_ns']-.03)
+        self.assertEqual([x['lane'] for x in after['lanes'] if x['zero_reuse_hold_margin_ns']<before['minimum_zero_reuse_hold_ns']],[17])
 
     def test_late_data_fails_setup(self):
         results,plan,cell=arithmetic();results["data"]["rows"]["data:17:max:fall"]["delay_ns"]=20

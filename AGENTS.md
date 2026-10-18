@@ -20,7 +20,9 @@
   physical timing or guard-sizing campaign unless explicitly requested.
 - No periodic clock may be added to work around native timing. Keep clocks only
   at documented boundaries: independent LF time/watchdog, physical wire sampling,
-  bounded serial pin timing and reset qualification. Experimental self-timed SRAM
+  bounded serial pin timing, reset qualification and the event arrival/clear
+  arbitration edge. Event pending, cutoff masking and WAIT remain together in
+  Services; no native counters or MUTEX replace that ordering. Experimental self-timed SRAM
   remains isolated until macro pulse/aperture and ownership checks pass.
 - Preserve the ABI, programming lock, SRAM retention, watchdog/reset isolation,
   sleep behavior and crash accounting. POR disables GPIO outputs; watchdog GPIO

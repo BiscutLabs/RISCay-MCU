@@ -6,10 +6,10 @@ libraries, mapper and accepted repair flow for matched production comparisons.
 Full routed physical requalification remains migration item 17.
 
 The **BD mapped-logic milestone below 2.3 mm² excluding SRAM is achieved**.
-The latest BD Telemetry-view batch maps to **2.058088 mm²** and repairs to
-**2.242768 mm²**, compared with its immediate generic-MCU parent at
-2.100657 / 2.283901 mm². Frozen Click remains at 2.894444 / 3.099576 mm²
-mapped/repaired. The earlier passive/guard/fusion batch mapped to
+The latest clocked-event/register-view batch maps to **2.053129 / 2.854875 mm²**
+(BD / Click) and repairs to **2.237991 / 3.063397 mm²**, compared with its immediate
+parent at 2.058088 / 2.894444 mapped and 2.242768 / 3.099576 repaired.
+The earlier passive/guard/fusion batch mapped to
 2.229395 / 3.048424 mm² (BD / Click). These are fresh whole-chip results, not summed
 pilot savings. Mapped/repaired numbers exclude the P&R additions tabulated below.
 Generic boot introduces new ROM/decode timing
@@ -60,6 +60,7 @@ electrical repair; repaired means accepted pre-placement repair, not P&R.
 | 11b1 (`c195deb`, merged `29e0ea7`) | 2.825888 / 3.585890 | 3.014986 / 3.795762 | 0.542153 / 1.061831 | 0.413624 / 0.366484 | 0.536041 / 1.052901 | 5,072 / 5,127 |
 | 11b2 + 11b3 | 2.792933 / 3.554119 | 2.978974 / 3.757950 | 0.542153 / 1.061831 | 0.413624 / 0.366484 | 0.536041 / 1.052901 | 4,810 / 4,865 |
 | A7b + A8b + A10 SRAM fusion | 2.229395 / 3.048424 | 2.412382 / 3.252393 | 0.404567 / 0.942852 | 0 / 0 | 0.398561 / 0.934080 | 4,810 / 4,865 |
+| Clocked events + both retained register views | 2.053129 / 2.854875 | 2.237991 / 3.063397 | 0.398907 / 0.932315 | 0 / 0 | 0.393112 / 0.923780 | 3,896 / 3,952 |
 
 11b1 removes 268 periodic flip-flops per variant. Its complete contract, matched
 parent comparison, wake activity and listed-state leakage bounds remain in the
@@ -68,11 +69,99 @@ accepted graph; it does not replace historical evidence with newly generated
 receipts. The earlier PR10 maps fail current receipt validation with
 `REPAIR_INPUT_CHANGED`; those failures are retained under `build/area-ledger/`.
 
+### Clocked event arbitration and both retained register views
+
+The six-bit pending register, arrival-cutoff mask and WAIT remain at the work-clock
+arbitration edge. Event fields and event-only transactions leave Telemetry. Click
+now retains application/GPIO values natively like BD, using its own phase bank.
+BD reuses its existing full-return state to qualify clocked bank readers; Click
+adds a completion-phase synchronizer and receipt authorization bit. Neither owner
+contains a periodic clock or a clocked payload mirror.
+
+| Metric | BD before → after | Click before → after |
+| --- | ---: | ---: |
+| Mapped logic, mm² | 2.058088 → 2.053129 (−0.24%) | 2.894444 → 2.854875 (−1.37%) |
+| Repaired logic, mm² | 2.242768 → 2.237991 | 3.099576 → 3.063397 |
+| Guards, mm² | 0.398907 → 0.398907 | 0.927310 → 0.932315 |
+| Passive allowances, mm² | 0 → 0 | 0 → 0 |
+| DLYD, mm² | 0.393112 → 0.393112 | 0.918854 → 0.923780 |
+| Periodic sinks | 3,915 → 3,896 (−19) | 4,179 → 3,952 (−227) |
+| Whole-chip service / work / LF | 1,203 / 2,634 / 78 → 1,203 / 2,615 / 78 | 1,207 / 2,894 / 78 → 1,207 / 2,667 / 78 |
+| Services service / work / LF | 14 / 1,481 / 0 → 14 / 1,468 / 0 | 14 / 1,692 / 0 → 14 / 1,468 / 0 |
+| Services periodic total | 1,495 → 1,482 | 1,706 → 1,482 |
+
+Work sinks include three SRAM clock pins; the separate SDA event sink is excluded.
+The 32→6-bit clear mask does not imply 26 removed cells: unused upper bits were
+already optimized away. Click's native bank adds guarded phase storage while
+removing periodic mirrors; its guard area therefore grows slightly. No Click
+counts were resized. Ten generated module suffixes in its guard identity bindings
+were updated after elaboration; owner paths, primitive parameters and recipes are
+unchanged. Relative to the original mostly-clocked mapped baseline (0.576 / 0.594
+mm²), current logic remains about 3.56× / 4.81×; this batch does not close that gap.
+
+| Current DLYD purpose | BD cells / mm² | Click cells / mm² |
+| --- | ---: | ---: |
+| Custom ordering/reset | 3,542 / 0.264364 | 8,956 / 0.668447 |
+| Bundling / Click request-pulse | 937 / 0.069935 | 845 / 0.063068 |
+| Publication / Click output-pulse | 688 / 0.051350 | 1,988 / 0.148378 |
+| Seed/reset admission | 100 / 0.007464 | — |
+| Click ACK-pulse | — | 588 / 0.043886 |
+| Total | 5,267 / 0.393112 | 12,377 / 0.923780 |
+
+Matched activity uses the existing 12 MHz native-model fixture, I²C-loaded
+43-instruction firmware (`spiBoot=false`) and 27 wake windows per variant. The
+production maps use SPI boot. These are digital activity measurements, not
+physical energy or flash-boot measurements.
+
+| Wake / windows | Telemetry commands before → after, BD / Click | Work edges before → after, BD / Click | Duration ns before → after, BD / Click |
+| --- | ---: | ---: | ---: |
+| Maintenance / 22 | 1 → 1 / 1 → 1 | 24 → 24 / 19 → 21 | 3,147.358 → 3,147.358 / 3,064.024 → 3,064.024 |
+| ADC / 3 | 2 → 2 / 2 → 2 | 217 → 217 / 214 → 215 | 18,439.147 → 18,439.147 / 18,189.145 → 18,272.479 |
+| Firmware / 2 | 4 → 1 / 4 → 1 | 3,258 → 3,243 / 3,212 → 3,200 | 271,857.841 → 270,607.831 / 268,024.477 → 267,024.469 |
+
+Time and sample updates still need Telemetry. Event-only activity does not. Click's
+completion synchronizer extends the work-clock enable window by two edges for
+maintenance and one for ADC; firmware wake work falls in both implementations.
+
+Evidence: `build/clocked-events/{bd,click}-area.json`,
+`{bd,click}-clock-owners.json`, `map-bd`, `map-click-r2` and `activity-r3`.
+The retained inventory generator remains `tools/report_clock_owners.py`.
+These are accepted graph-preserving pre-placement repairs, not routed signoff.
+See the [independent review and fixes](reviews/clocked-events.md).
+
+BD repaired-map reader qualification now covers all **224 periodic D pins** reached
+from the 206-bit native bank: 192 snapshot bits and 32 Control receipt bits. All
+ten cases (five PVT corners × two input slews) pass with a same-corner 20% two-sided
+derate. Minimum next-edge setup residual is **+27.147 ns**, same-edge old-bank hold
+residual **+1.242 ns**, and feedback-after-bank separation **+12.638 ns** against the
+2 ns floor. The former negative pending-to-dispatch path and self-holding view-valid
+path disappear when native pending and view-valid state are removed. The tool
+checks the remaining readers explicitly; it does not waive those old paths.
+Evidence: `bank-timing-r3/{inventory,results,receipt}.json` beneath the batch root.
+
+The standard Telemetry update-stage campaign also resolves all ten cases, including
+the two former FF parser rejections. Minimum local data lag / zero-reuse hold /
+ACK-after-capture are **+10.162 / +1.042 / +1.265 ns**. Signed NLDM data offsets are
+retained and debit hold; they are not clamped to zero. These local stage results
+are conditional, uncomposed and without the bank screen's mismatch derate.
+Evidence: `telemetry-stage-r1/{results,receipt}.json`. Full electrical/table-range,
+source composition, clock skew and routed RC qualification remain item 17.
+
+All four functional/physical exports pass strict validation and the generation
+audit; both reset-crossing proofs pass structural containment. The affected
+extended campaign covers 206 tests across 13 suites. One shared-ADC test required
+isolating idle-MISO stimulus from a legitimate periodic sample wake; both variants
+pass its focused rerun without changing the original assertion or deadline.
+The original failure, diagnosis and independently reviewed correction are retained
+in the [batch review](reviews/clocked-events.md).
+The final frozen-source gate passes **302 Python and 195 Scala/export tests**;
+its accepted receipt is `build/clocked-events/ci-r2/receipt.json`.
+
 ## Counting rules and evidence
 
-### Native events baseline
+### Clocked-event conversion baseline
 
-This is **step 0 only**, before any native event or routing change. Source is
+This is **step 0 only**, before the event/register-view conversion. Source is
 `49ca683`. Reuse the accepted BD `build/native-app-registers/map-bd-r2` and
 unchanged Click `build/generic-mcu-r10/map-click` maps; these are not new maps or
 timing qualifications. New per-owner connectivity inventories are in
@@ -88,8 +177,7 @@ timing qualifications. New per-owner connectivity inventories are in
 | Services periodic total | 1,495 | 1,706 |
 
 Work counts include the three macro clock pins in each variant. The independent
-SDA event sink is excluded from periodic totals. No after-area or savings claim
-exists yet.
+SDA event sink is excluded from periodic totals. The after-area comparison is recorded above.
 
 `PhysicalEstimateSpec` now counts accepted Telemetry commands at the existing
 command crossing. Fresh baseline runs pass on both variants with the same 12 MHz
@@ -112,7 +200,10 @@ removed. These are digital-model wake windows, not silicon energy measurements.
 The [event contract](native-events.md) records why the suggested saturated-counter
 protocol has not been adopted and separates oracle checks from RTL verification.
 
-### BD Telemetry register-view slice
+### Historical BD Telemetry register-view slice (`49ca683`)
+
+The following records the prior batch. The clocked-event conversion above
+supersedes its pending ownership, Click divergence and local bank-timing status.
 
 The existing native Telemetry owner now supplies application words, GPIO
 output/OE and pending readback without Services payload mirrors. Click is

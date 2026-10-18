@@ -111,7 +111,7 @@ abstract class FourPhasePlatform(p: SocParameters, board: SocParameters => Board
   val host = asyncChild("i2c")(d => new I2cTarget(p.i2cAddress,p.i2cIdleCycles,d,borrowFrames=true))
   host.clock := serviceClock; host.scl := scl; host.sda := sda
   host.frameAcceptEnable := fabric.io.clockRunning
-  host.snapshotAcceptEnable := fabric.io.clockRunning
+  host.snapshotAcceptEnable := fabric.io.clockRunning && fabric.bankReadReady
   fabric.io.i2c <> host.host; sdaLow := host.pullLow
   val programAccess = asyncChild("program_access")(d => new ProgramAccess(d))
   val programReturn = asyncChild("program_return")(d => new FourPhaseProgramReturn(d))
@@ -300,6 +300,7 @@ abstract class FourPhasePlatform(p: SocParameters, board: SocParameters => Board
       .elsewhen(!telemetryReplyBridge.in.ack) { returning := false.B }
     returning
   }
+  fabric.telemetryBankReady:= !telemetryReturning
   fabric.io.telemetryDraining := !telemetryCommandBridge.in.ready ||
     (telemetryReturning && telemetryReplyBridge.in.ack)
 

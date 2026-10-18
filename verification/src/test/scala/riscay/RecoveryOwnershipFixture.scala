@@ -61,7 +61,7 @@ class BdRecoveryOwnershipFixture(p: SocParameters) extends BdPublicationSourceFi
     fabric.telemetryReply.fire && fabric.telemetryReply.bits.recovery)
   val freshRecoveryReply=IO(Output(UInt(2.W)))
   freshRecoveryReply:=recoveryReply & eligible & Fill(2,!fabric.io.cpuResetActive)
-  val projectedEvents=IO(Output(UInt(6.W))); projectedEvents:=BoringUtils.bore(fabric.pendingState)
+  val projectedEvents=IO(Output(UInt(6.W))); projectedEvents:=BoringUtils.bore(fabric.eventPending)
   val visibleEvents=IO(Output(UInt(6.W))); visibleEvents:=BoringUtils.bore(fabric.pending)
   val visibleDeadline=IO(Output(UInt(32.W))); visibleDeadline:=BoringUtils.bore(fabric.deadline)
   val projectedTime=IO(Output(UInt(32.W))); projectedTime:=(BoringUtils.bore(fabric.housekeepingState).now + BoringUtils.bore(fabric.housekeepingQueued).elapsed(0) +
@@ -125,7 +125,7 @@ class ClickRecoveryOwnershipFixture(p: SocParameters) extends ClickPublicationSo
     fabric.telemetryReply.fire && fabric.telemetryReply.bits.recovery)
   val freshRecoveryReply=IO(Output(UInt(2.W)))
   freshRecoveryReply:=recoveryReply & eligible & Fill(2,!fabric.io.cpuResetActive)
-  val projectedEvents=IO(Output(UInt(6.W))); projectedEvents:=BoringUtils.bore(fabric.pendingState)
+  val projectedEvents=IO(Output(UInt(6.W))); projectedEvents:=BoringUtils.bore(fabric.eventPending)
   val visibleEvents=IO(Output(UInt(6.W))); visibleEvents:=BoringUtils.bore(fabric.pending)
   val visibleDeadline=IO(Output(UInt(32.W))); visibleDeadline:=BoringUtils.bore(fabric.deadline)
   val projectedTime=IO(Output(UInt(32.W))); projectedTime:=(BoringUtils.bore(fabric.housekeepingState).now + BoringUtils.bore(fabric.housekeepingQueued).elapsed(0) +

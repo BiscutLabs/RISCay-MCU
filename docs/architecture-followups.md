@@ -75,21 +75,23 @@ This is a proposed logical boundary, not implemented power gating. Separate rail
 would additionally require isolation, retention cells, supply sequencing and an
 external-memory/pad strategy before RTL work starts.
 
-### Existing divergence: retained Telemetry register view
+### Implemented slice: retained Telemetry view and clocked event arbitration
 
-BD removes Services' application/GPIO/pending payload mirrors and reads a closed
-bank inside the existing native Telemetry owner. One authorization bit remains at
-the existing reply receipt, with one application-view validity bit in Services.
-CPU write scheduling and the MMIO crossing are unchanged.
-Click currently retains its previous internal state/projections. The next native
-event conversion must first supply native app/GPIO MMIO routing in both variants;
-neither Fabric currently provides that endpoint. Keep Telemetry as the existing
-owner, separating its CPU-written bank from sample observations instead of adding
-an independent writer. This is a bounded item-A slice, not completion of the
-island split. The [native event contract](native-events.md) tracks the source
-inventory, exact clear semantics and protocol work that must precede adoption.
-See [the register-view contract](native-app-registers.md) for snapshot atomicity,
-reset isolation and the boundary timing obligations.
+Both variants remove Services' application/GPIO payload mirrors. Telemetry keeps
+one closed native architectural bank; Services retains sample publication state,
+command scheduling and the existing CPU MMIO crossing. BD captures on the qualified
+receipt ACK and waits for full return. Click uses its own standard Click bank,
+launched by both receipt ACK phases, with its native completion phase synchronized
+for clocked readers. Click has no four-phase adapter. See the
+[register-view contract](native-app-registers.md).
+
+Pending events, arrival masking and WAIT parking deliberately remain together at
+one clocked arbitration point in Services. Independent arrivals must be ordered
+against the first offered clear request; saturated source counters cannot preserve
+that cutoff. No event travels through Telemetry. The six-bit bank is the sole
+pending state, shared by MMIO, WAIT/sleep and the host snapshot. This is a generic
+arbitration boundary, not an application policy. The [event contract](native-events.md)
+records the sources, exact cutoff/reset rules and shared executable oracle.
 
 ## B. Register-pointer host interface
 

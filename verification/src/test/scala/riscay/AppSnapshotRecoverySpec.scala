@@ -41,9 +41,10 @@ begin
 end endtask
 """
 
-  test("BD serial host reads cleared application words during application recovery") {
-    ClockedSimulation.run(new AppRegisterIntegrationFixture(SocParameters(config,
-      watchdogCycles=1000000,spiBoot=true)),"app-snapshot-recovery","""
+  for(click <- Seq(false,true)) {
+  test(s"${if(click) "Click" else "BD"} serial host reads cleared application words during application recovery") {
+    val p=SocParameters(config,watchdogCycles=1000000,spiBoot=true)
+    ClockedSimulation.run(if(click) new ClickAppRegisterIntegrationFixture(p) else new AppRegisterIntegrationFixture(p),"app-snapshot-recovery","""
       wait(!cancel);#1000;
       app_access(1,48,0,0);app_access(1,52,32'ha5c35a3c,0);
       read_words(128,0,0);
@@ -66,5 +67,6 @@ end endtask
         if(selectedSnapshot[31:0]!==0 || selectedSupported!==1) $fatal(1,"APP_RECOVERY_SERIAL_REOPEN");
       end
     """,tasks)
+  }
   }
 }

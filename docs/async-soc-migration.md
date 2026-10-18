@@ -16,10 +16,9 @@ The [architecture plan](architecture-followups.md) supplies boundary details.
   committed SRAM/loader effects, lock, retention and close/rebase recovery.
   Start with a logical split on one supply. Measure mapped/repaired area, periodic
   clock sinks and wake activity/duration against the parent for each batch.
-  First slice: [BD Telemetry register view](native-app-registers.md) removes the
-  application/GPIO/pending mirrors; command scheduling still crosses the work clock.
-  Next: [native events and WAIT in both variants](native-events.md), including the
-  native app/GPIO routing prerequisite. Baseline/oracle only; protocol not adopted.
+  The [Telemetry register view](native-app-registers.md) removes application/GPIO
+  mirrors in both variants. [Event pending/clear/WAIT](native-events.md) stays at
+  its intentional clocked arbitration boundary, without Telemetry transport.
 - [ ] **B. Register-pointer host interface.** Replace the framed loader; do not
   build a permanent second transport. Decide the versioned wire ABI and host
   transition before RTL. Absorbs 11a2/11a2b, 13c, R5 epoch work and the R6 public
@@ -54,6 +53,7 @@ The [architecture plan](architecture-followups.md) supplies boundary details.
 | --- | --- |
 | Production SRAM macros and pin controllers | Qualified CLK pulse, address/data setup/hold and read capture |
 | I²C/GPIO pin sampling | Metastability containment, filtering and bounded edge capture |
+| Event pending, clear cutoff and WAIT | One work-clock edge orders all six producers against request arrival; preserves the cutoff ABI without an unqualified native MUTEX |
 | SPI pin player | Bounded SCLK high/low times and MISO sampling aperture |
 | LF timebase/watchdog | Time and recovery independent of CPU/service progress |
 | Reset qualifier/coordinator and clock gates | Real-time reset holds, receiving-edge close/rebase, safe stop/start |

@@ -20,7 +20,7 @@ python tools/ci.py --output build/ci-local
 
 The output directory must be new. This runs Python discovery, then one sbt process
 for the selected core, fabric, Control, CRC, housekeeping, frame, reset bridge,
-sleep and boot-ingress suites, the generic SPI boot cases and physical export/core
+retained register-view, event-oracle, sleep and boot-ingress suites, the generic SPI boot cases and physical export/core
 policy suites. It checks fresh, nonempty JUnit results for every requested suite.
 Missing suites, failed cases and unexpected skips fail the run. Linux may skip
 only the Windows mounted-drive translation test. CI runs the same entry point on
@@ -124,3 +124,17 @@ Older review and migration documents record the tools and acceptance rules used
 at their original revisions. Deleted commands there are historical recipes; use
 this page for current entry points. Prior failure logs and generated evidence
 remain under ignored `build/` directories. Source history remains in Git.
+
+## Retained-bank reader timing
+
+After accepted BD mapping and electrical repair, run:
+
+```text
+python tools/telemetry_bank_timing.py build/map-bd build/bank-readers
+python tools/native_stage_timing.py build/map-bd build/telemetry-stage --variant bd --stage FourPhaseSoc.ca_child_telemetry.ca_child_update --campaign
+```
+
+Both outputs must be fresh directories. The first inventories all periodic readers
+of the closed bank and checks their per-cell apertures plus feedback ordering.
+The second uses the existing standard-stage campaign. These zero-wire checks
+complement the reader-qualification assertions; routed skew/RC remains open.

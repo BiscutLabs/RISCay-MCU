@@ -130,13 +130,13 @@ wire [211:0] packedHouseNative={houseNative_recovery,houseNative_timeValid,house
   houseNative_write,houseNative_offset,houseNative_data,houseNative_waitAccepted,houseNative_periodUpdate,
   houseNative_period,houseNative_cpuCompletion};
 wire [191:0] packedTelemetryCommand={telemetryCommandView_recovery,telemetryCommandView_kind,
-  telemetryCommandView_events,telemetryCommandView_clear,telemetryCommandView_elapsedUpper,
+  telemetryCommandView_elapsedUpper,
   telemetryCommandView_offset,telemetryCommandView_data,telemetryCommandView_appIndex,
   telemetryCommandView_captures_0_seen,telemetryCommandView_captures_0_count,telemetryCommandView_captures_0_hadValid,
   telemetryCommandView_captures_0_valid,telemetryCommandView_captures_0_calibrated,
   telemetryCommandView_captures_0_value,telemetryCommandView_captures_0_tailAge};
 wire [191:0] packedTelemetryNative={telemetryNative_recovery,telemetryNative_kind,
-  telemetryNative_events,telemetryNative_clear,telemetryNative_elapsedUpper,
+  telemetryNative_elapsedUpper,
   telemetryNative_offset,telemetryNative_data,telemetryNative_appIndex,
   telemetryNative_captures_0_seen,telemetryNative_captures_0_count,telemetryNative_captures_0_hadValid,
   telemetryNative_captures_0_valid,telemetryNative_captures_0_calibrated,
@@ -161,7 +161,7 @@ always begin #2; if(!reset) begin
     if(packedTelemetryNative!==heldTelemetry) $fatal(1,"TELEMETRY_BORROW_CHANGED");
     if(telemetrySenderIdle) telemetryActive=0;
   end
-  if(telemetryNative_kind!=1 && {telemetryNative_clear,telemetryNative_offset,telemetryNative_data,telemetryNative_appIndex}!==0)
+  if(telemetryNative_kind!=1 && {telemetryNative_offset,telemetryNative_data,telemetryNative_appIndex}!==0)
     $fatal(1,"TELEMETRY_NONCOMMIT_NOT_MASKED");
 end end
 always @(houseNativeAck) if(!reset && (nativeClick || houseNativeAck)) begin

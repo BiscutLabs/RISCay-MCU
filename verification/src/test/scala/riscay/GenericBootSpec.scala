@@ -267,11 +267,23 @@ end
         recovery=1;#2000;recovery=0;
         wait(spiOwned);if(adcBusy || !adcCsN) $fatal(1,"SPI_CLAIM_BEFORE_DRAIN");
         wait(readReturns>1);wait(!spiOwned);wait(conversions>=4);
-        wait(sleeping);#10000;
+        // Isolate MISO wake from the next legitimate periodic sample. Drain
+        // outstanding work with LF paused, then exercise the full idle window.
+        referenceEnabled=0;wait(sleeping);
+        if(adcBusy || !adcCsN) $fatal(1,"SPI_SLEEP_BEFORE_DRAIN");
+        idleMisoCheck=1;
+        repeat(20) begin #500;adcMiso=~adcMiso;end
         if(gpioEvents || !adcCsN) $fatal(1,"SPI_MISO_WOKE_GPIO");
+        if(!sleeping) $fatal(1,"SPI_IDLE_MISO_WOKE_CPU");
+        idleMisoCheck=0;resumedConversions=conversions;referenceEnabled=1;
+        wait(conversions>resumedConversions);
+        if(gpioEvents) $fatal(1,"SPI_RESUMED_MISO_WOKE_GPIO");
         """,model(Vector.empty,click)+"""
-integer conversions=0,gpioEvents=0;reg [15:0] adcShift;reg watchGpio=0;
+integer conversions=0,gpioEvents=0,resumedConversions=0;
+reg [15:0] adcShift;reg watchGpio=0,idleMisoCheck=0;
 always @(posedge serviceClock) if(!reset && watchGpio && gpioEvent) gpioEvents=gpioEvents+1;
+always @(*) if(idleMisoCheck && (!sleeping || !adcCsN || adcBusy || gpioEvents))
+  $fatal(1,"SPI_IDLE_MISO_WAKE_OR_ACTIVITY");
 always @(negedge adcCsN) if(!reset) begin
   if(!flashCsN || spiOwned) $fatal(1,"SHARED_SPI_DOUBLE_OWNER");
   conversions=conversions+1;adcShift=16'h5aaa;adcMiso=adcShift[15];

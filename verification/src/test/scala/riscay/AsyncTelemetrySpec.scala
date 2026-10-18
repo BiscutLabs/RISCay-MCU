@@ -12,15 +12,13 @@ class AsyncTelemetrySpec extends AnyFunSuite {
   private val config = McuConfiguration(16,16,2,Vector(MeasurementChannel(0,"sample",1,0)),
     ApplicationProfile(1,1,"telemetry",Vector(HostRegister(0,"A"),HostRegister(17,"B")),Vector.empty))
   private val p = SocParameters(config)
-  private case class Step(kind: Int = 0, events: Int = 0, clear: Int = 0, elapsed: Long = 0,
+  private case class Step(kind: Int = 0, elapsed: Long = 0,
     offset: Int = 0, data: Long = 0, index: Int = 0,
     capture: Seq[Long] = Seq(0,0,0,0,0,0,0), changes: Map[String,Long] = Map.empty)
-  private val initial = Map("output"->0L,"enable"->0L,"pending"->0L,"application_0"->0L,"application_1"->0L,
+  private val initial = Map("output"->0L,"enable"->0L,"application_0"->0L,"application_1"->0L,
     "samples_0_value"->0L,"samples_0_valid"->0L,"samples_0_calibrated"->0L,"samples_0_age"->0L,
     "samples_0_sequence"->0L,"samples_0_never"->1L,"samples_0_fault"->0L)
   private val steps = Seq(
-    Step(events=63,changes=Map("pending"->63L)),
-    Step(events=4,clear=63,changes=Map("pending"->4L)),
     Step(kind=1,offset=24,data=0xdeadbeefL,changes=Map("output"->0xdeadbeefL)),
     Step(kind=1,offset=28,data=3,changes=Map("enable"->3L)),
     Step(kind=1,offset=52,index=17,data=123,changes=Map("application_1"->123L)),
@@ -30,17 +28,16 @@ class AsyncTelemetrySpec extends AnyFunSuite {
     Step(elapsed=20,capture=Seq(1,3,1,0,1,42,7),changes=Map("samples_0_value"->42L,"samples_0_age"->7L,"samples_0_sequence"->4L,"samples_0_never"->0L)),
     Step(elapsed=5,capture=Seq(1,1,0,0,0,999,0),changes=Map("samples_0_age"->12L,"samples_0_sequence"->5L)),
     Step(elapsed=8,capture=Seq(1,1,1,1,1,100,2),changes=Map("samples_0_value"->100L,"samples_0_age"->2L,"samples_0_sequence"->6L,"samples_0_valid"->1L,"samples_0_calibrated"->1L,"samples_0_fault"->0L)),
-    Step(kind=2,events=32,elapsed=3,changes=Map("output"->0L,"enable"->0L,"pending"->32L,"application_1"->0L,"samples_0_age"->5L)),
+    Step(kind=2,elapsed=3,changes=Map("output"->0L,"enable"->0L,"application_1"->0L,"samples_0_age"->5L)),
     Step(elapsed=0xffffffffL,changes=Map("samples_0_age"->0xffffffffL)),
     Step(elapsed=2,capture=Seq(1,0xffffffffL,0,0,0,0,0),changes=Map("samples_0_sequence"->5L,"samples_0_valid"->0L,"samples_0_calibrated"->0L,"samples_0_fault"->1L)),
     Step(capture=Seq(1,2,1,1,0,1234,0),changes=Map("samples_0_sequence"->7L,"samples_0_value"->1234L,"samples_0_age"->0L,"samples_0_valid"->1L,"samples_0_fault"->0L)),
-    Step(kind=1,offset=8,clear=2,events=2,changes=Map("pending"->34L)),
-    Step(kind=1,offset=8,clear=2,changes=Map("pending"->32L)))
+    Step(kind=1,offset=8))
   private def source(click: Boolean, campaign: Seq[Step]): String = campaign.zipWithIndex.map { case(s,i) =>
     val phase=if(click) (i+1)%2 else 1
     val capture=Seq("seen","count","hadValid","valid","calibrated","value","tailAge").zip(s.capture)
       .map { case(k,v) => s"command_bits_captures_0_$k=32'h${v.toHexString};" }.mkString("\n")
-    s"""command_bits_kind=${s.kind}; command_bits_events=${s.events}; command_bits_clear=${s.clear};
+    s"""command_bits_kind=${s.kind};
       command_bits_elapsedUpper=32'h${s.elapsed.toHexString}; command_bits_offset=${s.offset};
       command_bits_data=32'h${s.data.toHexString}; command_bits_appIndex=${s.index}; $capture
       #2; command_req=$phase; wait(command_ack == $phase); #2;
@@ -50,10 +47,9 @@ class AsyncTelemetrySpec extends AnyFunSuite {
   private def sink(click: Boolean, campaign: Seq[Step]): String = {
     var expected=initial
     campaign.zipWithIndex.map { case(s,i) =>
-      expected ++= s.changes
-      // BD stores only implemented GPIO bits. The external MMIO ABI already
-      // masks these bits; Click retains its frozen internal 32-bit layout.
-      if(!click) { val mask=(1L << p.config.gpioCount)-1
+      expected ++= s.changes;
+      // Both independent banks store only implemented GPIO bits.
+      { val mask=(1L << p.config.gpioCount)-1
         expected=expected.updated("output",expected("output") & mask).updated("enable",expected("enable") & mask)
       }
       val phase=if(click) (i+1)%2 else 1

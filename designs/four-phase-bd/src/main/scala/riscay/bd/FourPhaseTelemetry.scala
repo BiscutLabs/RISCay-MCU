@@ -15,7 +15,7 @@ import riscay.soc._
 
 /** The existing Telemetry owner exposes its closed architectural bank. */
 class TelemetryRegisters(gpios: Int, words: Int) extends Bundle {
-  val output=UInt(gpios.max(1).W); val enable=UInt(gpios.max(1).W);val pending=UInt(6.W)
+  val output=UInt(gpios.max(1).W); val enable=UInt(gpios.max(1).W)
   val application=if(words>0) Some(Vec(words,UInt(32.W))) else None
 }
 /** Application/GPIO state lives only in the closed bank, not in the feedback token. */
@@ -70,7 +70,6 @@ class FourPhaseTelemetry(p: SocParameters, words: Vector[Int], domain: ResetDoma
   private val stored=Module(new EventRegister(view.getWidth,cell))
   private val next=Wire(new TelemetryRegisters(p.config.gpioCount,words.size))
   next.output:=fork.out(1).bits.state.output;next.enable:=fork.out(1).bits.state.enable
-  next.pending:=fork.out(1).bits.state.pending
   next.application.foreach(_ := fork.out(1).bits.state.application.get)
   stored.reset:=reset;stored.trigger:=commitAck.getOrElse(reply.ack);stored.d:=next.asUInt
   contract.primitive("register_bank",stored,Map("WIDTH"->BigInt(view.getWidth),"DELAY_FS"->BigInt(cell.fs),
@@ -96,7 +95,7 @@ class FourPhaseTelemetry(p: SocParameters, words: Vector[Int], domain: ResetDoma
   FourPhase.connect(reply,fork.out(1))
   private def transition(s: TelemetryFeedback, c: TelemetryCommand, registers: TelemetryRegisters): TelemetryReply = {
     val r = WireDefault(0.U.asTypeOf(new TelemetryReply(p.config.measurements.size, words.size)))
-    r.kind := c.kind; r.state.pending := registers.pending
+    r.kind := c.kind
     r.state.output := registers.output.pad(32); r.state.enable := registers.enable.pad(32)
     r.state.application.foreach(_ := registers.application.get)
     r.state.samples.foreach(_ := s.samples.get)
@@ -110,7 +109,6 @@ class FourPhaseTelemetry(p: SocParameters, words: Vector[Int], domain: ResetDoma
       }
       n.application.foreach(_.foreach(_ := 0.U))
     }
-    n.pending := (Mux(c.kind === TelemetryKind.ResetApplication.U, 0.U, registers.pending) & ~c.clear) | c.events
     when(c.kind === TelemetryKind.Commit.U) {
       switch(c.offset) {
         is(24.U) { n.output := c.data & ((BigInt(1)<<p.config.gpioCount)-1).U(32.W) }

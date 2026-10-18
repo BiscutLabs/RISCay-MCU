@@ -102,8 +102,10 @@ end endtask
           if(commands[$first] != baseCommands[$first]+2 || commands[${1-first}] != baseCommands[${1-first}]+1)
             $$fatal(1,"RECOVERY_DECISION_SELECTION");
           @(negedge serviceClock); holdDecision=0; #20000;
-          if(recoveryReplyWaiting !== 3 || nativeDebt !== 3 || projectedEvents !== 0)
-            $$fatal(1,"RECOVERY_BEFORE_ACTUAL_PUBLICATION");
+          // Events now commit at the clocked arbitration edge, independently
+          // of held Telemetry publication; the post-cutoff GPIO must be visible.
+          if(recoveryReplyWaiting !== 3 || nativeDebt !== 3 || !projectedEvents[2])
+            $$fatal(1,"RECOVERY_EVENT_DEPENDED_ON_PUBLICATION");
           @(negedge serviceClock); request_valid=1; request_bits_operation=2;
           request_bits_address=32'h30000018; request_bits_data=1; request_bits_mask=15;
           holdPublication=0; #20000;

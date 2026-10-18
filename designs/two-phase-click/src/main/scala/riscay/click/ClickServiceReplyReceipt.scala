@@ -6,6 +6,7 @@ import chisel3.util._
 import chiselasync.clocked.ClockedBridge
 import chiselasync.core.ResetDomain
 import chiselasync.protocol.Channel
+import riscay.soc.TelemetryReply
 
 /** POR-owned native-phase receipt of an already retained payload.
   * The producer owns every payload bit until downstream acceptance. ACK records
@@ -38,4 +39,18 @@ class ClickServiceReplyReceipt[T <: Data](gen: T, domain: ResetDomain)
   contract.endpoint("request_sync", request)
   contract.endpoint("local_reset", localReset)
   contract.endpoint("reset", reset)
+}
+
+/** Authorization travels beside the accepted phase and stays until the next
+  * receipt. The native bank consumes both ACK polarities, even when revoked.
+  */
+class ClickTelemetryReceipt(gen: TelemetryReply,domain: ResetDomain)
+    extends ClickServiceReplyReceipt(gen,domain) {
+  val applyBank=IO(Input(Bool()));val bankApply=IO(Output(Bool()))
+  withClockAndReset(clock,localReset) {
+    val accepted=RegInit(false.B)
+    when(out.fire) { accepted:=applyBank }
+    bankApply:=accepted
+  }
+  contract.endpoint("apply_bank",applyBank);contract.endpoint("bank_apply",bankApply)
 }

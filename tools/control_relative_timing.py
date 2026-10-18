@@ -234,7 +234,7 @@ def parse(log, plan, context):
                          if plan.get('leaf_anchored') else
                          abs(source)<1e-6 and abs(arrival-data)<1e-6 and abs(arrival-delay)<1e-6)
                 require(all(math.isfinite(v) for v in (source,arrival,data,delay,slew)) and
-                        numeric and delay>=0 and slew>=0,
+                        numeric and (delay>=0 or context['kind']=='data') and slew>=0,
                         "RELATIVE_NUMERIC")
                 require(start in context["sources"] and end==q["sink"] and te==q["sink_edge"] and
                         se in ("rise","fall") and (q["source_edge"]=="any" or q["source_edge"]==se),"RELATIVE_PATH_BINDING")
@@ -316,8 +316,9 @@ def margins(results, plan, cell):
             values.append(dict(lane=lane,phase=phase,
                 maximum_input_data_lag_ns=capture-dmax-cell["setup_ns"],
                 # Leaf source launch/retention is uncomposed. Grant no parent
-                # distribution or transform contamination-delay credit.
-                zero_reuse_hold_margin_ns=ack+(0 if plan.get('leaf_anchored') else dmin)-close-cell["hold_ns"],
+                # distribution or positive transform contamination credit. A
+                # signed NLDM data offset still debits the hold bound.
+                zero_reuse_hold_margin_ns=ack+(min(0,dmin) if plan.get('leaf_anchored') else dmin)-close-cell["hold_ns"],
                 ack_after_capture_ns=ack-close))
             if plan.get('leaf_anchored'):values[-1].update(ack_receiver=limiting_ack['end'],ack_receiver_role=limiting_ack['receiver_role'])
     return dict(lanes=values, minimum_input_data_lag_ns=min((v["maximum_input_data_lag_ns"] for v in values if v["maximum_input_data_lag_ns"] is not None),default=None),

@@ -114,7 +114,7 @@ abstract class ClickPlatform(p: SocParameters, board: SocParameters => BoardProf
   val host = asyncChild("i2c")(d => new I2cTarget(p.i2cAddress,p.i2cIdleCycles,d))
   host.clock := serviceClock; host.scl := scl; host.sda := sda
   host.frameAcceptEnable := fabric.io.clockRunning
-  host.snapshotAcceptEnable := fabric.io.clockRunning
+  host.snapshotAcceptEnable := fabric.io.clockRunning && fabric.bankReadReady
   fabric.io.i2c <> host.host; sdaLow := host.pullLow
   val programAccess = asyncChild("program_access")(d => new ProgramAccess(d))
   val programReturn = asyncChild("program_return")(d => new ClickProgramReturn(d))
@@ -257,11 +257,14 @@ abstract class ClickPlatform(p: SocParameters, board: SocParameters => BoardProf
   dontTouch(housekeepingReplyBridge.out)
   housekeeping.start:=controlStart
   fabric.io.housekeepingDraining:= !housekeepingCommandBridge.in.ready
-  val telemetry = asyncChild("telemetry")(d => new ClickTelemetry(p, fabric.telemetryWords, d))
+  val telemetry = asyncChild("telemetry")(d => new ClickTelemetry(p, fabric.telemetryWords, d,qualifyCommit=true))
   val telemetryCommandBridge = asyncChild("telemetry_command_bridge")(d =>
     new DecoupledToClick(new TelemetryCommandHeader(p.config.measurements.size), d))
   val telemetryReplyBridge = asyncChild("telemetry_reply_bridge")(d =>
-    new ClickServiceReplyReceipt(new TelemetryReply(p.config.measurements.size, fabric.telemetryWords.size), d))
+    new ClickTelemetryReceipt(new TelemetryReply(p.config.measurements.size, fabric.telemetryWords.size), d))
+  fabric.telemetryView:=telemetry.view
+  telemetry.applyBank.get:=telemetryReplyBridge.bankApply
+  telemetryReplyBridge.applyBank:=fabric.telemetryApplyBank
   telemetry.start := controlStart
   telemetry.command.req:=telemetryCommandBridge.out.req
   telemetryCommandBridge.out.ack:=telemetry.command.ack
@@ -284,7 +287,15 @@ abstract class ClickPlatform(p: SocParameters, board: SocParameters => BoardProf
   dontTouch(telemetryReplyBridge.out)
   // Click reply acceptance returns the clocked bridge to idle on that edge.
   // The outstanding command covers reply wait; native guard drainage is clockless.
-  fabric.io.telemetryDraining := !telemetryCommandBridge.in.ready
+  // Completion is the bank's native output phase, after capture and its guard.
+  // Comparing the synchronized phase with the receipt ACK closes readers until
+  // every accepted (including revoked) publication has finished its bank turn.
+  val telemetryBankComplete=withClockAndReset(workClock,reset) {
+    val meta=RegNext(telemetry.bankComplete,false.B);RegNext(meta,false.B)
+  }
+  fabric.telemetryBankReady:=telemetryBankComplete === telemetryReplyBridge.in.ack
+  fabric.io.telemetryDraining := !telemetryCommandBridge.in.ready ||
+    telemetryBankComplete =/= telemetryReplyBridge.in.ack
 
   // Native proof ownership clears debt after original slot and final receipt
   // return. The temporary receipt only observes the remaining clocked client.

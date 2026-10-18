@@ -67,11 +67,13 @@ class ClickServices(p: SocParameters, boardFactory: SocParameters => BoardProfil
   val telemetryCommitPending = applicationReg(false.B)
   val telemetryCommit = Reg(new TelemetryCommand(config.measurements.size))
   io.telemetryCommitFields.elements.foreach { case (name, field) => field := telemetryCommit.elements(name) }
-  val telemetryBarrier = telemetryOutstanding || telemetryRecoveryBlocked || telemetryCommitPending || !io.telemetryCommandIdle
+  val telemetryBarrier = telemetryOutstanding || telemetryRecoveryBlocked || telemetryCommitPending || !io.telemetryCommandIdle || io.telemetryDraining
+  // Clocked completion of the existing native bank turn. Before receipt
+  // acceptance the old bank is stable; afterward readers wait for completion.
+  val telemetryBankReady=IO(Input(Bool()))
+  val bankReadReady=IO(Output(Bool()))
   val telemetryWork = Wire(Bool())
   val telemetryAccepted = WireDefault(false.B)
-  val telemetryDispatchedEvents = applicationReg(0.U(6.W))
-  val telemetryEvents = applicationReg(0.U(6.W))
   val telemetryElapsed = RegInit(0.U(32.W))
   val telemetryCaptures = RegInit(0.U.asTypeOf(Vec(config.measurements.size, new TelemetryCapture)))
   // Retain the complete registered boundary, including profile-constant flags.
@@ -164,14 +166,14 @@ class ClickServices(p: SocParameters, boardFactory: SocParameters => BoardProfil
   }
   io.observedGpio := gpio
   val gpioPrevious = RegNext(gpio, 0.U)
-  val output = if(p.retainGpioOnWatchdog) RegInit(0.U(32.W)) else applicationReg(0.U(32.W))
-  val enable = if(p.retainGpioOnWatchdog) RegInit(0.U(32.W)) else applicationReg(0.U(32.W))
+  val telemetryView=IO(Input(new TelemetryRegisters(config.gpioCount,telemetryWords.size)))
+  val output=telemetryView.output.pad(32);val enable=telemetryView.enable.pad(32)
   val gpioMask = ((BigInt(1) << config.gpioCount) - 1).U(32.W)
-  val application = telemetryWords.map(word => word -> applicationReg(0.U(32.W))).toMap
+  val application=telemetryWords.zip(telemetryView.application.toSeq.flatMap(_.toSeq)).toMap
   val appIndex = controlState.appIndex
   def applicationWord(word: UInt): UInt = MuxLookup(word, "hffffffff".U(32.W))(
     config.application.registers.map(r => r.word.U ->
-      application(r.word)))
+      Mux(io.applicationCancel || telemetryRecoveryBlocked,0.U,application(r.word))))
   def applicationExists(word: UInt): Bool = config.application.registers.map(r => word === r.word.U).foldLeft(false.B)(_ || _)
 
   // Native telemetry receives the retained acquisition stream.
@@ -197,29 +199,34 @@ class ClickServices(p: SocParameters, boardFactory: SocParameters => BoardProfil
     publish(0) := io.adc.result; publishAge(0) := io.adc.age
   }
   // Generic GPIO reset policy; profile pin descriptors never drive hardware.
-  val gpioOutputView = output & gpioMask
-  val gpioEnableView = enable & gpioMask
+  // Pads are continuous: keep isolation through native capture and full return,
+  // not just the receipt edge which authorizes the bank write.
+  val gpioRecovery = io.applicationCancel || telemetryRecoveryBlocked
+  val recoveryMask = Mux(gpioRecovery,
+    (if(!p.retainGpioOnWatchdog) 0.U(32.W) else if(p.spiBoot) "hffffffc7".U else "hffffffff".U),"hffffffff".U)
+  val gpioOutputView = output & gpioMask & recoveryMask
+  val gpioEnableView = enable & gpioMask & recoveryMask
   io.gpioOut := (if(p.retainGpioOnWatchdog) Mux(io.cpuReset, gpioOutputView & (if(p.spiBoot) "hffffffc7".U else "hffffffff".U), gpioOutputView) else Mux(io.cpuReset, 0.U, gpioOutputView))
   io.gpioOe := (if(p.retainGpioOnWatchdog) Mux(io.cpuReset, gpioEnableView & (if(p.spiBoot) "hffffffc7".U else "hffffffff".U), gpioEnableView) else Mux(io.cpuReset, 0.U, gpioEnableView))
 
-  val pendingState = applicationReg(0.U(6.W))
-  // Captured sets are irrevocable and visible while awaiting native commit.
-  // A CPU clear/replacement is serialized against in-flight native work.
-  val pendingView = pendingState | telemetryEvents | telemetryDispatchedEvents
+  // The work edge arbitrates independent producers against MMIO arrival.
+  // This is the sole event bank: no native projection or event transaction.
+  val eventPending = applicationReg(0.U(6.W))
+  val pendingView = eventPending
   // Diagnostic application observation follows immediate isolation. The actual
   // MMIO/host ABI and WAIT use pendingView and synchronous cancellation; raw
   // reset must never enter their data/enable cones.
   val pending = Mux(io.cpuReset, 0.U(6.W), pendingView)
-  val clear = WireDefault(0.U(32.W))
+  val clear = WireDefault(0.U(6.W))
   val replaceDeadline = WireDefault(false.B)
   val hostWake = WireDefault(false.B)
   val due = housekeepingPublished && !housekeepingRecoveryBlocked && !replaceDeadline && housekeepingReply.bits.due
   val acquisition = if(config.measurements.isEmpty) false.B else publish.map(_.valid).reduce(_ || _)
   val gpioActivity = ((gpio ^ gpioPrevious) & p.gpioEventMask.U(32.W)).orR
-  val events = Cat(0.U(26.W), hostWake, leaseExpired, acquisition, gpioActivity, due, tick)
+  val events = WireDefault(Cat(hostWake, leaseExpired, acquisition, gpioActivity, due, tick))
   // Native validation adds a handshake window before the peripheral commit.
   // Preserve every event raised during that window against a software clear.
-  val mmioEvents = applicationReg(0.U(32.W))
+  val mmioEvents = applicationReg(0.U(6.W))
   // The request may already be waiting while a previous completion drains.
   // Events since its arrival must survive a later clear, not only events since
   // Control dispatch. Otherwise extra return latency loses a coincident GPIO.
@@ -235,7 +242,7 @@ class ClickServices(p: SocParameters, boardFactory: SocParameters => BoardProfil
   // Replacement consumes only the old deadline, including an expiry on this
   // edge. Other new events still win acknowledgement races.
   val acceptedClear = (clear | Mux(replaceDeadline, 2.U, 0.U))(5,0)
-  telemetryEvents := (Mux(telemetryCommand.fire, 0.U, telemetryEvents) & ~acceptedClear) | events(5,0)
+  eventPending := (eventPending & ~acceptedClear) | events
 
   // Native credit gates admission at the original commit edge. Keep the held
   // request visible above while waiting, including its MMIO event-clear window.
@@ -337,7 +344,7 @@ class ClickServices(p: SocParameters, boardFactory: SocParameters => BoardProfil
     req.operation =/= Operation.Halt.U
   val mmioComplete = io.controlReply.fire && io.controlReply.bits.kind === ControlKind.Mmio.U && mmioCurrent
   val cpuAvailable = completionAvailable && !io.applicationCancel && !resetRecovery && io.clockRunning && io.admissionGrant.valid && !bootWait && !eventWait &&
-    !memoryBusy && !loaderWrite && !telemetryBarrier && !housekeepingBarrierBusy &&
+    !memoryBusy && !loaderWrite && !telemetryBarrier && telemetryBankReady && !housekeepingBarrierBusy &&
     !telemetryRecoveryBlocked && !housekeepingRecoveryBlocked
   // Reserve from a validated, held Control reply. An unused parked WAIT owns
   // no source. Engine readiness excludes these reservations, avoiding self-wait.
@@ -345,7 +352,7 @@ class ClickServices(p: SocParameters, boardFactory: SocParameters => BoardProfil
     io.controlReply.bits.kind === ControlKind.Mmio.U && io.request.valid && nativeMmio
   val successfulWrite=isWrite && !io.controlReply.bits.memory.error
   val telemetryRequired=successfulWrite &&
-    Seq(8,12,24,28,44,52).map(x => req.address(6,0) === x.U).reduce(_ || _)
+    Seq(24,28,44,52).map(x => req.address(6,0) === x.U).reduce(_ || _)
   val housekeepingWriteRequired=successfulWrite &&
     Seq(8,32,56,60,64).map(x => req.address(6,0) === x.U).reduce(_ || _)
   val housekeepingRequired=waitingRead || housekeepingWriteRequired
@@ -414,7 +421,7 @@ class ClickServices(p: SocParameters, boardFactory: SocParameters => BoardProfil
         when(isWrite && !io.controlReply.bits.memory.error) {
           switch(offset) {
             is(8.U) { replaceDeadline := true.B; response.error := false.B }
-            is(12.U) { clear := req.data & ~mmioEvents; response.error := false.B }
+            is(12.U) { clear := req.data(5,0) & ~Mux(mmioObserved, mmioEvents, 0.U(6.W)); response.error := false.B }
             is(24.U) { response.error := false.B }
             is(28.U) { response.error := false.B }
             is(32.U) { when(req.data === "h57444f47".U) { response.error := false.B } }
@@ -514,7 +521,7 @@ class ClickServices(p: SocParameters, boardFactory: SocParameters => BoardProfil
     (hostTurn && hostFrames.io.deq.bits.programBusy)
   io.controlCommand.bits.memory := req
   io.controlCommand.bits.applicationWritable := application.keys.toSeq.map(i => appIndex === i.U).foldLeft(false.B)(_ || _)
-  io.controlCommand.bits.peripheralData := MuxLookup(req.address(6,0), 0.U(32.W))(Seq(
+  val peripheralRead = MuxLookup(req.address(6,0), 0.U(32.W))(Seq(
     4.U -> now, 8.U -> deadline, 12.U -> pendingView, 16.U -> pendingView,
     20.U -> (gpio & gpioMask), 24.U -> gpioOutputView, 28.U -> gpioEnableView,
     52.U -> applicationWord(appIndex), 56.U -> wakeMask, 60.U -> sleepRemaining,
@@ -522,6 +529,8 @@ class ClickServices(p: SocParameters, boardFactory: SocParameters => BoardProfil
     72.U -> io.sleepEntries,
     88.U -> Cat(0.U(29.W), output(5) && enable(5) && !output(3), io.adc.busy, spiClaimed),
     92.U -> (MemoryMap.ram + config.workingRamBytes).U(32.W)))
+  io.controlCommand.bits.peripheralData:=Mux(io.controlCommand.bits.kind === ControlKind.Mmio.U &&
+    !telemetryBarrier && telemetryBankReady && !io.applicationCancel,peripheralRead,0.U)
   when(mmioCommitPending && !io.programSource.stored.valid) {
     io.controlCommand.bits := mmioCommit
   }
@@ -548,11 +557,14 @@ class ClickServices(p: SocParameters, boardFactory: SocParameters => BoardProfil
   // A reply belongs to the single outstanding command, including reset recovery.
   io.controlReply.ready := controlOutstanding &&
     (io.controlReply.bits.kind =/= ControlKind.Mmio.U || !mmioCurrent ||
-      (!telemetryBarrier && !housekeepingBarrierBusy && completionAvailable && !io.applicationCancel &&
+      (!telemetryBarrier && telemetryBankReady && !housekeepingBarrierBusy && completionAvailable && !io.applicationCancel &&
         !resetRecovery && io.clockRunning && io.admissionGrant.valid && !bootWait && !eventWait &&
         !memoryBusy && !telemetryRecoveryBlocked && !housekeepingRecoveryBlocked && publicationAdmission)) &&
     (!io.controlReply.bits.periodUpdate || (!housekeepingOrderedPending && housekeepingBankAvailable)) &&
     (!io.controlReply.bits.programWrite || programLoaderReady)
+  when(io.controlReply.fire && io.controlReply.bits.kind === ControlKind.Mmio.U && mmioCurrent) {
+    assert(io.request.fire,"MMIO_REPLY_WITHOUT_REQUEST_ACCEPTANCE")
+  }
   when(io.controlReply.fire) {
     val result = io.controlReply.bits
     controlOutstanding := false.B; loaderControlPending := false.B; controlState := result.state
@@ -695,7 +707,7 @@ class ClickServices(p: SocParameters, boardFactory: SocParameters => BoardProfil
     }
   }
   val capturesPending = telemetryCaptures.map(_.seen).foldLeft(false.B)(_ || _)
-  val observationPending = telemetryEvents.orR || telemetryElapsed.orR || capturesPending
+  val observationPending = telemetryElapsed.orR || capturesPending
   telemetryWork := telemetryBarrier || observationPending || io.telemetryDraining || io.telemetrySource.draining
   telemetryAccepted := io.request.fire && nativeMmio && telemetryRequired
   when(telemetryAccepted) {
@@ -703,7 +715,7 @@ class ClickServices(p: SocParameters, boardFactory: SocParameters => BoardProfil
     telemetryCommitPending := true.B
     telemetryCommit := 0.U.asTypeOf(new TelemetryCommand(config.measurements.size))
     telemetryCommit.kind := TelemetryKind.Commit.U; telemetryCommit.offset := req.address(6,0)
-    telemetryCommit.data := req.data; telemetryCommit.appIndex := appIndex; telemetryCommit.clear := acceptedClear
+    telemetryCommit.data := req.data; telemetryCommit.appIndex := appIndex
   }
   // CPU validation has priority over background batching. In particular a tick
   // on every service edge cannot prevent forward progress at serviceHz=1000.
@@ -711,7 +723,7 @@ class ClickServices(p: SocParameters, boardFactory: SocParameters => BoardProfil
     io.telemetrySource.grant.bits.recovery && io.telemetrySource.ownerRecovery &&
     io.telemetrySource.eligible && io.telemetrySource.recoveryDebt &&
     io.telemetrySource.decision.ready && !telemetryCommitPending && !io.telemetryDraining
-  telemetryCommand.valid := !telemetryOutstanding && !io.applicationCancel &&
+  telemetryCommand.valid := !telemetryOutstanding && !io.applicationCancel && !io.telemetryDraining &&
     (telemetryCommitPending || telemetryRecoveryReady ||
       (!io.telemetrySource.occupied && !telemetryRecoveryBlocked &&
         observationPending && !cpuTimingTurn && !mmioCurrent && !mmioLaunch && !io.request.fire))
@@ -722,12 +734,10 @@ class ClickServices(p: SocParameters, boardFactory: SocParameters => BoardProfil
     telemetryCommand.bits.recovery := true.B
   }
   telemetryRecoveryCommit:=telemetryCommand.fire && telemetryCommand.bits.recovery
-  telemetryCommand.bits.events := telemetryEvents
   telemetryCommand.bits.elapsedUpper := telemetryElapsed
   telemetryCommand.bits.captures.foreach(_ := telemetryCaptures)
   when(telemetryCommand.fire) {
     telemetryOutstanding := true.B; telemetryInFlight := telemetryCommand.bits
-    telemetryDispatchedEvents := telemetryCommand.bits.events
     when(telemetryCommand.bits.kind === TelemetryKind.Commit.U) { telemetryCommitPending := false.B }
   }
   val telemetryOwnedReply=telemetryReply.bits.kind === TelemetryKind.Commit.U || telemetryReply.bits.recovery
@@ -736,9 +746,12 @@ class ClickServices(p: SocParameters, boardFactory: SocParameters => BoardProfil
   io.telemetrySource.publication.bits:=telemetryReply.bits.state.output(0)
   io.telemetrySource.quiet:= !telemetryOutstanding && !telemetryCommitPending &&
     !io.telemetryDraining && io.telemetrySource.publication.ready
+  val telemetryApplyBank=IO(Output(Bool()))
+  telemetryApplyBank:= !io.applicationCancel &&
+    ((telemetryReply.bits.recovery && io.telemetrySource.ownerRecovery && io.telemetrySource.eligible) ||
+      (!telemetryReply.bits.recovery && !telemetryRecoveryBlocked))
   when(telemetryReply.fire) {
     val result = telemetryReply.bits
-    telemetryDispatchedEvents := 0.U
     telemetryOutstanding := false.B; telemetryInFlight := 0.U.asTypeOf(new TelemetryCommand(config.measurements.size))
     result.state.samples.foreach(hostSamples := _)
     assert(result.recovery === telemetryInFlight.recovery,"TELEMETRY_RECOVERY_ATTRIBUTION")
@@ -747,25 +760,15 @@ class ClickServices(p: SocParameters, boardFactory: SocParameters => BoardProfil
         "TELEMETRY_PUBLICATION_IDENTITY")
     }
     val recovered=result.recovery && io.telemetrySource.ownerRecovery && io.telemetrySource.eligible
-    // Fresh recovery may project before debt retirement; this preserves events
-    // carried by that publication. A revoked recovery can only update samples.
+    // Only an attributed live publication can complete a CPU write.
+    // Revoked replies drain and update retained samples, never application state.
     when(!io.applicationCancel && (recovered || (!result.recovery && !telemetryRecoveryBlocked))) {
-      output := result.state.output; enable := result.state.enable; pendingState := result.state.pending
-      for((word,index) <- telemetryWords.zipWithIndex) { application(word) := result.state.application.get(index) }
       when(result.kind === TelemetryKind.Commit.U && !result.recovery &&
           !io.telemetrySource.ownerRecovery && io.telemetrySource.eligible &&
           !telemetryRecoveryBlocked) {
         io.completionTelemetry.valid := true.B
         assert(io.completionTelemetry.ready,"COMPLETION_TELEMETRY_OVERFLOW")
       }
-    }
-  }
-
-  // Retain ordinary pads only. Highest-priority synchronous cancellation
-  // prevents pre-reset SPI enables reappearing when raw isolation releases.
-  if(p.retainGpioOnWatchdog && p.spiBoot) {
-    when(io.applicationCancel) {
-      output := output & "hffffffc7".U; enable := enable & "hffffffc7".U
     }
   }
 
@@ -830,9 +833,19 @@ class ClickServices(p: SocParameters, boardFactory: SocParameters => BoardProfil
       (space === 2.U && instance < config.measurements.size.U && word < 6.U) ||
       (space === 128.U && instance === 0.U && appWord)
   }
+  // Only the application host bank borrows native data. Cancellation/recovery
+  // selects constant zero, so reset must never block the host receipt.
+  bankReadReady:=space =/= 128.U || instance =/= 0.U || io.applicationCancel ||
+    telemetryRecoveryBlocked || telemetryBankReady
   val snapshot = Reg(Vec(bankSize, UInt(32.W)))
   val snapshotSupported = Reg(UInt(8.W))
-  when(io.i2c.readStart) { snapshot := bank; snapshotSupported := Cat(supported.reverse) }
+  when(io.i2c.readStart) {
+    assert(bankReadReady,"TELEMETRY_SNAPSHOT_WHILE_BANK_SETTLING")
+    snapshot := bank; snapshotSupported := Cat(supported.reverse)
+  }
+  when(io.controlCommand.fire && io.controlCommand.bits.kind === ControlKind.Mmio.U) {
+    assert(telemetryBankReady && !telemetryBarrier,"TELEMETRY_MMIO_WHILE_BANK_SETTLING")
+  }
   val readIndex = selector(7,0) +& io.i2c.wordIndex
   io.i2c.readWord := Mux(io.i2c.wordIndex === 8.U, Cat(0.U(24.W), snapshotSupported),
     MuxLookup(readIndex, "hffffffff".U(32.W))(bankWords.zipWithIndex.map { case(word,i) => word.U -> snapshot(i) }))
