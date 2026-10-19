@@ -263,7 +263,9 @@ proc leaf_slew {pin edge mode} {
 proc leaf_ack {id mode edge root phase_q phase_clk target {record LEAF_ACK_PATH}} {
   # Built-in report_path uses this same graph-path iterator. No invented output
   # port, electrical load or invalid combinational PathEnd constraint is needed.
-  sta::find_timing
+  # These are local combinational or explicit phase-launch paths. Populate the
+  # target's arrivals without unrelated whole-graph transparent-latch iteration.
+  get_property [exact_object pin $target] arrival_${mode}_${edge}
   set chosen {}; set visits 0
   foreach vertex [[exact_object pin $target] vertices] {
     set iterator [$vertex path_iterator $edge $mode]

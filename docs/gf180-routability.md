@@ -304,7 +304,7 @@ ODB-derived netlist, that reader's own annotation coverage, and rejection of
 active automatic loop cuts on alternative source-to-target paths. Neither an
 invented load nor a new timing waiver replaces the missing paths.
 
-The final Control smoke (`build/pnr-routed-timing-smoke-r15/`) completes at TT,
+The retained Control smoke (`build/pnr-routed-timing-smoke-r15/`) completes at TT,
 0.2 ns launch slew, with both extracted RC views and their conservative cross-RC
 envelope. All 88,624 driver identities match; every load-bearing driver is
 annotated and every queried target passes the automatic-loop-cut audit. The
@@ -312,8 +312,8 @@ cross-RC local bounds are **−14.929 ns allowed data lag**, **+1.675 ns zero-re
 hold**, and **+1.979 ns ACK after capture**. Negative allowed lag means Control
 needs data stable before its request; only a composed upstream-launch check can
 decide setup. This is a successful measurement, not a timing pass. The broader
-32-stage, five-PVT, two-slew, min/max-RC campaign is recorded separately when
-complete; the smoke does not stand in for those cases.
+32-stage, five-PVT, two-slew, min/max-RC campaign is recorded below; the smoke
+does not stand in for those cases.
 
 The independently reviewed period control
 (`build/pnr-routed-period-control-r1/`) changes only 1000 to 2000 ns and reproduces
@@ -322,6 +322,89 @@ slews, electrical records and margins. Apertures are conservative per-PVT maxima
 over the characterized Liberty setup/hold tables, not an interpolation at each
 receiver's measured slew. The period check does not qualify electrical violations
 or provide upstream launch credit.
+
+Two full-campaign contexts aborted in standalone STA: Completion reply request
+and core address common-path analysis. The instrumented Completion probe
+localizes its crash to the whole-graph arrival update, before constructing the
+path iterator; the address log alone does not localize its internal failure.
+The local helper now asks
+for arrivals through the target's graph level, then uses the same iterator and
+root/polarity/path checks. Independent review of the pinned STA source supports
+this for local combinational and explicitly launched phase paths; it is not a
+replacement for transparent-latch-chain or general full-chip analysis. Neither
+trigger computes required times or slack. Failed runs remain under
+`pnr-routed-stages-r7-hotspots-0-r1` and `pnr-routed-stages-r7-remaining-0-r1`.
+
+The generated-only diagnostic in `build/pnr-reply-arrival-probe-r1/` resolves all
+66 Completion request queries with the unchanged strict parser. The reviewed
+`build/pnr-control-arrival-equivalence-r1/` reproduces all 5,180 Control rows,
+paths, slews, apertures, margins and cross-RC bounds exactly after the trigger
+change. The fresh production smoke `build/pnr-routed-timing-smoke-r16/` also
+reproduces the complete r15 records exactly; the comparison is retained in
+`build/pnr-routed-smoke-equivalence-r16.json`. This checks the analyzer change,
+not physical timing closure. The period control repeated on that corrected
+analyzer (`build/pnr-routed-period-control-r2/`) again reproduces all 5,180 rows
+and complete derived results exactly at 1000 versus 2000 ns.
+
+### Routed canonical-stage results
+
+All **32 canonical BD stages** resolve at five cell PVTs, 0.02/2 ns input slews
+and both extracted RC views: **640 cases and 320 conservative cross-RC
+envelopes**, with no missing cases. Each consumed result and the expected stage
+inventory match their run-receipt hashes; aggregation checks the exact Cartesian
+product and rejects duplicates. Completion, core address and CRC use the clean
+`r2` reruns. The failed grouped `r1` runs remain retained and are excluded.
+
+These are local bounds, not composed setup slack. Positive allowed data lag
+means data may arrive that much after the request; a negative value requires
+data to arrive earlier. Zero-reuse hold assumes the source may reuse its data
+immediately upon ACK at the measured receiver, without additional source
+retention credit. Each table entry is the minimum across its group's instances,
+corners and slews; the three minima need not come from the same case.
+
+| Stage group | Allowed data lag, ns | Zero-reuse hold, ns | ACK after capture, ns |
+| --- | ---: | ---: | ---: |
+| ADC assemble/prepare | +20.927 | +1.319 | +1.510 |
+| ADC finish | +15.355 | +0.521 | +0.715 |
+| ADC radix steps | -132.685 | +1.119 | +1.313 |
+| CPU address | +19.179 | +1.067 | +1.261 |
+| CPU execute | +69.164 | +0.925 | +1.119 |
+| Completion reply | +20.871 | +2.163 | +2.357 |
+| Control CRC | +13.583 | +0.961 | +1.155 |
+| Control update | -29.962 | +0.903 | +1.097 |
+| Elapsed step | -233.389 | +0.968 | +1.162 |
+| Housekeeping update | -50.874 | +0.883 | +1.077 |
+| I2C update | +14.341 | +0.894 | +1.088 |
+| Program SRAM issue/capture | +20.108 | +1.238 | +1.432 |
+| Telemetry update | +15.651 | +1.612 | +1.806 |
+| Transaction reply | +21.904 | +1.639 | +1.833 |
+| Working SRAM issue/capture | +20.164 | +1.136 | +1.330 |
+
+Sixty envelopes require upstream data lead: Control, Housekeeping, elapsed and
+the three ADC radix stages. Elapsed is worst at SS hot, 2 ns input slew. All
+local hold/ACK bounds are positive, but ADC finish's **0.521 ns** hold and
+**0.715 ns** ACK bounds are small. These results contain the electrical-limit
+violations tabulated above and do not include mismatch derates. Repair those
+limits and compose actual launch/retention before accepting margins or changing
+guards. Insert hold cells only on failing composed paths; the **0.05 mm²**
+hold-repair reserve remains unspent.
+
+Within these 32 stages, the request-delay cell inventory locates two chains
+intersecting the lower SRAM band: program lane 3 capture,
+bbox (877.5,1991.4)–(1033.2,2348.1) µm, and
+working-RAM lane 1 issue, (2028.3,1858.1)–(2186.2,2387.3) µm. Both are covered
+above. Elapsed's request-chain cells lie near the lower edge,
+(1442.0,62.7)–(1775.2,180.3) µm. These are cell bounding boxes, not wire-route
+coverage or attribution of a timing failure to congestion.
+
+Evidence: the successful `build/pnr-routed-stages-r7-*/` runs and
+`build/pnr-routed-stage-summary-r7/{summary.json,stages.csv,request-guard-locations.json}`.
+The summary records the exact contributing runs. Custom controllers,
+Join/FIFO launch compositions, clocked bank readers, full reset distribution,
+pulse widths and receiver-noise immunity are outside this canonical-stage sweep.
+The empty-stage capture template does not close BD pending admission or both
+return-order scenarios.
+There is no full-chip timing-closure claim.
 
 ## Power-grid screening
 
@@ -414,7 +497,7 @@ The software rerun in `build/pnr-routability-ci-r2/` passes 346 Python tests,
 including the independently reviewed keeper experiment. The
 `build/pnr-routability-ci-r3/` passes 353 Python tests after the independently
 reviewed per-pin capacitance audit and its immutable-input checks. The latest
-`build/pnr-routability-ci-r5/` passes **360 Python tests**, including the reviewed
+`build/pnr-routability-ci-r6/` passes **360 Python tests**, including the reviewed
 routed reader, alternative-path loop audit and driver-identity checks. A synthetic 100×
 coupling fault in the historical pilot produces a false owner event and
 retained-state flip and is rejected. This negative control does not qualify
