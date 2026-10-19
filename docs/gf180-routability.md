@@ -1,6 +1,6 @@
 # BD routing, coupling and power-grid investigation
 
-The new 2.53 × 2.53 mm layout routes with zero violations. The retained old
+The new 2.25 × 2.53 mm layout routes with zero violations. The retained old
 1.94 × 2.53 mm layout has one real Metal2 short. This investigation
 keeps routing DRC, electrical limits, extracted relative timing, coupled noise
 and power-grid integrity as separate gates. A clean router result alone does
@@ -22,13 +22,41 @@ the 640-case campaign below explicitly load the independent SPEFs and replace
 those electrical/local-timing results. They remain diagnostic because electrical
 violations, composed launch/return paths and noise qualification are open.
 
-The next mapping/placement batch adds compact keeper placement and repairable
-parent output drivers. It must reroute and re-extract: old margins cannot be
+The current mapping/placement batch adds compact keeper placement and parent
+output drivers. It must reroute and re-extract: old margins cannot be
 transferred across those buffer and wire changes. First rerun native feeder cap,
 loaded slew and keeper coupling, then the still-needed local/composed timing.
 No new timing-closure claim may precede electrical repair.
 
 ## Compact native primitives and parent drivers (in progress)
+
+The fixed-tool runs at 2.25, 2.30 and 2.35 mm width pass detailed routing with
+zero violations, empty DRC reports, all 26,230 protected native cells and all
+10,327 placement groups. Independent nominal/minimum/maximum RC extraction is
+complete for all three. The README uses the smallest tested successful candidate,
+`build/native-physical/pnr-2250x2530-d50-r1`, rendered in
+`build/native-physical/render-2250-r1/layout.png`. The source map remains
+`map-bd-r4`, before the new A/B boot ROM; this layout does not qualify that ROM.
+
+The 2.25 mm cell footprints total **3.469786 mm²**: logic 2.858175, SRAM
+0.466241 and taps/endcaps 0.145371. Core occupancy is 64.27%; density in the
+available standard-cell area is 60.89%. The die is 15.98% larger than the former
+1.94 × 2.53 mm outline, rather than the 30.41% increase to 2.53 mm width.
+
+The matched 2.35 mm run totals **3.494115 mm²**: logic 2.875229, SRAM 0.466241
+and taps/endcaps 0.152645, at 61.90% core occupancy. Its 411 keeper groups span at
+most 25.20 µm; their median is 11.20 µm. All 9,916 output-parent groups span at
+most 63.84 µm, with median 12.32 µm. The former 525 µm victim's keeper group
+spans 11.76 µm. These are placement bounding boxes, not routed wire lengths or
+noise margins. The 2.35 mm extracted electrical/coupling campaign is diagnostic;
+its results do not qualify the different wires in the 2.25 mm layout.
+
+The final-flow 1.94, 2.05 and 2.20 mm runs still reject placement or global-route
+legalization/compaction; their logs remain under `pnr-1940x2530-d55-r3`,
+`pnr-2050x2530-d55-r3` and `pnr-2200x2530-d50-r4`. The earlier
+2.35 mm r2 router output had zero violations but its receipt rejected a tool
+source change during the run; r3 reruns with fixed tool inputs rather than
+waiving that rejection.
 
 The physical follow-up leaves RTL, handshake protocols and protected primitive
 graphs unchanged. Each AsymmetricC keeper's AOI21, NOR2 and first output buffer
@@ -42,8 +70,10 @@ ordinary logic, with a 500 µm retry from the saved starting placement, but the 
 within **64 µm on each axis**, after every legalization, repair and routed
 checkpoint. That is an engineering placement constraint, not a capacitance or
 noise-immunity limit. Extracted native-to-parent load and keeper coupling still
-decide qualification. Parent outputs remain repairable; their short input links
-are protected against inserting another uncontrolled branch.
+decide qualification. Short source-to-parent links are protected against another
+uncontrolled branch. A parent output remains locked if the same net enters a
+protected native input; the receiver-boundary correction below addresses this
+remaining repair limitation.
 
 The first trial (`build/native-physical/map-bd-r2`) exposed blanket pre-placement
 sizing: all 9,916 new `buf_2` drivers became `buf_8`, although only 52 parent-output
@@ -96,8 +126,8 @@ displacement into group 502. Local packing restores legal geometry, all 10,327
 groups pass, and every nontarget instance remains unchanged. A fully blocked
 placement rejects all attempts and restores the starting database geometry.
 Evidence: `build/native-physical/repack-fixture{,-blocked}.log`. Fresh 1.94, 2.05
-and 2.20 mm runs rejected isolated repacking; the 2.35 mm run passes global
-routing and has entered detailed routing. None has a new accepted route yet.
+and 2.20 mm runs rejected isolated repacking. The later accepted routes listed
+above use the regional fallback below.
 
 The next fallback selects ordinary neighbors whose complete bounding boxes lie
 within 96 µm of a bad group's first member. Neighboring native groups are released
@@ -128,6 +158,41 @@ the working-tree Python gate passes 370 tests in `ci-r5`, including the three
 new generic boot-slot properties being verified as a separate batch.
 These checks approve the implementation; they do not qualify unfinished routing,
 extracted electrical limits, composed timing or coupled noise.
+
+### Extracted electrical results and remaining receiver locks
+
+The accepted 2.35 mm route has **zero adapter-output capacitance violations**
+across all 10,609 measured native outputs, all five PVT corners and both min/max
+RC extractions. Both `electrical-2350-{min,max}-r3` audits explicitly load the
+appropriate SPEF and resolve every pin limit. This closes that inventory's
+previous 165–235 wire-dominated failures, not all whole-chip Liberty limits.
+Several ordinary-driver capacitance failures remain, including the frame
+publication parent buffer at the slow/hot corner.
+
+| PVT | Min-RC slew violation rows / worst ns | Max-RC slew violation rows / worst ns |
+| --- | ---: | ---: |
+| TT 25 °C | 1,299 / 11.686 | 1,548 / 14.393 |
+| SS 125 °C | 6,074 / 22.656 | 10,649 / 28.087 |
+| SS −40 °C | 1,877 / 14.861 | 2,329 / 18.330 |
+| FF 125 °C | 1,072 / 10.242 | 1,310 / 12.598 |
+| FF −40 °C | 651 / 7.666 | 732 / 11.251 |
+
+Evidence: `build/native-physical/slew-2350-r3/report.json`. The slow/hot max-RC
+rows cover 2,190 nets: 709 native-locked, 433 on which repair made no progress,
+and 1,048 ordinary/clock nets. Slew is worse than the previous layout; no timing
+margin from this netlist is accepted as closure.
+
+Independent review found that locking every native input net also blocks
+ordinary distribution upstream of that input. Of the 709 locked violating nets,
+450 have ordinary external drivers. The five worst boundaries are I²C update
+payload `d[13]`/`d[14]`, frame publication guard `a`, and completion RAM/memory
+guard `a`. Each has one protected receiver; frame publication has 342 total
+loads. The bounded correction is a noninverting isolation buffer outside each
+measured receiver boundary, compact with that receiver. Its short local net stays
+locked; the upstream distribution becomes repairable. Primitive bodies, full
+graph proof and subsequent protected-pin snapshots remain unchanged. No blanket
+per-bit buffering or relaxed electrical limit is authorized by this result.
+The correction and fresh extracted checks are still pending.
 
 ### Custom C-element option
 
@@ -171,9 +236,9 @@ confused with routed-wire area.
 Evidence: `build/pnr-bd-1940x2530-routability-r2/`, including raw instance/GCell
 exports, map, coordinates, owner areas and one run receipt.
 
-## Current routed layout
+## Retained 2.53 mm routed comparison
 
-The current `ed38c62` BD map completes detailed routing on **2.53 × 2.53 mm**
+The retained `ed38c62` BD map completed detailed routing on **2.53 × 2.53 mm**
 with **zero router violations**, an empty retained DRC report and independent
 nominal/minimum/maximum RC extraction. All 26,230 protected native cells and
 18,936 selected control-net NDR assignments survive routing. This accepts the

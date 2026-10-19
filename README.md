@@ -84,10 +84,10 @@ retention available as a generic build option.
 
 ## Physical implementation
 
-![BD routed digital layout on a 2.53 × 2.53 mm die](docs/images/bd-layout-2530x2530.png)
+![BD routed digital layout on a 2.25 × 2.53 mm die](docs/images/bd-layout.png)
 
-The current BD digital layout uses a **2.53 × 2.53 mm** outline. Cell footprints
-total **3.398 mm²**, including the three SRAM macros across the top. Pads and
+The current BD digital layout uses a **2.25 × 2.53 mm** outline. Cell footprints
+total **3.470 mm²**, including the three SRAM macros across the top. Pads and
 analog blocks are not included.
 
 **This is a development design, not ready for fabrication.** Detailed routing

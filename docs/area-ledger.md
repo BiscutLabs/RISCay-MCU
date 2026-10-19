@@ -26,7 +26,7 @@ exceeds it, revise the budget or architecture; do not waive a failing path. The
 
 ## Accepted production batches
 
-### Compact native placement and parent drivers (routing in progress)
+### Compact native placement and parent drivers (electrical closure open)
 
 The unchanged BD RTL maps to 2.010204 mm². The new parent-driver recipe passes
 the complete graph/protected-cell proof and repairs to **2.234365 mm²**, versus
@@ -51,9 +51,27 @@ and energy must be remeasured after routing. Click is unchanged. The 0.05 mm²
 hold-repair reserve is separate and remains unspent. No smaller die or README
 render is accepted until its new native geometry checks and zero-router-DRC gate pass.
 
+The fixed-tool 2.25, 2.30 and 2.35 × 2.53 mm runs pass those routing gates and
+complete nominal/minimum/maximum RC extraction. The smallest tested successful
+candidate replaces the README render; smaller 1.94/2.05/2.20 mm runs remain
+failed evidence. These are routing results, not physical qualification.
+
+| Run under `build/native-physical/` | Routed logic | SRAM | Taps/endcaps | Total footprints | Core occupancy |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| `pnr-2250x2530-d50-r1` | 2.858175 | 0.466241 | 0.145371 | **3.469786** | 64.27% |
+| `pnr-2350x2530-d50-r3` | 2.875229 | 0.466241 | 0.152645 | **3.494115** | 61.90% |
+
+The source is the same r4 map above, before A/B boot ROM expansion. The renders
+and congestion inventories are in `render-2250-r1` / `routability-2250-r1` and
+`render-2350-r3` / `routability-2350-r3`. The 2.35 mm min/max-RC audits resolve
+all 10,609 adapter outputs with zero capacitance violations at all five PVT
+corners. Whole-chip electrical closure remains open: slow/hot max-RC still has
+10,649 slew violation rows, worst 28.087 ns, and several ordinary-driver
+capacitance failures. These measurements must not be treated as timing closure.
+
 ### BD routing and signal-integrity investigation
 
-The current `ed38c62` BD map completes detailed routing on **2.53 × 2.53 mm**
+The retained `ed38c62` BD map completed detailed routing on **2.53 × 2.53 mm**
 with zero router violations, an empty retained DRC report and independent
 nominal/minimum/maximum RC extraction. Cell occupancy is **55.80%** of the core.
 Electrical limits and physical timing remain unqualified; routing acceptance
