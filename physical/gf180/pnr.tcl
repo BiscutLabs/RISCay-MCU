@@ -27,6 +27,8 @@ source $out/async-electrical.sdc
 source $out/protected.tcl
 source $out/native-routing.tcl
 source $source/pnr-native-routing.tcl
+source $out/native-placement.tcl
+source $source/pnr-native-placement.tcl
 proc connect_power {} {
   global protected_cells mapping source
   # OpenDB's dont-touch also blocks power connections. Release protection only
@@ -116,9 +118,9 @@ if {$stage eq "place"} {
   # The input has already passed default global pre-placement repair and its
   # graph audit. Wire-dependent electrical closure remains a separate gate;
   # do not silently alter protected native graphs during placement.
+  cluster_native_cells
   global_placement -density $placement_density -routability_driven
-  detailed_placement
-  check_placement -verbose
+  native_detailed_placement
   estimate_parasitics -placement
   wire_repair
   estimate_parasitics -placement
@@ -135,8 +137,7 @@ if {$stage eq "clock"} {
     -root_buf ${sc}clkbuf_16 -buf_list [list ${sc}clkbuf_2 ${sc}clkbuf_4 ${sc}clkbuf_8] \
     -sink_clustering_enable -sink_clustering_size 16 -sink_clustering_max_diameter 100 \
     -obstruction_aware -dont_use_dummy_load
-  detailed_placement
-  check_placement -verbose
+  native_detailed_placement
   set_propagated_clock [get_clocks {service work lf}]
   estimate_parasitics -placement
   periodic_clock_inventory $out/clock-sinks-after.tsv
@@ -190,6 +191,7 @@ if {$stage eq "extract"} {
   if {$rc_corner eq "nom"} {file copy -force $out/routed-nom.spef $out/routed.spef}
 }
 source $out/protected-baseline.tcl
+if {$stage ne "floorplan"} {check_native_placement}
 if {[protected_snapshot] ne $expected_protected} {error "PROTECTED_CONNECTIVITY_CHANGED"}
 puts "PROTECTED_AUDIT_PASS [llength $protected_cells]"
 connect_power

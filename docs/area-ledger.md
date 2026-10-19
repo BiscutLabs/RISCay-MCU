@@ -26,6 +26,31 @@ exceeds it, revise the budget or architecture; do not waive a failing path. The
 
 ## Accepted production batches
 
+### Compact native placement and parent drivers (routing in progress)
+
+The unchanged BD RTL maps to 2.010204 mm². The new parent-driver recipe passes
+the complete graph/protected-cell proof and repairs to **2.234365 mm²**, versus
+2.199751 mm² for the immediate parent: **+0.034614 mm² (+1.57%)** before placement.
+The 9,916 exclusive native-output parents account for 0.174720 mm². Removing the
+optional speculative early-sizing pass avoids enlarging every parent and removes
+unnecessary ordinary buffers; actual electrical-violation repair remains enabled.
+This is not an electrical or routed timing pass.
+
+| Recipe / evidence | Mapped logic | Repaired logic | Native-output parent area | Periodic sinks |
+| --- | ---: | ---: | ---: | ---: |
+| Immediate parent, `single-writer-telemetry/map-bd-r7` | 2.010204 | 2.199751 | — | 3,557 |
+| Trial with blanket early sizing, `native-physical/map-bd-r2` | 2.010204 | 2.743221 | 0.565958 | 3,557 |
+| Violation-driven repair, `native-physical/map-bd-r4` | 2.010204 | 2.234365 | 0.174720 | 3,557 |
+
+Areas are mm², excluding SRAM. The r4 report is
+`build/native-physical/area-r4.json`. Guards remain 0.399605 mm², allowances zero,
+and DLYD remains 5,276 cells / 0.393784 mm² with the same purpose inventory.
+Service/work/LF sinks remain 1,203 / 2,276 / 78; Services retains 1,228 work and
+14 service sinks. RTL/native-model wake activity is unchanged. Physical latency
+and energy must be remeasured after routing. Click is unchanged. The 0.05 mm²
+hold-repair reserve is separate and remains unspent. No smaller die or README
+render is accepted until its new native geometry checks and zero-router-DRC gate pass.
+
 ### BD routing and signal-integrity investigation
 
 The current `ed38c62` BD map completes detailed routing on **2.53 × 2.53 mm**

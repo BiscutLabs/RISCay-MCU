@@ -1,5 +1,9 @@
 # First GF180 place-and-route experiment
 
+> **Void for routed electrical/timing qualification:** this run predates the
+> wire-resistance unit and explicit SPEF-load fixes. Geometry/area and retained
+> DRC observations are historical only. See [withdrawn results](gf180-routability.md#withdrawn-physical-results).
+
 Current flow note (2026-10-17): `gf180_pnr.py --placement-density` exposes the
 placement target independently of `--die-side-um`. The default is now 0.60, selected from the matched 0.60/0.70 runs.
 This is not a measured improvement over 0.50. Existing checkpoint provenance

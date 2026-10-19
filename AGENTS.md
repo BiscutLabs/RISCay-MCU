@@ -87,6 +87,12 @@
   capture-tree spread, actual loaded slew, source release, ACK and Click rearm.
   Only reviewed primitive-internal keeper arcs may be cut; analysis clocks are
   timing references, not new silicon clocks. No functional path waiver.
+- Keep keeper feedback gates and their first isolation buffer compact. Every
+  live native output needs an exclusive repairable parent driver; passive aliases
+  and truly unused outputs add no cell. Placement clusters alone are insufficient:
+  enforce measured geometry and feeder isolation after legalization/repair, then
+  check actual extracted loading and noise. Pre-fix routed timing is void as
+  recorded in `docs/gf180-routability.md`.
 - Measure same-corner setup/hold/order bounds with complete inventories; missing
   paths and nonfinite values fail. Do not shorten delays on simulation evidence.
   Adopt locally measured reversible counts after affected digital/timing checks

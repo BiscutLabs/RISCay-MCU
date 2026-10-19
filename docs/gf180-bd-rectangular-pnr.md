@@ -1,5 +1,9 @@
 # BD layout on a 3.93 × 2.53 mm outline
 
+> **Void for routed electrical/timing qualification:** this run predates the
+> wire-resistance unit and explicit SPEF-load fixes. Geometry/area and retained
+> DRC observations are historical only. See [withdrawn results](gf180-routability.md#withdrawn-physical-results).
+
 Historical comparison run. The [1.94 × 2.53 mm rerun](gf180-bd-1940x2530-pnr.md)
 uses the same mapping and physical recipes on a narrower outline.
 

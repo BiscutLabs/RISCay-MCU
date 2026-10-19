@@ -32,6 +32,17 @@ Full extracted-RC qualification remains item 17. Physical prerequisites may be
 resolved earlier when they determine a design choice; optional 15a–c research is
 not on the tape-out critical path.
 
+The immediate physical prerequisites are compact C-element keeper/output
+placement, repairable native parent drivers and a matched 1.94–2.53 mm width
+sweep at 50–55% placement density, retaining only zero-router-DRC candidates.
+Pre-fix routed timing is [void](gf180-routability.md#withdrawn-physical-results).
+After boot resilience, narrow the retained time coordinate/timestamps from 64
+to approximately 41 bits of milliseconds (about 70 years), preserving saturating
+32-bit age and defining the terminal/wrap rule explicitly. Then address
+Housekeeping's 541 Services sinks (ordered 211, state 194, queued 136) through
+single-writer ownership and documented receiving-edge arbitration. The 269-sink
+host snapshot bank belongs with B's register-pointer redesign, not this slice.
+
 ## A. Always-on/application ownership split
 
 The implementation currently has a service clock, a gated work clock and native

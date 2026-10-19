@@ -37,6 +37,7 @@ proc wire_repair {} {
   set groups [dict create]
   set locked {}
   set block [ord::get_db_block]
+  protect_native_output_feeders
   foreach record $protected_cells {
     lassign $record name master pins
     set owner [string range $name 0 [expr {[string last / $name]-1}]]
@@ -72,8 +73,7 @@ proc wire_repair {} {
   set_dont_use [get_lib_cells */*dff*]
   set_dont_use [get_lib_cells */*lat*]
   repair_design -slew_margin 10 -cap_margin 10
-  detailed_placement
-  check_placement -verbose
+  native_detailed_placement
   repair_graph $out/$stage-repair-after.tsv
   puts "WIRE_REPAIR_COMPLETE $stage"
 }

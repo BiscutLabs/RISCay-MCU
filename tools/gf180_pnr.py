@@ -25,14 +25,14 @@ ASSETS = {
     "rcx.min": "libs.tech/librelane/rules.openrcx.gf180mcuD.min",
     "rcx.max": "libs.tech/librelane/rules.openrcx.gf180mcuD.max",
 }
-PROVENANCE_SCHEMA = "riscay-pnr-inputs-v5"
+PROVENANCE_SCHEMA = "riscay-pnr-inputs-v6"
 MAPPING_INPUTS = ("mapping.json", "netlist.v", "netlist.json", "base.sdc", "clocked.sdc",
                   "feedback-cuts.tcl", "async.sdc", "preserve-mapped.tcl", "constraints-bound.json",
                   "electrical-repair/receipt.json")
-FLOW_INPUTS = ("pnr.tcl", "pnr-pdn.tcl", "power.tcl", "pnr-repair.tcl", "pnr-clock.tcl", "pnr-native-routing.tcl")
+FLOW_INPUTS = ("pnr.tcl", "pnr-pdn.tcl", "power.tcl", "pnr-repair.tcl", "pnr-clock.tcl", "pnr-native-routing.tcl", "pnr-native-placement.tcl")
 REPAIR_AUDIT_SOURCES = ('check_pnr_repair.py','check_pnr_clock.py','repair_gf180_design.py','gf180_physical.py',
-                      'gf180_estimate.py','repair_gf180_control.py','characterize_gf180_liberty.py','gf180_constraints.py','gf180_pnr.py','native_routing.py')
-GENERATED_INPUTS = ("config.tcl", "async-pnr.sdc", "async-electrical.sdc", "async-context.json", "protected.tcl", "native-routing.tcl", "native-routing.json")
+                      'gf180_estimate.py','repair_gf180_control.py','characterize_gf180_liberty.py','gf180_constraints.py','gf180_pnr.py','native_routing.py','native_placement.py')
+GENERATED_INPUTS = ("config.tcl", "async-pnr.sdc", "async-electrical.sdc", "async-context.json", "protected.tcl", "native-routing.tcl", "native-routing.json", "native-placement.tcl", "native-placement.json")
 RC_CORNERS = ("nom", "min", "max")
 DEFAULT_PLACEMENT_DENSITY = 0.60
 
@@ -181,6 +181,8 @@ def validate_provenance(mapping,out,stage,flow_sources=None):
         reports=cp.get('electrical_reports_sha256',{})
         if set(reports)!=set(electrical_report_names(prerequisite)) or any(sha(out/p)!=h for p,h in reports.items()):
             raise ValueError('PNR_ELECTRICAL_REPORT_CHANGED_'+prerequisite)
+        if prerequisite!='floorplan' and cp.get('native_placement_sha256')!=sha(out/(prerequisite+'-native-placement.tsv')):
+            raise ValueError('PNR_NATIVE_PLACEMENT_CHANGED_'+prerequisite)
     for repaired in ('place','global'):
         if STAGES.index(repaired)>STAGES.index(stage):continue
         proof=meta['checkpoints'][repaired].get('repair',{})
@@ -282,6 +284,8 @@ def configuration(mapping,out,routing,threads,side=1440,density=DEFAULT_PLACEMEN
     write_json(out/'async-context.json',context)
     from native_routing import generate
     generate(mapping,out)
+    from native_placement import generate as generate_placement
+    generate_placement(mapping,out)
 
 
 def electrical_context(sdc):
@@ -426,6 +430,8 @@ def run(mapping,out,from_stage,to_stage,threads,side=1440,openroad=None,density=
         meta["checkpoints"][stage]=dict(odb_sha256=sha(out/(stage+".odb")),
             protected_baseline_sha256=sha(out/"protected-baseline.tcl"),
             electrical_reports_sha256={name:sha(out/name) for name in electrical_report_names(stage)})
+        if stage!='floorplan':
+            meta['checkpoints'][stage]['native_placement_sha256']=sha(out/(stage+'-native-placement.tsv'))
         if stage in ('place','global'):
             from check_pnr_repair import check
             try:meta['checkpoints'][stage]['repair']=check(mapping,out,stage)

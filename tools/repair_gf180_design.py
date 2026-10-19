@@ -8,6 +8,7 @@ independent acceptance gates.
 """
 from collections import defaultdict
 from functools import lru_cache
+from copy import deepcopy
 import argparse
 import json
 from pathlib import Path
@@ -386,6 +387,103 @@ def buffer_sram_clocks(netlist,top):
     return evidence
 
 
+def buffer_native_outputs(netlist,top,adapter_instances):
+    """Isolate each live native output with an ordinary, repairable parent buffer.
+
+    Preserve the native boundary/feedback partition exactly. Cell-free aliases
+    do not own a driver. Unused outputs gain no cell. Specialize wrapper modules
+    so different instances may have different live output bits without creating
+    dead buffers in the other instances.
+    """
+    owners=set(adapter_instances.values());require(len(owners)==len(adapter_instances),'REPAIR_OUTPUT_OWNER_DUPLICATE')
+    graph=flat(netlist,top);drivers=defaultdict(list);sinks=defaultdict(list)
+    for name,c in graph['cells'].items():
+        for pin,ns in c['connections'].items():
+            for n in ns:(drivers if c['directions'][pin]=='output' else sinks)[n].append((name,pin))
+    for name,p in graph['ports'].items():
+        for n in p['bits']:(drivers if p['direction']=='input' else sinks)[n].append(('PORT',name))
+    wanted={};excluded=[];output_nets=set()
+    for owner in sorted(owners):
+        for boundary,ns in graph['boundaries'].items():
+            if boundary.rsplit('/',1)[0]!=owner or graph['boundary_directions'][boundary]!='output':continue
+            port=boundary.rsplit('/',1)[1]
+            for lane,n in enumerate(ns):
+                ds=drivers[n]
+                require(len(ds)==1,'REPAIR_OUTPUT_DRIVER_COUNT')
+                driver,pin=ds[0]
+                if not driver.startswith(owner+'/'):continue  # passive alias
+                require((owner,n) not in output_nets,'REPAIR_OUTPUT_ALIASED_BOUNDARY')
+                output_nets.add((owner,n))
+                if not any(not name.startswith(owner+'/') for name,_ in sinks[n]):
+                    excluded.append(dict(owner=owner,port=port,lane=lane,reason='no-external-consumer'));continue
+                wanted.setdefault(owner,[]).append((port,lane,driver,pin))
+    # Only ancestor modules are cloned; protected primitive bodies are unchanged.
+    serial=0;replaced=set()
+    def specialize(kind,path=''):
+        nonlocal serial
+        body=netlist['modules'][kind]
+        for key,c in list(body.get('cells',{}).items()):
+            child_path=path+ident(key)
+            if child_path in owners or c['type'].startswith(SC) or c['type']==SRAM:continue
+            if not any(o.startswith(child_path+'/') for o in wanted):continue
+            clone='riscay_output_parent_'+str(serial);serial+=1
+            require(clone not in netlist['modules'],'REPAIR_OUTPUT_MODULE_COLLISION')
+            replaced.add(c['type'])
+            netlist['modules'][clone]=deepcopy(netlist['modules'][c['type']]);c['type']=clone
+            specialize(clone,child_path+'/')
+    specialize(top)
+    reachable={top}
+    def visit(kind):
+        for c in netlist['modules'][kind].get('cells',{}).values():
+            if c['type'] in netlist['modules'] and c['type'] not in reachable:
+                reachable.add(c['type']);visit(c['type'])
+    visit(top)
+    for kind in replaced-reachable:del netlist['modules'][kind]
+    locations=instance_locations(netlist,top);evidence=[]
+    for owner,lanes in sorted(wanted.items()):
+        kind,key=locations[owner];body=netlist['modules'][kind];c=body['cells'][key]
+        bits=[b for cell in body['cells'].values() for bs in cell['connections'].values() for b in bs]
+        bits += [b for p in (*body['ports'].values(),*body.get('netnames',{}).values()) for b in p['bits']]
+        fresh=max((b for b in bits if isinstance(b,int)),default=1)+1
+        parent=owner.rsplit('/',1)[0]+'/' if '/' in owner else ''
+        for port,lane,driver,pin in lanes:
+            name='riscay_native_output_'+str(len(evidence))
+            require(name not in body['cells'],'REPAIR_OUTPUT_BUFFER_COLLISION')
+            destination=c['connections'][port][lane]
+            require(isinstance(destination,int),'REPAIR_OUTPUT_CONSTANT')
+            c['connections'][port][lane]=fresh
+            body['cells'][name]=dict(type=SC+'buf_2',parameters={},attributes={},
+                port_directions=dict(I='input',Z='output'),connections=dict(I=[fresh],Z=[destination]))
+            evidence.append(dict(owner=owner,port=port,lane=lane,driver=driver,pin=pin,
+                                 buffer=parent+name,master=SC+'buf_2'))
+            fresh+=1
+    return dict(buffers=evidence,unused=excluded)
+
+
+def validate_native_output_drivers(netlist,top,records):
+    """The native leaf's only external consumer is its exclusive parent input."""
+    graph=flat(netlist,top);sinks=defaultdict(set);result=[]
+    for name,c in graph['cells'].items():
+        for pin,ns in c['connections'].items():
+            if c['directions'][pin]=='input':
+                for n in ns:sinks[n].add((name,pin))
+    for name,p in graph['ports'].items():
+        if p['direction']=='output':
+            for n in p['bits']:sinks[n].add(('PORT',name))
+    for r in records:
+        driver=graph['cells'][r['driver']];buffer=graph['cells'][r['buffer']]
+        ns=driver['connections'][r['pin']]
+        # clkbuf is also a combinational I->Z buffer; the whole-graph proof
+        # independently checks the Liberty function at every corner.
+        require(len(ns)==1 and re.fullmatch(re.escape(SC)+r'(?:clk)?buf_\d+',buffer['type']) and
+                buffer['connections']['I']==ns,'REPAIR_OUTPUT_BUFFER_DRIVER')
+        external={p for p in sinks[ns[0]] if not p[0].startswith(r['owner']+'/')}
+        require(external=={(r['buffer'],'I')},'REPAIR_OUTPUT_BUFFER_EXCLUSIVE')
+        result.append({**r,'master':buffer['type']})
+    require(len({r['buffer'] for r in result})==len(result),'REPAIR_OUTPUT_BUFFER_DUPLICATE')
+    return result
+
+
 def validate_sram_clock_drivers(netlist,top):
     """Check the final live graph, not merely the preparation's buffer names."""
     actual=flat(netlist,top);drivers=defaultdict(list);sinks=defaultdict(list)
@@ -597,6 +695,8 @@ def repair(mapping,*,timeout=600):
         bindings=json.loads((mapping/'mapping.json').read_text())['bindings'],
         reset_free_aliases=reset_free_aliases)
     sram_preparation=buffer_sram_clocks(tied,'RiscayMcuDigital')
+    output_preparation=buffer_native_outputs(tied,'RiscayMcuDigital',
+        json.loads((reference/'netlist-audit.json').read_text())['adapter_instances'])
     skipped_feedback=[]
     preparation=split_output_feedback(tied,'RiscayMcuDigital',skipped=skipped_feedback)
     prepared_proof=graph_proof(before,tied,'RiscayMcuDigital',protected,libs)
@@ -604,9 +704,11 @@ def repair(mapping,*,timeout=600):
     write_json(out/'prepared.json',tied)
     write_json(out/'preparation.json',dict(buffers=preparation,skipped_feedback_buffers=skipped_feedback,reset_buffers=reset_preparation,
         reset_free_data_aliases=reset_free_aliases,sram_clock_buffers=sram_preparation,
+        native_output_buffers=output_preparation['buffers'],unused_native_outputs=output_preparation['unused'],
         added_buffer_cells=dict(reset_distribution=len(reset_preparation),
             sram_clocks=len(sram_preparation),
-            hierarchy_output_feedback=len(prepared_proof['added_buffers'])-len(reset_preparation)-len(sram_preparation)),proof=prepared_proof))
+            native_outputs=len(output_preparation['buffers']),
+            hierarchy_output_feedback=len(prepared_proof['added_buffers'])-len(reset_preparation)-len(sram_preparation)-len(output_preparation['buffers'])),proof=prepared_proof))
     q=lambda p:'"'+yosys.path(p)+'"'
     emit=out/'prepared.ys'
     emit.write_text('read_json '+q(out/'prepared.json')+'\nwrite_verilog -norename -noattr -noexpr '+q(out/'prepared.v')+'\n',newline='\n')
@@ -635,7 +737,11 @@ def repair(mapping,*,timeout=600):
     text+='set_dont_use [get_lib_cells */*dff*]\nset_dont_use [get_lib_cells */*lat*]\n'
     text+='if {$count != '+str(len(protected))+'} {error REPAIR_PROTECTED_INVENTORY}\n'
     text+='report_check_types -max_slew -max_capacitance -violators -digits 6 > '+b(out/'before-electrical.rpt')+'\n'
-    text+='repair_design -pre_placement -max_wire_length 0 -verbose\n'
+    # -pre_placement performs speculative gain/cap-ratio sizing of every driver,
+    # even without an electrical violation. In the pinned implementation its
+    # fast-buffer shortlist promotes all small output drivers to buf_8. Preserve
+    # actual slew/cap repair, and let placement/routing supply the real wire load.
+    text+='repair_design -max_wire_length 0 -verbose\n'
     text+='report_check_types -max_slew -max_capacitance -violators -digits 6 > '+b(out/'after-electrical.rpt')+'\n'
     text+='write_verilog '+b(out/'repaired-raw.v')+'\nputs REPAIR_COMPLETE\nexit\n'
     script=out/'repair.tcl';script.write_text(text,newline='\n')
@@ -657,6 +763,7 @@ def repair(mapping,*,timeout=600):
         subprocess.run(yosys.command(['-s',yosys.path(emit)],timeout=180),stdout=stream,stderr=subprocess.STDOUT,check=True,timeout=190)
     after=read_verilog_json(out/'repaired.v',out/'repaired.json','RiscayMcuDigital',yosys,pdk,before)
     proof=graph_proof(before,after,'RiscayMcuDigital',protected,libs)
+    proof['native_output_drivers']=validate_native_output_drivers(after,'RiscayMcuDigital',output_preparation['buffers'])
     write_json(out/'sram-clock-drivers.json',validate_sram_clock_drivers(after,'RiscayMcuDigital'))
     # Run the existing exact adapter audit before publishing either output.
     candidate=out/'candidate';candidate.mkdir()

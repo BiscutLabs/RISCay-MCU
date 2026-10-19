@@ -96,6 +96,9 @@ class PnrProvenance(unittest.TestCase):
                                    protected_baseline_sha256=pnr.sha(self.out/'protected-baseline.tcl'))
                          for stage in pnr.STAGES})
         for stage,cp in self.meta['checkpoints'].items():
+            if stage!='floorplan':
+                placement=self.out/(stage+'-native-placement.tsv');placement.write_text('checked geometry')
+                cp['native_placement_sha256']=pnr.sha(placement)
             for name in pnr.electrical_report_names(stage):(self.out/name).write_text(name)
             cp['electrical_reports_sha256']={n:pnr.sha(self.out/n) for n in pnr.electrical_report_names(stage)}
             if stage in ('place','global'):

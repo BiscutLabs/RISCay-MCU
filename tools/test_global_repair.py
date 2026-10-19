@@ -9,6 +9,7 @@ import json
 from gf180_physical import SC, SRAM
 from repair_gf180_design import (graph_proof, validate_receipt, split_output_feedback, correct_scalar_port_escaping,
     buffer_native_resets, buffer_sram_clocks, validate_sram_clock_drivers, prune_added_orphan_ties, EVIDENCE, sha)
+from repair_gf180_design import buffer_native_outputs, validate_native_output_drivers
 
 
 def cell(kind, **pins):
@@ -18,7 +19,7 @@ def cell(kind, **pins):
 
 BUF='pin(I){direction:input;} pin(Z){direction:output; function:"I";}'
 INV='pin(I){direction:input;} pin(Z){direction:output; function:"!I";}'
-LIB={SC+'buf_1':BUF,SC+'buf_2':BUF,SC+'buf_16':BUF,SC+'inv_1':INV,
+LIB={SC+'buf_1':BUF,SC+'buf_2':BUF,SC+'buf_16':BUF,SC+'clkbuf_8':BUF,SC+'inv_1':INV,
      SC+'tieh':'pin(Z){direction:output; function:"1";}',
      SC+'tiel':'pin(ZN){direction:output; function:"0";}',
      SC+'dff_1':'ff(IQ,IQN){clocked_on:"I";} '+BUF,
@@ -39,6 +40,39 @@ def buffered():
 class GlobalRepairTest(unittest.TestCase):
     def proof(self,before,after,protected=None):
         return graph_proof(before,after,'top',protected or {},[LIB]*5)
+
+    def test_native_output_buffer_preserves_feedback_and_rejects_bypass(self):
+        a=self.native();b=deepcopy(a)
+        rows=buffer_native_outputs(b,'top',{'native':'driver'})['buffers']
+        self.assertEqual(len(rows),1)
+        self.proof(a,b,{'driver/keeper':'driver'})
+        validate_native_output_drivers(b,'top',rows)
+        b['modules']['top']['cells'][rows[0]['buffer']]['type']=SC+'clkbuf_8'
+        self.proof(a,b,{'driver/keeper':'driver'})
+        validate_native_output_drivers(b,'top',rows)
+        b['modules']['top']['cells']['sink']['connections']['I']=b['modules']['top']['cells'][rows[0]['buffer']]['connections']['I']
+        with self.assertRaisesRegex(ValueError,'REPAIR_OUTPUT_BUFFER_EXCLUSIVE'):
+            validate_native_output_drivers(b,'top',rows)
+
+    def test_shared_wrappers_specialize_unused_outputs_without_dead_buffers(self):
+        a=self.native();owner=a['modules']['owner']
+        wrapper=dict(ports={'I':dict(direction='input',bits=[1]),'Q':dict(direction='output',bits=[2])},
+            cells=dict(native=dict(type='owner',connections=dict(I=[1],Q=[2]),port_directions=dict(I='input',Q='output'))))
+        a['modules']['wrapper']=wrapper
+        a['modules']['top']['cells']['driver']['type']='wrapper'
+        a['modules']['top']['cells']['unused']=dict(type='wrapper',connections=dict(I=[1],Q=[9]),port_directions=dict(I='input',Q='output'))
+        b=deepcopy(a);rows=buffer_native_outputs(b,'top',{'a':'driver/native','b':'unused/native'})
+        self.assertEqual(len(rows['buffers']),1);self.assertEqual(len(rows['unused']),1)
+        self.proof(a,b,{'driver/native/keeper':'driver/native','unused/native/keeper':'unused/native'})
+        validate_native_output_drivers(b,'top',rows['buffers'])
+        self.assertEqual(b['modules']['owner'],owner)
+
+    def test_aliasing_native_output_ports_rejected_before_buffer_insertion(self):
+        a=self.native()
+        a['modules']['owner']['ports']['alsoQ']=dict(direction='output',bits=[2])
+        c=a['modules']['top']['cells']['driver'];c['connections']['alsoQ']=[2];c['port_directions']['alsoQ']='output'
+        with self.assertRaisesRegex(ValueError,'REPAIR_OUTPUT_ALIASED_BOUNDARY'):
+            buffer_native_outputs(a,'top',{'native':'driver'})
 
     def test_three_sram_clocks_keep_exact_macros_and_get_exclusive_drivers(self):
         a=dict(modules=dict(top=dict(ports={'clk':dict(direction='input',bits=[1])},cells={

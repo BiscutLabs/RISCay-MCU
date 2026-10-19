@@ -6,6 +6,95 @@ keeps routing DRC, electrical limits, extracted relative timing, coupled noise
 and power-grid integrity as separate gates. A clean router result alone does
 not qualify an asynchronous chip.
 
+## Withdrawn physical results
+
+All routed/extracted electrical and timing conclusions made before the wire-R
+unit and explicit SPEF-load fixes in `78e7869` are **void**. This includes the
+first-P&R and 1.94/3.93 mm rectangular campaigns and their derivative reports.
+Their archived databases, DRC failures and cell-footprint counts remain useful
+historical observations; they cannot qualify a current layout, establish a wire
+margin or justify a guard reduction. Do not silently relabel or overwrite them.
+
+The `pnr-bd-routability-2530x2530-r7` routing used corrected resistance units.
+Its original `extract*-electrical.rpt` files still used estimated parasitics and
+are also **void**. The later `pnr-adapter-cap-extract-{min,max}-r7-r1` audits and
+the 640-case campaign below explicitly load the independent SPEFs and replace
+those electrical/local-timing results. They remain diagnostic because electrical
+violations, composed launch/return paths and noise qualification are open.
+
+The next mapping/placement batch adds compact keeper placement and repairable
+parent output drivers. It must reroute and re-extract: old margins cannot be
+transferred across those buffer and wire changes. First rerun native feeder cap,
+loaded slew and keeper coupling, then the still-needed local/composed timing.
+No new timing-closure claim may precede electrical repair.
+
+## Compact native primitives and parent drivers (in progress)
+
+The physical follow-up leaves RTL, handshake protocols and protected primitive
+graphs unchanged. Each AsymmetricC keeper's AOI21, NOR2 and first output buffer
+form one placement group. Every live driven native output gets an ordinary
+parent-side buffer; native feedback stays on the source side. Passive aliases
+and unused outputs get no buffer. The full graph proof and a separate exclusive
+feeder check reject changed logic, external bypasses and orphan cells.
+
+GPL groups use exact OpenDB objects. Detailed placement may search up to 100 µm
+for ordinary logic, but the final bounding box of each native group must fit
+within **64 µm on each axis**, after every legalization, repair and routed
+checkpoint. That is an engineering placement constraint, not a capacitance or
+noise-immunity limit. Extracted native-to-parent load and keeper coupling still
+decide qualification. Parent outputs remain repairable; their short input links
+are protected against inserting another uncontrolled branch.
+
+The first trial (`build/native-physical/map-bd-r2`) exposed blanket pre-placement
+sizing: all 9,916 new `buf_2` drivers became `buf_8`, although only 52 parent-output
+violation rows appeared beforehand. The parents alone cost 0.565958 mm². The
+pinned resizer's optional early sizing pass promotes eligible drivers using a
+capacitance-ratio heuristic and does not count those changes in its printed
+resize total. Of these parents, 5,726 have one sink; median TT pin loading is
+0.004473 pF. `buf_8` also loads its native source about 3.7 times as much as
+`buf_2`. The follow-up removes `-pre_placement`, retaining violation-driven
+slew/capacitance/fanout repair, unchanged limits and later wire-aware repair.
+These are geometry and loading observations, not an energy estimate.
+
+The violation-driven r4 map passes the complete graph proof, all 26,230 protected
+native cells and all 9,916 exclusive output parents. Repaired logic is 2.234365
+mm², only 0.034614 mm² above the immediate parent's recipe; the parents account
+for 0.174720 mm². The [area ledger](area-ledger.md) retains both recipes.
+
+The first 2.20 × 2.53 mm, 50%-density trial stopped with 80 legalization failures
+under a global 20 µm displacement limit. That failed trial remains archived.
+Increasing the ordinary search radius does not change the 64 µm native acceptance
+bound. Width/density candidates must share the final mapping/repair recipe and
+reach zero router violations before comparison or README adoption.
+
+The 2.20 mm retry passes all 10,327 geometry groups both before and after
+placement repair: maximum spans are 28.56 and 58.24 µm, respectively. Routing
+and extraction remain pending. A matched 2.05 mm / 55%-density placement is also
+in progress. Neither candidate is yet a replacement for the routed README image.
+
+Independent review found no outstanding source/doc issue and independently
+verified that all 927 control-connected parent outputs remain covered by NDR
+traversal; payload-only outputs retain their existing classification. The fast
+gate `build/native-physical/ci-r2` passes 366 Python and 197 Scala tests. The
+buffer-kind correction and current Python suite also pass in `ci-r3` (366 tests).
+These checks approve the implementation; they do not qualify unfinished routing,
+extracted electrical limits, composed timing or coupled noise.
+
+### Custom C-element option
+
+A custom cell is a plausible longer-term way to keep the keeper state wire
+inside one characterized layout. Use the existing reduced `set`, `hold` and
+`reset` equation so all asymmetric variants retain their protocol; a chain of
+binary C-elements is not equivalent. Include the first output isolation stage
+inside the cell. Keep any separately required output delay as a measured timing
+obligation, rather than assuming the custom cell supplies it.
+
+This option needs transistor sizing, LEF/GDS/CDL views, DRC/LVS, retention/reset
+and coupled-noise checks, per-corner Liberty characterization, a reviewed internal
+feedback timing model and interface load limits. No custom cell has been added,
+and no area/noise improvement is claimed before those measurements. It does not
+provide MUTEX arbitration or qualify independent competing requesters.
+
 ## Where the old layout is congested
 
 The old layout is `build/pnr-bd-1940x2530-r1`, mapped from `baec57b`'s

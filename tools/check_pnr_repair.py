@@ -1,12 +1,13 @@
 # SPDX-License-Identifier: Apache-2.0
 """Prove the uncontracted OpenDB graph before/after wire-dependent repair."""
 from pathlib import Path
+import json
 
 from characterize_gf180_liberty import CORNERS
 from gf180_estimate import library
 from gf180_physical import ROOT, SC, sha, write_json
 from repair_gf180_control import require
-from repair_gf180_design import graph_proof, protected_cells, validate_sram_clock_drivers
+from repair_gf180_design import graph_proof, protected_cells, validate_sram_clock_drivers, validate_native_output_drivers
 
 
 def read_graph(path):
@@ -40,6 +41,9 @@ def check(mapping,out,stage):
     libs=[library(ROOT/'.tools/physical/pdk'/(SC+c+'.lib')) for c in CORNERS]
     proof=graph_proof(a,b,'RiscayMcuDigital',protected_cells(mapping),libs)
     proof['sram_clock_drivers']=validate_sram_clock_drivers(b,'RiscayMcuDigital')
+    original=json.loads((mapping/'electrical-repair/proof.json').read_text())
+    if 'native_output_drivers' in original:
+        proof['native_output_drivers']=validate_native_output_drivers(b,'RiscayMcuDigital',original['native_output_drivers'])
     proof['inputs_sha256']=frozen
     require(all(sha(Path(p))==h for p,h in frozen.items()),'PNR_REPAIR_INPUT_CHANGED')
     output=out/(stage+'-repair-proof.json');write_json(output,proof)
