@@ -76,7 +76,8 @@ class NativePlacementTest(unittest.TestCase):
         with self.assertRaisesRegex(tkinter.TclError,'NATIVE_REPACK_NO_LEGAL_NEIGHBORHOOD'):
             t.call('repack_native_groups')
         self.assertEqual(t.eval('expr {[native_locations] eq $before}'),'1')
-        self.assertEqual(t.eval('llength $artifacts'),t.eval('set attempts'))
+        self.assertIn('global-before-native-repack.odb',t.eval('set artifacts'))
+        self.assertEqual(t.eval('llength [lsearch -all -inline -glob $artifacts *-failed.odb]'),t.eval('set attempts'))
         # Diagnostic I/O failure must not prevent rollback.
         t.eval('proc write_db {path} {error DIAGNOSTIC_IO_ERROR}')
         with self.assertRaisesRegex(tkinter.TclError,'NATIVE_REPACK_NO_LEGAL_NEIGHBORHOOD'):
@@ -96,3 +97,42 @@ class NativePlacementTest(unittest.TestCase):
         self.assertFalse(t.eval('oversized_native_groups'))
         self.assertEqual(t.eval('neighbor getPlacementStatus'),'PLACED')
         self.assertEqual(t.eval('dict get [native_locations] neighbor'),t.eval('dict get $before neighbor'))
+        # Regional selection is whole-box, whole-native-group and nonfixed.
+        # Ordinary neighbors may move, but an incomplete native group may not.
+        t.eval('''
+          b setLocation 10 100
+          Cell create near 20 20
+          Cell create inside_a 30 30; Cell create inside_b 40 30
+          Cell create boundary_a 100 30; Cell create boundary_b 110 30
+          Cell create fixed 20 40; fixed setPlacementStatus FIRM
+          Cell create covered 20 50; covered setPlacementStatus COVER
+          Cell create locked 20 60; locked setPlacementStatus LOCKED
+          set fixture_cells {a b neighbor near inside_a inside_b boundary_a boundary_b fixed covered locked}
+          proc block {method args} {
+            global fixture_cells
+            switch $method {
+              getInsts {return $fixture_cells}
+              getDbUnitsPerMicron {return 1}
+              findInst {return [lindex $args 0]}
+            }
+          }
+          lappend native_placement_groups {inside 64 {inside_a inside_b}} {boundary 64 {boundary_a boundary_b}}
+          set before [native_locations]
+          set selected [native_repack_neighbors [oversized_native_groups] $before [dict create a 1 b 1]]
+        ''')
+        self.assertEqual(set(t.splitlist(t.eval('dict keys $selected'))),{'a','b','near','inside_a','inside_b'})
+        t.eval('''
+          proc detailed_placement {args} {
+            if {[near getPlacementStatus] eq "FIRM"} {error NEED_REGIONAL_ROOM}
+            if {[inside_a getPlacementStatus] ne "PLACED" || [inside_b getPlacementStatus] ne "PLACED"} {error PARTIAL_GROUP}
+            if {[boundary_a getPlacementStatus] ne "FIRM" || [boundary_b getPlacementStatus] ne "FIRM"} {error BOUNDARY_GROUP_MOVED}
+            near setLocation 24 24
+            b setLocation 14 10
+          }
+        ''')
+        t.call('repack_native_groups')
+        self.assertFalse(t.eval('oversized_native_groups'))
+        for name in ('neighbor','boundary_a','boundary_b','fixed','covered','locked'):
+            self.assertEqual(t.eval(f'dict get [native_locations] {name}'),t.eval(f'dict get $before {name}'))
+        self.assertNotEqual(t.eval('dict get [native_locations] near'),t.eval('dict get $before near'))
+        self.assertEqual(t.eval('near getPlacementStatus'),'PLACED')

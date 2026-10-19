@@ -65,6 +65,37 @@ proc oversized_native_groups {} {
   }
   return $bad
 }
+proc native_repack_neighbors {bad saved targets} {
+  global native_placement_groups
+  set block [ord::get_db_block]
+  set radius [expr {96*[$block getDbUnitsPerMicron]}]
+  set regions {}
+  foreach row $bad {
+    set box [[$block findInst [lindex $row 2 0]] getBBox]
+    lappend regions [list [expr {[$box xMin]-$radius}] [expr {[$box yMin]-$radius}] \
+      [expr {[$box xMax]+$radius}] [expr {[$box yMax]+$radius}]]
+  }
+  set eligible {}
+  dict for {inst record} $saved {
+    if {[lindex $record 3] in {FIRM LOCKED COVER}} {continue}
+    set box [$inst getBBox]
+    foreach region $regions {
+      lassign $region x0 y0 x1 y1
+      if {[$box xMin]>=$x0 && [$box yMin]>=$y0 && [$box xMax]<=$x1 && [$box yMax]<=$y1} {
+        dict set eligible $inst 1; break
+      }
+    }
+  }
+  # A neighboring native group moves as a complete group or not at all.
+  # Groups are disjoint by construction. Original bad groups remain targets.
+  foreach row $native_placement_groups {
+    set instances [lmap name [lindex $row 2] {$block findInst $name}]
+    set complete 1
+    foreach inst $instances {if {![dict exists $eligible $inst]} {set complete 0}}
+    if {!$complete} {foreach inst $instances {dict unset eligible $inst}}
+  }
+  return [dict merge $eligible $targets]
+}
 proc repack_native_groups {} {
   global out stage
   if {$stage ni {place clock global}} {error "NATIVE_REPACK_AFTER_ROUTING $stage"}
@@ -73,14 +104,27 @@ proc repack_native_groups {} {
   puts "NATIVE_REPACK_GROUPS [lmap row $bad {lindex $row 0}]"
   set block [ord::get_db_block]
   set dbu [$block getDbUnitsPerMicron]
-  set targets {}
+  set original_targets {}
   foreach row $bad {
-    foreach name [lindex $row 2] {dict set targets [$block findInst $name] 1}
+    foreach name [lindex $row 2] {dict set original_targets [$block findInst $name] 1}
   }
   set saved [native_locations]
+  if {[catch {write_db $out/$stage-before-native-repack.odb} diagnostic]} {
+    puts "NATIVE_REPACK_DIAGNOSTIC_FAILED $diagnostic"
+  }
+  # Select once from the legal baseline, never from a failed trial's movement.
+  # 96um selects neighbors; it is not a fence on their final position.
+  set regional_targets [native_repack_neighbors $bad $saved $original_targets]
   # DPL imports placement statuses on every invocation. FIRM pins all other
   # cells temporarily; source/parent masters and connectivity never change.
-  foreach anchor {first midpoint last} {
+  foreach trial {first midpoint last regional-first regional-midpoint} {
+    set targets $original_targets
+    set anchor $trial
+    if {[string match regional-* $trial]} {
+      set targets $regional_targets
+      set anchor [string range $trial 9 end]
+    }
+    puts "NATIVE_REPACK_TRIAL $trial [dict size $targets]"
     set accepted 0
     try {
       dict for {inst record} $saved {
@@ -135,10 +179,10 @@ proc repack_native_groups {} {
       if {[llength [oversized_native_groups]]} {error NATIVE_REPACK_SPREAD}
       set accepted 1
     } on error {message options} {
-      if {[catch {write_db $out/$stage-native-repack-$anchor-failed.odb} diagnostic]} {
+      if {[catch {write_db $out/$stage-native-repack-$trial-failed.odb} diagnostic]} {
         puts "NATIVE_REPACK_DIAGNOSTIC_FAILED $diagnostic"
       }
-      puts "NATIVE_REPACK_REJECTED $anchor $message"
+      puts "NATIVE_REPACK_REJECTED $trial $message"
       # DPL can move instances before throwing. Every retry starts from the
       # same legal placement, including orientation and original statuses.
     } finally {
@@ -146,7 +190,7 @@ proc repack_native_groups {} {
         dict for {inst record} $saved {$inst setPlacementStatus [lindex $record 3]}
       }
     }
-    if {$accepted} {puts "NATIVE_REPACK_PASS $anchor [llength $bad]"; return}
+    if {$accepted} {puts "NATIVE_REPACK_PASS $trial [llength $bad]"; return}
   }
   error NATIVE_REPACK_NO_LEGAL_NEIGHBORHOOD
 }

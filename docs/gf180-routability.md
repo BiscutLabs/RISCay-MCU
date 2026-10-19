@@ -96,7 +96,24 @@ displacement into group 502. Local packing restores legal geometry, all 10,327
 groups pass, and every nontarget instance remains unchanged. A fully blocked
 placement rejects all attempts and restores the starting database geometry.
 Evidence: `build/native-physical/repack-fixture{,-blocked}.log`. Fresh 1.94, 2.05
-and 2.20 mm runs use this same follow-up flow; routing and extraction are pending.
+and 2.20 mm runs rejected isolated repacking; the 2.35 mm run passes global
+routing and has entered detailed routing. None has a new accepted route yet.
+
+The next fallback selects ordinary neighbors whose complete bounding boxes lie
+within 96 µm of a bad group's first member. Neighboring native groups are released
+only in their entirety, and originally fixed cells remain fixed. This movable
+set is computed once from the saved legal baseline. The 96 µm radius selects
+neighbors; it is not a final fence. DPL still searches 48 µm and every native
+group still must fit the 64 µm bound. Outside geometry and all original placement
+statuses are checked/restored. Failed trials roll back before retrying.
+
+`build/native-physical/repack-fixture-regional.log` exercises that fallback on
+the real 2.20 mm database, with deliberate isolated-attempt failures. Regional
+placement passes legality and all 10,327 groups, with maximum displacement
+45.9 µm; cells outside the selected region are unchanged. This proves the
+fallback mechanism, not convergence of a production checkpoint. The blocked
+fixture and Tcl property controls check rollback, full-group boundary selection
+and fixed-cell exclusions. New width runs use this flow in fresh directories.
 
 Independent review found no outstanding source/doc issue and independently
 verified that all 927 control-connected parent outputs remain covered by NDR
@@ -106,6 +123,9 @@ buffer-kind correction and current Python suite also pass in `ci-r3` (366 tests)
 The independently reviewed repack passes 367 Python tests in `ci-r4`, including
 fixed-cell and failed-diagnostic rollback controls. The previous committed batch
 also passes GitHub CI at `d1e6fcd`.
+The regional fallback has an independent review with no remaining source finding;
+the working-tree Python gate passes 370 tests in `ci-r5`, including the three
+new generic boot-slot properties being verified as a separate batch.
 These checks approve the implementation; they do not qualify unfinished routing,
 extracted electrical limits, composed timing or coupled noise.
 
