@@ -33,8 +33,11 @@ class LeafIndex:
                 (self.drivers if port['direction']=='input' else self.consumers)[net].append(('port',label))
         for path in buffers:
             cell=self.after['cells'][path]
-            require(re.fullmatch(re.escape(SC)+r'buf_\d+',cell['type']) is not None and
-                    set(cell['connections'])=={'I','Z'},'LEAF_BUFFER_SHAPE')
+            # Repair's all-corner graph proof permits ordinary and clock buffers:
+            # both are combinational I->Z cells, retained in the live timing graph.
+            require(re.fullmatch(re.escape(SC)+r'(?:clk)?buf_\d+',cell['type']) is not None and
+                    set(cell['connections'])=={'I','Z'} and
+                    cell['directions']=={'I':'input','Z':'output'},'LEAF_BUFFER_SHAPE')
             a,q=[cell['connections'][p] for p in ('I','Z')]
             require(len(a)==len(q)==1 and q[0] not in self.aliases,'LEAF_BUFFER_DRIVER')
             self.aliases[q[0]]=a[0]

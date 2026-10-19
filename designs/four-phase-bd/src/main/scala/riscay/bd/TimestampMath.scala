@@ -3,18 +3,20 @@ package riscay.bd
 
 import chisel3._
 import chisel3.util.Cat
+import riscay.soc.SampleTime
 
 /** A combinational carry-select nibble. Keeping this ordinary module boundary
   * prevents area mapping from rebuilding a word-wide ripple carry. It has no
   * clock, reset, storage, delay cell or native handshake.
   */
-private[riscay] class TimestampNibble extends RawModule {
-  val a=IO(Input(UInt(4.W)));val b=IO(Input(UInt(4.W)))
-  val sum0=IO(Output(UInt(4.W)));val sum1=IO(Output(UInt(4.W)))
+private[riscay] class TimestampNibble(width: Int) extends RawModule {
+  require(width >= 1 && width <= 4)
+  val a=IO(Input(UInt(width.W)));val b=IO(Input(UInt(width.W)))
+  val sum0=IO(Output(UInt(width.W)));val sum1=IO(Output(UInt(width.W)))
   val generate=IO(Output(Bool()));val propagate=IO(Output(Bool()))
   val total=a +& b
-  sum0:=total(3,0);sum1:=(total+1.U)(3,0)
-  generate:=total(4);propagate:=(a|b).andR
+  sum0:=total(width-1,0);sum1:=(total+1.U)(width-1,0)
+  generate:=total(width);propagate:=(a|b).andR
 }
 
 /** Preserve each associative prefix-combine node. Flattened area mapping can
@@ -32,11 +34,12 @@ private[riscay] class TimestampPrefix extends RawModule {
 private[riscay] object TimestampMath {
   private def arithmetic(a: UInt, b: UInt, subtract: Boolean): (UInt, Bool) = {
     val width=a.getWidth
-    require(width == b.getWidth && (width == 32 || width == 64))
+    require(width == b.getWidth && width >= 1 && width <= 64)
     val operand = if (subtract) ~b else b
-    val blocks=(0 until width/4).map { i =>
-      val block=Module(new TimestampNibble)
-      block.a:=a(4*i+3,4*i);block.b:=operand(4*i+3,4*i)
+    val blocks=(0 until (width+3)/4).map { i =>
+      val bits=(width-4*i).min(4)
+      val block=Module(new TimestampNibble(bits))
+      block.a:=a(4*i+bits-1,4*i);block.b:=operand(4*i+bits-1,4*i)
       block
     }
     val groups=blocks.size
@@ -61,26 +64,29 @@ private[riscay] object TimestampMath {
   def apply(a: UInt, b: UInt, subtract: Boolean = false): UInt =
     arithmetic(a,b,subtract)._1
 
-  /** The elapsed operand is 32 bits. Prepare the upper increment independently
-    * of the low-word carry, then select; no carry chain crosses both words.
+  /** The elapsed operand is 32 bits. Precompute the high increment so no
+    * carry chain crosses both words. Saturate the POR coordinate, never wrap.
     */
   def advance(now: UInt, elapsed: UInt): UInt = {
-    require(now.getWidth == 64 && elapsed.getWidth == 32)
+    require(now.getWidth == SampleTime.Width && elapsed.getWidth == 32)
+    val upper=now(SampleTime.Width-1,32)
     val (low,carry)=arithmetic(now(31,0),elapsed,subtract=false)
-    val high=arithmetic(now(63,32),1.U(32.W),subtract=false)._1
-    Cat(Mux(carry,high,now(63,32)),low)
+    val (high,overflow)=arithmetic(upper,1.U(upper.getWidth.W),subtract=false)
+    Mux(carry && overflow,SampleTime.Maximum.U(SampleTime.Width.W),
+      Cat(Mux(carry,high,upper),low))
   }
 
-  /** Saturate the unsigned modular 64-bit difference without propagating its
-    * low-word borrow through a second word and then reducing 32 high bits.
-    * A difference fits iff high words match without borrow, or differ by one
-    * with borrow. The timestamp-only increment must settle before a qualified read.
+  /** A difference fits iff high words match without borrow, or differ by one
+    * with borrow. Reject a future timestamp and high-word wrap. Terminal time
+    * always reports stale, including samples captured at the terminal value.
     */
   def saturatedAge(now: UInt, timestamp: UInt): UInt = {
-    require(now.getWidth == 64 && timestamp.getWidth == 64)
+    require(now.getWidth == SampleTime.Width && timestamp.getWidth == SampleTime.Width)
     val (low,noBorrow)=arithmetic(now(31,0),timestamp(31,0),subtract=true)
-    val sameHigh=now(63,32) === timestamp(63,32)
-    val nextHigh=now(63,32) === arithmetic(timestamp(63,32),1.U(32.W),subtract=false)._1
-    Mux(Mux(noBorrow,sameHigh,nextHigh),low,"hffffffff".U(32.W))
+    val nowHigh=now(SampleTime.Width-1,32)
+    val stampHigh=timestamp(SampleTime.Width-1,32)
+    val (incremented,overflow)=arithmetic(stampHigh,1.U(stampHigh.getWidth.W),subtract=false)
+    val fits=Mux(noBorrow,nowHigh === stampHigh,!overflow && nowHigh === incremented)
+    Mux(!now.andR && fits,low,"hffffffff".U(32.W))
   }
 }

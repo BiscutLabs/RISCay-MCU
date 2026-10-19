@@ -40,15 +40,18 @@ The immediate physical prerequisites are compact C-element keeper/output
 placement, repairable native parent drivers and a matched 1.94–2.53 mm width
 sweep at 50–55% placement density, retaining only zero-router-DRC candidates.
 Pre-fix routed timing is [void](gf180-routability.md#withdrawn-physical-results).
-Next, narrow the retained time coordinate/timestamps from 64
+The retained time coordinate/timestamps are narrowed from 64
 to **43 bits of conservative upper milliseconds**, preserving saturating 32-bit
 age. A 41-bit coordinate lasts 69.7 coordinate-years, but the GF180 5–12 Hz
 envelope can advance it 2.4 times faster than wall time: only 29.0 wall years.
 43 bits supports at least 116 wall years under that envelope. Saturate the
 coordinate and force terminal age to `0xffffffff`, even for newly sampled data,
 so a stopped coordinate cannot make data permanently fresh. Nominal 32-bit MMIO
-time and deadline arithmetic remain unchanged. This is the planned width,
-not yet implemented.
+time and deadline arithmetic remain unchanged. The verified 43-bit batch removes
+42 periodic sinks per variant, with Services work sinks 1,228 → 1,207. Production
+ADC/time local timing passes; optional software-sample configurations still need
+their own physical map. Matched area and unchanged native-model wake activity
+are recorded in the [ledger](area-ledger.md#bounded-time-coordinate).
 
 Housekeeping's 541 Services sinks comprise ordered 211, state 194 and queued
 136. Review found 128 obsolete elapsed-age payload bits across ordered/queued;

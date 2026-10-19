@@ -14,11 +14,16 @@ Samples have POR lifetime, including accepted CPU publications whose application
 resets before native dispatch. GPIO/application cancellation cannot discard them.
 
 Age uses the conservative upper-time coordinate, **not** nominal MMIO `now`.
-Use a shared 64-bit upper-millisecond coordinate and native last-good timestamps;
-read age is the saturated 32-bit difference. The supported uninterrupted POR
-interval is less than 2^63 upper milliseconds (over 292 million years); timestamp
-subtraction is unsigned modular arithmetic within that bound. Never-sampled age
-is `0xffffffff`. Failed attempts increment the 32-bit sequence and update
+The time-width follow-up uses a shared **43-bit** upper-millisecond coordinate
+and native last-good timestamps. Read age stays
+the saturated 32-bit difference. The GF180 5–12 Hz envelope can advance this
+coordinate up to 2.4 times faster than wall time. Its 278.7 coordinate-years
+therefore cover at least 116 wall years; 41 bits would cover only 29 wall years.
+This lifetime bound applies to that LF envelope, not arbitrary user time sources.
+The coordinate saturates instead of wrapping. At its terminal value every sample
+reports age `0xffffffff`, including a newly published sample, until POR. A future
+timestamp also reports saturated age. Never-sampled age is `0xffffffff`.
+Failed attempts increment the 32-bit sequence and update
 valid/fault/calibration, while preserving the last-good value and timestamp.
 ADC timestamps originate at conversion admission, including the existing
 coincident-tick convention and subsequent conversion/publication delay. CPU
@@ -28,8 +33,24 @@ The implementation computes the low-word difference and checks the high-word
 borrow condition directly. Four-bit combinational carry-select modules bound
 the mapped carry depth. Both nibble and group-prefix module boundaries prevent
 ABC from rebuilding a word-wide ripple chain. The shared counter precomputes its upper increment
-and selects it on low-word carry. Both are equivalent to the 64-bit arithmetic;
-neither adds a register, pipeline cycle or clock boundary.
+and selects it on low-word carry. The final nibble supports the partial high
+word; a wide-integer oracle checks carry, borrow, terminal saturation and age.
+Neither arithmetic path adds a register, pipeline cycle or clock boundary.
+Nominal 32-bit MMIO time, deadlines, sequences and application reset behavior
+are unchanged. Application/watchdog reset retains the coordinate and samples;
+POR clears them.
+
+The width follow-up passes 66 focused tests, 35 extended reset/sleep/boot/activity
+tests, the 372-Python/197-Scala fast gate, both RDC proofs and all four export
+audits. Terminal-time tests publish again and recover through watchdog reset;
+only POR restores freshness. Production ADC/time timing passes ten local
+corner/slew cases: bank reader setup/hold +210.489/+1.364 ns, feedback after bank
++11.311 ns, and one-period time/admission setup/hold +6.312/+0.405 ns. These are
+20%-derated, zero-wire-RC bounds, not routed closure. The production profile has
+no software-sample bank; its attempted campaign rejects that missing inventory.
+Software channels retain functional coverage and need their own configuration
+map for physical qualification. See the [area ledger](area-ledger.md#bounded-time-coordinate)
+for the matched map and sink changes.
 
 Remove time-driven Observe and sample batching from Services. ADC result
 publication commits its own closed native sample bank through its existing
@@ -81,7 +102,7 @@ The full per-register inventory is retained in
 `build/single-writer-telemetry/{bd,click}-baseline-registers.json`.
 The parent maps are `build/clocked-events/map-bd` and `map-click-r2`.
 
-The new maps have identical Services inventory in both variants: **1,228 work
+The original conversion maps have identical Services inventory in both variants: **1,228 work
 + 14 service sinks**, down 240. Ranked work families are snapshot 269,
 Housekeeping ordered 211, Housekeeping state 194, Housekeeping queued 136, Control
 106, retained MMIO commit 77, upper-time coordinate 64, program boundary 54, RAM
@@ -128,6 +149,7 @@ Elapsed source-Q versus publication/history composition, continuous source/inter
 slew coverage, routed RC/skew and electrical signoff remain separate obligations. Receipt settling alone is not
 a measured native-launch proof.
 
-A/B slots, an immutable golden recovery image, factory provisioning and measured
-full-capacity boot remain ahead of further area/guard tuning. Existing single-image
-SPI boot and I2C fallback do not yet provide that resilient boot layout.
+The [A/B boot batch](boot-slots.md) supplies external golden recovery, factory
+image/read-back verification and measured full-capacity boot in both variants.
+It was completed before the time-width and Housekeeping follow-ups. Golden is
+never modified by ROM updates; physical flash protection remains a board choice.

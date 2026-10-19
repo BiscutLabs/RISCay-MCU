@@ -16,7 +16,7 @@ class BdSpiAgeFixture(p: SocParameters) extends riscay.bd.FourPhaseSoc(p,x => ne
   private val adcOwner=spiAdc.get
   val publicationAge=IO(Output(UInt(32.W)))
   private val age=fabric.io.adc.upperTime-BoringUtils.bore(adcOwner.native.timestamp)
-  publicationAge:=Mux(age(63,32).orR,"hffffffff".U,age(31,0))
+  publicationAge:=Mux(age(age.getWidth-1,32).orR,"hffffffff".U,age(31,0))
   val adcBusy=IO(Output(Bool())); adcBusy:=fabric.io.adc.busy
   watchdog.io.heartbeat:=false.B
 }
@@ -29,7 +29,7 @@ class ClickSpiAgeFixture(p: SocParameters) extends riscay.click.ClickSoc(p,x => 
   private val adcOwner=spiAdc.get
   val publicationAge=IO(Output(UInt(32.W)))
   private val age=fabric.io.adc.upperTime-BoringUtils.bore(adcOwner.native.timestamp)
-  publicationAge:=Mux(age(63,32).orR,"hffffffff".U,age(31,0))
+  publicationAge:=Mux(age(age.getWidth-1,32).orR,"hffffffff".U,age(31,0))
   val adcBusy=IO(Output(Bool())); adcBusy:=fabric.io.adc.busy
   watchdog.io.heartbeat:=false.B
 }

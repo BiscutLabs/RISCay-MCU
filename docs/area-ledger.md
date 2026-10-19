@@ -6,9 +6,10 @@ libraries, mapper and accepted repair flow for matched production comparisons.
 Full routed physical requalification remains migration item 17.
 
 The **BD mapped-logic milestone below 2.3 mm² excluding SRAM is achieved**.
-The single-writer Telemetry batch maps to **2.010204 / 2.815021 mm²**
-(BD / Click) and repairs to **2.199751 / 3.032252 mm²**, compared with its immediate
-parent `d0a01c5` at 2.053129 / 2.854875 mapped and 2.237991 / 3.063397 repaired.
+The bounded-time batch maps to **2.048618 / 2.848272 mm²**
+(BD / Click) and repairs to **2.273786 / 3.097721 mm²**, including the expanded
+A/B boot ROM and current parent-driver recipe. The matched parent and
+single-writer Telemetry results are recorded in their batch rows below.
 The earlier passive/guard/fusion batch mapped to
 2.229395 / 3.048424 mm² (BD / Click). These are fresh whole-chip results, not summed
 pilot savings. Mapped/repaired numbers exclude the P&R additions tabulated below.
@@ -25,6 +26,48 @@ exceeds it, revise the budget or architecture; do not waive a failing path. The
 [repair contract](architecture-followups.md#routed-hold-repair) specifies the gates.
 
 ## Accepted production batches
+
+### Bounded time coordinate
+
+The conservative upper-time coordinate and sample timestamps are 43 bits,
+with terminal saturation and saturated 32-bit age. This covers at least 116 wall
+years under the GF180 5–12 Hz envelope; 41 bits would cover only 29. Nominal MMIO
+time, deadlines, sequence and retention behavior are unchanged.
+
+| Variant | Parent mapped / repaired logic | Narrowed mapped / repaired logic | Delta mapped / repaired | Periodic sinks before → after |
+| --- | ---: | ---: | ---: | ---: |
+| BD | 2.064823 / 2.291139 | 2.048618 / 2.273786 | −0.016205 / −0.017353 | 3,557 → 3,515 |
+| Click | 2.869313 / 3.120468 | 2.848272 / 3.097721 | −0.021041 / −0.022747 | 3,614 → 3,572 |
+
+Areas are mm², excluding unchanged SRAM. Both comparisons use the same mapper,
+PDK and current parent-driver/receiver-isolator recipe. Services loses 21 work
+sinks (1,228 → **1,207**); ADC admission loses another 21. Services service sinks
+remain 14. Whole-chip service/work/LF totals are **1,203/2,234/78 BD** and
+**1,207/2,287/78 Click**. BD guards/DLYD remain 0.399605/0.393784 mm² (5,276 cells);
+Click remains 0.937320/0.928706 mm² (12,443). Allowances remain zero; DLYD purposes
+and the separate 0.05 mm² routed hold reserve are unchanged.
+
+Native-model activity is unchanged in the retained 43-instruction workload:
+maintenance/sample/firmware work edges remain **24/217/3,241 BD**, **18/214/3,197
+Click**, with windows **3.147/18.439/270.441 µs BD** and **3.064/18.189/266.774 µs
+Click**. Telemetry commands remain zero in these windows. This fixture bypasses
+normal boot; the separate full-capacity boot measurements below remain the boot
+evidence, not these short wakes. These are digital activity measurements, not
+power estimates or physical timing.
+
+Evidence: `build/time-width/{baseline,candidate}-{bd,click}-{area,sinks}-r1.json`,
+`summary-r1.json`, `activity-*-r1.log`, `ci-r1/receipt.json`, `python-r2/receipt.json`,
+`focused-r1.log`, `extended-r1.log`, `check-r1/` and the two RDC logs. All 66 focused
+and 35 extended tests, 372 Python/197 Scala fast tests, four exports and both RDC
+checks pass. Independent source/evidence review is complete. The narrowed
+production ADC/time local screen passes ten cases in `timing-adc-r2`: one-period
+setup/hold minima **+6.312/+0.405 ns**, bank-reader **+210.489/+1.364 ns**, feedback
+after bank **+11.311 ns**. Routed RC/skew and source-launch composition remain
+open. The absent software-sample bank deliberately fails inventory in
+`timing-software-r2`; no physical coverage is claimed for that optional profile.
+The initial `LEAF_BUFFER_SHAPE` failure is retained: the checker now accepts
+proof-approved combinational `clkbuf` as well as `buf`, with scalar I→Z pins;
+their real delays remain in STA. Its existing positive/negative controls pass.
 
 ### A/B external boot slots
 

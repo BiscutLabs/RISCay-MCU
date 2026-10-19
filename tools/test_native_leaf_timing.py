@@ -30,13 +30,17 @@ def fixture():
 
 class LeafGraphTests(unittest.TestCase):
     def test_parent_branch_keeps_original_root_and_all_fanout(self):
-        before,after=fixture();index=leaf.LeafIndex(before,after,['branch'])
-        row=index.boundary('stage','data')[0]
-        self.assertEqual(row['source'],'source/Q')
-        self.assertEqual(set(row['complete_fanout']),{'sibling/I','stage/payload/D'})
-        self.assertIn('branch',index.after['cells'])
-        self.assertEqual(index.boundary('stage','unused')[0]['kind'],'unused')
-        self.assertEqual(index.boundary('stage','constant')[0]['value'],0)
+        for kind in ('buf_2','clkbuf_3','clkbuf_4','clkbuf_8'):
+            with self.subTest(kind=kind):
+                before,after=fixture()
+                after['modules']['RiscayMcuDigital']['cells']['branch']['type']=SC+kind
+                index=leaf.LeafIndex(before,after,['branch'])
+                row=index.boundary('stage','data')[0]
+                self.assertEqual(row['source'],'source/Q')
+                self.assertEqual(set(row['complete_fanout']),{'sibling/I','stage/payload/D'})
+                self.assertIn('branch',index.after['cells'])
+                self.assertEqual(index.boundary('stage','unused')[0]['kind'],'unused')
+                self.assertEqual(index.boundary('stage','constant')[0]['value'],0)
 
     def test_unbuffered_sibling_must_remain_connected(self):
         before,after=fixture()

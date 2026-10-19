@@ -71,7 +71,7 @@ class ClickServices(p: SocParameters, boardFactory: SocParameters => BoardProfil
   io.telemetryCommitFields.data:=mmioCommit.memory.data
   io.telemetryCommitFields.appIndex:=mmioCommit.peripheralData(5,0)
   val softwareCommit=IO(Output(new SoftwareSampleCommit))
-  val softwareTimestamp=if(p.softwareSampleChannels.nonEmpty) RegInit(0.U(64.W)) else WireDefault(0.U(64.W))
+  val softwareTimestamp=if(p.softwareSampleChannels.nonEmpty) RegInit(0.U(SampleTime.Width.W)) else WireDefault(0.U(SampleTime.Width.W))
   val softwarePublicationPending=if(p.softwareSampleChannels.nonEmpty) RegInit(false.B) else WireDefault(false.B)
   val telemetryBarrier = telemetryOutstanding || telemetryRecoveryBlocked || telemetryCommitPending || !io.telemetryCommandIdle || io.telemetryDraining
   // Clocked completion of the existing native bank turn. Before receipt
@@ -167,7 +167,7 @@ class ClickServices(p: SocParameters, boardFactory: SocParameters => BoardProfil
   // Keep its late valid/accept pulse at the final mux, out of the carry cone.
   // No register observes this unqualified bus when tick is false.
   val ageOperand=if(p.lowPower.nonEmpty) io.elapsedScaling.publicationElapsed(2) else upperElapsed
-  val upperTime=if(config.measurements.nonEmpty) RegInit(0.U(64.W)) else WireDefault(0.U(64.W))
+  val upperTime=if(config.measurements.nonEmpty) RegInit(0.U(SampleTime.Width.W)) else WireDefault(0.U(SampleTime.Width.W))
   val upperTimeNext=Mux(tick,TimestampMath.advance(upperTime,ageOperand),upperTime)
   if(config.measurements.nonEmpty) {upperTime:=upperTimeNext}
   // Track only while the existing loan is idle. The acceptance edge captures

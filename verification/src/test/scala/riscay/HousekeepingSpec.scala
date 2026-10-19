@@ -88,6 +88,37 @@ end endtask
     def fixture(p: SocParameters): SocTop = if(click) new ClickHousekeepingFixture(p) else new BdHousekeepingFixture(p)
     def parameters = SocParameters(config,staleMs=100,watchdogCycles=64,watchdogHoldCycles=32,
       lowPower=Some(LowPowerParameters()))
+    test(s"$name housekeeping: terminal time stays stale through new publications and watchdog recovery until POR") {
+      val maximum=SampleTime.Maximum.toString(16)
+      val steps=(1 << (SampleTime.Width-32))+1
+      ClockedSimulation.run(fixture(parameters),name+"-timestamp-terminal",s"""
+        manualTime=1;referenceEnabled=0;wait(idle);publish;wait(idle);
+        expectedUpper=upperTimeView;
+        for(n=1;n<=$steps;n=n+1) begin
+          advance(n,1,32'hffffffff);
+          expectedUpper=expectedUpper+64'hffffffff;
+          if(expectedUpper>64'h$maximum) expectedUpper=64'h$maximum;
+          if(upperTimeView!==expectedUpper) $$fatal(1,"UPPER_TIME_ADVANCE_OR_SATURATION");
+        end
+        wait(idle);read_words(2,0,0);
+        if(snapshot[64+:32]!==32'hffffffff || snapshot[32] || !snapshot[33])
+          $$fatal(1,"OLD_SAMPLE_FRESH_AT_TERMINAL_TIME");
+        publish;wait(idle);read_words(2,0,0);
+        if(snapshot[96+:32]!==2 || snapshot[64+:32]!==32'hffffffff || snapshot[32] || !snapshot[33])
+          $$fatal(1,"NEW_SAMPLE_FRESH_AT_TERMINAL_TIME");
+        stopHeartbeat=1;referenceEnabled=1;wait(systemReset);wait(!systemReset);
+        referenceEnabled=0;stopHeartbeat=0;wait(idle);
+        if(upperTimeView!==64'h$maximum) $$fatal(1,"WATCHDOG_CLEARED_UPPER_TIME");
+        read_words(2,0,0);
+        if(snapshot[96+:32]!==2 || snapshot[64+:32]!==32'hffffffff || snapshot[32])
+          $$fatal(1,"WATCHDOG_CHANGED_TERMINAL_SAMPLE");
+        @(negedge serviceClock);reset=1;#5000;reset=0;#5000;wait(idle);
+        if(upperTimeView!==0) $$fatal(1,"POR_DID_NOT_CLEAR_UPPER_TIME");
+        publish;wait(idle);read_words(2,0,0);
+        if(snapshot[96+:32]!==1 || snapshot[64+:32]!==0 || !snapshot[32] || snapshot[33])
+          $$fatal(1,"POR_DID_NOT_RESTORE_FRESH_TIME");
+      """,tasks+"\nreg [63:0] expectedUpper;\n",referenceHalfPeriodNs=1000,deadlineNs=6000000)
+    }
     test(s"$name housekeeping: unqualified retained elapsed payload cannot update timestamp state") {
       ClockedSimulation.run(fixture(parameters),name+"-elapsed-qualification","""
         manualTime=1;referenceEnabled=0;wait(idle);savedUpper=upperTimeView;

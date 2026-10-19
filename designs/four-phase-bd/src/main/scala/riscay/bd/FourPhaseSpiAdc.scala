@@ -15,7 +15,7 @@ import riscay.soc._
   * protocol state, scaling or retirement. The clocked player only times slots.
   */
 class FourPhaseSpiAdc(p: AdcParameters,domain: ResetDomain) extends AsyncModule(domain) {
-  val timestamp=IO(Input(UInt(64.W)))
+  val timestamp=IO(Input(UInt(SampleTime.Width.W)))
   val sampleView=IO(Output(new SampleRecord))
   val sampleComplete=IO(Output(Bool()))
   val command=fourPhaseInput("command",Bool())
@@ -127,7 +127,7 @@ class SpiAdc(p: AdcParameters,autonomous: Boolean,domain: ResetDomain) extends C
     val interval=RegInit(0.U(log2Ceil(p.intervalCycles).W))
     // One admission timestamp is held through conversion and complete native
     // return. It replaces the per-conversion periodic age accumulator.
-    val admissionTime=RegInit(0.U(64.W));native.timestamp:=admissionTime
+    val admissionTime=RegInit(0.U(SampleTime.Width.W));native.timestamp:=admissionTime
     val slot=RegInit(0.U(5.W)); val playing=RegInit(false.B)
     // Preserve the recipe's original highest-occupied-slot semantics,
     // including holes or an empty recipe; do not hard-code 32 transfers.

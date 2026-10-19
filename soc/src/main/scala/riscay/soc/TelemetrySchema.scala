@@ -5,11 +5,20 @@ import chisel3._
 import chisel3.experimental.BundleLiterals._
 import chisel3.experimental.VecLiterals._
 
+/** Conservative upper milliseconds: at least 116 wall years at the supported
+  * 2.4x fastest/slowest LF ratio. Saturation makes every sample stale until POR.
+  * Nominal MMIO time and deadlines retain their independent 32-bit ABI.
+  */
+object SampleTime {
+  val Width=43
+  val Maximum=(BigInt(1)<<Width)-1
+}
+
 /** POR-owned last-good sample. Time is conservative upper milliseconds, not
   * nominal MMIO time. Read conversion saturates; failed attempts retain stamp.
   */
 class SampleRecord extends Bundle {
-  val value=UInt(32.W); val timestamp=UInt(64.W); val sequence=UInt(32.W)
+  val value=UInt(32.W); val timestamp=UInt(SampleTime.Width.W); val sequence=UInt(32.W)
   val valid=Bool(); val calibrated=Bool(); val seen=Bool(); val fault=Bool()
 }
 object SampleRecord {
@@ -17,7 +26,7 @@ object SampleRecord {
     _.sequence -> 0.U, _.valid -> false.B, _.calibrated -> false.B, _.seen -> false.B, _.fault -> false.B)
 }
 class SoftwareSampleCommit extends Bundle {
-  val index=UInt(4.W); val value=UInt(32.W); val timestamp=UInt(64.W)
+  val index=UInt(4.W); val value=UInt(32.W); val timestamp=UInt(SampleTime.Width.W)
 }
 
 /** Wire formats only. Native state transitions belong to each design. */

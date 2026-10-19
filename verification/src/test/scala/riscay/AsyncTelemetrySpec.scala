@@ -30,7 +30,7 @@ class AsyncTelemetrySpec extends AnyFunSuite {
     Step(offset=44,data=3,value=100,timestamp=42,changes=Map("samples_0_value"->100L,"samples_0_timestamp"->42L,"samples_0_sequence"->5L,
       "samples_0_valid"->1L,"samples_0_calibrated"->1L,"samples_0_fault"->0L)),
     Step(kind=2,changes=Map("output"->0L,"enable"->0L,"application_1"->0L)),
-    // The bank retains the timestamp across time-coordinate wrap and failed attempts.
+    // The bank retains the timestamp across low-word time-coordinate carry and failed attempts.
     // Age saturation is checked at the Services projection, where time is owned.
     Step(offset=44,data=0,value=0,timestamp=0x100000001L,changes=Map("samples_0_sequence"->6L,"samples_0_valid"->0L,
       "samples_0_calibrated"->0L,"samples_0_fault"->1L)),
@@ -42,7 +42,7 @@ class AsyncTelemetrySpec extends AnyFunSuite {
     s"""command_bits_kind=${s.kind}; command_bits_offset=${s.offset};
       command_bits_data=32'h${s.data.toHexString}; command_bits_appIndex=${s.index};
       command_bits_sample_index=0; command_bits_sample_value=32'h${s.value.toHexString};
-      command_bits_sample_timestamp=64'h${s.timestamp.toHexString};
+      command_bits_sample_timestamp=${SampleTime.Width}'h${s.timestamp.toHexString};
       #2; command_req=$phase; wait(command_ack == $phase); #2;
       ${if(click) "" else "command_req=0; wait(!command_ack); #2;"}
     """
