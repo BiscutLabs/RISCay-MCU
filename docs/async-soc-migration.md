@@ -6,6 +6,8 @@ both native implementations** unless explicitly scoped otherwise. Click physical
 timing and sizing campaigns remain frozen.
 Completed work and old contracts are in the [migration log](history/migration-log.md).
 The [architecture plan](architecture-followups.md) supplies boundary details.
+External [A/B boot, golden recovery and factory provisioning](boot-slots.md) are
+verified, including full-capacity boot measurements in both variants.
 
 ## Architecture and implementation
 
@@ -27,11 +29,6 @@ The [architecture plan](architecture-followups.md) supplies boundary details.
   frame-route AND replacement if frame banks survive. **11a2b is paused until the
   ABI decision.** Define coherent reads, partial-write commit, busy/reset/overflow
   behavior, pointer bounds and lock enforcement; reuse the existing loader/CRC owner.
-- [ ] **Boot resilience.** Specify A/B boot slots, golden-image recovery and factory
-  programming/verification. Test corrupt/blank slots, interrupted updates, POR,
-  watchdog recovery and lock behavior. Measure boot time at full configured image
-  capacity, including validation, SRAM copy and fallback. **Next priority, ahead
-  of further area tuning.** No application policy in ROM.
 - [ ] **11c. Arbitration.** Use a physically qualified native MUTEX only where
   independent asynchronous requesters meet. Clocked arbitration at a real crossing
   is acceptable; verify fairness, simultaneous arrivals and reset containment.

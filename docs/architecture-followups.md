@@ -14,9 +14,13 @@ Document temporary internal divergence and any approved ABI transition.
 
 ## Work order
 
-1. Complete resilient external boot storage: A/B slots, an external golden image,
-   factory programming/read-back, and full-capacity boot/fallback timing. This
-   precedes further area tuning; no application policy moves into silicon.
+The [external boot batch](boot-slots.md) is verified: A/B slots, external golden,
+factory image/read-back and full-capacity boot/fallback measurements precede the
+remaining area work. No application policy moves into silicon.
+
+1. Narrow the conservative timestamp coordinate, then remove Housekeeping's
+   obsolete elapsed payload and qualified state mirror. Keep its receiving-edge
+   command arbitration; the host snapshot bank is outside this slice.
 2. Decide B's replacement host ABI before resuming 11a2b credit/admission work,
    then continue A/B with producers and consumers moved together.
 3. Regenerate the BD request-guard inventory and size surviving guards at each
@@ -36,12 +40,29 @@ The immediate physical prerequisites are compact C-element keeper/output
 placement, repairable native parent drivers and a matched 1.94–2.53 mm width
 sweep at 50–55% placement density, retaining only zero-router-DRC candidates.
 Pre-fix routed timing is [void](gf180-routability.md#withdrawn-physical-results).
-After boot resilience, narrow the retained time coordinate/timestamps from 64
-to approximately 41 bits of milliseconds (about 70 years), preserving saturating
-32-bit age and defining the terminal/wrap rule explicitly. Then address
-Housekeeping's 541 Services sinks (ordered 211, state 194, queued 136) through
-single-writer ownership and documented receiving-edge arbitration. The 269-sink
-host snapshot bank belongs with B's register-pointer redesign, not this slice.
+Next, narrow the retained time coordinate/timestamps from 64
+to **43 bits of conservative upper milliseconds**, preserving saturating 32-bit
+age. A 41-bit coordinate lasts 69.7 coordinate-years, but the GF180 5–12 Hz
+envelope can advance it 2.4 times faster than wall time: only 29.0 wall years.
+43 bits supports at least 116 wall years under that envelope. Saturate the
+coordinate and force terminal age to `0xffffffff`, even for newly sampled data,
+so a stopped coordinate cannot make data permanently fresh. Nominal 32-bit MMIO
+time and deadline arithmetic remain unchanged. This is the planned width,
+not yet implemented.
+
+Housekeeping's 541 Services sinks comprise ordered 211, state 194 and queued
+136. Review found 128 obsolete elapsed-age payload bits across ordered/queued;
+their time/CPU/reset arbitration edge remains necessary. Remove the 194-bit
+state mirror with an explicitly qualified native committed view. BD's existing
+feedback FIFO becomes transparent when empty and cannot provide that view:
+replace its wide state token and Join operand with a one-bit credit and one
+closed architectural bank, as in Telemetry. Capture completion must precede
+feedback and full return. Click's existing event-register payload remains
+retained; qualify its input-acknowledge phase against the reply receipt phase.
+Neither implementation needs a second architectural bank or native MUTEX. The
+initial target is about 322 removed sinks before any
+qualification overhead, subject to mapping. The 269-sink host snapshot bank
+belongs with B's register-pointer redesign, not this slice.
 
 ## A. Always-on/application ownership split
 
@@ -144,23 +165,25 @@ remains frozen.
 
 ## External boot resilience and provisioning
 
-The current ROM has one flash slot and I²C fallback. A/B selection and golden-image
-recovery are new work, not existing guarantees. Specify the flash layout, golden
-image placement/protection, versioned selection/commit metadata and bounded boot
-attempt/fallback rules. Keep generic boot decisions separate from application
+The verified A/B implementation's [contract](boot-slots.md)
+specifies the flash layout, golden image placement/protection, versioned
+selection/commit metadata and bounded boot attempt/fallback rules. The legacy
+single-slot path and I²C fallback remain. Keep generic boot decisions separate from application
 behavior; a golden application belongs in external storage, never mask ROM.
 
-Factory programming must produce a bootable image set and verify read-back,
-compatibility and CRC before release. Define how field updates preserve a usable
-fallback and how loader locks apply. Test blank/corrupt slots, interrupted erase/
-program/metadata commits, POR and watchdog resets, including failure of the chosen
-slot and golden-image recovery. The programming lock is not protection against
+The factory tool assembles a bootable image set and verifies full-device read-back,
+compatibility and CRC before acceptance. Field updates preserve the newest usable
+field image and leave golden/directory untouched. Both variants pass blank/corrupt
+slots, interrupted erase/program/metadata commits, POR, watchdog and lock scenarios,
+including golden recovery. The programming lock is not protection against
 arbitrary firmware GPIO writes to flash; any physical write protection must be
 specified separately.
 
-Measure reset-to-entry and worst-case fallback time at full configured capacity,
-including flash transfer, CRC validation, SRAM copy and shared ADC-bus drainage.
-Record work-clock edges and elapsed time for boot and ordinary firmware wakes.
+The boot contract records reset-to-entry and worst-case fallback time and work
+edges at the full 2 KiB reference capacity. These digital-model measurements
+include flash transfer, CRC and SRAM loading; shared ADC-bus drainage has its
+separate integration test. Routed boot timing and board provisioning remain
+physical integration obligations.
 
 ## Retained services and arbitration (11c, 12, 13b)
 
@@ -188,7 +211,7 @@ removed supervisor-policy configurations.
 | Configuration axis | Required coverage |
 | --- | --- |
 | Production reference | Generic 2 KiB program / 1 KiB working SRAM, SPI boot, scheduled ADC and source-stopping LF sleep |
-| Boot | Valid external image, I²C fallback and supported I²C-only builds; A/B/golden paths once implemented |
+| Boot | Valid external image, I²C fallback, supported I²C-only builds, A/B/golden paths and interrupted updates |
 | Acquisition | ADC disabled/zero measurement channels, scheduled ADC, and autonomous ADC in supported legacy builds |
 | Time and sleep | LF with service stopping on/off, plus legacy service-derived time without retained-sleep support |
 | Capacity and schema | Supported minimum/non-power-of-two/reference capacities; generic GPIO/channel counts and sparse application words |

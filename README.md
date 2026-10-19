@@ -16,7 +16,7 @@ ISA and software interfaces.
 | --- | --- |
 | CPU | RV32E, sixteen 32-bit registers, one instruction in flight; no cache, compressed instructions or hardware multiply/divide |
 | Memory | 2 KiB executable SRAM and 1 KiB working SRAM in the reference build; configurable capacities |
-| Boot | ROM bootloader reads and validates firmware from external SPI NOR flash, with I²C host-loader fallback |
+| Boot | External SPI NOR flash, A/B firmware slots and a golden recovery image, with I²C host-loader fallback |
 | Programming | CRC and image-compatibility checks, programming lock, optional flash persistence |
 | I/O | GPIO inputs, outputs and events; external SPI ADC interface; measurement value, validity and age |
 | Timing | Independent low-frequency timebase and watchdog, deadlines, wake events and retained sleep |
@@ -59,12 +59,15 @@ code, linker scripts, a generic bootloader and example test workloads in
 [`firmware/`](firmware/README.md).
 
 At power-on, the bootloader validates an image in external SPI NOR flash and
-loads it into executable SRAM. If no valid image is available, it waits for an
+loads it into executable SRAM. An optional A/B layout preserves the previous
+usable image during updates and falls back to an external golden image. If no
+valid image is available, it waits for an
 I²C upload. GPIOs start as inputs; board pull resistors determine their electrical
 state. Watchdog recovery preserves the image and programming lock, with GPIO
 retention available as a generic build option.
 
 - [Boot image format and flash programming](docs/generic-boot-contract.md)
+- [A/B slots, golden recovery and factory provisioning](docs/boot-slots.md)
 - [Memory map and storage](docs/memory-architecture.md)
 - [MMIO and I²C host protocol](docs/soc-contract.md)
 - [Sleep, wake events and reset behavior](docs/sleep-and-clock.md)
@@ -86,9 +89,10 @@ retention available as a generic build option.
 
 ![BD routed digital layout on a 2.25 × 2.53 mm die](docs/images/bd-layout.png)
 
-The current BD digital layout uses a **2.25 × 2.53 mm** outline. Cell footprints
+This BD digital layout uses a **2.25 × 2.53 mm** outline. Cell footprints
 total **3.470 mm²**, including the three SRAM macros across the top. Pads and
-analog blocks are not included.
+analog blocks are not included. This routing study predates the expanded A/B
+boot ROM.
 
 **This is a development design, not ready for fabrication.** Detailed routing
 has zero router violations; electrical, timing and signal-integrity qualification

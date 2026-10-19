@@ -6,6 +6,7 @@ import os
 import subprocess
 import sys
 import hashlib
+import re
 from build_firmware import ROOT, TOOLCHAIN, FLAGS, audit_instructions, stack_bound
 
 def main():
@@ -31,6 +32,10 @@ def main():
     count=audit_instructions(dis)
     run('objcopy',['-O','binary',elf,binary])
     data=binary.read_bytes(); assert len(data)%4==0
+    symbols=run('nm',['-n',elf])
+    capacity=re.findall(r'^([0-9a-f]+)\s+\w\s+riscay_program_capacity$',symbols,re.M)
+    if len(capacity)!=1 or int(capacity[0],16)!=len(data)-4 or data[-4:]!=bytes.fromhex('dec0dec0'):
+        raise ValueError('BOOT_CAPACITY_LITERAL_NOT_FINAL')
     bound,chain,frames=stack_bound([p.read_text() for p in out.glob('*.ci')],root='boot_main')
     if bound>256: raise ValueError(f'BOOT_STACK_EXCEEDS_MINIMUM_RAM:{bound}')
     resource=ROOT/'soc/src/main/resources/riscay/boot.hex';resource.parent.mkdir(parents=True,exist_ok=True)
@@ -38,6 +43,7 @@ def main():
     chain=[value.replace(str(ROOT)+'/','') for value in chain]
     frames={key.replace(str(ROOT)+'/',''):value for key,value in frames.items()}
     report={'schema':'riscay-generic-boot-v1','rom_bytes':len(data),'instructions':count,
+            'program_capacity_offset':len(data)-4,'program_capacity_sentinel':'c0dec0de',
             'stack_bytes':bound,'stack_chain':chain,'frames':frames,'binary_sha256':hashlib.sha256(data).hexdigest(),
             'sources':{str(p.relative_to(ROOT)):hashlib.sha256(p.read_bytes()).hexdigest() for p in [src/'boot.c',src/'startup.S',src/'link.ld',Path(__file__)]}}
     (src/'rom-report.json').write_text(json.dumps(report,indent=2)+'\n')

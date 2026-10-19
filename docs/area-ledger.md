@@ -26,6 +26,42 @@ exceeds it, revise the budget or architecture; do not waive a failing path. The
 
 ## Accepted production batches
 
+### A/B external boot slots
+
+The ROM grows from 2,096 to **4,224 bytes**, with a statically bounded 188-byte
+stack. Both fresh maps use the same mapper, PDK, capacities and parent-driver
+recipe from `34d14e6`, before the five receiver isolators; the mapped/repaired
+comparison below isolates the boot change.
+The host synthesis timeout was increased from 600 to 3,600 seconds because the
+old mapper's ROM technology mapping exceeded it. No circuit constraint changed;
+the original timeout logs remain. Mapping and complete graph proofs pass.
+
+| Variant | Parent mapped / repaired logic | A/B mapped / repaired logic | Delta mapped / repaired | Periodic sinks before → after |
+| --- | ---: | ---: | ---: | ---: |
+| BD | 2.010204 / 2.234365 | 2.064823 / 2.291051 | +0.054619 / +0.056687 | 3,557 → 3,557 |
+| Click | 2.815021 / 3.064001 | 2.869313 / 3.120468 | +0.054292 / +0.056467 | 3,614 → 3,614 |
+
+Areas are mm², excluding the unchanged 0.466241 mm² SRAM. The matched Click
+parent reruns the current repair recipe on the previous RTL; it is not the older
+3.032252 mm² repair in the Telemetry row. Evidence is under `build/generic-boot/`:
+`slots-baseline-click-r1`, `slots-map-{bd,click}-r3`,
+`slots-area-{bd,click}-r3.json` and `slots-sinks-{bd,click}-r3.json`.
+BD's parent is `build/native-physical/map-bd-r4`.
+
+Services remains 1,228 work + 14 service sinks in each variant. Whole-chip
+service/work/LF totals remain 1,203/2,276/78 BD and 1,207/2,329/78 Click.
+BD guards/DLYD remain 0.399605 / 0.393784 mm² (5,276 DLYD cells); Click remains
+0.937320 / 0.928706 mm² (12,443 DLYD cells). Allowances remain zero and every
+DLYD remains assigned to its existing purpose. The boot ROM is combinational;
+no periodic or native storage, synchronizer or clock was added. Full-capacity
+2 KiB primary boot takes 353.740 / 398.806 ms and 3,537,379 / 3,988,038 work
+edges (BD / Click). With both field bodies corrupt, golden fallback takes
+1,010.868 / 1,139.608 ms and 10,108,660 / 11,396,064 work edges. These are native
+digital-model results at 10 MHz service clock; see the [boot table](boot-slots.md#full-capacity-boot-activity).
+All 69 extended boot cases and the 372-Python/197-Scala fast gate pass; both RDC
+proofs, all four export audits and independent final review pass. The older
+README layout does not include the expanded ROM, whose paths need fresh timing.
+
 ### Compact native placement and parent drivers (electrical closure open)
 
 The unchanged BD RTL maps to 2.010204 mm². The new parent-driver recipe passes

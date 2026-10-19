@@ -7,6 +7,8 @@ with `python tools/build_boot_rom.py`; its source hashes, size and stack bound
 are recorded in `boot/rom-report.json`. See the
 [generic boot contract](../docs/generic-boot-contract.md) for the image format,
 shared SPI pins, update/lock behavior and reset semantics.
+The [A/B boot-slot guide](../docs/boot-slots.md) describes external golden
+recovery, interrupted-update behavior and factory image/read-back verification.
 
 The remaining programs are compiler-built sizing and execution fixtures.
 `event_loop` exercises deadline/leased WAIT, GPIO reads and application

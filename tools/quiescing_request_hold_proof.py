@@ -47,6 +47,14 @@ GENERIC_ROM_FABRIC = {
     'bd': '96f9ea8fab6150f5c98ba9eedfa723ceda92be43fc0dceb82ee6d6a938fb5663',
     'click': '16f5d7dab638315bfee217616e8e5c68bd20aeddfeb4aacf39f35dcd3e702700',
 }
+# A/B ROM review: compare complete canonical graphs after independently checking
+# the ROM contents/capacity literal and aperture (2096 -> 4224 bytes). Only those
+# data/decode expressions change; native identities, parameters, storage,
+# capture/reset/return histories and the held 70-bit source are unchanged.
+SLOT_ROM_FABRIC = {
+    'bd': 'fa15fd343f84771fe41c150ea12a0a8f42db44d42d158fd05b0f40f01e1f6216',
+    'click': 'e704a7fb72f0fbd499925fa5297a8a3416473181163d09b30e2d7c3190f986d6',
+}
 # Independently reviewed reset fixtures: legacy ROM, generic MMIO aperture.
 GENERIC_FIXTURE_FABRIC = {
     'bd': '2b61765e1f631ab7b97a0180063d1faa1fbae73e0c0db575c60270f5da172c1d',
@@ -161,7 +169,8 @@ def prove_request_hold(database, top, capacities):
     for owner,signature in signatures.items():
         expected=({FIXTURE_FABRIC[protocol], GENERIC_FIXTURE_FABRIC[protocol]} if fixture and owner=='fabric' else
                   {EXPECTED[protocol][owner], PASSIVE_EXPECTED[protocol][owner]})
-        if not fixture and owner=='fabric': expected.add(GENERIC_ROM_FABRIC[protocol])
+        if not fixture and owner=='fabric':
+            expected.update((GENERIC_ROM_FABRIC[protocol], SLOT_ROM_FABRIC[protocol]))
         need(signature['sha256'] in expected, 'OWNER_TOPOLOGY_'+owner)
     return dict(prefix=address, consumer_prefix=receipt, status='pass', protocol=protocol, source=address+'.ca_primitive_payload',
         source_width=70, signatures=signatures, capacities=capacities, phase_aliases=aliases,

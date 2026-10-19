@@ -1,11 +1,15 @@
 {
   "schema": "riscay-generic-boot-v1",
-  "rom_bytes": 2096,
-  "instructions": 524,
-  "stack_bytes": 56,
+  "rom_bytes": 4224,
+  "instructions": 1055,
+  "program_capacity_offset": 4220,
+  "program_capacity_sentinel": "c0dec0de",
+  "stack_bytes": 188,
   "stack_chain": [
     "boot_main",
-    "firmware/boot/boot.c:write_idle",
+    "firmware/boot/boot.c:load_slot",
+    "firmware/boot/boot.c:record_header",
+    "firmware/boot/boot.c:address_command",
     "firmware/boot/boot.c:select_flash"
   ],
   "frames": {
@@ -16,15 +20,22 @@
     "firmware/boot/boot.c:address_command": 12,
     "firmware/boot/boot.c:write_enable": 12,
     "firmware/boot/boot.c:write_idle": 20,
-    "firmware/boot/boot.c:image_word": 0,
+    "firmware/boot/boot.c:crc_word": 0,
+    "firmware/boot/boot.c:directory": 20,
+    "firmware/boot/boot.c:record_header": 72,
+    "firmware/boot/boot.c:load_stream": 16,
+    "firmware/boot/boot.c:image_header_word": 0,
+    "firmware/boot/boot.c:image_word": 16,
+    "firmware/boot/boot.c:persist_at": 44,
     "firmware/boot/boot.c:claim_bus": 12,
-    "boot_main": 36
+    "firmware/boot/boot.c:load_slot": 16,
+    "boot_main": 88
   },
-  "binary_sha256": "fbbf3ae7f47c8f86c0e2f8dba4340bb381dd4e4bf190ab875d848573f191b3e7",
+  "binary_sha256": "1f3973405ec67711e293f885f46a75fe5b9e591a766bcf6387f4f153607bd579",
   "sources": {
-    "firmware/boot/boot.c": "82a7f0835ca559870fb1576baf996ed144241b5e77515e7757b14d496a322c3f",
-    "firmware/boot/startup.S": "100776ae90b7fbd3a4112f87606411401dc8253b06f3f29ca41786d7b18682c0",
-    "firmware/boot/link.ld": "a38e55daa3b11f08dbbc24325e12d5491856652324ca2c2e81268ecd7a009be8",
-    "tools/build_boot_rom.py": "297257b41d14980cd771d727fe60d3c8e5b6aded868e59556247db5fddd2b299"
+    "firmware/boot/boot.c": "1187311054340de052c0cb2df9602ea17e382fd053ad969e261413bb91bf1a8f",
+    "firmware/boot/startup.S": "713171df7793ef28d9b02400826add817e215671d59060c9c43cc3f5204c319c",
+    "firmware/boot/link.ld": "2a5d6793ff9212a64281b32d2bdab682c8b07c8ef120dabd2e8ea08c9dfaf33e",
+    "tools/build_boot_rom.py": "61184b03c804e0f07227a10341ccf57970a682bc10bf4e005548c6ac92a004e7"
   }
 }
