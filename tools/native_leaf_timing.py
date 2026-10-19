@@ -185,13 +185,82 @@ def bind_plan(plan, index, descriptor, original, cuts):
 
 
 SLEW_TCL = r'''
+proc leaf_check_loop_cuts {roots targets phase_clk phase_q} {
+  # Inspect every enabled alternative in the launch-to-target corridor, not
+  # only the extremal path eventually printed by STA. Ignore automatic loop
+  # flags during reachability, then reject any such cut in that corridor.
+  set root_vertices {}; set target_vertices {}; set queue {}; set seen {}; set forward {}
+  foreach pin $roots {
+    if {[llength [$pin vertices]] != 1} {error LEAF_LOOP_PIN_VERTICES}
+    foreach vertex [$pin vertices] {dict set root_vertices $vertex 1}
+  }
+  foreach pin $targets {
+    if {[llength [$pin vertices]] != 1} {error LEAF_LOOP_PIN_VERTICES}
+    foreach vertex [$pin vertices] {dict set target_vertices $vertex 1; lappend queue $vertex}
+  }
+  while {[llength $queue]} {
+    set vertex [lindex $queue end]; set queue [lrange $queue 0 end-1]
+    if {[dict exists $seen $vertex]} {continue}; dict set seen $vertex 1
+    if {[llength [[$vertex pin] vertices]] != 1} {error LEAF_LOOP_PIN_VERTICES}
+    if {[dict exists $root_vertices $vertex]} {continue}
+    set iterator [$vertex in_edge_iterator]
+    while {[$iterator has_next]} {
+      set arc [$iterator next]
+      set from [$arc from]; set role [$arc role]
+      if {$role ni {wire combinational}} {
+        if {$phase_q eq "" || [get_full_name [$arc from_pin]] ne $phase_clk ||
+            [get_full_name [$arc to_pin]] ne $phase_q} {continue}
+      }
+      if {[llength [[$arc from_pin] vertices]] != 1 ||
+          [llength [[$arc to_pin] vertices]] != 1} {error LEAF_LOOP_PIN_VERTICES}
+      # is_disabled_constant means ANY transition arc is disabled in old STA;
+      # dropping that entire edge would hide an enabled competing transition.
+      # Keep uncertain conditional alternatives conservatively in the corridor.
+      if {[$arc is_disabled_constraint] || ($role eq "combinational" && [$arc sim_timing_sense] eq "none") ||
+          [sta::pin_sim_logic_value [$arc from_pin]] in {0 1} ||
+          [sta::pin_sim_logic_value [$arc to_pin]] in {0 1} ||
+          [$arc is_disabled_cond_default]} {continue}
+      dict lappend forward $from [list $vertex $arc]
+      lappend queue $from
+    }
+    $iterator finish
+  }
+  set queue [dict keys $root_vertices]; set reached {}; set arcs 0
+  while {[llength $queue]} {
+    set vertex [lindex $queue end]; set queue [lrange $queue 0 end-1]
+    if {[dict exists $reached $vertex]} {continue}; dict set reached $vertex 1
+    if {![dict exists $forward $vertex]} {continue}
+    foreach pair [dict get $forward $vertex] {
+      lassign $pair target arc; incr arcs
+      if {[$arc is_disabled_loop]} {error "LEAF_ACTIVE_LOOP_CUT [$arc to_string]"}
+      lappend queue $target
+    }
+  }
+  foreach vertex [dict keys $target_vertices] {
+    if {![dict exists $reached $vertex]} {error "LEAF_LOOP_TARGET_UNREACHABLE [get_full_name [$vertex pin]]"}
+  }
+  row LEAF_LOOP_CUT_COVERAGE [dict size $root_vertices] [llength $targets] $arcs
+}
+proc leaf_analysis_view {} {
+  # OpenSTA renamed its single-corner analysis context to Scene. Each generated
+  # experiment loads one PVT only; preserve that context on both pinned runtimes.
+  if {[llength [info commands sta::cmd_scene]]} {return [sta::cmd_scene]}
+  return [sta::cmd_corner]
+}
 proc leaf_slew {pin edge mode} {
   set values {}
-  foreach vertex [$pin vertices] {lappend values [sta::time_sta_ui [$vertex slew_corner $edge [sta::cmd_corner] $mode]]}
+  foreach vertex [$pin vertices] {
+    if {[llength [info commands sta::cmd_scene]]} {
+      set slew [$vertex slew $edge $mode]
+    } else {
+      set slew [$vertex slew_corner $edge [leaf_analysis_view] $mode]
+    }
+    lappend values [sta::time_sta_ui $slew]
+  }
   if {![llength $values]} {error LEAF_SLEW_VERTEX}
   return [tcl::mathfunc::$mode {*}$values]
 }
-proc leaf_ack {id mode edge root phase_q phase_clk target} {
+proc leaf_ack {id mode edge root phase_q phase_clk target {record LEAF_ACK_PATH}} {
   # Built-in report_path uses this same graph-path iterator. No invented output
   # port, electrical load or invalid combinational PathEnd constraint is needed.
   sta::find_timing
@@ -230,34 +299,49 @@ proc leaf_ack {id mode edge root phase_q phase_clk target} {
     row LEAF_ACK_POINTS $id {*}$names
   } else {
     set delay [expr {$arrival-$origin}]
-    row LEAF_ACK_PATH $id $origin $arrival $delay $delay $max_slew $pin $target $start_edge $edge
-    row LEAF_ACK_POINTS $id {*}$names
+    row $record $id $origin $arrival $delay $delay $max_slew $pin $target $start_edge $edge
+    if {$record eq "CONTROL_PATH"} {row CONTROL_POINTS $id {*}$names} else {row LEAF_ACK_POINTS $id {*}$names}
   }
 }
 '''
 
 
-def script(netlist,corner,slew,plan,ctx,*,sta,period=1000):
+def script(netlist,corner,slew,plan,ctx,*,sta,period=1000,odb=None,spef=None,routed_netlist=None):
     import control_relative_timing as relative
     b=relative.brace
     root_slew=ctx.get('root_slew_ns',dict(min=slew,max=slew))
     require(ctx['kind'] not in ('common','sequential_ack') or 'root_slew_ns' in ctx,
             'LEAF_COMMON_SLEW_REQUIRED')
     text='read_liberty '+b(sta.path(ROOT/'.tools/physical/pdk'/(SC+corner+'.lib')))+'\n'
-    text+='read_liberty '+b(sta.path(ROOT/'.tools/gf180-sram'/(SRAM+'__tt_025C_3v30.lib')))+'\n'
+    text+='read_liberty '+b(sta.path(ROOT/'.tools/gf180-sram'/(SRAM+'__'+corner+'.lib')))+'\n'
     text+=relative.PROBE.read_text()+'\n'+SLEW_TCL+'\n'
-    text+='read_verilog '+b(sta.path(netlist))+'\nlink_design RiscayMcuDigital\n'
+    require((odb is None and routed_netlist is None)==(spef is None) and
+            not (odb is not None and routed_netlist is not None),'LEAF_ROUTED_INPUT_PAIR')
+    if routed_netlist is not None:
+        from routed_annotation import REPORT_TCL
+        text+='read_verilog '+b(sta.path(routed_netlist))+'\nlink_design RiscayMcuDigital\n'
+        text+='read_spef '+b(sta.path(spef))+'\n'+REPORT_TCL
+    elif odb is None:
+        text+='read_verilog '+b(sta.path(netlist))+'\nlink_design RiscayMcuDigital\n'
+    else:
+        text+='read_db '+b(sta.path(odb))+'\nread_spef '+b(sta.path(spef))+'\n'
     text+=f'set_input_transition {slew} [all_inputs]\nset_load 0.05 [all_outputs]\nset_max_transition 2 [current_design]\n'
     for kind,pin,value in ctx['state']['cases']:text+=f'set_case_analysis {value} [exact_object {kind} {b(pin)}]\n'
     for cell in ctx['state']['keeper_cuts']:text+='set_disable_timing -from A1 -to ZN [get_cells '+b(cell)+']\n'
     text+='set roots {}; foreach name [list '+ ' '.join(map(b,ctx['sources']))+'] {lappend roots [exact_object pin $name]}\n'
     text+=f'create_clock -name event -period {period} -waveform {{0 1}} $roots\nset_propagated_clock [all_clocks]\nsta::find_delays\n'
     for mode in ('min','max'):
-        text+='foreach pin $roots {foreach vertex [$pin vertices] {foreach edge {rise fall} {sta::set_annotated_slew $vertex [sta::cmd_corner] '+mode+' $edge [sta::time_ui_sta '+str(root_slew[mode])+']}}}\n'
+        text+='foreach pin $roots {foreach vertex [$pin vertices] {foreach edge {rise fall} {sta::set_annotated_slew $vertex [leaf_analysis_view] '+mode+' $edge [sta::time_ui_sta '+str(root_slew[mode])+']}}}\n'
     text+='set sources [get_clocks event]\nrow RELATIVE_BEGIN\n'
     text+='set targets {}\n'
     for pin in sorted({q['sink'] for q in ctx['queries'] if q['role']!='ack'}):text+='lappend targets [exact_object pin '+b(pin)+']\n'
     text+='if {[llength $targets]} {set_max_delay 100000 -from $sources -to $targets; set_min_delay 0 -from $sources -to $targets}\n'
+    if routed_netlist is not None:
+        text+='set audit_targets {}\n'
+        for pin in sorted({q['sink'] for q in ctx['queries']}):
+            text+='lappend audit_targets [exact_object pin '+b(pin)+']\n'
+        phase=[plan['phase'][p]['pin'] for p in ('CLK','Q')] if ctx['kind']=='sequential_ack' else ['','']
+        text+='sta::find_delays\nleaf_check_loop_cuts $roots $audit_targets '+' '.join(map(b,phase))+'\n'
     if ctx['kind']=='sequential_ack':
         # Read propagated graph arrivals at actual receivers. Combinational
         # input pins are not artificial constrained PathEnd endpoints.
@@ -268,6 +352,14 @@ def script(netlist,corner,slew,plan,ctx,*,sta,period=1000):
         for q in ctx['queries']:
             if q['role']=='ack':
                 text+='leaf_ack '+' '.join(map(b,[q['id'],q['mode'],q['sink_edge'],plan['event'],'','',q['sink']]))+'\n'
+            elif spef is not None and ctx['kind']!='data':
+                # In the routed OpenSTA runtime a latch enable is a clock pin,
+                # not a constrained data PathEnd. Query its real propagated
+                # graph arrival, exactly as for an ACK receiver. No path waiver
+                # or substitute output/load is introduced.
+                require(len(ctx['sources'])==1 and q['source_edge']=='rise',
+                        'LEAF_CAPTURE_LAUNCH_SHAPE')
+                text+='leaf_ack '+' '.join(map(b,[q['id'],q['mode'],q['sink_edge'],ctx['sources'][0],'','',q['sink'],'CONTROL_PATH']))+'\n'
             else:batches[tuple(q[k] for k in ('mode','source_edge','sink_edge'))].append(q)
         for (mode,se,te),qs in batches.items():
             text+='control_batch '+' '.join(map(b,(mode,se,te)))+' $sources pin [list '
@@ -282,8 +374,20 @@ def script(netlist,corner,slew,plan,ctx,*,sta,period=1000):
     return text
 
 
-def parse(log,plan,ctx,slew,index):
+def parse(log,plan,ctx,slew,index,*,routed_drivers=None):
     import control_relative_timing as relative
+    from routed_annotation import SPEF_WARNING
+    require(re.search(SPEF_WARNING,log) is None,
+            'LEAF_SPEF_ANNOTATION_INCOMPLETE')
+    if routed_drivers is not None:
+        from routed_annotation import check_loaded_drivers
+        check_loaded_drivers(log+'\n'+routed_drivers)
+        coverage=[l.split('\t')[1:] for l in log.splitlines() if l.startswith('LEAF_LOOP_CUT_COVERAGE\t')]
+        expected_targets=len({q['sink'] for q in ctx['queries']})
+        require(len(coverage)==1 and len(coverage[0])==3 and
+                all(re.fullmatch(r'\d+',v) for v in coverage[0]) and
+                list(map(int,coverage[0][:2]))==[len(ctx['sources']),expected_targets] and
+                (int(coverage[0][2])>0 or not expected_targets),'LEAF_LOOP_CUT_COVERAGE')
     measured={}
     root_slew=ctx.get('root_slew_ns',dict(min=slew,max=slew))
     for line in log.splitlines():

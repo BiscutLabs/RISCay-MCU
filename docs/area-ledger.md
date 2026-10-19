@@ -26,9 +26,30 @@ exceeds it, revise the budget or architecture; do not waive a failing path. The
 
 ## Accepted production batches
 
+### BD routing and signal-integrity investigation
+
+The current `ed38c62` BD map completes detailed routing on **2.53 × 2.53 mm**
+with zero router violations, an empty retained DRC report and independent
+nominal/minimum/maximum RC extraction. Cell occupancy is **55.80%** of the core.
+Electrical limits and physical timing remain unqualified; routing acceptance
+does not waive them. [Maps, limits and evidence](gf180-routability.md).
+
+| Physical run | Mapped logic | Pre-placement repaired logic | Routed logic | SRAM | Taps/endcaps | Total cell footprints | Periodic sinks |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| `pnr-bd-routability-2530x2530-r7` | 2.010204 | 2.199751 | 2.767025 | 0.466241 | 0.164802 | 3.398069 | 3,557 |
+
+Areas are mm². This batch changes floorplanning, routing and analysis, not RTL:
+guards remain 0.399605 mm², allowances zero, DLYD 5,276 cells / 0.393784 mm²,
+and periodic sinks remain service 1,203 / work 2,276 / LF 78. Native-model wake
+activity is unchanged; no new silicon energy claim is made. The 0.05 mm² routed
+hold-repair reserve remains unspent. The same current map on 1.94 × 2.53 mm
+failed to converge to zero violations in late routing passes despite lower SRAM
+band density; its evidence is retained. This is not an isolated comparison with
+the older RTL in the rectangular-layout table below.
+
 ### BD rectangular P&R
 
-The latest routed generic-MCU BD snapshot (`baec57b`) completed detailed routing on a
+The earlier generic-MCU BD snapshot (`baec57b`) completed detailed routing on a
 **1.94 × 2.53 mm** outline (4.9082 mm²), with **one unresolved Metal2 short**.
 Nominal/minimum/maximum wire RC extraction is complete. This snapshot predates the
 ownership batches below. **Physical timing remains unqualified.** The larger comparison run completed with zero detailed-router DRC

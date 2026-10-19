@@ -55,6 +55,37 @@ def fixture(variant):
 
 
 class MetadataTests(unittest.TestCase):
+    def test_wire_envelope_retains_unresolved_obligations(self):
+        cases=[dict(instance='stage',key=key,wire_corner=rc) for key in ('fast','slow') for rc in ('min','max')]
+        envelopes=[dict(instance='stage',key=key,status=status) for key,status in
+                   (('fast','CONDITIONAL_LOCAL_MEASUREMENTS'),('slow','UNRESOLVED'))]
+        coverage=n.wire_envelope_coverage(cases,envelopes,True)
+        self.assertEqual(coverage['completed']+coverage['unresolved'],coverage['expected'])
+        self.assertGreater(coverage['unresolved'],0)
+        for incomplete in (envelopes[:1],envelopes+envelopes[:1]):
+            with self.assertRaisesRegex(ValueError,'STAGE_WIRE_ENVELOPE_COVERAGE'):
+                n.wire_envelope_coverage(cases,incomplete,True)
+        disabled=n.wire_envelope_coverage(cases,[],False)
+        self.assertEqual(disabled['status'],'not-requested')
+        self.assertIn('both min and max RC',disabled['reason'])
+
+    def test_cross_rc_envelope_checks_fast_ack_against_slow_capture(self):
+        a,plan,aperture=arithmetic();b=deepcopy(a)
+        plan['contexts']=[dict(id=name,queries=[dict(id=k,mode='min' if 'min' in k.split(':') else 'max') for k in r['rows']]) for name,r in a.items()]
+        # Both same-RC hold checks pass. The conservative mixed-RC bound fails.
+        b['common']['rows']['ack:min:rise']['delay_ns']=10
+        for k,row in b['common']['rows'].items():
+            if k.startswith('capture:'):row['delay_ns']=8
+        self.assertGreater(r.margins(a,plan,aperture)['minimum_zero_reuse_hold_ns'],0)
+        self.assertGreater(r.margins(b,plan,aperture)['minimum_zero_reuse_hold_ns'],0)
+        merged=n.bd_wire_envelope({'min':a,'max':b},plan)
+        self.assertLess(r.margins(merged,plan,aperture)['minimum_zero_reuse_hold_ns'],0)
+        self.assertEqual(merged['common']['rows']['ack:min:rise']['wire_corner'],'min')
+        self.assertEqual(merged['common']['rows']['capture:0:max']['wire_corner'],'max')
+        del b['data']['rows'][next(iter(b['data']['rows']))]
+        with self.assertRaisesRegex(ValueError,'STAGE_WIRE_ENVELOPE_ROWS'):
+            n.bd_wire_envelope({'min':a,'max':b},plan)
+
     def test_passive_allowance_has_exact_unmasked_ports(self):
         for variant in ('bd','click'):
             values=list(fixture(variant));manifest,netlist,record=values[:3]

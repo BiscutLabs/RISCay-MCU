@@ -9,6 +9,7 @@ from run_receipt import RunReceipt
 import argparse
 from copy import deepcopy
 import hashlib
+from itertools import product
 import json
 from pathlib import Path
 import re
@@ -159,6 +160,43 @@ def numerical_status(summary):
                 negative_metrics=negative, physical_qualification=False)
 
 
+def bd_wire_envelope(measurements,plan):
+    """Compare fastest control/ACK with slowest data/capture across wire views.
+
+    Cell PVT and injected source slew must match at the caller. This conservative
+    wire envelope does not supply source launch composition or mismatch derates.
+    """
+    require(plan['variant']=='bd' and {'min','max'}<=measurements.keys(),'STAGE_WIRE_ENVELOPE_INPUTS')
+    contexts={c['id']:c for c in plan['contexts']}
+    require(all(set(results)==set(contexts) for results in measurements.values()),'STAGE_WIRE_ENVELOPE_CONTEXTS')
+    merged={}
+    for name,context in contexts.items():
+        modes={q['id']:q['mode'] for q in context['queries']}
+        require(all(set(results[name]['rows'])==set(modes) for results in measurements.values()),'STAGE_WIRE_ENVELOPE_ROWS')
+        rows={}
+        for key,mode in modes.items():
+            require(mode in ('min','max'),'STAGE_WIRE_ENVELOPE_MODE')
+            rc,row=(min if mode=='min' else max)(
+                ((rc,r[name]['rows'][key]) for rc,r in measurements.items()),key=lambda pair:pair[1]['delay_ns'])
+            rows[key]=dict(row,wire_corner=rc)
+        merged[name]=dict(rows=rows,event_slew_ns=[
+            min(r[name]['event_slew_ns'][0] for r in measurements.values()),
+            max(r[name]['event_slew_ns'][1] for r in measurements.values())])
+    return merged
+
+
+def wire_envelope_coverage(cases,envelopes,enabled):
+    expected={(c['instance'],c['key']) for c in cases if c['wire_corner']=='min'} if enabled else set()
+    actual=[(e['instance'],e['key']) for e in envelopes]
+    require(len(actual)==len(set(actual)) and set(actual)==expected,'STAGE_WIRE_ENVELOPE_COVERAGE')
+    require(all(e['status'] in ('UNRESOLVED','CONDITIONAL_LOCAL_MEASUREMENTS') for e in envelopes),
+            'STAGE_WIRE_ENVELOPE_STATUS')
+    unresolved=sum(e['status']=='UNRESOLVED' for e in envelopes)
+    return dict(status='requested' if enabled else 'not-requested',
+        reason=None if enabled else 'Requires routed BD measurements with both min and max RC',
+        expected=len(expected),completed=len(envelopes)-unresolved,unresolved=unresolved)
+
+
 def roundtrip(mapping, output, netlist, yosys, pdk):
     """Prove the queried Verilog has exactly the graph used to bind queries."""
     write_json(output/"blackboxes.json",dict(modules={n:b for n,b in netlist["modules"].items()
@@ -185,7 +223,7 @@ def inventory(manifest):
             for n in nodes(manifest["design"]) if n["primitives"]]
 
 
-def run(mapping, output, variant, paths, campaign=False):
+def run(mapping, output, variant, paths, campaign=False, *, routed=None, wire_corners=('min','max')):
     require(not output.exists(),"STAGE_OUTPUT_EXISTS")
     from repair_gf180_design import validate_receipt
     import native_leaf_timing as leaf
@@ -210,22 +248,62 @@ def run(mapping, output, variant, paths, campaign=False):
     plans=[leaf.bind_plan(relative.make_plan(original,record,variant,d),leaf_index,d,original,cuts)
            for d in descriptors]
     sta=tool("sta");yosys=tool("yosys");pdk=ROOT/".tools/physical/pdk";pdk_verify(pdk)
-    source_names=("native_stage_timing.py","native_leaf_timing.py","physical_tools.py","control_relative_timing.py","characterize_gf180_control_native.py",
+    rc_views={None:(None,None)}; routed_files=[]; routed_netlists={}; routed_drivers={}
+    if routed is not None:
+        from gf180_pnr import validate_provenance,rc_inputs,pnr_tool
+        routed=routed.resolve()
+        meta=validate_provenance(mapping,routed,'extract')
+        require(wire_corners and len(set(wire_corners))==len(wire_corners),'STAGE_RC_SELECTION')
+        rc_views={rc:rc_inputs(mapping,routed,rc) for rc in wire_corners}
+        odb_tool=pnr_tool(meta)
+        routed_files=[routed/'run.json',routed/'global-repair-after.tsv',routed/'global-repair-proof.json',
+                      *[p for pair in rc_views.values() for p in pair],*odb_tool.input_files()]
+        # The P&R graph proof binds the complete repaired graph; source identities
+        # and protected leaf pins above still come from the original contract.
+        # Register the actual post-placement cell masters for path validation.
+        physical_cells={}
+        from routed_annotation import flat_export_name
+        for line in (routed/'global-repair-after.tsv').read_text().splitlines():
+            row=line.split('\t')
+            if row[0]=='C':
+                require(len(row)==3,'STAGE_ROUTED_CELL_INVENTORY')
+                name=flat_export_name(row[1])
+                require(name not in physical_cells,'STAGE_ROUTED_CELL_INVENTORY')
+                physical_cells[name]=dict(type=row[2])
+        require(physical_cells,'STAGE_ROUTED_CELL_INVENTORY')
+        leaf_index.after['cells']=physical_cells
+    source_names=("native_stage_timing.py","native_leaf_timing.py","routed_annotation.py","physical_tools.py","control_relative_timing.py","characterize_gf180_control_native.py",
                   "screen_gf180_control_repair.py","gf180_physical.py","gf180_estimate.py","gf180_implement.py","repair_gf180_control.py","characterize_gf180_liberty.py")
     files=[mapping/f for f in ("mapping.json","netlist.v","netlist.json","netlist-audit.json","timing-intent.json","physical-policy.json")]
     files += [mapping/'electrical-repair/receipt.json',mapping/'electrical-repair/reference/netlist.json',
               mapping/'electrical-repair/proof.json',ROOT/'tools/repair_gf180_design.py']
     files += [ROOT/"tools"/f for f in source_names]+[relative.PROBE]+sta.input_files()+yosys.input_files()
     files += [pdk/(relative.SC+c+".lib") for c in relative.CORNERS]
-    files += [ROOT/'.tools/gf180-sram'/(leaf.SRAM+'__tt_025C_3v30.lib')]
+    files += [ROOT/'.tools/gf180-sram'/(leaf.SRAM+'__'+c+'.lib') for c in relative.CORNERS]
+    files += routed_files
     run_receipt=RunReceipt(output/"receipt.json",inputs=files,tools=[ROOT/"tools/run_receipt.py"])
     status='fail'
     try:
         output.mkdir(parents=True);write_json(output/"inventory.json",inventory(manifest))
-        roundtrip(mapping,output,netlist,yosys,pdk)
+        if routed is None:roundtrip(mapping,output,netlist,yosys,pdk)
+        else:
+            from routed_annotation import run as audit_annotation, flat_driver_report
+            ports={name+(f'[{i}]' if len(port['bits'])>1 else '')
+                   for name,port in leaf_index.after['ports'].items() for i in range(len(port['bits']))}
+            for rc,(odb,spef) in rc_views.items():
+                annotation_dir=output/('annotation-'+rc)
+                routed_netlists[rc]=annotation_dir/'actual.v'
+                audit_annotation(odb,spef,odb_tool,annotation_dir,export_netlist=routed_netlists[rc])
+                annotation_log=(annotation_dir/'annotation.log').read_text()
+                routed_drivers[rc]=flat_driver_report(annotation_log,ports)
+            exported_hashes={rc:sha(path) for rc,path in routed_netlists.items()}
+            write_json(output/'analysis-backend.json',dict(backend='standalone-STA',
+                netlists={rc:dict(path=str(path),sha256=exported_hashes[rc],source_odb=str(rc_views[rc][0]),
+                                 source_odb_sha256=sha(rc_views[rc][0])) for rc,path in routed_netlists.items()},
+                scope='Fresh full-netlist exports from accepted ODBs; exact SPEF and complete loaded-driver coverage in each STA context'))
         cases=[]
-        for index,plan in enumerate(plans):
-            sub=output/str(index);sub.mkdir();write_json(sub/"plan.json",plan)
+        for (index,plan), (wire_corner,(odb,spef)) in product(enumerate(plans),rc_views.items()):
+            sub=output/(str(index)+('-rc-'+wire_corner if wire_corner else ''));sub.mkdir();write_json(sub/"plan.json",plan)
             for corner in (relative.CORNERS if campaign else relative.CORNERS[:1]):
                 cell=relative.aperture(relative.library(pdk/(relative.SC+corner+".lib")),variant)
                 for slew in ([0.02,2.0] if campaign else [0.2]):
@@ -236,22 +314,51 @@ def run(mapping, output, variant, paths, campaign=False):
                             require(prior,'LEAF_COMMON_SLEW_REQUIRED')
                             ctx['root_slew_ns']=dict(min=min(r[0] for r in prior),max=max(r[1] for r in prior))
                         tcl=sub/(key+"-"+ctx["id"]+".tcl");log=tcl.with_suffix(".log")
-                        tcl.write_text(leaf.script(mapping/"netlist.v",corner,slew,plan,ctx,sta=sta),newline="\n")
+                        tcl.write_text(leaf.script(mapping/"netlist.v",corner,slew,plan,ctx,sta=sta,
+                                                  routed_netlist=routed_netlists.get(wire_corner),spef=spef),newline="\n")
                         with log.open("w") as stream:
-                            subprocess.run(sta.command(["-no_init","-exit",sta.path(tcl)],timeout=55),stdout=stream,stderr=subprocess.STDOUT,check=True,timeout=65)
-                        try:results[ctx["id"]]=leaf.parse(log.read_text(),plan,ctx,slew,leaf_index)
+                            arguments=["-no_init","-exit",sta.path(tcl)]
+                            subprocess.run(sta.command(arguments,timeout=110 if routed else 55),stdout=stream,stderr=subprocess.STDOUT,check=True,timeout=120 if routed else 65)
+                        try:results[ctx["id"]]=leaf.parse(log.read_text(),plan,ctx,slew,leaf_index,
+                                                        routed_drivers=routed_drivers.get(wire_corner))
                         except ValueError as e:
                             failure=dict(context=ctx["id"],diagnostic=str(e));break
                     if failure is None:
                         try:summary=relative.margins(results,plan,cell)
                         except ValueError as e:failure=dict(context="relative-composition",diagnostic=str(e))
-                    case=dict(instance=plan["descriptor"]["instance"],key=key,status="UNRESOLVED" if failure else "CONDITIONAL_LOCAL_MEASUREMENTS",failure=failure,
+                    case=dict(instance=plan["descriptor"]["instance"],key=key,wire_corner=wire_corner,status="UNRESOLVED" if failure else "CONDITIONAL_LOCAL_MEASUREMENTS",failure=failure,
                               numerical=None if failure else numerical_status(summary),
                               summary=None if failure else {k:v for k,v in summary.items() if k!="lanes"})
                     write_json(sub/(key+".json"),dict(case=case,results=results,aperture=cell,summary=None if failure else summary))
                     cases.append(case);print(json.dumps(case),flush=True)
-        write_json(output/"results.json",dict(physical_qualification=False,cases=cases))
-        if any(c["status"]=="UNRESOLVED" for c in cases):raise ValueError("STAGE_CAMPAIGN_UNRESOLVED")
+        cross_rc=[]
+        envelope_enabled=routed is not None and variant=='bd' and {'min','max'}<=rc_views.keys()
+        if routed is not None:
+            require(all(sha(path)==exported_hashes[rc] for rc,path in routed_netlists.items()),'STAGE_ROUTED_EXPORT_CHANGED')
+            validate_provenance(mapping,routed,'extract')
+            if envelope_enabled:
+                for index,plan in enumerate(plans):
+                    envelope_dir=output/(str(index)+'-rc-envelope');envelope_dir.mkdir()
+                    for case in [c for c in cases if c['instance']==plan['descriptor']['instance'] and c['wire_corner']=='min']:
+                        records={rc:json.loads((output/(str(index)+'-rc-'+rc)/(case['key']+'.json')).read_text()) for rc in rc_views}
+                        failures={rc:r['case']['failure'] for rc,r in records.items() if r['case']['status']=='UNRESOLVED'}
+                        merged=summary=None
+                        if not failures:
+                            try:
+                                merged=bd_wire_envelope({rc:r['results'] for rc,r in records.items()},plan)
+                                summary=relative.margins(merged,plan,records['min']['aperture'])
+                            except ValueError as error:failures={'composition':str(error)}
+                        entry=dict(instance=case['instance'],key=case['key'],
+                            status='UNRESOLVED' if failures else 'CONDITIONAL_LOCAL_MEASUREMENTS',failure=failures or None,
+                            numerical=None if failures else numerical_status(summary),
+                            summary=None if failures else {k:v for k,v in summary.items() if k!='lanes'})
+                        write_json(envelope_dir/(case['key']+'.json'),dict(case=entry,results=merged,summary=summary))
+                        cross_rc.append(entry)
+        write_json(output/"results.json",dict(physical_qualification=False,routed_directory=str(routed) if routed else None,
+            scope='Conditional local stage bounds; source launch, actual upstream slew, mismatch, noise and reset closure remain separate obligations',
+            cases=cases,cross_rc_envelopes=cross_rc,
+            cross_rc_coverage=wire_envelope_coverage(cases,cross_rc,envelope_enabled)))
+        if any(c["status"]=="UNRESOLVED" for c in cases+cross_rc):raise ValueError("STAGE_CAMPAIGN_UNRESOLVED")
         status='pass'
     finally:
         run_receipt.finish(outputs=[p for p in output.rglob('*') if p.is_file()],status=status)
@@ -264,4 +371,6 @@ if __name__=="__main__":
     p.add_argument("--variant",choices=("bd","click"),required=True)
     p.add_argument("--stage",action="append",required=True)
     p.add_argument("--campaign",action="store_true")
-    a=p.parse_args();run(a.mapping,a.output,a.variant,a.stage,a.campaign)
+    p.add_argument('--routed',type=Path,help='Accepted zero-DRC P&R run; export its actual ODB for STA with extracted SPEF')
+    p.add_argument('--wire-corner',action='append',choices=('min','nom','max'),help='Extracted corners; defaults to min and max')
+    a=p.parse_args();run(a.mapping,a.output,a.variant,a.stage,a.campaign,routed=a.routed,wire_corners=a.wire_corner or ('min','max'))

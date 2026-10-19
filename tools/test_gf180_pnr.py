@@ -12,6 +12,31 @@ from gf180_pnr import bind_flat_interfaces, SC
 
 
 class FloorplanGeometry(unittest.TestCase):
+    def test_sram_pin_escape_and_partial_density_are_separate(self):
+        for width in (1940,2400,3930):
+            g=pnr.geometry(width,height=2530);r=pnr.routability_regions(g)
+            self.assertLess(r['band_density_percent'],g['placement_density']*100)
+            for macro,halo in zip(g['macro_locations'],r['hard']):
+                _,x,y=macro
+                self.assertEqual(halo['orientation'],'R0')
+                self.assertEqual(halo['box'][1],y-40)
+                self.assertLess(halo['box'][0],x)
+                self.assertGreater(halo['box'][2],x+301.3)
+            self.assertLess(r['band'][1],1966)
+            self.assertGreater(r['band'][3],1966)
+
+    def test_zero_router_gate_checks_report_and_final_count(self):
+        with TemporaryDirectory() as directory:
+            report=Path(directory)/'drc.rpt';report.write_text('')
+            self.assertEqual(pnr.router_violations(report,'Number of violations = 9\nNumber of violations = 0')['violations'],0)
+            with self.assertRaisesRegex(ValueError,'PNR_ROUTER_VIOLATIONS'):
+                pnr.router_violations(report,'Number of violations = 1')
+            report.write_text('Short: actual retained violation')
+            with self.assertRaisesRegex(ValueError,'PNR_ROUTER_VIOLATIONS'):
+                pnr.router_violations(report,'Number of violations = 0')
+            with self.assertRaisesRegex(ValueError,'PNR_ROUTER_DRC_COUNT_MISSING'):
+                pnr.router_violations(report,'incomplete router log')
+
     def test_rectangle_keeps_macros_inside_core_and_square_default_unchanged(self):
         for width,height in ((3930,2530),(2530,3930),(1440,1440)):
             g=pnr.geometry(width,height=height)
@@ -81,6 +106,11 @@ class PnrProvenance(unittest.TestCase):
                     protected_nets_sha256=pnr.sha(self.out/(stage+'-native-protected-nets.txt')),
                     inputs_sha256={str((self.out/(stage+'-repair-'+side+'.tsv')).resolve()):pnr.sha(self.out/(stage+'-repair-'+side+'.tsv')) for side in ('before','after')})
         self.meta['checkpoints']['extract']['spef_sha256']=pnr.sha(self.out/'routed.spef')
+        (self.out/'route-drc.rpt').write_text('')
+        (self.out/'route.log').write_text('Number of violations = 0')
+        self.meta['checkpoints']['route']['router_drc']=pnr.router_violations(self.out/'route-drc.rpt',(self.out/'route.log').read_text())
+        (self.out/'route-native-routing.tsv').write_text('checked assignment')
+        self.meta['checkpoints']['route']['native_routing_sha256']=pnr.sha(self.out/'route-native-routing.tsv')
         paths=[self.out/(name+'.tsv') for name in ('clock-repair-before','clock-repair-after','clock-sinks-before','clock-sinks-after')]
         for path in paths:path.write_text('clock evidence')
         (self.out/'clock-coverage-proof.json').write_text('proved clock inventory')

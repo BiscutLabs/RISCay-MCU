@@ -1,0 +1,423 @@
+# BD routing, coupling and power-grid investigation
+
+The new 2.53 × 2.53 mm layout routes with zero violations. The retained old
+1.94 × 2.53 mm layout has one real Metal2 short. This investigation
+keeps routing DRC, electrical limits, extracted relative timing, coupled noise
+and power-grid integrity as separate gates. A clean router result alone does
+not qualify an asynchronous chip.
+
+## Where the old layout is congested
+
+The old layout is `build/pnr-bd-1940x2530-r1`, mapped from `baec57b`'s
+generic-MCU inputs. It predates the current single-writer Telemetry RTL.
+`report_routability.py` reads the routed instance geometry and saved global-route
+GCell usage/capacity without changing either database.
+
+![Placement density and per-layer routing use](images/bd-routability-before.png)
+
+| Region (µm) | Local cell density | Identifiable owners |
+| --- | ---: | --- |
+| 100 × 100 box around the short at (1360.8, 1965.9) | 92.91% | Mostly flattened SoC logic and repair; original owner unavailable |
+| Below-left SRAM: (450,1500)–(750,1800) | 97.48% | Mostly flattened logic/repair, then CTS and Telemetry |
+| Right edge: (1650,1250)–(1909.6,1550) | 89.28% | Transactions, RAM access, core |
+| Centre: (1050,950)–(1350,1250) | 94.43% | Flattened logic/repair, I²C, Control |
+
+Density includes logic and physical-cell footprints, excludes macro footprint
+from the available area, and is local rather than the whole-core 75.23% figure.
+Ownership is based on surviving instance hierarchy; flattened gates are not
+assigned to a module by guesswork. The short connects ordinary OAI/AOI logic,
+not SRAM signal pins. All saved GCell layers have zero overflow despite this
+detailed-routing failure. GCell reservations include blockages and must not be
+confused with routed-wire area.
+
+Evidence: `build/pnr-bd-1940x2530-routability-r2/`, including raw instance/GCell
+exports, map, coordinates, owner areas and one run receipt.
+
+## Current routed layout
+
+The current `ed38c62` BD map completes detailed routing on **2.53 × 2.53 mm**
+with **zero router violations**, an empty retained DRC report and independent
+nominal/minimum/maximum RC extraction. All 26,230 protected native cells and
+18,936 selected control-net NDR assignments survive routing. This accepts the
+route, not electrical, noise or timing signoff.
+
+![Current placement density and per-layer routing use](images/bd-routability-after.png)
+
+The map combines final routed instance geometry with saved global-route GCells.
+Every layer has zero global overflow. Whole-core footprint occupancy is 55.80%;
+standard-cell density excluding macros is 52.14%. Total cell footprint is
+3.398069 mm²: logic 2.767025, SRAM 0.466241 and taps/endcaps 0.164802.
+
+| Region (µm) | Local cell density | Identifiable owners |
+| --- | ---: | --- |
+| Below SRAMs: (1300,1650)–(1600,1900) | 72.98% | Flattened SoC logic/repair, Telemetry, SPI ADC |
+| Centre: (1150,950)–(1450,1250) | 62.46% | Flattened logic/repair, Telemetry, Control command bridge |
+| Right edge: (2200,1250)–(2499.84,1550) | 56.13% | Transactions, RAM source, admission |
+| Lower SRAM band: y = 1850–2100 | 27.06% | Flattened logic/repair and RAM access; density excludes macros |
+
+Small 100 µm pockets remain dense: a flattened SoC/ADC bin near (1480,1780)
+is 96.08%, a CPU bin near (2180,380) is 92.13%, and an I²C/flattened bin near
+(680,1180) is 91.63%. Those pockets remain priorities for extracted coupling
+and timing, even though the router found legal paths.
+
+Evidence: `build/pnr-bd-routability-2530x2530-r7/`,
+`build/pnr-bd-routability-route-r7/` and `build/pnr-bd-routability-render-r7/`.
+The original short's coordinate now partly overlaps the moved middle SRAM;
+its empty standard-cell area is not a same-location logic improvement.
+
+The same current map was tried first at 1.94 × 2.53 mm with a 60% placement
+target (`pnr-bd-routability-1940x2530-r6`). The SRAM-band keep-outs reduced the
+former-short box from about 93% to 33% local occupancy, but the centre/right
+regions stayed near 94%/90%. It finished with 1,288 violations: 1,091 shorts,
+195 metal-spacing, one non-sufficient-metal and one cut-short report. Extraction
+was correctly blocked. The accepted retry uses a 50% target with the same halos,
+SRAM-band limit and native-net spacing recipe. It does not establish the
+smallest feasible die. The old reference layout also uses older RTL, so changes
+against it cannot be attributed solely to floorplanning.
+
+## Repair recipe
+
+Current experiments use `build/single-writer-telemetry/map-bd-r7` from `ed38c62`,
+with 2.010204 mm² mapped and 2.199751 mm² repaired logic before placement.
+This is not an isolated floorplan comparison against the older RTL above.
+
+- Keep all three SRAMs in R0. Their 36 signal pins lie on the south Metal2 edge,
+  already facing the logic. Flipping them north would face the narrow die margin.
+- Add hard placement halos: 24 µm at the sides/top and 40 µm at the signal-pin
+  edge. Align tap-cell row cutting with these keep-outs.
+- Use a 50% partial placement region across the lower SRAM band. In pinned
+  OpenROAD, GPL honours `max_density`, but DPL treats a non-soft partial region
+  as hard. Explicitly set the region soft after creation; the CLI ignores
+  `-soft` when `-max_density` is also present. Hard macro halos remain hard.
+- Apply a 2× spacing, unchanged-width NDR to typed native control leaves and
+  their buffer/inverter branches. Recompute the selection after repair and
+  verify it again after detailed routing. Payload D/Q alone do not select a net.
+- Require both the router's final count and its retained DRC report to be empty
+  before extraction can proceed. Keep failed databases and logs.
+- Rebuild global guides from the complete repaired placement after electrical
+  repair. The pinned incremental 3-D maze router aborts with GRT-0183 (heap
+  underflow) on the program-source reservation C-element in trial r5. Fresh
+  routing retains the NDRs and every protected connection; it waives no path.
+
+The investigation also found a pre-existing resistance-unit bug. GF180 Liberty
+declares ohms; the flow supplied fitted kilohms/µm values directly. `set_units`
+only checks the requested units in this OpenSTA build; it does not change them.
+The flow now converts the fit numerically through the STA unit APIs before
+`set_layer_rc` and checks the resulting database sheet resistance. Metal2–5
+read back as 0.108041, 0.0578684, 0.0472105 and 0.0348822 Ω/□. This avoids a
+1000× underestimate during placement/global-route electrical repair. Independent
+SPEF extraction has its own units.
+
+Failed trials remain under `build/pnr-bd-routability-*`: early placement trials
+exposed the hard/partial blockage API behavior above; the first legal trial was
+stopped after the unit check showed that `set_units` had not corrected wire R.
+Neither trial is qualifying evidence. The corrected run starts again from the
+mapped inputs, including placement and clock-tree construction.
+
+### Electrical coverage limitation
+
+The repaired global checkpoint still violates electrical limits. The five
+corner reports contain 1,302 / 8,710 / 1,938 / 701 / 270 slew violations
+(TT, SS hot, SS cold, FF hot, FF cold respectively), with worst slews of
+8.66 / 15.97 / 11.17 / 7.39 / 5.29 ns. These are estimated global-route results,
+not extracted timing closure.
+
+Independent review also found that this OpenSTA version stores per-pin
+`set_max_capacitance` constraints but does not consult them when reporting
+capacitance violations. Its two reported capacitance failures per corner cover
+Liberty limits only: they do **not** cover the native adapter's 0.05 pF pin
+limits. A separate read-only audit must compare each constrained driver's actual
+load with the intended pin limit. Do not interpret the ordinary report's small
+count as complete electrical coverage or relax the adapter limit to match it.
+
+The direct global-checkpoint audit measures all 10,609 constrained outputs at
+every corner, with no missing pins. It finds 213 / 215 / 210 / 217 / 215 definite
+0.05 pF violations in the same corner order. These use coherent STA load values,
+not a sum of independently maximal components. Evidence:
+`build/pnr-adapter-cap-global-r4/`. The audit completes successfully as a
+measurement; its electrical verdict is **adapter-capacitance-failures**.
+All failing output nets load receivers outside their own protected primitive.
+Wire capacitance dominates on 183–187 of them, depending on corner. The worst
+I²C publication output has about 0.374 pF total load, of which 0.352 pF is wire,
+and only six external receivers. Parent-side buffering/placement is therefore
+the main follow-up; increasing the adapter limit would hide the problem.
+Until electrical limits close, timing reports can include Liberty-table
+extrapolation. The extracted campaigns below are diagnostics, not permission
+to shorten a guard or accept a marginal path.
+
+The wider r7 global checkpoint reduces adapter-capacitance failures to
+178 / 181 / 177 / 183 / 181, with complete measurements at the same 10,609 pins.
+Worst load is 0.304119 pF on the I²C observation output driving `sdaLow`, including
+0.254119 pF of wire capacitance. Slew failures remain 1,129 / 7,173 / 1,770 / 883 /
+222 rows, with worst values 8.97 / 17.39 / 11.44 / 7.85 / 5.17 ns. Widening the
+floorplan therefore improves congestion without closing electrical limits.
+Independent graph and ODB checks reproduce all 26,230 protected cells and the
+55,129 native anchors on 18,936 constrained nets.
+Evidence: `build/pnr-adapter-cap-global-wide-r7/` and
+`build/pnr-wide-r7-independent-summary.json`.
+
+### Final extracted electrical results
+
+Fresh audits explicitly load each independently extracted SPEF into STA. In
+TT / SS hot / SS cold / FF hot / FF cold order:
+
+| Check | Minimum RC | Maximum RC |
+| --- | --- | --- |
+| Slew violations | 972 / 5,165 / 1,444 / 662 / 160 | 1,184 / 10,215 / 1,899 / 955 / 234 |
+| Worst slew, ns | 7.06 / 13.70 / 9.00 / 6.18 / 4.07 | 8.40 / 16.30 / 10.71 / 7.35 / 4.84 |
+| Native 0.05 pF output-limit violations | 165 / 165 / 164 / 166 / 166 | 230 / 233 / 226 / 235 / 234 |
+
+All 10,609 constrained native outputs resolve at every corner. The maximum-RC
+worst output is the completion `memory_ack` gate, at 0.266–0.267 pF, including
+0.254 pF of wire. Wire capacitance dominates 215–223 of the failing maximum-RC
+nets. Most failures are ClosingLatch outputs, especially Core, RAM and I²C.
+The ordinary Liberty-capacitance report finds only one maximum-RC violation
+in the first four corners and none at FF cold; it omits the adapter constraints.
+
+Evidence: `build/pnr-electrical-extract-{min,max}-r7-r1/` and
+`build/pnr-adapter-cap-extract-{min,max}-r7-r1/`. Independent graph comparison
+also finds the routed graph identical to the global checkpoint, with only
+permitted physical tie-instance renaming during extraction.
+
+The original flow's extraction reports are **not authoritative**: OpenRCX wrote
+SPEF but did not replace STA's estimated parasitics. Those reports are retained
+unchanged. The flow now explicitly reads the extracted RC into every PVT scene
+before reporting; the separate fresh audits above use that same explicit load.
+
+## Noise and timing obligations
+
+The pinned router tapers NDRs near pin access and its final DRC does not establish
+complete NDR spacing coverage. Assignment is therefore reported as
+**constrained, unqualified**, not a shielding or noise-immunity proof.
+Extracted coupling must be examined at the actual protected receiver leaves.
+
+`check_gf180_coupling.py` inventories the extracted native nets and ranks their
+coupling. Its distributed-RC screens are sensitivities, not receiver thresholds.
+`check_gf180_keeper_coupling.py` adds a bounded transistor experiment: select an
+eligible internal C-element net by measured external coupling, retain the whole
+mapped keeper and its extracted feedback wires, and load external sinks from
+the corner's Liberty pin capacitances. Both reset-reached holding histories,
+quiet controls, rising/falling aggressors and timestep refinement are required.
+An extra owner output transition or retained-state flip fails; unsettled final
+state also fails. Internal analog excursions are recorded separately.
+
+The transistor experiment still uses ideal boundary/aggressor sources and
+schematic cell models, without cell-internal extracted RC or statistical
+mismatch. It is representative noise evidence, not an immunity guarantee for
+every handshake wire or every arrival time.
+
+### Final extracted noise findings
+
+The r7 minimum- and maximum-RC inventories each account for all 18,936 native
+nets: 18,838 have extracted networks and 98 are independently proved singleton
+terminals without routed wire. There are no unexplained omissions. Among 2,277
+eligible internal C-element victims, selection takes the largest external
+coupling and the largest distinct-owner candidate in a current hotspot region.
+Both selected victims have terminals in the broad r7 macro region
+(y = 1854–2497.04 µm); this sample does not cover the narrower lower SRAM band
+or the centre/right density pockets. Historical hotspot coordinates remain
+separately labelled. Evidence:
+`build/native-coupling-r7-{min,max}-r1/` and
+`build/native-si-selection-r7-r2/`. The two-victim distributed-RC screens retain
+their separate sensitivity-only verdict.
+
+The strongest victim is `lane_2_join.ca_child_left.ca_primitive_a`'s retained
+`state`, with 40.450 / 45.700 fF external coupling at minimum / maximum RC.
+Its adjacent feedback gates `u4`/`u5` sit near (1082,2395) µm, but first output
+buffer `u6` is about 363 µm away. The state wire totals 525.28 µm: 96.88 on M2,
+372.96 on M3 and 55.44 on M4, with 11 vias. Its M3 trunk parallels `net13337`
+for 348.32 µm and `gpioOut[0]` for 159.60 µm, both at 1.12 µm centerline
+separation. These aggressors contribute 24.635 and 10.348 fF at maximum RC;
+`lane_3_join_out_req` contributes another 5.932 fF. These decoded overlaps do
+not assign individual extracted capacitors to segments or prove metal-edge
+clearance. Evidence: `build/keeper-forensics-r7-r4/`.
+
+**The ideal fast-edge stress fails.** With the complete nonlinear keeper and
+actual extracted wires, coherent 20 ps full-rail rising aggressors flip a held
+low owner and its retained state at all five PVTs and both RC views. All ten
+failures survive timestep halving (maximum measured voltage difference
+2.28 µV). The failed receipt is retained in `build/native-keeper-r7-v0-r1/`.
+Its 100 primary cases include 20 stable quiet controls; no other primary case
+flips. The second owner, `lane_3_join.out_req_ca_primitive_rendezvous`, selected
+at internal delay node `n10`, completes 100 primary cases plus 12 refinements
+without transition; its largest Q departure from the held rail is 6.371 mV
+(`build/native-keeper-r7-v1-r1/`).
+
+The 20 ps linear ramp represents only 8 ps at Liberty's 30–70% slew thresholds.
+The fastest observed loaded slew across all 29 contributor cell terminals,
+five PVTs and both RC views is 98.881 ps. Even the smallest transition-table
+entry across the actual aggressor cells' characterized inputs and loads is
+41.24 ps; neither comparison proves a universal physical edge bound. A narrow
+supplement uses each aggressor's fastest positive saved-constraint loaded slew,
+converts it to a full-rail ramp by 2.5, and aligns all 50% crossings. All 20
+held-low/rising and held-high/falling cases plus 20 refinements remain settled
+without owner transition. Q stays within 4 µV of its held rail, although the
+largest victim-terminal excursion is 1.548 V. Evidence:
+`build/keeper-loaded-slew-r7-r1/` (pass receipt; largest refinement difference
+0.111 mV). This conditional result does not erase the fast-edge stress failure.
+
+Only two owners and two histories of one holding condition per owner are
+covered. Ideal equipotential aggressors do not prove legal simultaneous
+switching; propagated STA slews depend on upstream constraints, feedback cuts
+and the tool's automatic loop breaks. The schematic cells omit cell-internal
+extracted RC and supplied MOS diffusion areas/perimeters default to zero.
+Statistical mismatch, supply noise
+and qualified receiver immunity thresholds remain absent. Independent review
+found no remaining implementation issues in the keeper, geometry, slew or
+supplemental experiment. A concrete robustness follow-up is to cluster the
+keeper core and first output buffer, then separate or shield the remaining
+state route from the identified aggressors, preserving the state function and
+rerunning extraction and timing. These experiments do not demonstrate that the
+20 ps condition occurs in silicon or establish whole-design noise closure.
+
+### Routed timing method
+
+`native_stage_timing.py --routed <run>` uses a fresh netlist exported from the
+verified extracted database and independently generated min/max SPEF. It retains per-corner Liberty,
+loaded capture trees, source slews and ACK receivers. Its results are conditional
+local stage bounds; complete upstream launch, reset, mismatch and receiver-noise
+qualification remain separate obligations. Unmatched SPEF annotations fail.
+The 0.05 mm² routed hold-repair reserve remains available for failing composed
+paths; no guard is shortened on the basis of these local checks alone.
+
+The extraction audit covers all load-bearing drivers, including competing paths
+that are absent from an extremal timing report. Unloaded exclusions require
+actual database connectivity. Every pinned SPEF-reader diagnostic from
+STA-1640 through STA-1657 fails the audit, including unit and name-map errors.
+Cross-RC envelopes pair fast control/ACK with slow data/capture at the same cell
+corner and input slew; unresolved constituents remain explicit obligations.
+
+The initial routed reruns exposed two analysis-tool problems, with failed logs
+retained under `build/pnr-routed-timing-smoke-r*`. OpenROAD's Tcl stdout transport
+corrupted records longer than 4 KiB; bounded writes now preserve the exact TSV
+record, verified independently over twelve lengths through 65,536 characters.
+More seriously, OpenROAD 26Q2's static loop discovery ignored the explicit keeper
+cuts and automatically disabled Control's active C-element B-to-ZN arc. Its
+dynamic-loop experiment did not finish within a useful bound and was retained
+as unresolved, not used for measurements.
+
+The pinned standalone OpenSTA 2.7.0 uses constraint-aware loop discovery
+([source revision 857316ff](https://github.com/The-OpenROAD-Project/OpenSTA/blob/857316ff001b2a8dbbdc5996944d08a6d38c87ab/search/Levelize.hh)).
+The identical request context resolves all 646 capture queries there with the
+actual routed netlist and minimum-RC SPEF. Independent review requires a fresh
+ODB-derived netlist, that reader's own annotation coverage, and rejection of
+active automatic loop cuts on alternative source-to-target paths. Neither an
+invented load nor a new timing waiver replaces the missing paths.
+
+The final Control smoke (`build/pnr-routed-timing-smoke-r15/`) completes at TT,
+0.2 ns launch slew, with both extracted RC views and their conservative cross-RC
+envelope. All 88,624 driver identities match; every load-bearing driver is
+annotated and every queried target passes the automatic-loop-cut audit. The
+cross-RC local bounds are **−14.929 ns allowed data lag**, **+1.675 ns zero-reuse
+hold**, and **+1.979 ns ACK after capture**. Negative allowed lag means Control
+needs data stable before its request; only a composed upstream-launch check can
+decide setup. This is a successful measurement, not a timing pass. The broader
+32-stage, five-PVT, two-slew, min/max-RC campaign is recorded separately when
+complete; the smoke does not stand in for those cases.
+
+The independently reviewed period control
+(`build/pnr-routed-period-control-r1/`) changes only 1000 to 2000 ns and reproduces
+all 5,180 parsed rows across the six min/max-RC contexts exactly, including paths,
+slews, electrical records and margins. Apertures are conservative per-PVT maxima
+over the characterized Liberty setup/hold tables, not an interpolation at each
+receiver's measured slew. The period check does not qualify electrical violations
+or provide upstream launch credit.
+
+## Power-grid screening
+
+The accepted 2530 × 2530 µm r7 extracted checkpoint passes full VDD/VSS
+terminal connectivity and voltage coverage for all 88,589 logic/SRAM instances.
+The final static analysis uses 604 explicit ideal perimeter source nodes per
+rail at 3.3 V, zero external resistance, and TT 25 °C Liberty models for the
+synthetic STA case. The normalized case assigns 1 mA across standard cells in
+proportion to footprint area and 0.1 mA to each of the three SRAMs.
+
+| Checkpoint and assumed load | Total current | Maximum VDD loss | Maximum VSS rise | Maximum local combined drop |
+| --- | ---: | ---: | ---: | ---: |
+| Final extracted r7, normalized | 1.300 mA | 0.103 mV | 0.114 mV | 0.217 mV |
+| Final extracted r7, synthetic STA activity | 31.108 mA | 2.563 mV | 2.802 mV | 5.365 mV |
+| Retained global r7, normalized | 1.300 mA | 0.103 mV | 0.114 mV | 0.217 mV |
+| Retained global r7, synthetic STA activity | 30.877 mA | 2.561 mV | 2.800 mV | 5.361 mV |
+
+The final STA case explicitly reads `routed-nom.spef` into a fresh process;
+the retained global case uses placement-estimated signal RC. Both use vectorless
+activity of 0.002 transitions/ns and 0.5 duty, plus clocks from the checkpoint
+SDC (20 MHz service/work, approximately 12 Hz LF, and a 400 kHz I2C-start
+reference). These are assumed load scenarios, not measured firmware activity or
+active/sleep power estimates. All nominal/minimum/maximum signal SPEFs exist for
+the accepted PNR run; this IR comparison uses nominal signal capacitance only.
+
+The middle program SRAM, `soc/fabric_program_macros_1`, remains worst at bbox
+(1114.35, 1954.00)–(1415.65, 2469.81) µm. The worst standard cell is
+`clkbuf_3_5_0_soc\/ca_child_spi_adc\/net1559`, bbox
+(1285.76, 1901.20)–(1300.32, 1905.12) µm, at 4.606 mV combined drop in the
+final synthetic case (4.578 mV at the global checkpoint).
+
+Regional maxima below use instances whose footprints intersect each box.
+They conservatively combine each instance's minimum VDD and maximum VSS
+terminal voltage; they are not an interpolated voltage at the box center.
+Cell density follows the routability report's available-area convention.
+
+| Region and bounds, µm | Cell density | Normalized maximum | Final synthetic maximum | Limiting synthetic instance/owner, lower-left µm |
+| --- | ---: | ---: | ---: | --- |
+| Former short: (1310,1915)–(1410,2015) | 0% | 0.217 mV | 5.365 mV | Program1 SRAM; (1114.35,1954.00) |
+| Below-left SRAM: (450,1500)–(750,1800) | 57.08% | 0.126 mV | 3.821 mV | Control CRC; (744.80,1767.92) |
+| Former right: (1650,1250)–(1909.6,1550) | 61.96% | 0.138 mV | 4.125 mV | Housekeeping update; (1648.08,1524.88) |
+| Former center: (1050,950)–(1350,1250) | 61.38% | 0.138 mV | 4.400 mV | Service-clock buffer; (1315.44,1168.16) |
+| Current center: (1150,950)–(1450,1250) | 62.46% | 0.138 mV | 4.400 mV | Service-clock buffer; (1315.44,1168.16) |
+| Current right: (2200,1250)–(2499.84,1550) | 56.13% | 0.082 mV | 2.287 mV | Transactions `gain362`; (2188.48,1309.28) |
+| SRAM band: (30.24,1850)–(2499.84,2100) | 27.06% | 0.217 mV | 5.365 mV | Program1 SRAM; logic-only maxima 0.150/4.606 mV |
+| Dense ADC/flattened: (1430.24,1731.36)–(1530.24,1831.36) | 96.08% | 0.150 mV | 4.407 mV | `clkbuf_0_soc\/net1530`; (1425.20,1756.16) |
+| Dense core: (2130.24,331.36)–(2230.24,431.36) | 92.13% | 0.060 mV | 1.106 mV | Core register-file x15; (2129.12,431.20) |
+| Dense I2C/flattened: (630.24,1131.36)–(730.24,1231.36) | 91.63% | 0.114 mV | 3.125 mV | `soc/wire7658`, owner unresolved; (726.88,1211.28) |
+
+The former-short box now intersects the moved SRAM and contains no standard
+cells; its result is not evidence of improvement for the original logic at that
+location. High cell density alone does not determine the maximum IR drop.
+
+Final evidence and maps are in `build/pdn-ir-routability-r7/`, with a passing
+`receipt.json`, `summary.json`, both-rail CSVs, and `normalized-drop.svg` /
+`sta-drop.svg`. The retained global comparison is in
+`build/pdn-ir-routability-global-r7/`. Reproduce into a fresh directory with:
+
+```sh
+python tools/check_pdn_ir.py build/pnr-bd-routability-2530x2530-r7 build/pdn-ir-r7-repeat --checkpoint extract
+python -m unittest discover -s tools -p test_check_pdn_ir.py -v
+```
+
+The runner overrides automatic ideal M5 supply-pin sourcing with explicit ring
+and perimeter-strap sources. It separates manually assigned loads from STA
+power into different processes because pinned PDNSim adds the two. Grid sheet
+resistance is the nominal flow fit; M1 and via/cut resistance remain unqualified
+LEF fallbacks. Signal SPEF supplies STA signal capacitance and does not extract
+the power grid. SRAM internal supply-grid drop is absent.
+
+For comparison, the retained old 1940 × 2530 µm layout gives 0.224 mV at
+normalized 1.3 mA and 0.447 mV at 2.6 mA, scaling within 1 µV of CSV rounding;
+its synthetic 34.055 mA case gives 5.638 mV. Evidence remains in
+`build/pdn-ir-baseline-r1/` and `build/pdn-ir-baseline-scale2-r1/`.
+
+These are static sensitivity checks with optimistic ideal perimeter feeds.
+Actual supply-pad locations, package/board impedance, workload switching, SRAM
+current envelopes and allowable droop are still needed for power-integrity
+qualification. Transient wake droop, decap and inductance are not modeled. No
+deep-sleep or active-power claim follows from the synthetic numbers.
+
+## Verification and independent review
+
+The initial flow/tool batch passes the fast gate in
+`build/pnr-routability-ci-r1/`: 336 Python and 197 Scala tests. No RTL, ABI,
+watchdog/reset contract or native timing policy changed. Follow-up review caught
+the partial-blockage API behavior, the ineffective `set_units` call and gaps in
+SPEF coverage. Those fixes pass 56 focused tests and fresh independent review.
+The software rerun in `build/pnr-routability-ci-r2/` passes 346 Python tests,
+including the independently reviewed keeper experiment. The
+`build/pnr-routability-ci-r3/` passes 353 Python tests after the independently
+reviewed per-pin capacitance audit and its immutable-input checks. The latest
+`build/pnr-routability-ci-r5/` passes **360 Python tests**, including the reviewed
+routed reader, alternative-path loop audit and driver-identity checks. A synthetic 100×
+coupling fault in the historical pilot produces a false owner event and
+retained-state flip and is rejected. This negative control does not qualify
+nominal routed silicon.
+Actual route, extracted timing and receiver-noise results remain separate from
+these software and functional checks.

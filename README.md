@@ -84,15 +84,15 @@ retention available as a generic build option.
 
 ## Physical implementation
 
-![BD routed digital layout on a 1.94 × 2.53 mm die](docs/images/bd-layout-1940x2530.png)
+![BD routed digital layout on a 2.53 × 2.53 mm die](docs/images/bd-layout-2530x2530.png)
 
-The current BD digital layout uses a **1.94 × 2.53 mm** outline. Cell footprints
-total **3.494 mm²**, including the three SRAM macros across the top. Pads and
+The current BD digital layout uses a **2.53 × 2.53 mm** outline. Cell footprints
+total **3.398 mm²**, including the three SRAM macros across the top. Pads and
 analog blocks are not included.
 
-**This is a development design, not ready for fabrication.** One Metal2 short
-remains in the routed layout, and physical timing is not yet qualified. See the
-[layout results](docs/gf180-bd-1940x2530-pnr.md), [area ledger](docs/area-ledger.md)
+**This is a development design, not ready for fabrication.** Detailed routing
+has zero router violations; electrical, timing and signal-integrity qualification
+remain open. See the [layout and congestion results](docs/gf180-routability.md), [area ledger](docs/area-ledger.md)
 and [development roadmap](docs/architecture-followups.md) for measurements and
 remaining work.
 

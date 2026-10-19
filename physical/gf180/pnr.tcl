@@ -25,6 +25,8 @@ source $mapping/feedback-cuts.tcl
 # native timing is measured in the contract-driven analysis campaigns.
 source $out/async-electrical.sdc
 source $out/protected.tcl
+source $out/native-routing.tcl
+source $source/pnr-native-routing.tcl
 proc connect_power {} {
   global protected_cells mapping source
   # OpenDB's dont-touch also blocks power connections. Release protection only
@@ -42,12 +44,23 @@ proc connect_power {} {
 }
 connect_power
 # Published fit in this pinned PDK's LibreLane config (kohm/um, pF/um).
+# Liberty declares 1 ohm. set_units only checks units; it does not change them.
+# Convert the fit through SI into actual command units, then verify DB sheet R.
+report_units
 foreach {layer resistance capacitance} {
   Metal2 3.85861e-4 1.35357e-4
   Metal3 2.06673e-4 1.46141e-4
   Metal4 1.68609e-4 1.50688e-4
   Metal5 7.92778e-5 1.55595e-4
-} {set_layer_rc -layer $layer -resistance $resistance -capacitance $capacitance}
+} {
+  set r_ohm_um [expr {1000.0*$resistance}]
+  set_layer_rc -layer $layer -resistance [sta::resistance_sta_ui $r_ohm_um] \
+    -capacitance [sta::capacitance_sta_ui [expr {1e-12*$capacitance}]]
+  set db_layer [[ord::get_db_tech] findLayer $layer]
+  set expected_sheet [expr {$r_ohm_um*[$db_layer getWidth]/double([[ord::get_db_block] getDbUnitsPerMicron])}]
+  if {abs([$db_layer getResistance]-$expected_sheet)>1e-7*$expected_sheet} {error "PNR_LAYER_RESISTANCE_UNITS $layer"}
+  puts "PNR_LAYER_RC $layer ohm_per_square=[$db_layer getResistance] pf_per_um=$capacitance"
+}
 set_wire_rc -signal -layer Metal3
 set_wire_rc -clock -layer Metal4
 
@@ -76,7 +89,16 @@ if {$stage eq "floorplan"} {
     lassign $record name x y
     place_macro -macro_name $name -location [list $x $y] -orientation R0 -exact
   }
-  tapcell -tapcell_master ${sc}filltie -endcap_master ${sc}endcap -distance 20 -halo_width_x 12 -halo_width_y 12
+  # Tap-cell halos alone do not reserve space for ordinary logic or pin escape.
+  foreach region $macro_keepouts {create_blockage -region $region}
+  # GPL honors max_density even when soft. Pinned DPL otherwise treats PARTIAL
+  # as a hard exclusion and rejects legal taps/cells across the entire band.
+  set sram_band [create_blockage -region $sram_density_region -max_density $sram_density_percent]
+  # create_blockage ignores its -soft flag when -max_density is supplied.
+  $sram_band setSoft
+  if {![$sram_band isSoft] || [$sram_band getMaxDensity]!=$sram_density_percent} {error SRAM_DENSITY_REGION_INVALID}
+  # Cut rows before adding physical cells; no fixed tap may occupy a keep-out.
+  tapcell -tapcell_master ${sc}filltie -endcap_master ${sc}endcap -distance 20 -halo_width_x 24 -halo_width_y 40
   insert_tiecells ${sc}tieh/Z
   insert_tiecells ${sc}tiel/ZN
   repair_tie_fanout -separation 1 ${sc}tieh/Z
@@ -87,6 +109,7 @@ if {$stage eq "floorplan"} {
   pdngen -failed_via_report $out/pdn-vias.rpt
   check_power_grid -net VDD -floorplanning -error_file $out/pdn-vdd.rpt
   check_power_grid -net VSS -floorplanning -error_file $out/pdn-vss.rpt
+  apply_native_routing
   set f [open $out/protected-baseline.tcl w]; puts $f [list set expected_protected [protected_snapshot]]; close $f
 }
 if {$stage eq "place"} {
@@ -124,20 +147,25 @@ if {$stage eq "global"} {
   set_propagated_clock [get_clocks {service work lf}]
   set_routing_layers -signal Metal2-Metal5 -clock Metal2-Metal5
   set_global_routing_layer_adjustment Metal2-Metal5 0.15
+  apply_native_routing global-before
   global_route -guide_file $out/route.guide -congestion_iterations 100 -congestion_report_file $out/congestion.rpt -verbose
   estimate_parasitics -global_routing
-  # Track added cells, moved cells and changed nets in the existing route.
-  global_route -start_incremental
+  # Rebuild guides after repair and NDR re-selection. The pinned router's
+  # incremental 3-D maze path fails with GRT-0183 on this repaired native graph.
+  # A fresh global route uses the complete repaired placement and all rules.
   wire_repair
-  global_route -end_incremental -guide_file $out/route.guide -congestion_iterations 100
+  apply_native_routing global-after
+  global_route -guide_file $out/route.guide -congestion_iterations 100 -congestion_report_file $out/congestion.rpt -verbose
   estimate_parasitics -global_routing
 }
 if {$stage eq "route"} {
   set_propagated_clock [get_clocks {service work lf}]
   set_routing_layers -signal Metal2-Metal5 -clock Metal2-Metal5
   read_guides $out/route.guide
+  apply_native_routing route-before
   detailed_route -output_drc $out/route-drc.rpt -output_guide_coverage $out/guide-coverage.rpt \
     -droute_end_iter 32 -or_seed 42
+  verify_native_routing
 }
 if {$stage eq "extract"} {
   set_propagated_clock [get_clocks {service work lf}]
@@ -154,6 +182,11 @@ if {$stage eq "extract"} {
   define_process_corner -ext_model_index 0 $rc_corner
   extract_parasitics -ext_model_file $routing/rcx.$rc_corner
   write_spef $out/routed-$rc_corner.spef
+  # OpenRCX writes the database/SPEF; it does not replace STA's estimated
+  # parasitics. Load this RC corner into every PVT scene before reporting.
+  foreach corner $pvt_corners {
+    read_spef -corner $corner $out/routed-$rc_corner.spef
+  }
   if {$rc_corner eq "nom"} {file copy -force $out/routed-nom.spef $out/routed.spef}
 }
 source $out/protected-baseline.tcl

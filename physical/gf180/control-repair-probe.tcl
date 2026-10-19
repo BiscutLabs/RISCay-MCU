@@ -1,5 +1,13 @@
 # Local stage screen. No created clock, reset case, false path or manual loop cut.
-proc row {args} { puts [join $args "\t"] }
+proc row {args} {
+  # Pinned OpenROAD corrupts long Tcl stdout writes at its 4096-byte boundary.
+  # Bound each write while preserving the existing complete TSV record.
+  set text [join $args "\t"]
+  for {set start 0} {$start < [string length $text]} {incr start 1024} {
+    puts -nonewline [string range $text $start [expr {$start+1023}]]
+  }
+  puts ""
+}
 proc exact_object {kind name} {
   if {$kind eq "port"} {set objects [get_ports -quiet $name]} else {set objects [get_pins -quiet $name]}
   if {[llength $objects] != 1 || [get_full_name [lindex $objects 0]] ne $name} {error "CONTROL_OBJECT_BINDING $kind $name"}

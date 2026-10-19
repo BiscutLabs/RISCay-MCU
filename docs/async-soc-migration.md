@@ -76,6 +76,10 @@ transport and payload copies; the documented receiving-edge arbitration remains.
 - [ ] Close electrical and routing violations, then composed setup/hold/ACK,
   capture-tree spread, pulse/rearm, clock skew/duty, SRAM and CDC checks across all
   required corners with extracted min/max RC and justified mismatch derates.
+  Complete native-control crosstalk/keeper checks and power-grid analysis with
+  actual supply and workload models. [Routing investigation](gf180-routability.md)
+  separates NDR assignment, representative noise experiments and static IR screens
+  from qualification.
 - [ ] **R2b:** qualify complete reset assertion/release distribution, recovery/removal,
   hold intervals and startup, including generated reset trees, wake and clock gating.
 - [ ] Apply routed hold repair **only to failing composed paths**; reserve **0.05 mm²**

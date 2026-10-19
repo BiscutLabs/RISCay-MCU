@@ -25,14 +25,14 @@ ASSETS = {
     "rcx.min": "libs.tech/librelane/rules.openrcx.gf180mcuD.min",
     "rcx.max": "libs.tech/librelane/rules.openrcx.gf180mcuD.max",
 }
-PROVENANCE_SCHEMA = "riscay-pnr-inputs-v4"
+PROVENANCE_SCHEMA = "riscay-pnr-inputs-v5"
 MAPPING_INPUTS = ("mapping.json", "netlist.v", "netlist.json", "base.sdc", "clocked.sdc",
                   "feedback-cuts.tcl", "async.sdc", "preserve-mapped.tcl", "constraints-bound.json",
                   "electrical-repair/receipt.json")
-FLOW_INPUTS = ("pnr.tcl", "pnr-pdn.tcl", "power.tcl", "pnr-repair.tcl", "pnr-clock.tcl")
+FLOW_INPUTS = ("pnr.tcl", "pnr-pdn.tcl", "power.tcl", "pnr-repair.tcl", "pnr-clock.tcl", "pnr-native-routing.tcl")
 REPAIR_AUDIT_SOURCES = ('check_pnr_repair.py','check_pnr_clock.py','repair_gf180_design.py','gf180_physical.py',
-                      'gf180_estimate.py','repair_gf180_control.py','characterize_gf180_liberty.py','gf180_constraints.py','gf180_pnr.py')
-GENERATED_INPUTS = ("config.tcl", "async-pnr.sdc", "async-electrical.sdc", "async-context.json", "protected.tcl")
+                      'gf180_estimate.py','repair_gf180_control.py','characterize_gf180_liberty.py','gf180_constraints.py','gf180_pnr.py','native_routing.py')
+GENERATED_INPUTS = ("config.tcl", "async-pnr.sdc", "async-electrical.sdc", "async-context.json", "protected.tcl", "native-routing.tcl", "native-routing.json")
 RC_CORNERS = ("nom", "min", "max")
 DEFAULT_PLACEMENT_DENSITY = 0.60
 
@@ -48,6 +48,35 @@ def geometry(side, density=DEFAULT_PLACEMENT_DENSITY, height=None):
         macro_locations=[["soc/fabric_"+name, x, height-576]
             for name,x in zip(("program_macros_0","program_macros_1","ram_macros_0"),
                              (100, (side-301.3)/2, side-400))])
+
+
+def routability_regions(g):
+    """Keep pins facing south; reserve placement space, not routing blockages.
+
+    SRAM signal pins occupy the south Metal2 edge. The pin-side 40 um halo
+    and 24 um other halos are hard placement exclusions. A 50% local target
+    spreads logic in the lower SRAM band, including the old short hotspot.
+    OpenROAD's partial blockage density is a percentage, unlike GPL density.
+    """
+    core=g['core_um']; hard=[]
+    for name,x,y in g['macro_locations']:
+        box=[max(core[0],x-24),max(core[1],y-40),
+             min(core[2],x+301.3+24),min(core[3],y+515.81+24)]
+        hard.append(dict(name=name,box=box,orientation='R0'))
+    bottom=min(y for _,x,y in g['macro_locations'])
+    band=[core[0],max(core[1],bottom-104),core[2],min(core[3],bottom+146)]
+    return dict(hard=hard,band=band,band_density_percent=50)
+
+
+def router_violations(report, log):
+    """Require independent report and final router count to agree at zero."""
+    if not report.is_file(): raise ValueError('PNR_ROUTER_DRC_REPORT_MISSING')
+    counts=re.findall(r'number of violations\s*=\s*(\d+)',log,re.I)
+    if not counts: raise ValueError('PNR_ROUTER_DRC_COUNT_MISSING')
+    count=int(counts[-1])
+    text=report.read_text().strip()
+    if count or text: raise ValueError(f'PNR_ROUTER_VIOLATIONS_{count}')
+    return dict(violations=0,report_sha256=sha(report))
 
 
 def mapping_hashes(mapping):
@@ -161,6 +190,12 @@ def validate_provenance(mapping,out,stage,flow_sources=None):
             raise ValueError('PNR_REPAIR_GRAPH_CHANGED')
         if proof.get('protected_nets_sha256')!=sha(out/(repaired+'-native-protected-nets.txt')):
             raise ValueError('PNR_REPAIR_PROTECTION_CHANGED')
+    if STAGES.index(stage)>=STAGES.index('route'):
+        expected=router_violations(out/'route-drc.rpt',(out/'route.log').read_text())
+        if meta['checkpoints']['route'].get('router_drc')!=expected:
+            raise ValueError('PNR_ROUTER_DRC_CHANGED')
+        if meta['checkpoints']['route'].get('native_routing_sha256')!=sha(out/'route-native-routing.tsv'):
+            raise ValueError('PNR_NATIVE_ROUTING_CHANGED')
     if STAGES.index(stage)>=STAGES.index('clock'):
         proof=meta['checkpoints']['clock'].get('clock_coverage',{})
         if proof.get('proof_sha256')!=sha(out/'clock-coverage-proof.json'):
@@ -215,11 +250,15 @@ def configuration(mapping,out,routing,threads,side=1440,density=DEFAULT_PLACEMEN
         lines.append(f'set {name} {brace(linux(path))}')
     lines.extend([f'set threads {threads}',f'set sc {SC}',f'set sram_cell {SRAM}'])
     g=geometry(side,density,height)
+    regions=routability_regions(g)
     lines += ['set die_area {'+' '.join(map(str,g['die_um']))+'}',
               'set core_area {'+' '.join(map(str,g['core_um']))+'}',
               'set placement_density '+str(g['placement_density']),
               'set macro_locations {'+' '.join('{'+name+' '+str(x)+' '+str(y)+'}'
-                  for name,x,y in g['macro_locations'])+'}']
+                  for name,x,y in g['macro_locations'])+'}',
+              'set macro_keepouts {'+' '.join('{'+ ' '.join(map(str,r['box']))+'}' for r in regions['hard'])+'}',
+              'set sram_density_region {'+' '.join(map(str,regions['band']))+'}',
+              'set sram_density_percent '+str(regions['band_density_percent'])]
     (out/"config.tcl").write_text("\n".join(lines)+"\n")
     # Compare every protected signal-pin connection at each checkpoint. Capture
     # after constant tie-cell insertion; power/well connections are separate.
@@ -241,6 +280,8 @@ def configuration(mapping,out,routing,threads,side=1440,density=DEFAULT_PLACEMEN
     (out/"async-pnr.sdc").write_text(full)
     (out/"async-electrical.sdc").write_text(electrical)
     write_json(out/'async-context.json',context)
+    from native_routing import generate
+    generate(mapping,out)
 
 
 def electrical_context(sdc):
@@ -399,6 +440,18 @@ def run(mapping,out,from_stage,to_stage,threads,side=1440,openroad=None,density=
             except BaseException:
                 meta['checkpoints'].pop(stage,None)
                 meta.update(status='stopped-unqualified',failed_stage='clock-coverage-proof')
+                write_json(out/'run.json',meta)
+                raise
+        if stage=='route':
+            try:
+                meta['checkpoints'][stage]['router_drc']=router_violations(out/'route-drc.rpt',log)
+                from native_routing import read_report
+                anchors=[r['pin'] for r in json.loads((out/'native-routing.json').read_text())['anchors']]
+                read_report(out/'route-native-routing.tsv',anchors)
+                meta['checkpoints'][stage]['native_routing_sha256']=sha(out/'route-native-routing.tsv')
+            except ValueError:
+                # Keep the routed database and actual failure report for repair.
+                meta.update(status='stopped-unqualified',failed_stage='router-drc')
                 write_json(out/'run.json',meta)
                 raise
         if stage=="extract":
