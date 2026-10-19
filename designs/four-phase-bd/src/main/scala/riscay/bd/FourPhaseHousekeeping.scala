@@ -7,7 +7,14 @@ import chiselasync.bundled._
 import chiselasync.core.{AsyncModule,ResetDomain}
 import chiselasync.metadata.{BundledTiming,ModelTime}
 import chiselasync.protocol.FourPhase
+import chiselasync.primitives.{ControlGate, EventRegister, GateOperation}
 import riscay.soc._
+
+/** The bank is an explicit transform input, covered by stage bundling. */
+class HousekeepingUpdate extends Bundle {
+  val state=new HousekeepingState
+  val command=new HousekeepingCommand
+}
 
 /** Native time, application timer/lease, kick and acquisition coordination.
   * Commands carry ordered observations, never a clocked copy of policy state.
@@ -19,24 +26,41 @@ class FourPhaseHousekeeping(p: SocParameters,domain: ResetDomain) extends AsyncM
 
   private val timing=OwnerTiming.base
   private val cell=ModelTime.ps(1000)
-  private val state=asyncChild("state")(d => new FourPhaseFifo(new HousekeepingState,1,timing,Seq(HousekeepingState.initial(p)),cell,d))
-  private val join=asyncChild("join")(d => new FourPhaseJoin(new HousekeepingState,new HousekeepingCommand,timing,cell,d))
+  val view=IO(Output(new HousekeepingState))
+  private val resetRef=contract.endpoint("reset",reset)
+  contract.endpoint("state_view",view)
+  private val initial=HousekeepingState.initial(p).litValue
+  private val bank=Module(new EventRegister(view.getWidth,cell,initial))
+  bank.reset:=reset
+  contract.primitive("state_bank",bank,Map("WIDTH"->BigInt(view.getWidth),
+    "DELAY_FS"->BigInt(cell.fs),"RESET_VALUE"->initial),resetRef,
+    "sole retained Housekeeping state; capture only on accepted reply ACK")
+  view:=bank.q.asTypeOf(view)
+  private val state=asyncChild("state")(d => new FourPhaseFifo(Bool(),1,timing,Seq(false.B),cell,d))
+  private val join=asyncChild("join")(d => new FourPhaseJoin(Bool(),new HousekeepingCommand,timing,cell,d))
   private val update=asyncChild("update")(d => new FourPhaseStage(
-    new Joined(new HousekeepingState,new HousekeepingCommand),new HousekeepingReply,
-    (x: Joined[HousekeepingState,HousekeepingCommand]) => transition(x.left,x.right),timing,d))
+    new HousekeepingUpdate,new HousekeepingReply,
+    (x: HousekeepingUpdate) => transition(x.state,x.command),timing,d))
   FourPhase.connect(join.left,state.out); FourPhase.connect(join.right,command)
-  FourPhase.connect(update.in,join.out)
-  state.in.bits:=update.out.bits.state; state.in.req:=reply.ack
-  update.out.ack:=state.in.ack; reply.req:=update.out.req; reply.bits:=update.out.bits
-  dontTouch(state.in); dontTouch(update.out)
-
-  contract.endpoint("reset",reset)
+  update.in.req:=join.out.req;join.out.ack:=update.in.ack
+  update.in.bits.state:=view;update.in.bits.command:=join.out.bits.right
+  bank.trigger:=reply.ack;bank.d:=update.out.bits.state.asUInt
+  // Relative bank capture-to-feedback ordering. This digital model is not a
+  // physical target: size this owner's own path at each corner before adoption.
+  private val settled=Module(new ControlGate(1,GateOperation.Buffer,ModelTime.ps(10000)))
+  settled.reset:=reset;settled.a:=reply.ack.asUInt;settled.b:=0.U
+  contract.primitive("bank_guard",settled,Map("WIDTH"->BigInt(1),"OP"->BigInt(0),
+    "DELAY_FS"->BigInt(10000000),"RESET_VALUE"->BigInt(0)),resetRef,
+    "relative state-bank capture precedes feedback credit; both return edges retained")
+  state.in.bits:=false.B;state.in.req:=settled.q.asBool
+  update.out.ack:=state.in.ack;reply.req:=update.out.req;reply.bits:=update.out.bits
+  dontTouch(state.in);dontTouch(update.out)
 
   private def transition(s: HousekeepingState, c: HousekeepingCommand): HousekeepingReply = {
     val r=WireDefault(0.U.asTypeOf(new HousekeepingReply)); r.state:=s
     r.recovery := c.recovery
-    val n=r.state; val elapsed=c.elapsed(0); val tick=elapsed =/= 0.U || c.elapsedOverflow
-    r.timeValid:=c.timeValid; r.tick:=tick; r.single:=c.single; r.elapsed:=c.elapsed
+    val n=r.state; val elapsed=c.elapsed; val tick=elapsed =/= 0.U || c.elapsedOverflow
+    r.timeValid:=c.timeValid; r.tick:=tick
     r.resetApplication:=c.resetApplication; r.cpuCompletion:=c.cpuCompletion
     n.now:=s.now+elapsed
     when(c.timeValid) { n.consumed:=c.target }

@@ -14,12 +14,11 @@ class AsyncHousekeepingSpec extends AnyFunSuite {
   private val p=SocParameters(McuConfiguration(8,8,0,Vector(MeasurementChannel(0,"sample",1,0)),
     ApplicationProfile(1,1,"housekeeping",Vector.empty,Vector.empty)),
     adc=Some(AdcParameters(halfPeriodCycles=2,intervalCycles=100000)),lowPower=Some(LowPowerParameters()))
-  private val fields=Seq("timeValid","target","single","elapsed_0","elapsed_1","elapsed_2","elapsedOverflow",
+  private val fields=Seq("timeValid","target","elapsed","elapsedOverflow",
     "resetApplication","started","parked","adcBusy","discard","write","offset","data",
     "waitAccepted","periodUpdate","period","cpuCompletion")
   private val defaults=Map("started"->1L,"adcBusy"->1L)
-  private def time(n: Long): Fields=Map("timeValid"->1L,"target"->n,"single"->1L,
-    "elapsed_0"->n,"elapsed_1"->n,"elapsed_2"->n)
+  private def time(n: Long): Fields=Map("timeValid"->1L,"target"->n,"elapsed"->n)
   private def write(offset: Long,value: Long): Fields=Map("write"->1L,"offset"->offset,"data"->value,"cpuCompletion"->1L)
   private def state(values: (String,Long)*): Fields=values.map { case(k,v) => "state_"+k->v }.toMap
   private def fresh(name: String) = {
@@ -38,18 +37,27 @@ class AsyncHousekeepingSpec extends AnyFunSuite {
         ${if(click) "" else "command_req=0; wait(!command_ack); #2;"}
       """
     }.mkString("\n")
+    val bankFields=Seq("now","consumed","deadline","armed","lease","wakeMask",
+      "period","nextPeriod","periodPending","countdown","requested")
+    val bank=bankFields.map("view_"+_).mkString("{",",","}")
     val sink=steps.zipWithIndex.map { case(s,i) =>
       val phase=if(click) (i+1)%2 else 1
       val checks=s.expected.toSeq.sortBy(_._1).map { case(k,v) =>
         s"if(reply_bits_$k !== 32'h${v.toHexString}) $$fatal(1,\"HOUSEKEEPING_${i}_$k actual=%h\",reply_bits_$k);"
       }.mkString("\n")
-      s"""wait(reply_req == $phase); #2; $checks
-        repeat(5) begin #${(i%5+1)*41000000L}; $checks end
+      val committed=s.expected.toSeq.filter(_._1.startsWith("state_")).map { case(k,v) =>
+        s"if(view_${k.stripPrefix("state_")} !== 32'h${v.toHexString}) $$fatal(1,\"HOUSEKEEPING_COMMITTED_$k\");"
+      }.mkString("\n")
+      s"""savedBank=$bank; wait(reply_req == $phase); #2; $checks
+        repeat(5) begin #${(i%5+1)*41000000L}; $checks
+          if($bank !== savedBank) $$fatal(1,"HOUSEKEEPING_BANK_CHANGED_BEFORE_ACCEPTANCE");
+        end
         reply_ack=$phase;
         ${if(click) "#2;" else "wait(!reply_req); #37000000; reply_ack=0; #2;"}
+        #1000000000; $committed
       """
     }.mkString("\n")
-    s"fork begin $source end begin $sink end join #1000000000;"
+    s"fork begin $source end begin reg [$$bits($bank)-1:0] savedBank; $sink end join #1000000000;"
   }
   for(click <- Seq(false,true)) {
     val name=if(click) "click" else "bd"
@@ -70,8 +78,8 @@ class AsyncHousekeepingSpec extends AnyFunSuite {
           "armed"->0,"lease"->0,"wakeMask"->15,"period"->10)++Map("due"->0L,"leaseExpired"->0L)),
         Step(write(60,3),state("lease"->3)),
         Step(write(8,120),state("armed"->1)),
-        Step(Map("timeValid"->1L,"elapsedOverflow"->1L,"elapsed_2"->0xffffffffL),
-          state("now"->106,"lease"->0)++Map("tick"->1L,"leaseExpired"->1L,"due"->1L,"elapsed_2"->0xffffffffL)),
+        Step(Map("timeValid"->1L,"elapsedOverflow"->1L),
+          state("now"->106,"lease"->0)++Map("tick"->1L,"leaseExpired"->1L,"due"->1L)),
         Step(write(8,120),state("armed"->1)),
         Step(time(0xfffffffeL),state("now"->104,"armed"->0)++Map("due"->1L)),
         Step(write(8,120),state("armed"->1)),

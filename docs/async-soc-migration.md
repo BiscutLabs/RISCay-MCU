@@ -23,6 +23,9 @@ verified, including full-capacity boot measurements in both variants.
   its intentional clocked arbitration boundary, without Telemetry transport.
   The [single-writer sample split](single-writer-telemetry.md) removes time/sample
   Telemetry traffic and clocked sample projections in both variants.
+  The [Housekeeping view](native-housekeeping-view.md) removes its clocked state
+  mirror and obsolete elapsed lanes, retaining command arbitration and the
+  consumed-time wake acknowledgement.
 - [ ] **B. Register-pointer host interface.** Replace the framed loader; do not
   build a permanent second transport. Decide the versioned wire ABI and host
   transition before RTL. Absorbs 11a2/11a2b, 13c, R5 epoch work and the R6 public
@@ -56,6 +59,7 @@ verified, including full-capacity boot measurements in both variants.
 | Event pending, clear cutoff and WAIT | One work-clock edge orders all six producers against request arrival; preserves the cutoff ABI without an unqualified native MUTEX |
 | Command scheduling | Receiving-edge arbitration for Control's host/CPU/completion/reset commands, Housekeeping's time/timer/cadence/recovery, and Telemetry's CPU/recovery ordering; no unqualified native MUTEX |
 | Shared upper-time coordinate | One POR time counter on the work-clock side of the existing LF/elapsed receipt; no new clock or per-sample clocked age bank |
+| Consumed-time acknowledgement and bank-reader qualification | Capture LF progress on the real receiving edge before it enters asynchronous wake logic; inhibit readers during native bank capture/return |
 | SPI pin player | Bounded SCLK high/low times and MISO sampling aperture |
 | LF timebase/watchdog | Time and recovery independent of CPU/service progress |
 | Reset qualifier/coordinator and clock gates | Real-time reset holds, receiving-edge close/rebase, safe stop/start |

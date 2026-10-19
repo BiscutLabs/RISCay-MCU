@@ -6,8 +6,8 @@ libraries, mapper and accepted repair flow for matched production comparisons.
 Full routed physical requalification remains migration item 17.
 
 The **BD mapped-logic milestone below 2.3 mm² excluding SRAM is achieved**.
-The bounded-time batch maps to **2.048618 / 2.848272 mm²**
-(BD / Click) and repairs to **2.273786 / 3.097721 mm²**, including the expanded
+The Housekeeping batch maps to **1.987975 / 2.800265 mm²**
+(BD / Click) and repairs to **2.209548 / 3.051047 mm²**, including the expanded
 A/B boot ROM and current parent-driver recipe. The matched parent and
 single-writer Telemetry results are recorded in their batch rows below.
 The earlier passive/guard/fusion batch mapped to
@@ -26,6 +26,101 @@ exceeds it, revise the budget or architecture; do not waive a failing path. The
 [repair contract](architecture-followups.md#routed-hold-repair) specifies the gates.
 
 ## Accepted production batches
+
+### Single-writer Housekeeping view
+
+Services reads the qualified retained native Housekeeping bank. The state mirror
+and unused elapsed-age command lanes are removed in both variants. BD replaces
+its wide feedback FIFO/Join storage with one closed bank and a one-bit credit;
+Click retains its native phase buffer. The 32-bit receiving-edge consumed-time
+acknowledgement remains because it feeds asynchronous oscillator-wake logic.
+Command arbitration, event cutoff, the host snapshot bank and the ABI are unchanged.
+
+| Variant | Parent mapped / repaired logic | Current mapped / repaired logic | Delta mapped / repaired | Periodic sinks before → after |
+| --- | ---: | ---: | ---: | ---: |
+| BD | 2.048618 / 2.274043 | 1.987975 / 2.209548 | −0.060642 / −0.064495 | 3,515 → 3,223 |
+| Click | 2.848272 / 3.098062 | 2.800265 / 3.051047 | −0.048007 / −0.047015 | 3,572 → 3,282 |
+
+Areas are mm² excluding unchanged SRAM, with the same mapper, PDK and repair
+recipe. Services loses **292 work sinks in each variant**, leaving **915 work +
+14 service**. Click adds two work-clock qualification synchronizers outside
+Services, so its total reduction is 290. Whole-chip service/work/LF totals are
+**1,203/1,942/78 BD** and **1,207/1,997/78 Click**. The separate SDA event remains.
+The reports retain the per-register Services inventory for item 16.
+
+This matched comparison reruns both the immediate parent and candidate with the
+new ordinary hierarchy parent-driver repair. Two high-fanout child outputs gain
+exclusive repairable buffers; complete graph and driver proofs pass. The former
+I²C readStart child's 251-load capacitance violation is removed. A broad 447-net
+fanout experiment failed to fix that hierarchy boundary and is not adopted.
+
+BD guards/DLYD change from 0.399605/0.393784 to **0.400304/0.394455 mm²**:
+the new bank-feedback guard adds nine DLYD cells. Click remains
+**0.937320/0.928706 mm²**. Allowances remain zero. These are subsets of mapped
+logic, not additional area; the 0.05 mm² routed hold reserve remains separate.
+
+| DLYD purpose | BD cells / mm² | Click cells / mm² |
+| --- | ---: | ---: |
+| Request bundling | 937 / 0.069935 | 855 / 0.063814 |
+| Publication/output guard | 688 / 0.051350 | 2,016 / 0.150468 |
+| ACK guard | 0 / 0 | 616 / 0.045976 |
+| Custom ordering/reset | 3,560 / 0.265707 | 8,956 / 0.668447 |
+| Seed reset/admission | 100 / 0.007464 | 0 / 0 |
+| **Total** | **5,285 / 0.394455** | **12,443 / 0.928706** |
+
+Safe full-return qualification has a measurable digital activity cost:
+
+| Wake | BD work edges, parent → current | Click work edges, parent → current | Current duration BD / Click, µs |
+| --- | ---: | ---: | ---: |
+| Maintenance | 24 → 30 | 18 → 27 | 3.147 / 3.064 |
+| Sample | 217 → 221 | 214 → 216 | 18.772 / 18.356 |
+| 43-instruction firmware | 3,241 → 3,242 | 3,197 → 3,199 | 270.524 / 266.941 |
+
+All 22 maintenance, three sample and two firmware observations per variant agree
+within their respective categories. Maintenance oscillator-on duration is unchanged;
+sample duration grows by 0.333/0.167 µs and firmware by 0.083/0.167 µs. Telemetry
+commands remain zero. These are native digital-model windows, not measured power
+or physical delay. Fewer sinks alone does not establish an energy win.
+
+Evidence is under `build/housekeeping-view/`: `map-bd-r2`, `map-click-r1`,
+`{baseline,candidate}-{bd,click}-repair-r4`, `*-area-r4.json`, `*-sinks-r4.json`,
+`activity-r1.json`, `focused-complete-r3`, `extended-r1`, `atomic-r3`, `ci-r2`,
+`python-final-r6`, `check-r1` and both RDC logs. The 59 focused cases, 33 extended
+cases and four final atomic-snapshot controls pass. The fast Scala gate passes
+197 cases; the final Python gate passes 381 tests without skips.
+All four exports and both reset-crossing proofs pass. The first mapping's missing
+new-guard classification, the original borrowed-command monitor declaration error
+and the selector-correlation proof failure are retained, not counted as passes.
+No functional deadline or oracle was weakened. Independent review found and
+closed the reader-proof, timing-composition and shared-wrapper repair issues.
+
+The final BD bank campaign (`timing-bank-r6`) passes all ten PVT/slew cases:
+920 periodic bank-reader endpoints have minimum **+192.568 ns setup / +1.247 ns
+hold**, with **+11.105 ns** bank-to-feedback ordering through the nine-cell
+guard. The 17 qualification sources reach 1,074 periodic targets; all source/
+launch-polarity combinations are checked with one-period setup and same-edge
+hold, yielding **+0.834 / +0.482 ns** minima. The 263 native frontier endpoints
+are explicitly inventoried, not counted as qualified periodic readers.
+The ten canonical update-stage cases (`timing-update-r4`) also pass locally:
+minimum data-lag budget **+9.929 ns**, zero-reuse hold **+1.187 ns**, and ACK
+after capture **+1.381 ns**. These are repaired, zero-wire-RC bounds with no CTS
+skew. Native bank-to-update launch composition, routed min/max RC, reset/noise,
+mismatch justification and whole-chip electrical closure remain open.
+
+The failed pre-parent-driver and global-CLK-to-Q envelopes remain in
+`timing-bank-r2/r3`. `timing-bank-r4` caught sink-edge ranking by slack rather
+than propagation; the final query neutralizes only that selection cost and
+reapplies the unchanged Liberty apertures afterward. Every assigned zero cost
+is read back, every source/polarity pair is required, and reversed bounds still
+fail. Superseded `r5` retains a changed-tool receipt failure; only `r6` is accepted.
+
+All four full-capacity primary/golden boot cases pass again in `full-boot-r1.log`;
+`full-boot-r1.json` and `full-boot-r1-reports` retain their records. BD primary/
+fallback take **353.740 / 1,010.872 ms**, Click **398.812 / 1,139.618 ms** at the
+10 MHz digital-model service clock. Relative to the boot batch, the extra reader
+qualification costs 0.1/3.9 µs BD and 6.4/10.0 µs Click. ROM remains 4,224 bytes;
+the image, CRC, lock, golden fallback and factory provisioning protocols are
+unchanged. See [boot activity](boot-slots.md#full-capacity-boot-activity).
 
 ### Bounded time coordinate
 

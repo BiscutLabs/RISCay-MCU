@@ -15,7 +15,6 @@ class BdCommandBorrowFixture(p: SocParameters, fault: String = "") extends BdHou
   val enabled=withClockAndReset((!serviceClock.asBool).asClock,reset) { RegNext(!stopWorkClock,false.B) }
   workClock:=(serviceClock.asBool && enabled).asClock
   fabric.io.clockRunning:=enabled; host.frameAcceptEnable:=enabled
-  val observedWorkClock=IO(Output(Clock())); observedWorkClock:=workClock
   val workRunning=IO(Output(Bool())); workRunning:=enabled
   val pauseNative=IO(Input(UInt(2.W))); val pauseReturn=IO(Input(UInt(2.W)))
   // Retain the known idle phase before inserting a stall. The actual signal is
@@ -65,7 +64,6 @@ class ClickCommandBorrowFixture(p: SocParameters, fault: String = "") extends Cl
   val enabled=withClockAndReset((!serviceClock.asBool).asClock,reset) { RegNext(!stopWorkClock,false.B) }
   workClock:=(serviceClock.asBool && enabled).asClock
   fabric.io.clockRunning:=enabled; host.frameAcceptEnable:=enabled
-  val observedWorkClock=IO(Output(Clock())); observedWorkClock:=workClock
   val workRunning=IO(Output(Bool())); workRunning:=enabled
   val pauseNative=IO(Input(UInt(2.W))); val pauseReturn=IO(Input(UInt(2.W)))
   // Retain the known idle phase before inserting a stall. The actual signal is
@@ -118,7 +116,6 @@ integer houseLoans=0,telemetryLoans=0,houseCaptures=0,telemetryCaptures=0,period
 integer savedHouse,savedTelemetry,savedCaptures,houseRecoveryLoans=0,savedRecoveries;
 reg [31:0] savedSampleSequence;
 reg houseActive=0,telemetryActive=0;
-reg [211:0] heldHouse;
 reg [47:0] heldTelemetry;
 reg [15:0] adcShift;
 always @(negedge adcCsN) begin adcShift={4'hf,12'd2200};adcMiso=adcShift[15];end
@@ -127,13 +124,21 @@ task acquire;begin
   wait(!adcActive);@(negedge serviceClock);injectSample=1;
   @(posedge serviceClock);#1;injectSample=0;wait(adcActive);wait(!adcActive);
 end endtask
-wire [211:0] packedHouseCommand={houseCommand_recovery,houseCommand_timeValid,houseCommand_target,houseCommand_single,
-  houseCommand_elapsed_0,houseCommand_elapsed_1,houseCommand_elapsed_2,houseCommand_elapsedOverflow,
+wire [$bits({houseCommand_recovery,houseCommand_timeValid,houseCommand_target,
+  houseCommand_elapsed,houseCommand_elapsedOverflow,
+  houseCommand_resetApplication,houseCommand_started,houseCommand_parked,houseCommand_adcBusy,houseCommand_discard,
+  houseCommand_write,houseCommand_offset,houseCommand_data,houseCommand_waitAccepted,houseCommand_periodUpdate,
+  houseCommand_period,houseCommand_cpuCompletion})-1:0] packedHouseCommand={houseCommand_recovery,houseCommand_timeValid,houseCommand_target,
+  houseCommand_elapsed,houseCommand_elapsedOverflow,
   houseCommand_resetApplication,houseCommand_started,houseCommand_parked,houseCommand_adcBusy,houseCommand_discard,
   houseCommand_write,houseCommand_offset,houseCommand_data,houseCommand_waitAccepted,houseCommand_periodUpdate,
   houseCommand_period,houseCommand_cpuCompletion};
-wire [211:0] packedHouseNative={houseNative_recovery,houseNative_timeValid,houseNative_target,houseNative_single,
-  houseNative_elapsed_0,houseNative_elapsed_1,houseNative_elapsed_2,houseNative_elapsedOverflow,
+wire [$bits({houseNative_recovery,houseNative_timeValid,houseNative_target,
+  houseNative_elapsed,houseNative_elapsedOverflow,
+  houseNative_resetApplication,houseNative_started,houseNative_parked,houseNative_adcBusy,houseNative_discard,
+  houseNative_write,houseNative_offset,houseNative_data,houseNative_waitAccepted,houseNative_periodUpdate,
+  houseNative_period,houseNative_cpuCompletion})-1:0] packedHouseNative={houseNative_recovery,houseNative_timeValid,houseNative_target,
+  houseNative_elapsed,houseNative_elapsedOverflow,
   houseNative_resetApplication,houseNative_started,houseNative_parked,houseNative_adcBusy,houseNative_discard,
   houseNative_write,houseNative_offset,houseNative_data,houseNative_waitAccepted,houseNative_periodUpdate,
   houseNative_period,houseNative_cpuCompletion};
@@ -141,6 +146,11 @@ wire [47:0] packedTelemetryCommand={telemetryCommandView_recovery,telemetryComma
   telemetryCommandView_offset,telemetryCommandView_data,telemetryCommandView_appIndex};
 wire [47:0] packedTelemetryNative={telemetryNative_recovery,telemetryNative_kind,
   telemetryNative_offset,telemetryNative_data,telemetryNative_appIndex};
+// Icarus resolves $bits of a forward-declared net as zero. Declare the saved
+// payload after the complete packed wire, and check both sides cover its width.
+reg [$bits(packedHouseCommand)-1:0] heldHouse;
+initial if($bits(heldHouse)!=$bits(packedHouseCommand) ||
+  $bits(heldHouse)!=$bits(packedHouseNative)) $fatal(1,"HOUSEKEEPING_MONITOR_WIDTH");
 always @(posedge observedWorkClock) if(!reset) begin
   if(houseAccepted) begin
     heldHouse=packedHouseCommand;houseActive=1;houseLoans=houseLoans+1;
@@ -197,7 +207,7 @@ advance(2,5);#1000;
 if(consumed || timeNow || houseSenderIdle || houseCaptures!=savedCaptures || projectedTime!=22)
   $fatal(1,"HOUSEKEEPING_BORROW_STALLED_NATIVE");
 start_bus();write_byte(8'h6a);write_byte(7);write_word(20);stop_bus();wait(periodWaiting);#1000;
-if(periodEffects || houseNative_elapsed_0!=17 || houseNative_target!=1)
+if(periodEffects || houseNative_elapsed!=17 || houseNative_target!=1)
   $fatal(1,"HOUSEKEEPING_PERIOD_OVERWROTE_BORROW");
 stopWorkClock=1;wait(!workRunning);#500;pauseNative=0;wait(houseCaptures>savedCaptures);#1000;
 if(consumed || timeNow || periodEffects || houseSenderIdle) $fatal(1,"BORROW_STOPPED_CONSUMER_CAPTURED");

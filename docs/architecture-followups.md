@@ -18,14 +18,11 @@ The [external boot batch](boot-slots.md) is verified: A/B slots, external golden
 factory image/read-back and full-capacity boot/fallback measurements precede the
 remaining area work. No application policy moves into silicon.
 
-1. Narrow the conservative timestamp coordinate, then remove Housekeeping's
-   obsolete elapsed payload and qualified state mirror. Keep its receiving-edge
-   command arbitration; the host snapshot bank is outside this slice.
-2. Decide B's replacement host ABI before resuming 11a2b credit/admission work,
+1. Decide B's replacement host ABI before resuming 11a2b credit/admission work,
    then continue A/B with producers and consumers moved together.
-3. Regenerate the BD request-guard inventory and size surviving guards at each
+2. Regenerate the BD request-guard inventory and size surviving guards at each
    corner. Historical counts are not the new architecture's inventory.
-4. Run item 16 once on the integrated architecture and supported configurations,
+3. Run item 16 once on the integrated architecture and supported configurations,
    then regenerate 17a3 and close the BD tape-out gate, including full R2b reset
    distribution and targeted routed hold repair.
 
@@ -53,19 +50,16 @@ ADC/time local timing passes; optional software-sample configurations still need
 their own physical map. Matched area and unchanged native-model wake activity
 are recorded in the [ledger](area-ledger.md#bounded-time-coordinate).
 
-Housekeeping's 541 Services sinks comprise ordered 211, state 194 and queued
-136. Review found 128 obsolete elapsed-age payload bits across ordered/queued;
-their time/CPU/reset arbitration edge remains necessary. Remove the 194-bit
-state mirror with an explicitly qualified native committed view. BD's existing
-feedback FIFO becomes transparent when empty and cannot provide that view:
-replace its wide state token and Join operand with a one-bit credit and one
-closed architectural bank, as in Telemetry. Capture completion must precede
-feedback and full return. Click's existing event-register payload remains
-retained; qualify its input-acknowledge phase against the reply receipt phase.
-Neither implementation needs a second architectural bank or native MUTEX. The
-initial target is about 322 removed sinks before any
-qualification overhead, subject to mapping. The 269-sink host snapshot bank
-belongs with B's register-pointer redesign, not this slice.
+The [Housekeeping view](native-housekeeping-view.md) removes 292 Services work
+sinks in each variant (1,207 → 915). The obsolete elapsed-age command lanes and
+architectural state mirror are gone; time/CPU/reset receiving-edge arbitration
+remains. The existing 32-bit consumed-time acknowledgement stays at that edge
+because it drives asynchronous oscillator-wake logic. BD uses one closed native
+bank and a one-bit feedback credit. Click retains its native state buffer and
+adds two completion synchronizer flops at the reader boundary. Total periodic
+sinks fall by 292 BD / 290 Click. Qualification increases work-clock edges in
+some wakes; the ledger records the cost. The 269-sink host snapshot bank belongs
+with B's register-pointer redesign, not this slice.
 
 ## A. Always-on/application ownership split
 

@@ -17,6 +17,8 @@ class ClickHousekeeping(p: SocParameters,domain: ResetDomain) extends AsyncModul
   val command=twoPhaseInput("command",new HousekeepingCommand)
   val reply=twoPhaseOutput("reply",new HousekeepingReply)
   val start=IO(Input(Bool()))
+  val view=IO(Output(new HousekeepingState))
+  val bankComplete=IO(Output(Bool()))
   private val timing=OwnerTiming.base
   private val cell=ModelTime.ps(1000)
   private val state=asyncChild("state")(d => new PhaseDecoupledClickBuffer(new HousekeepingState,timing,Some(HousekeepingState.initial(p)),d))
@@ -29,14 +31,19 @@ class ClickHousekeeping(p: SocParameters,domain: ResetDomain) extends AsyncModul
   state.in.bits:=update.out.bits.state; state.in.req:=reply.ack
   update.out.ack:=state.in.ack; reply.req:=update.out.req; reply.bits:=update.out.bits
   dontTouch(state.in); dontTouch(update.out)
+  // This seeded Click buffer uses closed EventRegister payload storage.
+  // Its input ACK is the unseeded accepted-feedback phase; output phase starts
+  // with the initial token and must not qualify clocked readers.
+  view:=state.out.bits;bankComplete:=state.in.ack
+  contract.endpoint("state_view",view);contract.endpoint("bank_complete",bankComplete)
   state.start.get:=start; contract.endpoint("start",start)
   contract.endpoint("reset",reset)
 
   private def transition(s: HousekeepingState, c: HousekeepingCommand): HousekeepingReply = {
     val r=WireDefault(0.U.asTypeOf(new HousekeepingReply)); r.state:=s
     r.recovery := c.recovery
-    val n=r.state; val elapsed=c.elapsed(0); val tick=elapsed =/= 0.U || c.elapsedOverflow
-    r.timeValid:=c.timeValid; r.tick:=tick; r.single:=c.single; r.elapsed:=c.elapsed
+    val n=r.state; val elapsed=c.elapsed; val tick=elapsed =/= 0.U || c.elapsedOverflow
+    r.timeValid:=c.timeValid; r.tick:=tick
     r.resetApplication:=c.resetApplication; r.cpuCompletion:=c.cpuCompletion
     n.now:=s.now+elapsed
     when(c.timeValid) { n.consumed:=c.target }

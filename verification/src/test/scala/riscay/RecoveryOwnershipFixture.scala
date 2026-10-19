@@ -64,9 +64,9 @@ class BdRecoveryOwnershipFixture(p: SocParameters) extends BdPublicationSourceFi
   val projectedEvents=IO(Output(UInt(6.W))); projectedEvents:=BoringUtils.bore(fabric.eventPending)
   val visibleEvents=IO(Output(UInt(6.W))); visibleEvents:=BoringUtils.bore(fabric.pending)
   val visibleDeadline=IO(Output(UInt(32.W))); visibleDeadline:=BoringUtils.bore(fabric.deadline)
-  val projectedTime=IO(Output(UInt(32.W))); projectedTime:=(BoringUtils.bore(fabric.housekeepingState).now + BoringUtils.bore(fabric.housekeepingQueued).elapsed(0) +
-    Mux(BoringUtils.bore(fabric.housekeepingOrderedPending),BoringUtils.bore(fabric.housekeepingOrdered).elapsed(0),0.U) +
-    BoringUtils.bore(fabric.housekeepingInFlight).elapsed(0))
+  val projectedTime=IO(Output(UInt(32.W))); projectedTime:=(BoringUtils.bore(fabric.housekeepingState).now + BoringUtils.bore(fabric.housekeepingQueued).elapsed +
+    Mux(BoringUtils.bore(fabric.housekeepingOrderedPending),BoringUtils.bore(fabric.housekeepingOrdered).elapsed,0.U) +
+    BoringUtils.bore(fabric.housekeepingInFlight).elapsed)
   val maintenanceReply=IO(Output(Bool()))
   maintenanceReply:=fabric.housekeepingReply.fire && !fabric.housekeepingReply.bits.recovery &&
     !fabric.housekeepingReply.bits.cpuCompletion && fabric.housekeepingReply.bits.resetApplication
@@ -128,9 +128,9 @@ class ClickRecoveryOwnershipFixture(p: SocParameters) extends ClickPublicationSo
   val projectedEvents=IO(Output(UInt(6.W))); projectedEvents:=BoringUtils.bore(fabric.eventPending)
   val visibleEvents=IO(Output(UInt(6.W))); visibleEvents:=BoringUtils.bore(fabric.pending)
   val visibleDeadline=IO(Output(UInt(32.W))); visibleDeadline:=BoringUtils.bore(fabric.deadline)
-  val projectedTime=IO(Output(UInt(32.W))); projectedTime:=(BoringUtils.bore(fabric.housekeepingState).now + BoringUtils.bore(fabric.housekeepingQueued).elapsed(0) +
-    Mux(BoringUtils.bore(fabric.housekeepingOrderedPending),BoringUtils.bore(fabric.housekeepingOrdered).elapsed(0),0.U) +
-    BoringUtils.bore(fabric.housekeepingInFlight).elapsed(0))
+  val projectedTime=IO(Output(UInt(32.W))); projectedTime:=(BoringUtils.bore(fabric.housekeepingState).now + BoringUtils.bore(fabric.housekeepingQueued).elapsed +
+    Mux(BoringUtils.bore(fabric.housekeepingOrderedPending),BoringUtils.bore(fabric.housekeepingOrdered).elapsed,0.U) +
+    BoringUtils.bore(fabric.housekeepingInFlight).elapsed)
   val maintenanceReply=IO(Output(Bool()))
   maintenanceReply:=fabric.housekeepingReply.fire && !fabric.housekeepingReply.bits.recovery &&
     !fabric.housekeepingReply.bits.cpuCompletion && fabric.housekeepingReply.bits.resetApplication

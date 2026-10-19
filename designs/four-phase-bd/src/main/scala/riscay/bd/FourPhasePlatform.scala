@@ -257,12 +257,16 @@ abstract class FourPhasePlatform(p: SocParameters, board: SocParameters => Board
   fabric.io.housekeepingCommandIdle:=housekeepingCommandBridge.in.ready
   fabric.housekeepingReply <> housekeepingReplyBridge.out
   dontTouch(housekeepingReplyBridge.out)
+  fabric.housekeepingView:=housekeeping.view
   val housekeepingReturning=withClockAndReset(workClock,reset) {
     val pending=RegInit(false.B)
     when(housekeepingReplyBridge.out.fire) { pending:=true.B }
       .elsewhen(!housekeepingReplyBridge.in.ack) { pending:=false.B }
     pending
   }
+  // This registered ACK falls only after guarded bank capture and the
+  // synchronized reply return. Same-edge readers capture the previous bank.
+  fabric.housekeepingBankReady:= !housekeepingReturning
   fabric.io.housekeepingDraining:= !housekeepingCommandBridge.in.ready ||
     (housekeepingReturning && housekeepingReplyBridge.in.ack)
   val telemetry = asyncChild("telemetry")(d => new FourPhaseTelemetry(p, fabric.telemetryWords, d,qualifyCommit=true))

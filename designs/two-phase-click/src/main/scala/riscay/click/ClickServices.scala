@@ -82,9 +82,6 @@ class ClickServices(p: SocParameters, boardFactory: SocParameters => BoardProfil
   val telemetryAccepted = WireDefault(false.B)
   val sampleView=IO(Input(Vec(p.softwareSampleChannels.size,new SampleRecord)))
   val hostSamples=Wire(Vec(config.measurements.size,new Sample))
-  def saturatingAdd(a: UInt, b: UInt): UInt = {
-    val sum = a +& b; Mux(sum(32), "hffffffff".U(32.W), sum(31,0))
-  }
   // Clock-domain status projection preserves the ABI's third-edge reset
   // observation even when the native reset command is backpressured.
   val mode = RegInit(0.U(3.W))
@@ -100,7 +97,14 @@ class ClickServices(p: SocParameters, boardFactory: SocParameters => BoardProfil
 
   val housekeepingCommand = IO(Decoupled(new HousekeepingCommand))
   val housekeepingReply = IO(Flipped(Decoupled(new HousekeepingReply)))
-  val housekeepingState = RegInit(HousekeepingState.initial(p))
+  val housekeepingView=IO(Input(new HousekeepingState))
+  val housekeepingBankReady=IO(Input(Bool()))
+  val housekeepingState=housekeepingView
+  // The physical wake frontier acknowledges consumed LF work on its receiving
+  // edge. Keep this POR acknowledgement, not a mirror of architectural state;
+  // the asynchronous oscillator-wake input must not see a moving native bank.
+  val consumedTimeAck=RegInit(0.U(32.W))
+  when(housekeepingReply.fire) { consumedTimeAck:=housekeepingReply.bits.state.consumed }
   val housekeepingOutstanding = RegInit(false.B)
   val housekeepingInFlight = RegInit(0.U.asTypeOf(new HousekeepingCommand))
   val housekeepingBarrierBusy = Wire(Bool())
@@ -109,7 +113,7 @@ class ClickServices(p: SocParameters, boardFactory: SocParameters => BoardProfil
   val housekeepingOrdered = Reg(new HousekeepingCommand)
   io.housekeepingPayload := housekeepingOrdered
   io.housekeepingPayload.recovery := false.B
-  val housekeepingBankAvailable = !housekeepingOutstanding && io.housekeepingCommandIdle
+  val housekeepingBankAvailable = !housekeepingOutstanding && io.housekeepingCommandIdle && housekeepingBankReady
   val housekeepingOrderedPending = RegInit(false.B)
   val housekeepingQueued = RegInit(0.U.asTypeOf(new HousekeepingCommand))
   val housekeepingRecoveryBlocked = io.housekeepingSource.recoveryDebt || io.housekeepingSource.returnFence
@@ -135,17 +139,17 @@ class ClickServices(p: SocParameters, boardFactory: SocParameters => BoardProfil
   val adcLaunchPending = RegInit(false.B)
   io.elapsedScaling.target := Cat((0 until 32).reverse.map(i => io.timeGray(31,i).xorR))
   val rawElapsed = Wire(Vec(3,UInt(32.W)))
-  val rawTimeValid = Wire(Bool()); val rawTarget = Wire(UInt(32.W)); val rawSingle = Wire(Bool())
+  val rawTimeValid = Wire(Bool()); val rawTarget = Wire(UInt(32.W))
   if(p.lowPower.nonEmpty) {
     rawElapsed := io.elapsedScaling.elapsed; rawTimeValid := io.elapsedScaling.valid
-    rawTarget := io.elapsedScaling.publicationTarget; rawSingle := io.elapsedScaling.single
-    io.consumedGray := housekeepingState.consumed ^ (housekeepingState.consumed >> 1)
+    rawTarget := io.elapsedScaling.publicationTarget
+    io.consumedGray := consumedTimeAck ^ (consumedTimeAck >> 1)
   } else {
     val divider = RegInit(0.U(log2Ceil(p.serviceHz / 1000).max(1).W))
     val pulse = divider === (p.serviceHz / 1000 - 1).U
     divider := Mux(pulse,0.U,divider+1.U)
     rawElapsed.foreach(_ := Mux(pulse,1.U,0.U))
-    rawTimeValid := pulse; rawTarget := 0.U; rawSingle := pulse; io.consumedGray := 0.U
+    rawTimeValid := pulse; rawTarget := 0.U; io.consumedGray := 0.U
   }
   // Measurement/GPIO observation ingress remains independent of housekeeping.
   // Final housekeeping publication alone acknowledges LF work via consumedGray.
@@ -222,7 +226,7 @@ class ClickServices(p: SocParameters, boardFactory: SocParameters => BoardProfil
     if(p.lowPower.nonEmpty) {
       io.adc.start := adcLaunchPending && !io.adc.busy && !spiClaimRequested
       when(io.adc.start) { adcLaunchPending := false.B }
-      adcBusy := io.adc.busy || (!spiClaimRequested && (adcLaunchPending || housekeepingState.requested || periodPending))
+      adcBusy := io.adc.busy || !housekeepingBankReady || (!spiClaimRequested && (adcLaunchPending || housekeepingState.requested || periodPending))
     }
     publish(0) := io.adc.result
   }
@@ -356,9 +360,9 @@ class ClickServices(p: SocParameters, boardFactory: SocParameters => BoardProfil
     (req.address === MemoryMap.mmio.U ||
       (req.address === (MemoryMap.mmio+80).U && !controlState.persistPending))
   val waitingRead = isRead && fullWord && req.address === (MemoryMap.mmio + 16).U
-  val eventWait = waitingRead && (pendingView & (wakeMask | "h30".U)) === 0.U
+  val eventWait = waitingRead && (!housekeepingBankReady || (pendingView & (wakeMask | "h30".U)) === 0.U)
   parked := io.request.valid && (eventWait || bootWait)
-  val parkedForSleep = p.lowPower.nonEmpty.B && io.request.valid &&
+  val parkedForSleep = housekeepingBankReady && p.lowPower.nonEmpty.B && io.request.valid &&
     (bootWait || (eventWait && sleepRemaining =/= 0.U)) && io.admissionGrant.valid && !adcBusy && !memoryBusy && !controlBusy
   io.canSleep := parkedForSleep && !io.programSource.draining && !io.ramSource.draining && !scalingBusy && !tick && !telemetryWork
   if(p.spiBoot) {
@@ -483,7 +487,7 @@ class ClickServices(p: SocParameters, boardFactory: SocParameters => BoardProfil
   io.activity := io.programSource.draining || io.ramSource.draining || scalingBusy || io.i2c.busy || gpioActivity || memoryBusy || controlBusy || telemetryWork
   // The normal seven-edge guard may drain while native maintenance is busy;
   // canSleep/activity still keep the gate open until that work actually drains.
-  io.drainDemand := !parkedForSleep || io.i2c.busy || gpioActivity
+  io.drainDemand := !housekeepingBankReady || !parkedForSleep || io.i2c.busy || gpioActivity
   io.hostSelected := io.i2c.selected; io.hostRejected := io.i2c.rejected
   val selector = controlState.selector
   private val hostFrames = Module(new ControlMailbox)
@@ -522,7 +526,7 @@ class ClickServices(p: SocParameters, boardFactory: SocParameters => BoardProfil
   }
   // Reserve a bounded CPU admission turn before starting more background work.
   // A stalled Control computation still permits independent timer maintenance.
-  val cpuTimingTurn=io.request.valid && nativeMmio && !bootWait && !eventWait && !io.applicationCancel &&
+  val cpuTimingTurn=housekeepingBankReady && io.request.valid && nativeMmio && !bootWait && !eventWait && !io.applicationCancel &&
     (!controlOutstanding || (mmioCurrent && io.controlReply.valid))
   // Bounded host/CPU turns; a continuous host cannot starve ROM progress.
   val cpuTurn = RegInit(true.B)
@@ -532,9 +536,13 @@ class ClickServices(p: SocParameters, boardFactory: SocParameters => BoardProfil
   when(io.controlCommand.fire && io.controlCommand.bits.kind === ControlKind.Host.U) { cpuTurn := true.B }
   // Stack accesses need a bounded ROM turn too; a held program reservation
   // must still yield to loader invalidation before its commit decision.
-  val cpuAdmissionTurn = cpuTurn && io.request.valid && (nativeMmio || ramOperation) && !bootWait && !eventWait
+  val cpuAdmissionTurn = housekeepingBankReady && cpuTurn && io.request.valid && (nativeMmio || ramOperation) && !bootWait && !eventWait
   val hostTurn = hostHeadValid && !cpuAdmissionTurn
   val mmioLaunch = io.request.valid && nativeMmio && cpuAvailable && (!hostFrames.io.deq.valid || cpuTurn)
+  when(!housekeepingBankReady) {
+    assert(!cpuAdmissionTurn && !cpuTimingTurn && !mmioLaunch,
+      "HOUSEKEEPING_UNQUALIFIED_CPU_ADMISSION")
+  }
   controlBusy := controlOutstanding || hostRetiring || io.programSource.stored.valid || mmioCommitPending || resetPending || haltPending || (hostFrames.io.deq.valid && !cpuAdmissionTurn)
   io.controlCommand.valid := !controlOutstanding &&
     (io.programSource.stored.valid || mmioCommitPending || resetPending || (haltPending && !io.applicationCancel) || hostTurn || mmioLaunch)
@@ -558,7 +566,7 @@ class ClickServices(p: SocParameters, boardFactory: SocParameters => BoardProfil
     88.U -> Cat(0.U(29.W), output(5) && enable(5) && !output(3), io.adc.busy, spiClaimed),
     92.U -> (MemoryMap.ram + config.workingRamBytes).U(32.W)))
   io.controlCommand.bits.peripheralData:=Mux(io.controlCommand.bits.kind === ControlKind.Mmio.U &&
-    !telemetryBarrier && telemetryBankReady && !io.applicationCancel,peripheralRead,0.U)
+    !telemetryBarrier && telemetryBankReady && housekeepingBankReady && !io.applicationCancel,peripheralRead,0.U)
   when(mmioCommitPending && !io.programSource.stored.valid) {
     io.controlCommand.bits := mmioCommit
   }
@@ -627,17 +635,14 @@ class ClickServices(p: SocParameters, boardFactory: SocParameters => BoardProfil
     (housekeepingAction.write || housekeepingAction.waitAccepted || periodUpdate.valid)
   val housekeepingBarrier = housekeepingAction.write || housekeepingAction.waitAccepted || periodUpdate.valid
   val housekeepingQueuedWork = housekeepingQueued.timeValid || housekeepingQueued.discard
-  val housekeepingRetry = housekeepingState.requested && !io.adc.busy && !adcLaunchPending && !spiClaimRequested
+  val housekeepingRetry = housekeepingBankReady && housekeepingState.requested && !io.adc.busy && !adcLaunchPending && !spiClaimRequested
   val queueBase=housekeepingQueued
   val queueNext=WireDefault(queueBase)
-  val nominalSum=queueBase.elapsed(0) +& rawElapsed(0)
-  queueNext.elapsed(0):=nominalSum(31,0)
+  val nominalSum=queueBase.elapsed +& rawElapsed(0)
+  queueNext.elapsed:=nominalSum(31,0)
   queueNext.elapsedOverflow:=queueBase.elapsedOverflow || nominalSum(32)
-  queueNext.elapsed(1):=queueBase.elapsed(1)+rawElapsed(1)
-  queueNext.elapsed(2):=saturatingAdd(queueBase.elapsed(2),rawElapsed(2))
   when(rawTimeValid) {
     queueNext.timeValid:=true.B; queueNext.target:=rawTarget
-    queueNext.single:=rawSingle && !queueBase.timeValid
   }
   queueNext.discard:=queueBase.discard || (io.adc.done && !io.adc.result.valid)
   val housekeepingRecoveryReady=io.housekeepingSource.grant.valid &&
@@ -645,7 +650,7 @@ class ClickServices(p: SocParameters, boardFactory: SocParameters => BoardProfil
     io.housekeepingSource.eligible && io.housekeepingSource.recoveryDebt &&
     io.housekeepingSource.decision.ready && !io.applicationCancel &&
     !housekeepingOrderedPending && !io.housekeepingDraining
-  housekeepingCommand.valid := !housekeepingOutstanding && !housekeepingBarrier &&
+  housekeepingCommand.valid := !housekeepingOutstanding && housekeepingBankReady && !housekeepingBarrier &&
     (housekeepingOrderedPending || housekeepingRecoveryReady ||
       (!io.housekeepingSource.occupied && (io.applicationCancel || !housekeepingRecoveryBlocked) &&
         (housekeepingQueuedWork || rawTimeValid || queueNext.discard || housekeepingRetry) &&
@@ -697,7 +702,7 @@ class ClickServices(p: SocParameters, boardFactory: SocParameters => BoardProfil
     housekeepingOrderedPending:=true.B; housekeepingQueued:=0.U.asTypeOf(new HousekeepingCommand)
   }
   when(housekeepingPublished) {
-    housekeepingOutstanding:=false.B; housekeepingState:=housekeepingReply.bits.state
+    housekeepingOutstanding:=false.B
     housekeepingInFlight:=0.U.asTypeOf(new HousekeepingCommand)
     when(housekeepingReply.bits.startAdc) { adcLaunchPending:=true.B }
     assert(housekeepingReply.bits.recovery === housekeepingInFlight.recovery,
@@ -713,9 +718,9 @@ class ClickServices(p: SocParameters, boardFactory: SocParameters => BoardProfil
       assert(io.completionHousekeeping.ready,"COMPLETION_HOUSEKEEPING_OVERFLOW")
     }
   }
-  housekeepingBarrierBusy:=housekeepingOutstanding || housekeepingOrderedPending || housekeepingRecoveryBlocked ||
+  housekeepingBarrierBusy:= !housekeepingBankReady || housekeepingOutstanding || housekeepingOrderedPending || housekeepingRecoveryBlocked ||
     io.housekeepingDraining
-  housekeepingWork:=housekeepingOutstanding || housekeepingOrderedPending || housekeepingRecoveryBlocked ||
+  housekeepingWork:= !housekeepingBankReady || housekeepingOutstanding || housekeepingOrderedPending || housekeepingRecoveryBlocked ||
     housekeepingQueuedWork || housekeepingRetry || io.housekeepingDraining || io.housekeepingSource.draining
 
   // Only accepted CPU effects and ordered recovery use this owner. Time and
@@ -856,6 +861,10 @@ class ClickServices(p: SocParameters, boardFactory: SocParameters => BoardProfil
     telemetryRecoveryBlocked || telemetryBankReady
   when(space === 2.U) {
     bankReadReady:=Mux(instance === 0.U && p.adc.nonEmpty.B,io.adc.sampleReady,telemetryBankReady)
+  }
+  // Loader status also observes command arbitration derived from wakeMask.
+  when((space === 1.U || space === 3.U) && instance === 0.U) {
+    bankReadReady:=housekeepingBankReady
   }
   val snapshot = Reg(Vec(bankSize, UInt(32.W)))
   val snapshotSupported = Reg(UInt(8.W))

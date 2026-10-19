@@ -10,6 +10,7 @@ from gf180_physical import SC, SRAM
 from repair_gf180_design import (graph_proof, validate_receipt, split_output_feedback, correct_scalar_port_escaping,
     buffer_native_resets, buffer_sram_clocks, validate_sram_clock_drivers, prune_added_orphan_ties, EVIDENCE, sha)
 from repair_gf180_design import buffer_native_outputs, validate_native_output_drivers, buffer_native_inputs, validate_native_input_drivers, native_input_targets, flat
+from repair_gf180_design import buffer_ordinary_outputs, buffer_parent_outputs
 
 
 def cell(kind, **pins):
@@ -40,6 +41,84 @@ def buffered():
 class GlobalRepairTest(unittest.TestCase):
     def proof(self,before,after,protected=None):
         return graph_proof(before,after,'top',protected or {},[LIB]*5)
+
+    def ordinary_hierarchy(self):
+        a=fixture();a['modules']['owner']=dict(ports={'I':dict(direction='input',bits=[1]),
+            'Q':dict(direction='output',bits=[2])},cells={'logic':cell('buf_1',I=1,Z=2)})
+        top=a['modules']['top'];top['cells']['driver']=dict(type='owner',
+            connections=dict(I=[1],Q=[2]),port_directions=dict(I='input',Q='output'))
+        for i in range(20):
+            top['cells']['load'+str(i)]=cell('inv_1',I=2,ZN=10+i)
+            top['ports']['out'+str(i)]=dict(direction='output',bits=[10+i])
+        return a
+
+    def test_ordinary_hierarchy_driver_moves_all_external_loads(self):
+        a=self.ordinary_hierarchy();b=deepcopy(a)
+        rows=buffer_ordinary_outputs(b,'top',{})['buffers']
+        self.assertEqual({r['owner'] for r in rows},{'driver'})
+        self.proof(a,b);validate_native_output_drivers(b,'top',rows)
+        # A bypass can preserve Boolean connectivity but violates the boundary.
+        bad=deepcopy(b);bad['modules']['top']['cells']['sink']['connections']['I']=b['modules']['top']['cells'][rows[0]['buffer']]['connections']['I']
+        with self.assertRaisesRegex(ValueError,'REPAIR_OUTPUT_BUFFER_EXCLUSIVE'):
+            validate_native_output_drivers(bad,'top',rows)
+
+    def test_ordinary_hierarchy_skips_control_and_protected_buffer_aliases(self):
+        for pin in ('CLK','CLKN','RESET_B','SET_B'):
+            with self.subTest(pin=pin):
+                a=self.ordinary_hierarchy();cells=a['modules']['top']['cells']
+                cells['branch']=cell('inv_1',I=2,ZN=100)
+                cells['ff']=cell('dff_1',D=1,Q=101,**{pin:100})
+                self.assertEqual(buffer_ordinary_outputs(a,'top',{})['buffers'],[])
+        for kind in ('buf_2','clkbuf_8','inv_1','clkinv_1'):
+            for endpoint in ('native','sram'):
+                with self.subTest(kind=kind,endpoint=endpoint):
+                    a=self.ordinary_hierarchy();cells=a['modules']['top']['cells']
+                    cells['branch']=cell(kind,I=2,Z=100)
+                    cells['protected']=cell('inv_1',I=100,ZN=101)
+                    if endpoint=='sram':cells['protected']['type']=SRAM
+                    protected={'protected':'native'} if endpoint=='native' else {}
+                    self.assertEqual(buffer_ordinary_outputs(a,'top',protected)['buffers'],[])
+        a=self.ordinary_hierarchy()
+        self.assertEqual(buffer_ordinary_outputs(a,'top',{'driver/logic':'driver'})['buffers'],[])
+
+    def test_ordinary_aliases_are_retained_without_partial_rebinding(self):
+        a=self.ordinary_hierarchy();owner=a['modules']['owner'];inst=a['modules']['top']['cells']['driver']
+        owner['ports']['alsoQ']=dict(direction='output',bits=[2])
+        inst['connections']['alsoQ']=[2];inst['port_directions']['alsoQ']='output'
+        b=deepcopy(a);report=buffer_ordinary_outputs(b,'top',{})
+        self.assertEqual(report['buffers'],[]);self.assertEqual(b,a)
+        self.assertEqual({r['disposition'] for r in report['inventory']},{'aliased-output'})
+
+    def test_nested_selected_owners_specialize_shared_wrappers(self):
+        a=self.ordinary_hierarchy();outer=a['modules'].pop('top')
+        # Both outer and inner owners have independent high-fanout outputs.
+        outer['ports']={'in':dict(direction='input',bits=[1]),'out':dict(direction='output',bits=[3])}
+        a['modules']['outer']=outer
+        top=dict(ports={'in':dict(direction='input',bits=[1])},cells={})
+        for j,name in enumerate(('a','b','unselected')):
+            net=100+j
+            top['cells'][name]=dict(type='outer',connections={'in':[1],'out':[net]},
+                port_directions={'in':'input','out':'output'})
+            for i in range(20 if name!='unselected' else 1):
+                top['cells'][name+'_load'+str(i)]=cell('buf_1',I=net,Z=200+j*20+i)
+                top['ports'][name+'_out'+str(i)]=dict(direction='output',bits=[200+j*20+i])
+        a['modules']['top']=top;b=deepcopy(a)
+        rows=buffer_ordinary_outputs(b,'top',{})['buffers']
+        self.proof(a,b);validate_native_output_drivers(b,'top',rows)
+        self.assertEqual({r['owner'] for r in rows},{'a','a/driver','b','b/driver','unselected/driver'})
+        # Every shared instance's internal output is selected independently;
+        # only a/b need an outer buffer. No shared-body edits may leak.
+        self.assertNotIn('unselected',{r['owner'] for r in rows})
+        self.assertEqual(b['modules']['owner'],a['modules']['owner'])
+        # Also exercise an explicit subset: an untouched instance must keep its
+        # shared body even when selected owners contain selected descendants.
+        b=deepcopy(a);owners=('a','a/driver','b','b/driver')
+        selected={(o,'out' if '/' not in o else 'Q',0) for o in owners}
+        rows=buffer_parent_outputs(b,'top',dict(enumerate(owners)),selected=selected,
+            prefix='riscay_ordinary_output')['buffers']
+        self.proof(a,b);validate_native_output_drivers(b,'top',rows)
+        self.assertEqual(b['modules']['top']['cells']['unselected']['type'],'outer')
+        self.assertEqual(b['modules']['outer'],a['modules']['outer'])
 
     def test_measured_receiver_isolation_preserves_shared_graph_and_allows_upstream_repair(self):
         a=self.native()

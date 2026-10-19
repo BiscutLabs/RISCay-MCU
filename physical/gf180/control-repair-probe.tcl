@@ -21,9 +21,10 @@ proc control_batch {mode source_edge sink_edge sources sink_kind members} {
     lappend sinks [exact_object $sink_kind $name]
   }
   if {$source_edge eq "any"} {set from -from} else {set from -${source_edge}_from}
+  if {$sink_edge eq "any"} {set to -to} else {set to -${sink_edge}_to}
   # One transition, one path PER endpoint; enough global capacity for every
   # endpoint plus one overflow sentinel. This batches search, not coverage.
-  set paths [find_timing_paths $from $sources -${sink_edge}_to $sinks -path_delay $mode -group_path_count [expr {[dict size $ids]+1}] -endpoint_path_count 1]
+  set paths [find_timing_paths $from $sources $to $sinks -path_delay $mode -group_path_count [expr {[dict size $ids]+1}] -endpoint_path_count 1]
   foreach end $paths {
     set name [get_full_name [$end pin]]
     if {![dict exists $ids $name]} {error CONTROL_DUPLICATE_OR_UNKNOWN_PATH}

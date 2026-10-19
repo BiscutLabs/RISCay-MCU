@@ -255,8 +255,13 @@ abstract class ClickPlatform(p: SocParameters, board: SocParameters => BoardProf
   fabric.io.housekeepingCommandIdle:=housekeepingCommandBridge.in.ready
   fabric.housekeepingReply <> housekeepingReplyBridge.out
   dontTouch(housekeepingReplyBridge.out)
+  fabric.housekeepingView:=housekeeping.view
   housekeeping.start:=controlStart
-  fabric.io.housekeepingDraining:= !housekeepingCommandBridge.in.ready
+  val housekeepingBankPhase=withClockAndReset(workClock,reset) {
+    val first=RegNext(housekeeping.bankComplete,false.B);RegNext(first,false.B)
+  }
+  fabric.housekeepingBankReady:=housekeepingBankPhase === housekeepingReplyBridge.in.ack
+  fabric.io.housekeepingDraining:= !housekeepingCommandBridge.in.ready || !fabric.housekeepingBankReady
   val telemetry = asyncChild("telemetry")(d => new ClickTelemetry(p, fabric.telemetryWords, d,qualifyCommit=true))
   fabric.sampleView:=telemetry.sampleView
   val telemetryCommandBridge = asyncChild("telemetry_command_bridge")(d =>

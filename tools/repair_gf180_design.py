@@ -387,7 +387,7 @@ def buffer_sram_clocks(netlist,top):
     return evidence
 
 
-def buffer_native_outputs(netlist,top,adapter_instances):
+def buffer_parent_outputs(netlist,top,adapter_instances,*,selected=None,prefix='riscay_native_output'):
     """Isolate each live native output with an ordinary, repairable parent buffer.
 
     Preserve the native boundary/feedback partition exactly. Cell-free aliases
@@ -408,6 +408,7 @@ def buffer_native_outputs(netlist,top,adapter_instances):
             if boundary.rsplit('/',1)[0]!=owner or graph['boundary_directions'][boundary]!='output':continue
             port=boundary.rsplit('/',1)[1]
             for lane,n in enumerate(ns):
+                if selected is not None and (owner,port,lane) not in selected:continue
                 ds=drivers[n]
                 require(len(ds)==1,'REPAIR_OUTPUT_DRIVER_COUNT')
                 driver,pin=ds[0]
@@ -424,9 +425,10 @@ def buffer_native_outputs(netlist,top,adapter_instances):
         body=netlist['modules'][kind]
         for key,c in list(body.get('cells',{}).items()):
             child_path=path+ident(key)
-            if child_path in owners or c['type'].startswith(SC) or c['type']==SRAM:continue
+            if c['type'].startswith(SC) or c['type']==SRAM:continue
             if not any(o.startswith(child_path+'/') for o in wanted):continue
-            clone='riscay_output_parent_'+str(serial);serial+=1
+            stem='riscay_output_parent' if prefix=='riscay_native_output' else prefix+'_parent'
+            clone=stem+'_'+str(serial);serial+=1
             require(clone not in netlist['modules'],'REPAIR_OUTPUT_MODULE_COLLISION')
             replaced.add(c['type'])
             netlist['modules'][clone]=deepcopy(netlist['modules'][c['type']]);c['type']=clone
@@ -447,7 +449,7 @@ def buffer_native_outputs(netlist,top,adapter_instances):
         fresh=max((b for b in bits if isinstance(b,int)),default=1)+1
         parent=owner.rsplit('/',1)[0]+'/' if '/' in owner else ''
         for port,lane,driver,pin in lanes:
-            name='riscay_native_output_'+str(len(evidence))
+            name=prefix+'_'+str(len(evidence))
             require(name not in body['cells'],'REPAIR_OUTPUT_BUFFER_COLLISION')
             destination=c['connections'][port][lane]
             require(isinstance(destination,int),'REPAIR_OUTPUT_CONSTANT')
@@ -458,6 +460,74 @@ def buffer_native_outputs(netlist,top,adapter_instances):
                                  buffer=parent+name,master=SC+'buf_2'))
             fresh+=1
     return dict(buffers=evidence,unused=excluded)
+
+
+def buffer_native_outputs(netlist,top,adapter_instances):
+    return buffer_parent_outputs(netlist,top,adapter_instances)
+
+
+def buffer_ordinary_outputs(netlist,top,protected,limit=16):
+    """Expose high-fanout hierarchy outputs to ordinary parent-side repair.
+
+    OpenDB's local net endpoints can hide a child driver from its parent's
+    loads. Inventory the complete graph instead. Never change protected
+    interfaces or the combinational ancestry of clock/reset/set inputs.
+    """
+    graph=flat(netlist,top);drivers=defaultdict(list);sinks=defaultdict(list)
+    for path,c in graph['cells'].items():
+        for pin,ns in c['connections'].items():
+            for n in ns:(drivers if c['directions'][pin]=='output' else sinks)[n].append((path,pin))
+    external={n for p in graph['ports'].values() for n in p['bits']}
+    unsafe={n for path,c in graph['cells'].items() if path in protected or c['type']==SRAM
+            for ns in c['connections'].values() for n in ns}
+    adjacency=defaultdict(set)
+    for c in graph['cells'].values():
+        if re.fullmatch(re.escape(SC)+r'(?:buf|clkbuf|inv|clkinv)_\d+',c['type']):
+            ns={n for bits in c['connections'].values() for n in bits}
+            for n in ns:adjacency[n].update(ns-{n})
+    pending=list(unsafe)
+    while pending:
+        for n in adjacency[pending.pop()]-unsafe:unsafe.add(n);pending.append(n)
+    control=set();todo=[]
+    for path,c in graph['cells'].items():
+        sequential=c['type'].startswith((SC+'dff',SC+'lat'))
+        for pin,ns in c['connections'].items():
+            if c['directions'][pin]=='input' and ((sequential and pin!='D') or pin in ('CLK','CLKN')):
+                todo.extend(ns)
+    while todo:
+        n=todo.pop()
+        if n in control:continue
+        control.add(n)
+        for path,pin in drivers[n]:
+            c=graph['cells'][path]
+            if path in protected or c['type']==SRAM or c['type'].startswith((SC+'dff',SC+'lat')):continue
+            todo.extend(b for p,bs in c['connections'].items() if c['directions'][p]=='input' for b in bs)
+    output_aliases=defaultdict(int)
+    for boundary,ns in graph['boundaries'].items():
+        if '/' in boundary and graph['boundary_directions'][boundary]=='output':
+            owner=boundary.rsplit('/',1)[0]
+            for n in ns:output_aliases[(owner,n)]+=1
+    selected=set();inventory=[];seen=set()
+    for boundary,ns in sorted(graph['boundaries'].items(),key=lambda x:(x[0].count('/'),x[0])):
+        if '/' not in boundary or graph['boundary_directions'][boundary]!='output':continue
+        owner,port=boundary.rsplit('/',1)
+        for lane,n in enumerate(ns):
+            if n in seen:continue
+            loads=[(p,k) for p,k in sinks[n] if not p.startswith(owner+'/')]
+            if len(loads)<=limit:continue
+            ds=drivers[n]
+            if len(ds)!=1 or not ds[0][0].startswith(owner+'/'):continue
+            seen.add(n)
+            reason=('constant' if graph['cells'][ds[0][0]]['type'].startswith(SC+'tie') else
+                'external-port' if n in external else 'clock-or-reset-cone' if n in control else
+                'protected-interface' if n in unsafe else
+                'aliased-output' if output_aliases[(owner,n)]>1 else None)
+            inventory.append(dict(owner=owner,port=port,lane=lane,driver='/'.join(ds[0]),loads=len(loads),disposition=reason or 'parent-driver'))
+            if reason:continue
+            selected.add((owner,port,lane))
+    owners=sorted({o for o,p,l in selected})
+    added=buffer_parent_outputs(netlist,top,dict(enumerate(owners)),selected=selected,prefix='riscay_ordinary_output')
+    return dict(inventory=inventory,buffers=added['buffers'])
 
 
 def native_input_targets(mapping, policy):
@@ -829,6 +899,7 @@ def repair(mapping,*,timeout=600):
     targets=native_input_targets(json.loads((mapping/'mapping.json').read_text()),policy)
     input_preparation=buffer_native_inputs(tied,'RiscayMcuDigital',
         json.loads((reference/'netlist-audit.json').read_text())['adapter_instances'],targets)
+    ordinary_preparation=buffer_ordinary_outputs(tied,'RiscayMcuDigital',protected)
     skipped_feedback=[]
     preparation=split_output_feedback(tied,'RiscayMcuDigital',skipped=skipped_feedback)
     prepared_proof=graph_proof(before,tied,'RiscayMcuDigital',protected,libs)
@@ -837,10 +908,12 @@ def repair(mapping,*,timeout=600):
     write_json(out/'preparation.json',dict(buffers=preparation,skipped_feedback_buffers=skipped_feedback,reset_buffers=reset_preparation,
         reset_free_data_aliases=reset_free_aliases,sram_clock_buffers=sram_preparation,
         native_output_buffers=output_preparation['buffers'],native_input_buffers=input_preparation,unused_native_outputs=output_preparation['unused'],
+        ordinary_output_buffers=ordinary_preparation['buffers'],ordinary_output_inventory=ordinary_preparation['inventory'],
         added_buffer_cells=dict(reset_distribution=len(reset_preparation),
             sram_clocks=len(sram_preparation),
             native_outputs=len(output_preparation['buffers']),native_inputs=len(input_preparation),
-            hierarchy_output_feedback=len(prepared_proof['added_buffers'])-len(reset_preparation)-len(sram_preparation)-len(output_preparation['buffers'])-len(input_preparation)),proof=prepared_proof))
+            ordinary_outputs=len(ordinary_preparation['buffers']),
+            hierarchy_output_feedback=len(prepared_proof['added_buffers'])-len(reset_preparation)-len(sram_preparation)-len(output_preparation['buffers'])-len(input_preparation)-len(ordinary_preparation['buffers'])),proof=prepared_proof))
     q=lambda p:'"'+yosys.path(p)+'"'
     emit=out/'prepared.ys'
     emit.write_text('read_json '+q(out/'prepared.json')+'\nwrite_verilog -norename -noattr -noexpr '+q(out/'prepared.v')+'\n',newline='\n')
@@ -897,6 +970,7 @@ def repair(mapping,*,timeout=600):
     proof=graph_proof(before,after,'RiscayMcuDigital',protected,libs)
     proof['native_output_drivers']=validate_native_output_drivers(after,'RiscayMcuDigital',output_preparation['buffers'])
     proof['native_input_drivers']=validate_native_input_drivers(after,'RiscayMcuDigital',input_preparation)
+    proof['ordinary_output_drivers']=validate_native_output_drivers(after,'RiscayMcuDigital',ordinary_preparation['buffers'])
     write_json(out/'sram-clock-drivers.json',validate_sram_clock_drivers(after,'RiscayMcuDigital'))
     # Run the existing exact adapter audit before publishing either output.
     candidate=out/'candidate';candidate.mkdir()

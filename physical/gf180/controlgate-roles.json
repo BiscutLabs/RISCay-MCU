@@ -549,6 +549,9 @@
     },
     "FourPhaseSpiAdc": {
       "output_guard": "matched-control-delay"
+    },
+    "FourPhaseHousekeeping": {
+      "bank_guard": "matched-control-delay"
     }
   },
   "schema": "riscay-controlgate-roles-v1",

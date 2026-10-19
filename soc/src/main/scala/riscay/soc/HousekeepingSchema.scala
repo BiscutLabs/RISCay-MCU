@@ -21,8 +21,8 @@ object HousekeepingState {
 }
 class HousekeepingCommand extends Bundle {
   val recovery = Bool()
-  val timeValid = Bool(); val target = UInt(32.W); val single = Bool()
-  val elapsed = Vec(3, UInt(32.W)); val elapsedOverflow = Bool()
+  val timeValid = Bool(); val target = UInt(32.W)
+  val elapsed = UInt(32.W); val elapsedOverflow = Bool()
   val resetApplication = Bool(); val started = Bool(); val parked = Bool()
   val adcBusy = Bool(); val discard = Bool()
   val write = Bool(); val offset = UInt(7.W); val data = UInt(32.W); val waitAccepted = Bool()
@@ -31,7 +31,7 @@ class HousekeepingCommand extends Bundle {
 class HousekeepingReply extends Bundle {
   val recovery = Bool()
   val state = new HousekeepingState
-  val timeValid = Bool(); val tick = Bool(); val single = Bool(); val elapsed = Vec(3, UInt(32.W))
+  val timeValid = Bool(); val tick = Bool()
   val due = Bool(); val leaseExpired = Bool(); val startAdc = Bool(); val kick = Bool()
   val resetApplication = Bool(); val cpuCompletion = Bool()
 }

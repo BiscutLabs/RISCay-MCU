@@ -9,14 +9,24 @@ import riscay.soc._
 
 class BdHousekeepingFixture(p: SocParameters) extends FabricFixture(p) {
   val pauseHouseCommand=IO(Input(Bool())); val pauseHouseReply=IO(Input(Bool()))
+  val acceptHouseWithSnapshot=IO(Input(Bool()))
+  val observedWorkClock=IO(Output(Clock()));observedWorkClock:=workClock
+  val earlyHouseReady=IO(Input(Bool()))
+  when(earlyHouseReady) { fabric.housekeepingBankReady:=true.B } // negative control only
+  val houseBankReady=IO(Output(Bool()));houseBankReady:=fabric.housekeepingBankReady
+  val houseReplyFire=IO(Output(Bool()));houseReplyFire:=housekeepingReplyBridge.out.fire
+  val houseReplyAck=IO(Output(Bool()));houseReplyAck:=housekeepingReplyBridge.in.ack
+  val snapshotWithReply=IO(Output(Bool()))
+  snapshotWithReply:=fabric.io.i2c.readStart && housekeepingReplyBridge.out.fire
+  val blockHouseReply=pauseHouseReply && !(acceptHouseWithSnapshot && fabric.io.i2c.readStart)
   val pauseTelemetry=IO(Input(Bool())); val stopHeartbeat=IO(Input(Bool()))
   val manualTime=IO(Input(Bool())); val injectTime=IO(Input(Bool())); val injectTarget=IO(Input(UInt(32.W)))
   val injectElapsed=IO(Input(UInt(32.W))); val injectUpper=IO(Input(UInt(32.W)))
   val injectSample=IO(Input(Bool())); val sampleValue=IO(Input(UInt(32.W)))
   housekeepingCommandBridge.in.valid:=fabric.housekeepingCommand.valid && !pauseHouseCommand
   fabric.housekeepingCommand.ready:=housekeepingCommandBridge.in.ready && !pauseHouseCommand
-  fabric.housekeepingReply.valid:=housekeepingReplyBridge.out.valid && !pauseHouseReply
-  housekeepingReplyBridge.out.ready:=fabric.housekeepingReply.ready && !pauseHouseReply
+  fabric.housekeepingReply.valid:=housekeepingReplyBridge.out.valid && !blockHouseReply
+  housekeepingReplyBridge.out.ready:=fabric.housekeepingReply.ready && !blockHouseReply
   fabric.telemetryReply.valid:=telemetryReplyBridge.out.valid && !pauseTelemetry
   telemetryReplyBridge.out.ready:=fabric.telemetryReply.ready && !pauseTelemetry
   when(manualTime) {
@@ -39,9 +49,9 @@ class BdHousekeepingFixture(p: SocParameters) extends FabricFixture(p) {
   val houseState=IO(Output(new HousekeepingState)); houseState:=BoringUtils.bore(fabric.housekeepingState)
   val visibleLease=IO(Output(UInt(32.W))); visibleLease:=BoringUtils.bore(fabric.sleepRemaining)
   val visibleMask=IO(Output(UInt(32.W))); visibleMask:=BoringUtils.bore(fabric.wakeMask)
-  val projectedTime=IO(Output(UInt(32.W))); projectedTime:=(BoringUtils.bore(fabric.housekeepingState).now + BoringUtils.bore(fabric.housekeepingQueued).elapsed(0) +
-    Mux(BoringUtils.bore(fabric.housekeepingOrderedPending),BoringUtils.bore(fabric.housekeepingOrdered).elapsed(0),0.U) +
-    BoringUtils.bore(fabric.housekeepingInFlight).elapsed(0))
+  val projectedTime=IO(Output(UInt(32.W))); projectedTime:=(BoringUtils.bore(fabric.housekeepingState).now + BoringUtils.bore(fabric.housekeepingQueued).elapsed +
+    Mux(BoringUtils.bore(fabric.housekeepingOrderedPending),BoringUtils.bore(fabric.housekeepingOrdered).elapsed,0.U) +
+    BoringUtils.bore(fabric.housekeepingInFlight).elapsed)
   val upperTimeView=IO(Output(UInt(64.W))); upperTimeView:=BoringUtils.bore(fabric.upperTime)
   val consumed=IO(Output(UInt(32.W))); consumed:=fabric.io.consumedGray
   val idle=IO(Output(Bool())); idle:= !BoringUtils.bore(fabric.housekeepingWork) &&
@@ -119,6 +129,66 @@ end endtask
           $$fatal(1,"POR_DID_NOT_RESTORE_FRESH_TIME");
       """,tasks+"\nreg [63:0] expectedUpper;\n",referenceHalfPeriodNs=1000,deadlineNs=6000000)
     }
+    for(earlyRead <- Seq(false,true)) test(s"$name housekeeping: atomic snapshots and qualified return (premature ready=$earlyRead)") {
+      val stall=if(click) Map(("ca_child_housekeeping.ca_child_state","acknowledge_guard")->1000000000L)
+        else Map(("ca_child_housekeeping","bank_guard")->1000000000L)
+      def trial(): Unit = {
+      ClockedSimulation.run(fixture(parameters),name+"-housekeeping-snapshot", s"""
+        manualTime=1;referenceEnabled=0;wait(idle);
+        advance(1,1,1);wait(idle);
+        if(consumed!==1) $$fatal(1,"HOUSEKEEPING_CONSUMED_SETUP");
+        pauseHouseReply=1;issue(2,32'h30000038,37);wait(housePending);
+        read_words(3,0,0);
+        if(snapshot[96+:32]!==15 || !housePending || coincidences)
+          $$fatal(1,"HOUSEKEEPING_STALLED_SNAPSHOT_CHANGED");
+        monitorFeedback=1;earlyHouseReady=${if(earlyRead) 1 else 0};acceptHouseWithSnapshot=1;read_words(3,0,0);
+        if(snapshot[96+:32]!==15 || coincidences!=1)
+          $$fatal(1,"HOUSEKEEPING_ACCEPTANCE_EDGE_NOT_OLD_BANK");
+        acceptHouseWithSnapshot=0;pauseHouseReply=0;answer;wait(idle);
+        if(!feedbackReopened || blockedWorkEdges==0) $$fatal(1,"HOUSEKEEPING_FEEDBACK_STALL_NOT_OBSERVED");
+        monitorFeedback=0;
+        read_words(3,0,0);
+        if(snapshot[96+:32]!==37) $$fatal(1,"HOUSEKEEPING_COMMITTED_SNAPSHOT_MISSING");
+      """,tasks+s"localparam MIN_RETURN_EDGES = ${if(click) 0 else 5};\n"+"""
+        integer coincidences=0,blockedWorkEdges=0,workCycle=0,acceptedCycle=-1;
+        reg monitorFeedback=0,feedbackStarted=0,feedbackReopened=0;
+        realtime feedbackStart;
+        always @(posedge observedWorkClock) begin
+          workCycle=workCycle+1;
+          if(!reset && houseReplyFire) acceptedCycle=workCycle;
+          if(!reset && monitorFeedback && !houseReplyFire && acceptedCycle>=0 &&
+              workCycle-acceptedCycle<MIN_RETURN_EDGES && houseBankReady)
+            $fatal(1,"HOUSEKEEPING_READER_OPEN_BEFORE_A_PLUS_5");
+        end
+        always @(posedge observedWorkClock) if(!reset && snapshotWithReply) begin
+          coincidences=coincidences+1;
+          if(monitorFeedback) begin feedbackStarted=1;feedbackStart=$realtime;end
+        end
+        // Sample after the acceptance edge's nonblocking updates. The injected
+        // 1 us feedback delay must prevent every reader until completion.
+        always @(negedge observedWorkClock) if(monitorFeedback && feedbackStarted && !feedbackReopened) begin
+          if(consumed!==1) $fatal(1,"HOUSEKEEPING_CONSUMED_ACK_CHANGED_DURING_RETURN");
+          if($realtime-feedbackStart<1000 && houseBankReady)
+            $fatal(1,"HOUSEKEEPING_READER_OPEN_DURING_FEEDBACK");
+          if(!houseBankReady) blockedWorkEdges=blockedWorkEdges+1;
+        end
+        always @(posedge houseBankReady) if(monitorFeedback && feedbackStarted) begin
+          if($realtime-feedbackStart<1000) $fatal(1,"HOUSEKEEPING_FEEDBACK_READY_TOO_EARLY");
+          feedbackReopened=1;
+        end
+      """+(if(click) "" else """
+        // The actual work-clock receipt ACK launches bank capture at A.
+        // Its two request synchronizers plus ACK and returning registers keep
+        // readers closed through A+4; the first later capture is A+5.
+        always @(negedge observedWorkClock) if(!reset && monitorFeedback && houseReplyAck && houseBankReady)
+          $fatal(1,"HOUSEKEEPING_READER_OPEN_DURING_ACK");
+      """),referenceHalfPeriodNs=10000000,deadlineNs=5000000,primitiveDelayOverrides=stall)
+      }
+      if(earlyRead) {
+        val error=intercept[IllegalArgumentException] { trial() }
+        assert(error.getMessage.contains("HOUSEKEEPING_READER_OPEN_"),error.getMessage)
+      } else trial()
+    }
     test(s"$name housekeeping: unqualified retained elapsed payload cannot update timestamp state") {
       ClockedSimulation.run(fixture(parameters),name+"-elapsed-qualification","""
         manualTime=1;referenceEnabled=0;wait(idle);savedUpper=upperTimeView;
@@ -186,8 +256,11 @@ end endtask
         manualTime=1; referenceEnabled=0; wait(idle); publish; wait(idle);
         write_bus(32'h3000003c,20); write_bus(32'h30000008,20); wait(idle); pauseHouseCommand=1;
         advance(1,32'hffffffff,32'hffffffff); advance(2,1,1); #1000;
-        if(!houseCommand_elapsedOverflow || houseCommand_elapsed_0 ||
-          houseCommand_elapsed_2 !== 32'hffffffff) $fatal(1,"HOUSEKEEPING_QUEUE_WRAP");
+        if(!houseCommand_elapsedOverflow || houseCommand_elapsed)
+          $fatal(1,"HOUSEKEEPING_QUEUE_WRAP");
+        // Upper-age ingress is independent of the nominal Housekeeping queue.
+        // Test the architectural coordinate instead of the removed transport copy.
+        if(upperTimeView !== 64'h100000000) $fatal(1,"HOUSEKEEPING_UPPER_HISTORY_LOST");
         pauseHouseCommand=0; wait(consumed==3); wait(idle);
         if(timeNow || visibleLease) $fatal(1,"HOUSEKEEPING_WRAP_POLICY");
         issue(1,32'h3000000c,0); wait(response_valid);
@@ -243,14 +316,24 @@ end endtask
 }
 class ClickHousekeepingFixture(p: SocParameters) extends ClickFabricFixture(p) {
   val pauseHouseCommand=IO(Input(Bool())); val pauseHouseReply=IO(Input(Bool()))
+  val acceptHouseWithSnapshot=IO(Input(Bool()))
+  val observedWorkClock=IO(Output(Clock()));observedWorkClock:=workClock
+  val earlyHouseReady=IO(Input(Bool()))
+  when(earlyHouseReady) { fabric.housekeepingBankReady:=true.B } // negative control only
+  val houseBankReady=IO(Output(Bool()));houseBankReady:=fabric.housekeepingBankReady
+  val houseReplyFire=IO(Output(Bool()));houseReplyFire:=housekeepingReplyBridge.out.fire
+  val houseReplyAck=IO(Output(Bool()));houseReplyAck:=housekeepingReplyBridge.in.ack
+  val snapshotWithReply=IO(Output(Bool()))
+  snapshotWithReply:=fabric.io.i2c.readStart && housekeepingReplyBridge.out.fire
+  val blockHouseReply=pauseHouseReply && !(acceptHouseWithSnapshot && fabric.io.i2c.readStart)
   val pauseTelemetry=IO(Input(Bool())); val stopHeartbeat=IO(Input(Bool()))
   val manualTime=IO(Input(Bool())); val injectTime=IO(Input(Bool())); val injectTarget=IO(Input(UInt(32.W)))
   val injectElapsed=IO(Input(UInt(32.W))); val injectUpper=IO(Input(UInt(32.W)))
   val injectSample=IO(Input(Bool())); val sampleValue=IO(Input(UInt(32.W)))
   housekeepingCommandBridge.in.valid:=fabric.housekeepingCommand.valid && !pauseHouseCommand
   fabric.housekeepingCommand.ready:=housekeepingCommandBridge.in.ready && !pauseHouseCommand
-  fabric.housekeepingReply.valid:=housekeepingReplyBridge.out.valid && !pauseHouseReply
-  housekeepingReplyBridge.out.ready:=fabric.housekeepingReply.ready && !pauseHouseReply
+  fabric.housekeepingReply.valid:=housekeepingReplyBridge.out.valid && !blockHouseReply
+  housekeepingReplyBridge.out.ready:=fabric.housekeepingReply.ready && !blockHouseReply
   fabric.telemetryReply.valid:=telemetryReplyBridge.out.valid && !pauseTelemetry
   telemetryReplyBridge.out.ready:=fabric.telemetryReply.ready && !pauseTelemetry
   when(manualTime) {
@@ -273,9 +356,9 @@ class ClickHousekeepingFixture(p: SocParameters) extends ClickFabricFixture(p) {
   val houseState=IO(Output(new HousekeepingState)); houseState:=BoringUtils.bore(fabric.housekeepingState)
   val visibleLease=IO(Output(UInt(32.W))); visibleLease:=BoringUtils.bore(fabric.sleepRemaining)
   val visibleMask=IO(Output(UInt(32.W))); visibleMask:=BoringUtils.bore(fabric.wakeMask)
-  val projectedTime=IO(Output(UInt(32.W))); projectedTime:=(BoringUtils.bore(fabric.housekeepingState).now + BoringUtils.bore(fabric.housekeepingQueued).elapsed(0) +
-    Mux(BoringUtils.bore(fabric.housekeepingOrderedPending),BoringUtils.bore(fabric.housekeepingOrdered).elapsed(0),0.U) +
-    BoringUtils.bore(fabric.housekeepingInFlight).elapsed(0))
+  val projectedTime=IO(Output(UInt(32.W))); projectedTime:=(BoringUtils.bore(fabric.housekeepingState).now + BoringUtils.bore(fabric.housekeepingQueued).elapsed +
+    Mux(BoringUtils.bore(fabric.housekeepingOrderedPending),BoringUtils.bore(fabric.housekeepingOrdered).elapsed,0.U) +
+    BoringUtils.bore(fabric.housekeepingInFlight).elapsed)
   val upperTimeView=IO(Output(UInt(64.W))); upperTimeView:=BoringUtils.bore(fabric.upperTime)
   val consumed=IO(Output(UInt(32.W))); consumed:=fabric.io.consumedGray
   val idle=IO(Output(Bool())); idle:= !BoringUtils.bore(fabric.housekeepingWork) &&
