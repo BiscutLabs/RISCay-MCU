@@ -153,8 +153,10 @@ exterior fixed and rolling back both levels on failure. It cannot recurse again
 or relax the span, per-invocation DPL search bound or pin checks. The search bound
 is not a limit on cumulative movement from initial seeding. Replaying the original failed
 checkpoint passes legality and all 10,330 groups in
-`build/native-physical/repack-cascade-integrated/`; a fresh complete route is
-still required. The original failure and nested rollback controls are retained.
+`build/native-physical/repack-cascade-integrated/`. The fresh complete run,
+`pnr-input-2350x2530-d50-r2`, also passes every group, zero router violations
+and nominal/minimum/maximum RC extraction. The original failure and nested
+rollback controls are retained.
 Independent review corrected colliding nested diagnostic names. The final
 372-property Python gate is `build/native-physical/cascade-ci-r2`; every failed
 nested attempt now keeps its own evidence.
@@ -216,10 +218,35 @@ checkpoint. The unchanged graph proof passes all 26,230 native cells in
 `build/native-physical/map-bd-input-r1`; `input-locks-r1.json` confirms that all
 five upstream nets are free of protected receivers while all local nets remain
 protected. Python verification passes 372 tests in `input-ci-r2`, and independent
-review is closed. The matched `pnr-input-2350x2530-d50-r1` reroute and extracted
-electrical/timing checks remain pending; no physical improvement is claimed yet.
+review is closed. The first reroute stopped at the compactness gate described
+above. The accepted `pnr-input-2350x2530-d50-r2` totals **3.493048 mm²**:
+logic 2.874162, SRAM 0.466241 and taps/endcaps 0.152645, at 61.88% core occupancy.
+It retains zero router violations and passes all 10,330 placement groups.
+All 10,609 native output pins again meet their capacitance bounds at all five
+PVT corners and both extracted RC corners (`electrical-input-2350-{min,max}-r2`).
+The ten explicitly SPEF-loaded whole-chip electrical reports also contain no
+reported maximum-capacitance violations; independent cap-audit driver queries
+agree. This clears the previously reported ordinary-driver cap failures in
+these contexts, while the slew violations below remain.
 
-The compact-placement run also removes the observed flip in the previously
+| PVT | Min-RC slew violation rows / worst ns | Max-RC slew violation rows / worst ns |
+| --- | ---: | ---: |
+| TT 25 °C | 859 / 5.352 | 1,146 / 6.508 |
+| SS 125 °C | 5,900 / 10.149 | 10,832 / 12.626 |
+| SS −40 °C | 1,455 / 6.863 | 1,978 / 8.198 |
+| FF 125 °C | 640 / 4.651 | 881 / 5.765 |
+| FF −40 °C | 178 / 3.281 | 273 / 3.752 |
+
+The worst slow/hot slew improves from 28.087 to 12.626 ns, but violation rows
+increase from 10,649 to 10,832. Those rows cover 2,344 nets: 739 native-locked,
+425 with no resizer progress and 1,180 ordinary/clock nets. The five targeted
+isolators do not unlock every ordinary driver feeding protected inputs. The
+remaining worst path is an ordinary CPU execute OAI22 driver into protected
+payload storage. Evidence is `slew-input-2350-r2/report.json` and the unchanged
+strict electrical reports. This is progress on worst slew, **not electrical
+closure**; composed timing still cannot be accepted as qualified.
+
+The parent `pnr-2350x2530-d50-r3` removes the observed flip in the previously
 failing program-Join keeper. `build/native-physical/keeper-2350-r3/results.json`
 records 100 cases (five PVT corners, min/max RC, both stored states, quiet/rising/
 falling coherent aggressors at 20 ps and 2 ns), plus 20 half-step refinements.
@@ -228,13 +255,44 @@ All settle without an owner transition; the maximum keeper excursion is
 This is a repeated representative experiment on the same logical victim, not
 whole-chip noise qualification or evidence transferable to the 2.25 mm wires.
 
-The same 2.35 mm checkpoint passes static PDN connectivity/voltage coverage for
+On the receiver-isolation reroute, that historical victim has no unrelated
+coupling in one RC view. The attempted repeat correctly fails
+`KEEPER_NO_EXTERNAL_VICTIM_COUPLING` in `keeper-input-2350-r2`; it is not a
+passing noise test. Ranking the new layout's eligible internal C-element nets
+selects RAM lane 2 Join rendezvous `n8`, with 29.779 fF external coupling at
+max RC. The completed `keeper-input-selected-r2` campaign observes no owner
+transition in its 100 cases and 20 half-step refinements. Maximum victim
+excursion is **2.407 V**, versus 0.009 mV at the owner output. Review identifies
+this victim as an output-delay buffer wire, five buffers downstream of retained
+state: the result demonstrates filtering of that disturbance, not direct
+keeper-feedback immunity.
+
+A separate campaign targets I²C publication `snapshot_pending/state`, the
+highest externally coupled eligible feedback net present in both RC views
+(2.108 / 2.311 fF min/max RC). Its graph is the NOR2 state output feeding the
+AOI21 feedback input and first isolation buffer. The completed
+`keeper-feedback-input-r2` campaign has 100 cases and 20 half-step refinements,
+with no owner transition, retained-state change or unsettled final state.
+Maximum victim-terminal excursion is **0.722279 V**; maximum owner-output
+departure is **18.307 µV**. The largest refinement difference is 0.253 mV.
+Independent review verified the topology, complete case inventory and all 383
+receipt hashes. Selection by coupling alone is not a proof of the most vulnerable
+capacitance ratio, history or receiver threshold; both experiments are
+representative screens, not whole-chip noise qualification.
+
+That parent checkpoint passes static PDN connectivity/voltage coverage for
 98,945 logic/SRAM instances. With the existing ideal perimeter-feed assumptions,
 the normalized 1.3 mA load gives 0.217 mV maximum combined VDD/VSS drop; the
 synthetic vectorless 29.363 mA case gives 5.129 mV. Evidence and maps are in
 `build/native-physical/ir-2350-r3/`. These are static sensitivity screens, not
 firmware power, transient wake droop or package/board qualification; the feed,
 resistance and SRAM limitations in the power-grid section still apply.
+
+The receiver-isolation reroute's independent `ir-input-2350-r2` screen covers
+98,886 logic/SRAM instances: 0.216 mV combined VDD/VSS drop at the normalized
+1.3 mA load, and 5.125 mV at the synthetic vectorless 29.325 mA load. Its receipt
+passes with the same ideal perimeter sources and limitations. These values
+are not measured firmware current or a transient power-integrity qualification.
 
 ### Custom C-element option
 

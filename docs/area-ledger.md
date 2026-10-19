@@ -81,7 +81,8 @@ This is not an electrical or routed timing pass.
 
 The receiver-isolation trial adds five `buf_2` cells, **0.000088 mm²**, outside
 unchanged native boundaries. Its complete graph and exclusive receiver audits
-pass; matched rerouting and extracted checks remain pending. Evidence is
+pass; the fresh reroute passes zero router violations and all compactness
+checks. Extracted native-output capacitance passes; slew closure remains open. Evidence is
 `build/native-physical/area-bd-input-r1.json` and `input-locks-r1.json`.
 
 Areas are mm², excluding SRAM. The r4 report is
@@ -102,14 +103,23 @@ failed evidence. These are routing results, not physical qualification.
 | --- | ---: | ---: | ---: | ---: | ---: |
 | `pnr-2250x2530-d50-r1` | 2.858175 | 0.466241 | 0.145371 | **3.469786** | 64.27% |
 | `pnr-2350x2530-d50-r3` | 2.875229 | 0.466241 | 0.152645 | **3.494115** | 61.90% |
+| `pnr-input-2350x2530-d50-r2` | 2.874162 | 0.466241 | 0.152645 | **3.493048** | 61.88% |
 
-The source is the same r4 map above, before A/B boot ROM expansion. The renders
+The first two runs use the r4 map; the last uses `map-bd-input-r1` with five
+receiver isolators. All predate A/B boot ROM expansion. The renders
 and congestion inventories are in `render-2250-r1` / `routability-2250-r1` and
 `render-2350-r3` / `routability-2350-r3`. The 2.35 mm min/max-RC audits resolve
 all 10,609 adapter outputs with zero capacitance violations at all five PVT
 corners. Whole-chip electrical closure remains open: slow/hot max-RC still has
 10,649 slew violation rows, worst 28.087 ns, and several ordinary-driver
-capacitance failures. These measurements must not be treated as timing closure.
+capacitance failures in the parent. The receiver-isolation reroute also passes
+all 10,609 native output cap limits, but retains 10,832 slow/hot max-RC slew
+rows with worst 12.626 ns. Worst slew improves while the row count increases.
+Its footprint falls by 0.001067 mm²; this small difference includes placement
+and electrical repair, not merely the five added cells. The new congestion
+inventory is `routability-input-2350-r2`; full electrical tables and limitations
+are in [the routing report](gf180-routability.md#extracted-electrical-results-and-remaining-receiver-locks).
+These measurements must not be treated as timing closure.
 
 ### BD routing and signal-integrity investigation
 
