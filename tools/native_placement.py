@@ -52,4 +52,4 @@ def generate(mapping,out):
         text+='  {'+brace(r['driver'])+' '+brace(r['pin'])+' '+brace(r['buffer'])+'}\n'
     (out/'native-placement.tcl').write_text(text+'}\n')
     write_json(out/'native-placement.json',dict(groups=rows,drivers=proof['native_output_drivers'],
-        scope='GPL clusters, 100um ordinary DPL search, 64um final native XY-span acceptance; not a coupling/capacitance bound'))
+        scope='GPL clusters, 100/500um ordinary DPL search, bounded 48um local repack, 64um final native XY-span acceptance; not a coupling/capacitance bound'))

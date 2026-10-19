@@ -37,8 +37,8 @@ parent-side buffer; native feedback stays on the source side. Passive aliases
 and unused outputs get no buffer. The full graph proof and a separate exclusive
 feeder check reject changed logic, external bypasses and orphan cells.
 
-GPL groups use exact OpenDB objects. Detailed placement may search up to 100 µm
-for ordinary logic, but the final bounding box of each native group must fit
+GPL groups use exact OpenDB objects. Detailed placement searches 100 µm for
+ordinary logic, with a 500 µm retry from the saved starting placement, but the final bounding box of each native group must fit
 within **64 µm on each axis**, after every legalization, repair and routed
 checkpoint. That is an engineering placement constraint, not a capacitance or
 noise-immunity limit. Extracted native-to-parent load and keeper coupling still
@@ -67,16 +67,45 @@ Increasing the ordinary search radius does not change the 64 µm native acceptan
 bound. Width/density candidates must share the final mapping/repair recipe and
 reach zero router violations before comparison or README adoption.
 
-The 2.20 mm retry passes all 10,327 geometry groups both before and after
-placement repair: maximum spans are 28.56 and 58.24 µm, respectively. Routing
-and extraction remain pending. A matched 2.05 mm / 55%-density placement is also
-in progress. Neither candidate is yet a replacement for the routed README image.
+The initial matched width sweep exposed limits after electrical repair:
+
+| Width / density | Last accepted checkpoint | Rejected next checkpoint |
+| --- | --- | --- |
+| 1.94 mm / 55% | Floorplan | 18 ordinary legalization failures after placement repair |
+| 2.05 mm / 55% | Clock | 30 ordinary legalization failures after global-route repair |
+| 2.20 mm / 50% | Clock | Native group 502 spread to 86.24 µm after global-route repair |
+| 2.35 mm / 50% | Clock | Native group 529 spread to 66.64 µm after global-route repair |
+
+The 2.20 mm placement itself passed all 10,327 groups (maximum 58.24 µm after
+repair). Soft GPL clustering alone did not keep later DPL moves compact. Each
+failed run remains under `build/native-physical/pnr-*`; none replaces the README
+render or qualifies a smaller die.
+
+The follow-up collects every oversized group and tries bounded local repacking
+before rerouting. Other cells are temporarily fixed; local legalization searches
+48 µm around deterministic first/midpoint/last neighborhoods. The first attempt
+holds the first member's legal space. Every attempt retains the **same 64 µm
+acceptance bound**, checks whole-chip legality, and restores original statuses.
+Failed attempts preserve a diagnostic database and restore coordinates,
+orientations and statuses before retrying, even if diagnostic writing fails.
+Routed/extracted checkpoints cannot be repacked. Fresh global routing follows
+any accepted repack after wire repair.
+
+A real OpenROAD fixture on the 2.20 mm clock checkpoint injects an 84 µm
+displacement into group 502. Local packing restores legal geometry, all 10,327
+groups pass, and every nontarget instance remains unchanged. A fully blocked
+placement rejects all attempts and restores the starting database geometry.
+Evidence: `build/native-physical/repack-fixture{,-blocked}.log`. Fresh 1.94, 2.05
+and 2.20 mm runs use this same follow-up flow; routing and extraction are pending.
 
 Independent review found no outstanding source/doc issue and independently
 verified that all 927 control-connected parent outputs remain covered by NDR
 traversal; payload-only outputs retain their existing classification. The fast
 gate `build/native-physical/ci-r2` passes 366 Python and 197 Scala tests. The
 buffer-kind correction and current Python suite also pass in `ci-r3` (366 tests).
+The independently reviewed repack passes 367 Python tests in `ci-r4`, including
+fixed-cell and failed-diagnostic rollback controls. The previous committed batch
+also passes GitHub CI at `d1e6fcd`.
 These checks approve the implementation; they do not qualify unfinished routing,
 extracted electrical limits, composed timing or coupled noise.
 
