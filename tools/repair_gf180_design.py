@@ -460,6 +460,133 @@ def buffer_native_outputs(netlist,top,adapter_instances):
     return dict(buffers=evidence,unused=excluded)
 
 
+def native_input_targets(mapping, policy):
+    baseline=mapping.get('comparison_baseline',False)
+    require(policy['schema']==1 and type(baseline) is bool and
+            mapping['variant'] in policy['targets'],'REPAIR_INPUT_POLICY')
+    # Historical comparisons reproduce their original architecture. These five
+    # measured receiver boundaries belong only to the current SoC.
+    return [] if baseline else policy['targets'][mapping['variant']]
+
+
+def buffer_native_inputs(netlist, top, adapter_instances, targets):
+    """Isolate measured receiver boundaries without changing a native partition."""
+    graph = flat(netlist, top)
+    wanted = {}
+    drivers, sinks = defaultdict(list), defaultdict(list)
+    for name, cell in graph['cells'].items():
+        for pin, nets in cell['connections'].items():
+            for net in nets:
+                (drivers if cell['directions'][pin] == 'output' else sinks)[net].append((name, pin))
+    for name, port in graph['ports'].items():
+        for net in port['bits']:
+            (drivers if port['direction'] == 'input' else sinks)[net].append(('PORT', name))
+    seen = set()
+    for target in targets:
+        instance, port, lane = target['instance'], target['port'], target['lane']
+        require(instance in adapter_instances, 'REPAIR_INPUT_INSTANCE')
+        owner = adapter_instances[instance]
+        boundary = owner + '/' + port
+        require(graph['boundary_directions'].get(boundary) == 'input', 'REPAIR_INPUT_PORT')
+        bits = graph['boundaries'][boundary]
+        require(type(lane) is int and 0 <= lane < len(bits), 'REPAIR_INPUT_LANE')
+        net = bits[lane]
+        require(net[0] != 'constant' and len(drivers[net]) == 1, 'REPAIR_INPUT_SOURCE')
+        require(not drivers[net][0][0].startswith(owner + '/'), 'REPAIR_INPUT_INTERNAL_SOURCE')
+        require((owner, net) not in seen, 'REPAIR_INPUT_DUPLICATE')
+        seen.add((owner, net))
+        aliases = [(b, i) for b, ns in graph['boundaries'].items()
+                   if b.rsplit('/', 1)[0] == owner for i, n in enumerate(ns) if n == net]
+        require(aliases == [(boundary, lane)], 'REPAIR_INPUT_ALIASED_BOUNDARY')
+        receivers = sorted((name, pin) for name, pin in sinks[net] if name.startswith(owner + '/'))
+        require(receivers, 'REPAIR_INPUT_UNUSED_OR_PASSIVE')
+        wanted.setdefault(owner, []).append(dict(instance=instance, owner=owner, port=port, lane=lane,
+            receivers=[dict(cell=name, pin=pin) for name, pin in receivers]))
+    # Specialize ancestors only: an unselected instance of a shared module must
+    # not acquire a buffer, and exact primitive bodies remain unchanged.
+    serial = 0
+    replaced = set()
+    def specialize(kind, path=''):
+        nonlocal serial
+        body = netlist['modules'][kind]
+        for key, cell in list(body.get('cells', {}).items()):
+            child = path + ident(key)
+            if child in adapter_instances.values() or not any(o.startswith(child + '/') for o in wanted):
+                continue
+            clone = 'riscay_input_parent_' + str(serial)
+            serial += 1
+            require(clone not in netlist['modules'], 'REPAIR_INPUT_MODULE_COLLISION')
+            replaced.add(cell['type'])
+            netlist['modules'][clone] = deepcopy(netlist['modules'][cell['type']])
+            cell['type'] = clone
+            specialize(clone, child + '/')
+    specialize(top)
+    reachable = {top}
+    def visit(kind):
+        for cell in netlist['modules'][kind].get('cells', {}).values():
+            if cell['type'] in netlist['modules'] and cell['type'] not in reachable:
+                reachable.add(cell['type'])
+                visit(cell['type'])
+    visit(top)
+    for kind in replaced - reachable:
+        del netlist['modules'][kind]
+    locations, evidence = instance_locations(netlist, top), []
+    for owner, rows in sorted(wanted.items()):
+        kind, key = locations[owner]
+        body = netlist['modules'][kind]
+        cell = body['cells'][key]
+        bits = [b for c in body['cells'].values() for ns in c['connections'].values() for b in ns]
+        bits += [b for p in (*body['ports'].values(), *body.get('netnames', {}).values()) for b in p['bits']]
+        fresh = max((b for b in bits if isinstance(b, int)), default=1) + 1
+        parent = owner.rsplit('/', 1)[0] + '/' if '/' in owner else ''
+        for row in rows:
+            name = 'riscay_native_input_' + str(len(evidence))
+            require(name not in body['cells'], 'REPAIR_INPUT_BUFFER_COLLISION')
+            source = cell['connections'][row['port']][row['lane']]
+            require(isinstance(source, int), 'REPAIR_INPUT_CONSTANT')
+            cell['connections'][row['port']][row['lane']] = fresh
+            body['cells'][name] = dict(type=SC+'buf_2', parameters={}, attributes={},
+                port_directions=dict(I='input', Z='output'), connections=dict(I=[source], Z=[fresh]))
+            evidence.append(dict(**row, buffer=parent+name, master=SC+'buf_2'))
+            fresh += 1
+    validate_native_input_drivers(netlist, top, evidence)
+    return evidence
+
+
+def validate_native_input_drivers(netlist, top, records):
+    graph = flat(netlist, top)
+    drivers, sinks = defaultdict(set), defaultdict(set)
+    for name, cell in graph['cells'].items():
+        for pin, nets in cell['connections'].items():
+            for net in nets:
+                (drivers if cell['directions'][pin] == 'output' else sinks)[net].add((name, pin))
+    for name, port in graph['ports'].items():
+        for net in port['bits']:
+            (drivers if port['direction'] == 'input' else sinks)[net].add(('PORT', name))
+    result = []
+    for row in records:
+        cell = graph['cells'][row['buffer']]
+        boundary = row['owner'] + '/' + row['port']
+        expected = {(r['cell'], r['pin']) for r in row['receivers']}
+        nets = {n for name, pin in expected for n in graph['cells'][name]['connections'][pin]}
+        require(len(nets) == 1, 'REPAIR_INPUT_RECEIVER_PARTITION')
+        net = next(iter(nets))
+        if boundary in graph['boundaries']:
+            require(graph['boundary_directions'][boundary] == 'input' and
+                    graph['boundaries'][boundary][row['lane']] == net, 'REPAIR_INPUT_BOUNDARY')
+        require(not row['buffer'].startswith(row['owner'] + '/') and
+                re.fullmatch(re.escape(SC)+r'(?:clk)?buf_\d+', cell['type']) and
+                cell['directions'] == dict(I='input', Z='output') and
+                cell['connections']['Z'] == [net] and len(cell['connections']['I']) == 1 and
+                cell['connections']['I'] != [net], 'REPAIR_INPUT_BUFFER_DRIVER')
+        require(expected and all(n.startswith(row['owner'] + '/') for n, _ in expected) and
+                sinks[net] == expected and drivers[net] == {(row['buffer'], 'Z')},
+                'REPAIR_INPUT_BUFFER_EXCLUSIVE')
+        result.append(dict(**{k:v for k,v in row.items() if k != 'master'}, master=cell['type']))
+    require(len({r['buffer'] for r in result}) == len(result), 'REPAIR_INPUT_BUFFER_DUPLICATE')
+    return result
+
+
 def validate_native_output_drivers(netlist,top,records):
     """The native leaf's only external consumer is its exclusive parent input."""
     graph=flat(netlist,top);sinks=defaultdict(set);result=[]
@@ -660,6 +787,7 @@ def input_files(mapping):
     files=[mapping/n for n in ('mapping.json','netlist.v','netlist.json','netlist-audit.json')]
     files += [ROOT/'tools'/n for n in ('repair_gf180_design.py','physical_tools.py','gf180_physical.py',
         'gf180_estimate.py','gf180_implement.py','repair_gf180_control.py','characterize_gf180_liberty.py')]
+    files += [ROOT/'physical/gf180/native-input-isolation.json']
     files += tool('openroad').input_files()+tool('yosys').input_files()
     files += [pdk/(SC+c+'.lib') for c in CORNERS]+[ROOT/'.tools/physical/routing/technology.tlef',pdk/'gf180mcu_fd_sc_mcu7t5v0.lef',
         ROOT/'.tools/gf180-sram'/(SRAM+'.lef'),ROOT/'.tools/gf180-sram'/(SRAM+'__tt_025C_3v30.lib')]
@@ -697,6 +825,10 @@ def repair(mapping,*,timeout=600):
     sram_preparation=buffer_sram_clocks(tied,'RiscayMcuDigital')
     output_preparation=buffer_native_outputs(tied,'RiscayMcuDigital',
         json.loads((reference/'netlist-audit.json').read_text())['adapter_instances'])
+    policy=json.loads((ROOT/'physical/gf180/native-input-isolation.json').read_text())
+    targets=native_input_targets(json.loads((mapping/'mapping.json').read_text()),policy)
+    input_preparation=buffer_native_inputs(tied,'RiscayMcuDigital',
+        json.loads((reference/'netlist-audit.json').read_text())['adapter_instances'],targets)
     skipped_feedback=[]
     preparation=split_output_feedback(tied,'RiscayMcuDigital',skipped=skipped_feedback)
     prepared_proof=graph_proof(before,tied,'RiscayMcuDigital',protected,libs)
@@ -704,11 +836,11 @@ def repair(mapping,*,timeout=600):
     write_json(out/'prepared.json',tied)
     write_json(out/'preparation.json',dict(buffers=preparation,skipped_feedback_buffers=skipped_feedback,reset_buffers=reset_preparation,
         reset_free_data_aliases=reset_free_aliases,sram_clock_buffers=sram_preparation,
-        native_output_buffers=output_preparation['buffers'],unused_native_outputs=output_preparation['unused'],
+        native_output_buffers=output_preparation['buffers'],native_input_buffers=input_preparation,unused_native_outputs=output_preparation['unused'],
         added_buffer_cells=dict(reset_distribution=len(reset_preparation),
             sram_clocks=len(sram_preparation),
-            native_outputs=len(output_preparation['buffers']),
-            hierarchy_output_feedback=len(prepared_proof['added_buffers'])-len(reset_preparation)-len(sram_preparation)-len(output_preparation['buffers'])),proof=prepared_proof))
+            native_outputs=len(output_preparation['buffers']),native_inputs=len(input_preparation),
+            hierarchy_output_feedback=len(prepared_proof['added_buffers'])-len(reset_preparation)-len(sram_preparation)-len(output_preparation['buffers'])-len(input_preparation)),proof=prepared_proof))
     q=lambda p:'"'+yosys.path(p)+'"'
     emit=out/'prepared.ys'
     emit.write_text('read_json '+q(out/'prepared.json')+'\nwrite_verilog -norename -noattr -noexpr '+q(out/'prepared.v')+'\n',newline='\n')
@@ -764,6 +896,7 @@ def repair(mapping,*,timeout=600):
     after=read_verilog_json(out/'repaired.v',out/'repaired.json','RiscayMcuDigital',yosys,pdk,before)
     proof=graph_proof(before,after,'RiscayMcuDigital',protected,libs)
     proof['native_output_drivers']=validate_native_output_drivers(after,'RiscayMcuDigital',output_preparation['buffers'])
+    proof['native_input_drivers']=validate_native_input_drivers(after,'RiscayMcuDigital',input_preparation)
     write_json(out/'sram-clock-drivers.json',validate_sram_clock_drivers(after,'RiscayMcuDigital'))
     # Run the existing exact adapter audit before publishing either output.
     candidate=out/'candidate';candidate.mkdir()

@@ -192,7 +192,35 @@ measured receiver boundary, compact with that receiver. Its short local net stay
 locked; the upstream distribution becomes repairable. Primitive bodies, full
 graph proof and subsequent protected-pin snapshots remain unchanged. No blanket
 per-bit buffering or relaxed electrical limit is authorized by this result.
-The correction and fresh extracted checks are still pending.
+The correction is implemented in `native-input-isolation.json` for those five
+measured BD boundaries only. Historical comparison mappings explicitly skip it;
+missing current-design targets remain fatal. Two reusable properties cover
+shared ancestors, flattened repair graphs, invalid boundary selections and
+bypass/polarity/internal-partition faults. Placement groups include each new
+buffer and its protected receivers, and exclusivity is checked after every
+checkpoint. The unchanged graph proof passes all 26,230 native cells in
+`build/native-physical/map-bd-input-r1`; `input-locks-r1.json` confirms that all
+five upstream nets are free of protected receivers while all local nets remain
+protected. Python verification passes 372 tests in `input-ci-r2`, and independent
+review is closed. The matched `pnr-input-2350x2530-d50-r1` reroute and extracted
+electrical/timing checks remain pending; no physical improvement is claimed yet.
+
+The compact-placement run also removes the observed flip in the previously
+failing program-Join keeper. `build/native-physical/keeper-2350-r3/results.json`
+records 100 cases (five PVT corners, min/max RC, both stored states, quiet/rising/
+falling coherent aggressors at 20 ps and 2 ns), plus 20 half-step refinements.
+All settle without an owner transition; the maximum keeper excursion is
+27.020 mV and the maximum owner-output excursion is 0.003 mV. The receipt passes.
+This is a repeated representative experiment on the same logical victim, not
+whole-chip noise qualification or evidence transferable to the 2.25 mm wires.
+
+The same 2.35 mm checkpoint passes static PDN connectivity/voltage coverage for
+98,945 logic/SRAM instances. With the existing ideal perimeter-feed assumptions,
+the normalized 1.3 mA load gives 0.217 mV maximum combined VDD/VSS drop; the
+synthetic vectorless 29.363 mA case gives 5.129 mV. Evidence and maps are in
+`build/native-physical/ir-2350-r3/`. These are static sensitivity screens, not
+firmware power, transient wake droop or package/board qualification; the feed,
+resistance and SRAM limitations in the power-grid section still apply.
 
 ### Custom C-element option
 

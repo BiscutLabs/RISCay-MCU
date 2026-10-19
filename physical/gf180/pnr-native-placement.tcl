@@ -221,7 +221,7 @@ proc native_detailed_placement {} {
   check_native_placement
 }
 proc check_native_placement {} {
-  global native_placement_groups native_output_feeders out stage
+  global native_placement_groups native_output_feeders native_input_feeders out stage
   set block [ord::get_db_block]
   set f [open $out/$stage-native-placement.tsv w]
   set failures {}
@@ -260,6 +260,32 @@ proc check_native_placement {} {
       error "NATIVE_OUTPUT_PARENT_POLARITY $parent"
     }
   }
+  foreach row $native_input_feeders {
+    lassign $row parent receivers
+    set inst [$block findInst $parent]
+    if {$inst eq "NULL" || ![regexp {__(clk)?buf_[0-9]+$} [[$inst getMaster] getName]]} {
+      error "NATIVE_INPUT_PARENT_POLARITY $parent"
+    }
+    set net [[$inst findITerm Z] getNet]
+    if {$net eq "NULL" || [llength [$net getBTerms]]} {error "NATIVE_INPUT_LOCAL_NET $parent"}
+    set expected [list [list $parent Z]]
+    foreach receiver $receivers {
+      lassign $receiver name pin
+      set sink [[$block findInst $name] findITerm $pin]
+      if {[$sink getNet] ne $net || [[$sink getMTerm] getIoType] ne "INPUT"} {
+        error "NATIVE_INPUT_RECEIVER_CHANGED $name/$pin"
+      }
+      lappend expected [list $name $pin]
+    }
+    set actual {}
+    foreach terminal [$net getITerms] {
+      if {[$terminal getSigType] in {POWER GROUND}} {continue}
+      lappend actual [list [[$terminal getInst] getName] [[$terminal getMTerm] getName]]
+    }
+    if {[llength $receivers]==0 || [lsort $actual] ne [lsort $expected]} {
+      error "NATIVE_INPUT_EXTERNAL_BYPASS $parent"
+    }
+  }
   close $f
   puts "NATIVE_PLACEMENT_PASS [llength $native_placement_groups]"
 }
@@ -269,8 +295,9 @@ proc protect_native_output_feeders {} {
   foreach row $native_output_feeders {
     lassign $row driver pin parent
     set terminal [[$block findInst $driver] findITerm $pin]
-    # This short native-to-parent link is immutable. The parent output remains
-    # repairable, including buffering, fanout splitting and equivalent resizing.
+    # This short native-to-parent link is immutable. Upstream distribution at
+    # an isolated receiver is repairable; unisolated native inputs still lock
+    # their net and retain their electrical failures in the reports.
     [$terminal getNet] setDoNotTouch true
   }
 }

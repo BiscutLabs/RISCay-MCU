@@ -9,7 +9,7 @@ import json
 from gf180_physical import SC, SRAM
 from repair_gf180_design import (graph_proof, validate_receipt, split_output_feedback, correct_scalar_port_escaping,
     buffer_native_resets, buffer_sram_clocks, validate_sram_clock_drivers, prune_added_orphan_ties, EVIDENCE, sha)
-from repair_gf180_design import buffer_native_outputs, validate_native_output_drivers
+from repair_gf180_design import buffer_native_outputs, validate_native_output_drivers, buffer_native_inputs, validate_native_input_drivers, native_input_targets, flat
 
 
 def cell(kind, **pins):
@@ -40,6 +40,80 @@ def buffered():
 class GlobalRepairTest(unittest.TestCase):
     def proof(self,before,after,protected=None):
         return graph_proof(before,after,'top',protected or {},[LIB]*5)
+
+    def test_measured_receiver_isolation_preserves_shared_graph_and_allows_upstream_repair(self):
+        a=self.native()
+        a['modules']['top']['cells']['second']=deepcopy(a['modules']['top']['cells']['driver'])
+        a['modules']['top']['cells']['second']['connections']['Q']=[8]
+        a['modules']['top']['cells']['ordinary']=cell('buf_1',I=1,Z=9)
+        protected={'driver/keeper':'driver','second/keeper':'second'}
+        owners={'first':'driver','second':'second'}
+        targets=[dict(instance=i,port='I',lane=0) for i in owners]
+        b=deepcopy(a); rows=buffer_native_inputs(b,'top',owners,targets)
+        self.proof(a,b,protected);validate_native_input_drivers(b,'top',rows)
+        g=flat(b,'top');bits={}
+        def number(n):
+            if n not in bits:bits[n]=len(bits)+1
+            return bits[n]
+        flattened=dict(modules=dict(top=dict(
+            ports={p:dict(direction=r['direction'],bits=[number(n) for n in r['bits']]) for p,r in g['ports'].items()},
+            cells={name:dict(type=r['type'],port_directions=r['directions'],
+                connections={p:[number(n) for n in ns] for p,ns in r['connections'].items()}) for name,r in g['cells'].items()})))
+        validate_native_input_drivers(flattened,'top',rows)
+        self.assertEqual(a['modules']['owner'],b['modules']['owner'])
+        g=flat(b,'top');upstream=g['ports']['in']['bits'][0]
+        locked={n for name in protected for p,ns in g['cells'][name]['connections'].items()
+                if g['cells'][name]['directions'][p]=='input' for n in ns}
+        self.assertNotIn(upstream,locked)
+        c=b['modules']['top']['cells'];c['tree']=cell('buf_2',I=1,Z=100)
+        for row in rows:c[row['buffer']]['connections']['I']=[100]
+        c['ordinary']['connections']['I']=[100]
+        self.proof(a,b,protected);validate_native_input_drivers(b,'top',rows)
+        # Bypass stays logically equivalent but violates the local isolation.
+        bad=deepcopy(b);bad['modules']['top']['cells']['driver']['connections']['I']=[1]
+        with self.assertRaisesRegex(ValueError,'REPAIR_INPUT_BUFFER_DRIVER'):
+            validate_native_input_drivers(bad,'top',rows)
+        bad=deepcopy(b);bad['modules']['top']['cells'][rows[0]['buffer']]['type']=SC+'inv_1'
+        with self.assertRaisesRegex(ValueError,'REPAIR_NONBUFFER_ADDITION'):self.proof(a,bad,protected)
+        bad=deepcopy(b);bad['modules']['owner']['cells']['branch']=cell('buf_2',I=1,Z=4)
+        bad['modules']['owner']['cells']['keeper']['connections']['I']=[4]
+        with self.assertRaisesRegex(ValueError,'REPAIR_NATIVE_INTERNAL_BUFFER'):self.proof(a,bad,protected)
+        bad=deepcopy(b);local=bad['modules']['top']['cells'][rows[0]['buffer']]['connections']['Z'][0]
+        bad['modules']['top']['cells']['ordinary']['connections']['I']=[local]
+        with self.assertRaisesRegex(ValueError,'REPAIR_INPUT_BUFFER_EXCLUSIVE'):
+            validate_native_input_drivers(bad,'top',rows)
+
+    def test_input_isolation_rejects_alias_constant_unused_and_unselected_shared_instance(self):
+        policy=dict(schema=1,targets=dict(bd=[dict(instance='current',port='I',lane=0)],click=[]))
+        self.assertEqual(native_input_targets(dict(variant='bd',comparison_baseline=True),policy),[])
+        current=native_input_targets(dict(variant='bd',comparison_baseline=False),policy)
+        self.assertEqual(current,policy['targets']['bd'])
+        with self.assertRaisesRegex(ValueError,'REPAIR_INPUT_INSTANCE'):
+            buffer_native_inputs(self.native(),'top',{'historical':'driver'},current)
+        a=self.native();wrapper=dict(ports=deepcopy(a['modules']['owner']['ports']),cells={
+            'native':deepcopy(a['modules']['top']['cells']['driver'])})
+        a['modules']['wrapper']=wrapper;a['modules']['top']['cells']['driver']['type']='wrapper'
+        a['modules']['top']['cells']['second']=deepcopy(a['modules']['top']['cells']['driver'])
+        a['modules']['top']['cells']['second']['connections']['Q']=[8]
+        b=deepcopy(a);targets=[dict(instance='first',port='I',lane=0)]
+        rows=buffer_native_inputs(b,'top',{'first':'driver/native','second':'second/native'},targets)
+        self.proof(a,b,{'driver/native/keeper':'driver/native','second/native/keeper':'second/native'})
+        self.assertEqual(b['modules']['top']['cells']['second']['type'],'wrapper')
+        self.assertEqual({r['owner'] for r in rows},{'driver/native'})
+        for mutation,error in (
+            ('alias','REPAIR_INPUT_ALIASED_BOUNDARY'),('constant','REPAIR_INPUT_SOURCE'),
+            ('unused','REPAIR_INPUT_UNUSED_OR_PASSIVE'),('internal','REPAIR_INPUT_INTERNAL_SOURCE')):
+            with self.subTest(mutation=mutation):
+                a=self.native();owner=a['modules']['owner'];inst=a['modules']['top']['cells']['driver']
+                if mutation=='alias':
+                    owner['ports']['alsoI']=dict(direction='input',bits=[1])
+                    inst['connections']['alsoI']=[1];inst['port_directions']['alsoI']='input'
+                elif mutation=='constant':inst['connections']['I']=['1']
+                elif mutation=='internal':
+                    owner['ports']['I']['bits']=[2];inst['connections']['I']=[2]
+                else:owner['cells']['keeper']['connections']['I']=['1']
+                with self.assertRaisesRegex(ValueError,error):
+                    buffer_native_inputs(a,'top',{'first':'driver'},targets)
 
     def test_native_output_buffer_preserves_feedback_and_rejects_bypass(self):
         a=self.native();b=deepcopy(a)

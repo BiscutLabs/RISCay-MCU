@@ -6,7 +6,7 @@ from gf180_constraints import brace
 from repair_gf180_control import require
 
 
-def groups(mapping,audit,drivers):
+def groups(mapping,audit,drivers,inputs=()):
     raw=[]
     for binding in mapping['bindings']:
         if binding['model']!='ChiselAsyncAsymmetricC_v1':continue
@@ -22,6 +22,9 @@ def groups(mapping,audit,drivers):
     for r in drivers:
         require(not r['buffer'].startswith(r['owner']+'/'),'PLACEMENT_PARENT_INSIDE_NATIVE')
         raw.append(dict(kinds=['output'],cells=[r['driver'],r['buffer']]))
+    for r in inputs:
+        require(not r['buffer'].startswith(r['owner']+'/'),'PLACEMENT_INPUT_INSIDE_NATIVE')
+        raw.append(dict(kinds=['input'],cells=[r['buffer'],*[p['cell'] for p in r['receivers']]]))
     # A physical cell can belong to only one placement cluster.
     parent={}
     def root(n):
@@ -43,13 +46,17 @@ def generate(mapping,out):
     m=json.loads((mapping/'mapping.json').read_text());a=json.loads((mapping/'netlist-audit.json').read_text())
     proof=json.loads((mapping/'electrical-repair/proof.json').read_text())
     require('native_output_drivers' in proof,'PLACEMENT_PARENT_DRIVERS_REQUIRED')
-    rows=groups(m,a,proof['native_output_drivers'])
+    inputs=proof.get('native_input_drivers',[])
+    rows=groups(m,a,proof['native_output_drivers'],inputs)
     text='set native_placement_groups {\n'
     for r in rows:
         text+='  {'+str(r['id'])+' '+str(r['maximum_span_um'])+' {'+' '.join(brace(c) for c in r['cells'])+'}}\n'
     text+='}\nset native_output_feeders {\n'
     for r in proof['native_output_drivers']:
         text+='  {'+brace(r['driver'])+' '+brace(r['pin'])+' '+brace(r['buffer'])+'}\n'
+    text+='}\nset native_input_feeders {\n'
+    for r in inputs:
+        text+='  {'+brace(r['buffer'])+' {'+' '.join('{'+brace(p['cell'])+' '+brace(p['pin'])+'}' for p in r['receivers'])+'}}\n'
     (out/'native-placement.tcl').write_text(text+'}\n')
-    write_json(out/'native-placement.json',dict(groups=rows,drivers=proof['native_output_drivers'],
+    write_json(out/'native-placement.json',dict(groups=rows,drivers=proof['native_output_drivers'],inputs=inputs,
         scope='GPL clusters, 100/500um ordinary DPL search, 48um local repack with optional 96um neighbor selection, 64um final native XY-span acceptance; not a coupling/capacitance bound'))

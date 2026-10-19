@@ -66,7 +66,12 @@ class RepairAreaTest(unittest.TestCase):
         self.assertAlmostEqual(result['resize_delta_mm2'],10/1e6)
         self.assertEqual((result['original_cells'],result['repaired_cells']),(2,6))
         self.assertEqual({k:v['count'] for k,v in result['buffers'].items()},
-            dict(native_reset=1,sram_clock=0,native_output=0,writer_feedback=1,openroad_other=1))
+            dict(native_reset=1,sram_clock=0,native_output=0,native_input=0,writer_feedback=1,openroad_other=1))
+        self.prep['native_input_buffers']=[dict(buffer='island/other')]
+        isolated=self.result()
+        self.assertEqual(isolated['buffers']['native_input'],dict(count=1,area_mm2=10/1e6))
+        self.assertEqual(isolated['buffers']['openroad_other'],dict(count=0,area_mm2=0))
+        self.assertEqual(isolated['logic_after_mm2'],result['logic_after_mm2'])
 
     def test_sram_driver_category_and_area(self):
         self.prep['sram_clock_buffers']=[dict(buffer='island/other')]

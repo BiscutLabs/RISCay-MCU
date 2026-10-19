@@ -7,7 +7,7 @@ from characterize_gf180_liberty import CORNERS
 from gf180_estimate import library
 from gf180_physical import ROOT, SC, sha, write_json
 from repair_gf180_control import require
-from repair_gf180_design import graph_proof, protected_cells, validate_sram_clock_drivers, validate_native_output_drivers
+from repair_gf180_design import graph_proof, protected_cells, validate_sram_clock_drivers, validate_native_output_drivers, validate_native_input_drivers
 
 
 def read_graph(path):
@@ -44,6 +44,8 @@ def check(mapping,out,stage):
     original=json.loads((mapping/'electrical-repair/proof.json').read_text())
     if 'native_output_drivers' in original:
         proof['native_output_drivers']=validate_native_output_drivers(b,'RiscayMcuDigital',original['native_output_drivers'])
+    if 'native_input_drivers' in original:
+        proof['native_input_drivers']=validate_native_input_drivers(b,'RiscayMcuDigital',original['native_input_drivers'])
     proof['inputs_sha256']=frozen
     require(all(sha(Path(p))==h for p,h in frozen.items()),'PNR_REPAIR_INPUT_CHANGED')
     output=out/(stage+'-repair-proof.json');write_json(output,proof)

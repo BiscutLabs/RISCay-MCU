@@ -29,6 +29,10 @@ class NativePlacementTest(unittest.TestCase):
         self.assertEqual(sum(len(r['cells']) for r in rows),len(expected))
         self.assertTrue(all(set(r['kinds'])=={'keeper','output'} for r in rows))
         self.assertEqual(rows,groups(m,a,list(reversed(ds))))
+        inputs=[dict(owner='x/p',buffer='x/in',receivers=[dict(cell='x/p/a',pin='A1')])]
+        joined=groups(m,a,ds,inputs)
+        self.assertEqual({c for r in joined for c in r['cells']},expected|{'x/in'})
+        self.assertTrue(any(set(r['kinds'])=={'keeper','output','input'} and 'x/in' in r['cells'] for r in joined))
 
     def test_missing_keeper_or_internal_parent_is_rejected(self):
         m,a=self.fixture();bad=deepcopy(m);bad['bindings'][0]['cells'][0]['pins']['ZN']='wrong'

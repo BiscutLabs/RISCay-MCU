@@ -1,0 +1,34 @@
+{
+  "schema": 1,
+  "scope": "Measured BD receiver isolation; full graph and fresh physical checks required",
+  "targets": {
+    "bd": [
+      {
+        "instance": "FourPhaseSoc.ca_child_i2c.ca_child_native.ca_child_update.ca_primitive_payload",
+        "port": "d",
+        "lane": 13
+      },
+      {
+        "instance": "FourPhaseSoc.ca_child_i2c.ca_child_native.ca_child_update.ca_primitive_payload",
+        "port": "d",
+        "lane": 14
+      },
+      {
+        "instance": "FourPhaseSoc.ca_child_i2c.ca_child_native.ca_child_publication.framePhase_nb_ca_primitive_frame_publish_nb",
+        "port": "a",
+        "lane": 0
+      },
+      {
+        "instance": "FourPhaseSoc.ca_child_completion.ram_ack_nb_ca_primitive_ram_ack_nb",
+        "port": "a",
+        "lane": 0
+      },
+      {
+        "instance": "FourPhaseSoc.ca_child_completion.memory_ack_nb_ca_primitive_memory_ack_nb",
+        "port": "a",
+        "lane": 0
+      }
+    ],
+    "click": []
+  }
+}

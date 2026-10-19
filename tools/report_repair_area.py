@@ -32,11 +32,13 @@ def summarize(a,b,proof,prep,liberty,areas):
     reset={x['buffer'] for x in prep['reset_buffers']}
     sram={x['buffer'] for x in prep.get('sram_clock_buffers',[])}
     outputs={x['buffer'] for x in prep.get('native_output_buffers',[])}
+    inputs={x['buffer'] for x in prep.get('native_input_buffers',[])}
     feedback={x for x in buffers if '/riscay_output_feedback_' in x}
     require(reset|sram<=buffers and not reset&feedback and not sram&(reset|feedback),'REPAIR_AREA_PREPARATION_INVENTORY')
     require(outputs<=buffers and not outputs&(reset|sram|feedback),'REPAIR_AREA_OUTPUT_INVENTORY')
-    categories=dict(native_reset=reset,sram_clock=sram,native_output=outputs,writer_feedback=feedback,
-                    openroad_other=buffers-reset-sram-outputs-feedback)
+    require(inputs<=buffers and not inputs&(reset|sram|outputs|feedback),'REPAIR_AREA_INPUT_INVENTORY')
+    categories=dict(native_reset=reset,sram_clock=sram,native_output=outputs,native_input=inputs,writer_feedback=feedback,
+                    openroad_other=buffers-reset-sram-outputs-inputs-feedback)
     def area(cells,metric=areas):return math.fsum(metric[c['type']] for c in cells)
     before,after=area(a.values()),area(b.values())
     macro_before=area(c for c in a.values() if c['type']==SRAM)

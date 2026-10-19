@@ -41,6 +41,12 @@ This is not an electrical or routed timing pass.
 | Immediate parent, `single-writer-telemetry/map-bd-r7` | 2.010204 | 2.199751 | — | 3,557 |
 | Trial with blanket early sizing, `native-physical/map-bd-r2` | 2.010204 | 2.743221 | 0.565958 | 3,557 |
 | Violation-driven repair, `native-physical/map-bd-r4` | 2.010204 | 2.234365 | 0.174720 | 3,557 |
+| Five measured receiver isolators, `native-physical/map-bd-input-r1` | 2.010204 | 2.234452 | 0.174720 | 3,557 |
+
+The receiver-isolation trial adds five `buf_2` cells, **0.000088 mm²**, outside
+unchanged native boundaries. Its complete graph and exclusive receiver audits
+pass; matched rerouting and extracted checks remain pending. Evidence is
+`build/native-physical/area-bd-input-r1.json` and `input-locks-r1.json`.
 
 Areas are mm², excluding SRAM. The r4 report is
 `build/native-physical/area-r4.json`. Guards remain 0.399605 mm², allowances zero,
