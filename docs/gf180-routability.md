@@ -1,6 +1,9 @@
 # BD routing, coupling and power-grid investigation
 
-The new 2.25 × 2.53 mm layout routes with zero violations. The retained old
+The README now shows the completed 2.35 × 2.53 mm receiver-isolation layout,
+with zero router violations. It was selected from the existing runs on
+2026-10-19; no new routing or qualification campaign was run for the image.
+The smaller 2.25 mm route remains a historical area result. The retained old
 1.94 × 2.53 mm layout has one real Metal2 short. This investigation
 keeps routing DRC, electrical limits, extracted relative timing, coupled noise
 and power-grid integrity as separate gates. A clean router result alone does
@@ -33,10 +36,21 @@ No new timing-closure claim may precede electrical repair.
 The fixed-tool runs at 2.25, 2.30 and 2.35 mm width pass detailed routing with
 zero violations, empty DRC reports, all 26,230 protected native cells and all
 10,327 placement groups. Independent nominal/minimum/maximum RC extraction is
-complete for all three. The README uses the smallest tested successful candidate,
+complete for all three. The smallest tested successful candidate is
 `build/native-physical/pnr-2250x2530-d50-r1`, rendered in
-`build/native-physical/render-2250-r1/layout.png`. The source map remains
-`map-bd-r4`, before the new A/B boot ROM; this layout does not qualify that ROM.
+`build/native-physical/render-2250-r1/layout.png`. Its source map is `map-bd-r4`,
+before the new A/B boot ROM; this layout does not qualify that ROM.
+
+The README instead selects the later receiver-isolation run
+`build/native-physical/pnr-input-2350x2530-d50-r2` (recorded at `d6e5d91`,
+map `map-bd-input-r1`). It has zero router violations, the five receiver-boundary
+fixes and the extracted capacitance, representative keeper and IR results below.
+Those stronger existing results justify the 0.10 mm wider outline over the
+older minimum-width candidate; they do not establish full qualification. The
+image was regenerated directly from its unchanged `route.odb` with its recorded
+OpenROAD binary, in `render-input-2350-readme-r1`. This is a historical render,
+not a rerun or a qualification of current RTL. Its cell footprints total
+3.493048 mm². The unfinished hierarchical candidates were not selected.
 
 The 2.25 mm cell footprints total **3.469786 mm²**: logic 2.858175, SRAM
 0.466241 and taps/endcaps 0.145371. Core occupancy is 64.27%; density in the

@@ -5,6 +5,15 @@ in separate regions, and measures the resulting wires. It does not
 change the ABI, native protocols, periodic clocks or Click implementation.
 Placement regions are not power islands.
 
+At the user's request on 2026-10-19, the remaining r13 campaigns were stopped
+and their evidence retained. The three unrestricted arms stopped during global
+routing/repair; guided 2.80 mm/65% stopped during detailed routing with unresolved
+violations. These are cancellations, not completed routing verdicts. The guided
+55% arm had already failed placement. No r13 candidate has an accepted complete
+route or extracted comparison. The README uses the previously completed
+2.35 × 2.53 mm receiver-isolation route instead. The module-coloured image
+below remains explicitly a placement study.
+
 ## Matched comparisons
 
 Two different comparisons answer different questions:

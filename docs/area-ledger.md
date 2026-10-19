@@ -27,6 +27,10 @@ exceeds it, revise the budget or architecture; do not waive a failing path. The
 
 ## BD hierarchy experiment
 
+Status: the remaining r13 physical campaigns were cancelled at the user's
+request on 2026-10-19. The values below are synthesis/placement measurements,
+not a completed routed comparison. See the [study](hierarchical-floorplan.md).
+
 Major ordinary hierarchy is retained for placement experiments; the normal
 RTL export remains unchanged. The matched Yosys 0.62/ABC comparison measures
 **1.971463 mm² hierarchical versus 1.893700 mm² flat**, excluding SRAM, for a

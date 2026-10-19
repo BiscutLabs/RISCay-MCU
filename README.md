@@ -87,12 +87,13 @@ retention available as a generic build option.
 
 ## Physical implementation
 
-![BD routed digital layout on a 2.25 × 2.53 mm die](docs/images/bd-layout.png)
+![BD routed digital layout on a 2.35 × 2.53 mm die](docs/images/bd-layout.png)
 
-This BD digital layout uses a **2.25 × 2.53 mm** outline. Cell footprints
-total **3.470 mm²**, including the three SRAM macros across the top. Pads and
-analog blocks are not included. This routing study predates the expanded A/B
-boot ROM.
+This completed BD routing study uses a **2.35 × 2.53 mm** outline. Cell
+footprints total **3.493 mm²**, including the three SRAM macros across the top.
+Pads and analog blocks are not included. The selected run (`d6e5d91`) includes
+the native receiver-isolation fixes and predates the expanded A/B boot ROM
+and subsequent native-bank changes.
 
 **This is a development design, not ready for fabrication.** Detailed routing
 has zero router violations; electrical, timing and signal-integrity qualification
