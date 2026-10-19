@@ -145,6 +145,20 @@ fallback mechanism, not convergence of a production checkpoint. The blocked
 fixture and Tcl property controls check rollback, full-group boundary selection
 and fixed-cell exclusions. New width runs use this flow in fresh directories.
 
+The five-receiver isolation trial at 2.35 mm exposed one further legalization
+case: regional packing fixed four frame-store output pairs but stretched a
+neighboring pair to 80.64 µm. The run correctly stopped at the unchanged 64 µm
+gate. A regional trial may now make one bounded corrective repack, keeping its
+exterior fixed and rolling back both levels on failure. It cannot recurse again
+or relax the span, per-invocation DPL search bound or pin checks. The search bound
+is not a limit on cumulative movement from initial seeding. Replaying the original failed
+checkpoint passes legality and all 10,330 groups in
+`build/native-physical/repack-cascade-integrated/`; a fresh complete route is
+still required. The original failure and nested rollback controls are retained.
+Independent review corrected colliding nested diagnostic names. The final
+372-property Python gate is `build/native-physical/cascade-ci-r2`; every failed
+nested attempt now keeps its own evidence.
+
 Independent review found no outstanding source/doc issue and independently
 verified that all 927 control-connected parent outputs remain covered by NDR
 traversal; payload-only outputs retain their existing classification. The fast

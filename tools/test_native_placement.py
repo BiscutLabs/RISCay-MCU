@@ -140,3 +140,42 @@ class NativePlacementTest(unittest.TestCase):
             self.assertEqual(t.eval(f'dict get [native_locations] {name}'),t.eval(f'dict get $before {name}'))
         self.assertNotEqual(t.eval('dict get [native_locations] near'),t.eval('dict get $before near'))
         self.assertEqual(t.eval('near getPlacementStatus'),'PLACED')
+        # A legal regional pass may stretch a complete neighboring group. One
+        # bounded correction must keep the region's exterior fixed, and failure
+        # in that correction must restore the outer baseline too.
+        t.eval('''
+          restore_native_locations $before
+          set cascadeFailure 1; set artifacts {}
+          proc write_db {path} {global artifacts; lappend artifacts $path}
+          proc detailed_placement {args} {
+            global cascadeFailure
+            if {$cascadeFailure && [uplevel 1 {set depth}] == 1} {
+              inside_b setPlacementStatus PLACED
+              inside_b setLocation 800 900
+              error CASCADE_NO_SPACE
+            }
+            if {[near getPlacementStatus] ne "FIRM"} {
+              b setLocation 14 10
+              inside_b setLocation 110 30
+            } elseif {[inside_b getPlacementStatus] ne "FIRM"} {
+              inside_b setLocation 34 30
+            } else {error NEED_REGIONAL_ROOM}
+          }
+        ''')
+        with self.assertRaisesRegex(tkinter.TclError,'NATIVE_REPACK_NO_LEGAL_NEIGHBORHOOD'):
+            t.call('repack_native_groups')
+        self.assertEqual(t.eval('expr {[native_locations] eq $before}'),'1')
+        self.assertIn('global-cascade-regional-first-before-native-repack.odb',t.eval('set artifacts'))
+        self.assertIn('global-cascade-regional-midpoint-before-native-repack.odb',t.eval('set artifacts'))
+        self.assertIn('global-before-native-repack.odb',t.eval('set artifacts'))
+        artifacts=t.splitlist(t.eval('set artifacts'))
+        self.assertEqual(len(artifacts),len(set(artifacts)))
+        t.eval('set cascadeFailure 0')
+        t.call('repack_native_groups')
+        self.assertFalse(t.eval('oversized_native_groups'))
+        for name in ('neighbor','boundary_a','boundary_b','fixed','covered','locked'):
+            self.assertEqual(t.eval(f'dict get [native_locations] {name}'),t.eval(f'dict get $before {name}'))
+        for name in ('a','b','near','inside_a','inside_b'):
+            self.assertEqual(t.eval(f'{name} getPlacementStatus'),'PLACED')
+        with self.assertRaisesRegex(tkinter.TclError,'NATIVE_REPACK_DEPTH'):
+            t.call('repack_native_groups',2)

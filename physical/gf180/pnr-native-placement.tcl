@@ -96,8 +96,11 @@ proc native_repack_neighbors {bad saved targets} {
   }
   return [dict merge $eligible $targets]
 }
-proc repack_native_groups {} {
+proc repack_native_groups {{depth 0} {parentTrial ""}} {
   global out stage
+  if {!(($depth eq "0" && $parentTrial eq "") ||
+        ($depth eq "1" && $parentTrial in {regional-first regional-midpoint}))} {error NATIVE_REPACK_DEPTH}
+  set tag [expr {$depth ? "-cascade-$parentTrial" : ""}]
   if {$stage ni {place clock global}} {error "NATIVE_REPACK_AFTER_ROUTING $stage"}
   set bad [oversized_native_groups]
   if {![llength $bad]} {return}
@@ -109,7 +112,7 @@ proc repack_native_groups {} {
     foreach name [lindex $row 2] {dict set original_targets [$block findInst $name] 1}
   }
   set saved [native_locations]
-  if {[catch {write_db $out/$stage-before-native-repack.odb} diagnostic]} {
+  if {[catch {write_db $out/$stage$tag-before-native-repack.odb} diagnostic]} {
     puts "NATIVE_REPACK_DIAGNOSTIC_FAILED $diagnostic"
   }
   # Select once from the legal baseline, never from a failed trial's movement.
@@ -169,6 +172,19 @@ proc repack_native_groups {} {
       }
       detailed_placement -max_displacement {48 48}
       check_placement -verbose
+      # A regional legalization can repair the original groups but displace a
+      # neighboring complete group. Allow one bounded local correction, keeping
+      # everything outside this trial's region fixed. Nested failure rolls back
+      # through both saved placements. The span and per-call DPL search bounds
+      # stay unchanged; these do not bound cumulative movement from seeding.
+      if {$depth==0 && [string match regional-* $trial] && [llength [oversized_native_groups]]} {
+        dict for {inst unused} $targets {
+          $inst setPlacementStatus [lindex [dict get $saved $inst] 3]
+        }
+        puts "NATIVE_REPACK_CASCADE $trial"
+        repack_native_groups 1 $trial
+        check_placement -verbose
+      }
       dict for {inst record} $saved {
         if {[dict exists $targets $inst]} {continue}
         set box [$inst getBBox]
@@ -179,7 +195,7 @@ proc repack_native_groups {} {
       if {[llength [oversized_native_groups]]} {error NATIVE_REPACK_SPREAD}
       set accepted 1
     } on error {message options} {
-      if {[catch {write_db $out/$stage-native-repack-$trial-failed.odb} diagnostic]} {
+      if {[catch {write_db $out/$stage$tag-native-repack-$trial-failed.odb} diagnostic]} {
         puts "NATIVE_REPACK_DIAGNOSTIC_FAILED $diagnostic"
       }
       puts "NATIVE_REPACK_REJECTED $trial $message"
