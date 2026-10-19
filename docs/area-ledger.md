@@ -25,6 +25,39 @@ repair and placement whitespace. Record actual cell use after routing. If repair
 exceeds it, revise the budget or architecture; do not waive a failing path. The
 [repair contract](architecture-followups.md#routed-hold-repair) specifies the gates.
 
+## BD hierarchy experiment
+
+Major ordinary hierarchy is retained for placement experiments; the normal
+RTL export remains unchanged. The matched Yosys 0.62/ABC comparison measures
+**1.971463 mm² hierarchical versus 1.893700 mm² flat**, excluding SRAM, for a
+**0.077763 mm² (+4.11%)** hierarchy cost. All native primitive graphs and the
+three SRAMs are identical. This is a mapped comparison, before repair.
+
+The hierarchical candidate repairs to **2.196947 mm²**; guard area is
+**0.400304 mm²**, including **5,285 DLYD cells / 0.394455 mm²**. Passive allowance
+area remains zero. It has **3,273 periodic sinks** (1,253 service, 1,942 work,
+78 LF), plus the separate SDA event. Services owns 64 service and 916 work
+sinks. The production parent above used the older mapper, so its difference
+is not attributed entirely to hierarchy.
+The **matched flat** synthesis has **3,069 periodic sinks** (1,188 service,
+1,803 work, 78 LF), making the measured hierarchy cost **204 periodic sinks**.
+
+Evidence: `build/hierarchical-floorplan/area-r4.json`, `sinks-r4.json`,
+`flat-map-r3/comparison.json`, its passing run receipt and `flat-sinks-r2.json`. The
+[floorplan report](hierarchical-floorplan.md) separates matched placement from
+historical layouts and records the failed soft-seed experiment.
+
+Fresh matched placement at 2.80 x 2.53 mm and an initial 65% GPL target costs
+**2.929286 mm2 guided versus 2.712635 mm2 unrestricted** after placement repair:
+**+0.216651 mm2** for module locality. New placement-repair buffers alone occupy
+0.647435 versus 0.449349 mm2; resizes are separate. The 2.53 mm/55% and
+2.80 mm/55% unrestricted controls occupy 2.729424 and 2.735079 mm2. Guided
+55% fails the unchanged post-repair native compaction gate and is rejected.
+These are pre-route checkpoints: CTS, global repair, wire RC and final router
+DRC are not included. The guided optimizer raises effective density as high as
+86.89% (update lines do not identify a region), so its initial 65% target is not
+its final effective density. No routed result is inferred from these areas.
+
 ## Accepted production batches
 
 ### Single-writer Housekeeping view

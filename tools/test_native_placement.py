@@ -42,19 +42,23 @@ class NativePlacementTest(unittest.TestCase):
 
     def test_local_repack_restores_geometry_and_status_after_failed_dpl(self):
         t=tkinter.Tcl();t.eval((ROOT/'physical/gf180/pnr-native-placement.tcl').read_text())
+        t.eval((ROOT/'physical/gf180/pnr-module-regions.tcl').read_text())
+        t.eval('set module_region_bounded 0')
         t.eval('''
           oo::class create Cell {
-            variable x y orient status
-            constructor {px py} {set x $px; set y $py; set orient R0; set status PLACED}
+            variable x y orient status master
+            constructor {px py} {set x $px; set y $py; set orient R0; set status PLACED;set master small}
             method getBBox {} {return [self]}
             method xMin {} {return $x}; method yMin {} {return $y}
             method xMax {} {return [expr {$x+4}]}; method yMax {} {return [expr {$y+4}]}
-            method getName {} {return [self]}; method isPlaced {} {return 1}
+            method getName {} {return [namespace tail [self]]}; method getMaster {} {return $master}
+            method setMaster {v} {set master $v}; method isPlaced {} {return 1}
             method getOrient {} {return $orient}; method getPlacementStatus {} {return $status}
             method setOrient {v} {if {$status eq "FIRM"} {error FIXED_MOVE}; set orient $v}
             method setPlacementStatus {v} {set status $v}
             method setLocation {px py} {if {$status eq "FIRM"} {error FIXED_MOVE}; set x $px; set y $py}
           }
+          proc small {method args} {return small};proc large {method args} {return large}
           Cell create a 10 10; Cell create b 10 100; Cell create neighbor 200 200
           proc block {method args} {
             switch $method {
@@ -101,6 +105,88 @@ class NativePlacementTest(unittest.TestCase):
         self.assertFalse(t.eval('oversized_native_groups'))
         self.assertEqual(t.eval('neighbor getPlacementStatus'),'PLACED')
         self.assertEqual(t.eval('dict get [native_locations] neighbor'),t.eval('dict get $before neighbor'))
+        # Anchored legalization freezes only protected leaves. A resized parent
+        # remains movable; failed DPL restores the entire trial, while success
+        # keeps an ordinary buffer's new PLACED status.
+        t.eval('''
+          set protected_cells {{a master {}}}
+          neighbor setPlacementStatus UNPLACED
+          set anchor_before [native_locations]
+          proc check_native_placement {} {}
+          proc check_module_bounds {} {}
+          proc detailed_placement {args} {
+            if {[a getPlacementStatus] ne "FIRM" || [b getPlacementStatus] ne "PLACED"} {error WRONG_ANCHORS}
+            neighbor setLocation 240 240; neighbor setPlacementStatus PLACED
+            error ANCHOR_TRIAL_FAIL
+          }
+        ''')
+        self.assertEqual(t.call('native_anchor_legalization'),0)
+        self.assertEqual(t.eval('expr {[native_locations] eq $anchor_before}'),'1')
+        t.eval('''
+          proc detailed_placement {args} {
+            if {[a getPlacementStatus] ne "FIRM" || [b getPlacementStatus] ne "PLACED"} {error WRONG_ANCHORS}
+            neighbor setLocation 240 240; neighbor setPlacementStatus PLACED
+          }
+        ''')
+        self.assertEqual(t.call('native_anchor_legalization'),1)
+        self.assertEqual(t.eval('a getPlacementStatus'),'PLACED')
+        self.assertEqual(t.eval('neighbor getPlacementStatus'),'PLACED')
+        self.assertEqual(t.eval('dict get [native_locations] neighbor'),'240 240 R0 PLACED')
+        t.eval('''
+          set anchor_before [native_locations]
+          proc detailed_placement {args} {neighbor setLocation 280 280}
+          proc check_native_placement {} {error AFTER_REPACK_CHECK_FAILED}
+        ''')
+        self.assertEqual(t.call('native_anchor_legalization'),0)
+        self.assertEqual(t.eval('expr {[native_locations] eq $anchor_before}'),'1')
+        t.eval('proc check_native_placement {} {}')
+        # Repair-backed anchoring restores same-master members to their legal
+        # baseline; resized parents remain movable. Any later rejection restores
+        # the complete post-repair geometry, orientation and placement statuses.
+        t.eval('''
+          a setLocation 10 10; b setLocation 18 10
+          set baseline [native_repair_baseline]
+          a setLocation 100 100; b setMaster large; b setLocation 300 300
+          neighbor setPlacementStatus UNPLACED
+          set repair_before [native_locations]
+          proc detailed_placement {args} {
+            if {[a xMin]!=10 || [a getPlacementStatus] ne "FIRM" ||
+                [b getPlacementStatus] ne "PLACED" || [b getMaster] ne "large"} {error WRONG_BASELINE_ANCHORS}
+            b setLocation 18 10
+            neighbor setLocation 280 280;neighbor setPlacementStatus PLACED
+          }
+          proc check_native_placement {} {error AFTER_REPAIR_CHECK_FAILED}
+        ''')
+        self.assertEqual(t.call('native_anchor_legalization',t.eval('set baseline')),0)
+        self.assertEqual(t.eval('expr {[native_locations] eq $repair_before}'),'1')
+        t.eval('proc check_native_placement {} {}')
+        self.assertEqual(t.call('native_anchor_legalization',t.eval('set baseline')),1)
+        self.assertEqual(t.eval('dict get [native_locations] a'),'10 10 R0 PLACED')
+        self.assertEqual(t.eval('b getMaster'),'large')
+        self.assertEqual(t.eval('dict get [native_locations] neighbor'),'280 280 R0 PLACED')
+        t.eval('set repair_before [native_locations];set missing $baseline;dict unset missing b')
+        self.assertEqual(t.call('native_anchor_legalization',t.eval('set missing')),0)
+        self.assertEqual(t.eval('expr {[native_locations] eq $repair_before}'),'1')
+        # A pre-existing fixed member is never demoted or relocated. A changed
+        # fixed baseline rejects and rollback leaves its current state intact.
+        t.eval('''
+          a setPlacementStatus LOCKED
+          set baseline [native_repair_baseline]
+          oo::objdefine a method setPlacementStatus {v} {
+            if {$status eq "LOCKED" && $v ne "LOCKED"} {error FIXED_DEMOTED}
+            set status $v
+          }
+          proc detailed_placement {args} {
+            if {[a getPlacementStatus] ne "LOCKED"} {error FIXED_STATUS_CHANGED}
+            neighbor setLocation 300 300
+          }
+        ''')
+        self.assertEqual(t.call('native_anchor_legalization',t.eval('set baseline')),1)
+        t.eval('set repair_before [native_locations];dict set baseline a {small 99 99 R0 LOCKED}')
+        self.assertEqual(t.call('native_anchor_legalization',t.eval('set baseline')),0)
+        self.assertEqual(t.eval('expr {[native_locations] eq $repair_before}'),'1')
+        t.eval('''oo::objdefine a deletemethod setPlacementStatus
+          a setPlacementStatus PLACED''')
         # Regional selection is whole-box, whole-native-group and nonfixed.
         # Ordinary neighbors may move, but an incomplete native group may not.
         t.eval('''

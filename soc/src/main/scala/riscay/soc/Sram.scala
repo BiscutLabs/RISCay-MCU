@@ -10,14 +10,16 @@ import riscay.McuConfiguration
 /** Technology inventory accompanies the library's unchanged async contract. */
 object SramInventory {
   val macroName = "gf180mcu_ocd_ip_sram__sram1024x8m8wm1"
-  def write(base: Path, config: McuConfiguration): Unit = {
+  def write(base: Path, config: McuConfiguration, preserveHierarchy: Boolean = false): Unit = {
     val top = ujson.read(Files.readString(base.resolve("contract.json")))("manifest")("top").str
+    val services = if(preserveHierarchy) "fabric." else "fabric_"
     val instances = Seq("program" -> config.programBytes, "ram" -> config.workingRamBytes).flatMap {
       case(bank, bytes) => (0 until (bytes + 1023) / 1024).map(i =>
-        ujson.Obj("path" -> s"$top.fabric_${bank}_macros_$i", "bank" -> bank, "index" -> i))
+        ujson.Obj("path" -> s"$top.$services${bank}_macros_$i", "bank" -> bank, "index" -> i))
     }
     Files.writeString(base.resolve("sram.json"), ujson.write(ujson.Obj(
       "schema" -> "riscay-gf180-sram-v1", "macro" -> macroName,
+      "services_hierarchy" -> preserveHierarchy,
       "program_bytes" -> config.programBytes, "working_ram_bytes" -> config.workingRamBytes,
       "instances" -> ujson.Arr.from(instances)), indent=2) + "\n")
   }

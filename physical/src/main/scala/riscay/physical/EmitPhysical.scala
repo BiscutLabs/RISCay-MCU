@@ -38,7 +38,8 @@ object PhysicalSocExport {
   private def sha(path: Path): String = MessageDigest.getInstance("SHA-256")
     .digest(Files.readAllBytes(path)).map(b => f"${b & 0xff}%02x").mkString
 
-  def emit(root: Path, p: SocParameters = parameters, variants: Seq[String] = Seq("bd","click")): Unit = {
+  def emit(root: Path, p: SocParameters = parameters, variants: Seq[String] = Seq("bd","click"),
+      preserveHierarchy: Boolean = false): Unit = {
     require(!Files.exists(root), "PHYSICAL_EXPORT_ALREADY_EXISTS")
     require(variants.nonEmpty && variants.forall(Set("bd","click")), "PHYSICAL_VARIANT")
     variants.foreach { variant =>
@@ -46,15 +47,16 @@ object PhysicalSocExport {
       // Keep verification bodies in their owning module. The mapper still
       // rejects arbitrary/extracted sources; SYNTHESIS removes assertions.
       ExportDesign.emit(chisel3.layer.elideBlocks {
-        if(variant == "bd") new FourPhaseSoc(p,board)
+        if(variant == "bd") new FourPhaseSoc(p,board,preserveHierarchy=preserveHierarchy)
         else new ClickSoc(p,board)
       },out)
-      SramInventory.write(out,p.config)
+      SramInventory.write(out,p.config,variant == "bd" && preserveHierarchy)
       ChipWrapper.write(out,p.lowPower.get)
       Files.writeString(out.resolve("physical-policy.json"),ujson.write(ujson.Obj(
         "schema" -> "riscay-physical-policy-v4", "variant" -> variant,
         "purpose" -> "generic MCU evaluation fixture; not qualified for tapeout",
         "architecture" -> "generic-mcu", "profile_behavior" -> false,
+        "preserve_clocked_hierarchy" -> (variant == "bd" && preserveHierarchy),
         "spi_boot" -> true, "rom_bytes" -> p.bootWords.size*4,
         "gpio_count" -> p.config.gpioCount,
         "service_max_hz" -> ApplicationResetContract.maximumServiceHz, "lf_max_hz" -> 12,
@@ -80,4 +82,9 @@ object PhysicalSocExport {
 object EmitPhysical extends App {
   require(args.length == 1, "Usage: EmitPhysical new-output-directory")
   PhysicalSocExport.emit(Paths.get(args(0)).toAbsolutePath)
+}
+
+object EmitHierarchicalBd extends App {
+  require(args.length == 1, "Usage: EmitHierarchicalBd new-output-directory")
+  PhysicalSocExport.emit(Paths.get(args(0)).toAbsolutePath, variants=Seq("bd"), preserveHierarchy=true)
 }

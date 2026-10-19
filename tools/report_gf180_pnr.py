@@ -26,8 +26,8 @@ def corner_report(mapping,out,corner,wire_corner="nom"):
     t+='report_checks -path_delay min_max -group_path_count 5 -format full_clock_expanded\n'
     for group in ("service","work","lf"):
         t+=f'foreach mode {{min max}} {{foreach path [find_timing_paths -path_group {group} -path_delay $mode -group_path_count 1] {{puts "CLOCKED_SLACK {group} $mode [get_property $path slack]"}}}}\n'
-    for macro in ("program_macros_0","program_macros_1","ram_macros_0"):
-        t+=f'set macro [get_cells soc/fabric_{macro}]\n'
+    for macro,_,_ in meta['geometry']['macro_locations']:
+        t+=f'set macro [get_cells {brace(macro)}]\n'
         t+='foreach mode {min max} {\nset paths [find_timing_paths -to [get_pins -of_objects $macro] -path_delay $mode -group_path_count 1]\n'
         t+='if {[llength $paths]==0} {error MISSING_SRAM_TIMING}\n'
         t+=f'foreach path $paths {{puts "SRAM_SLACK {macro} $mode [get_property $path slack]"}}\n}}\n'

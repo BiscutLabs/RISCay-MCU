@@ -1,0 +1,25 @@
+--- a/src/dpl/src/Place.cpp
++++ b/src/dpl/src/Place.cpp
+@@ -862,6 +862,9 @@
+   y_min = max(GridY{0}, y_min);
+   x_max = min(grid_->getRowSiteCount(), x_max);
+   y_max = min(grid_->getRowCount(), y_max);
++  if (x_min > x_max || y_min > y_max) {
++    return PixelPt();
++  }
+   debugPrint(logger_,
+              DPL,
+              "place",
+@@ -894,7 +897,11 @@
+       positionsHeap;
+   std::unordered_set<GridPt> visited;
+   int sequence = 0;
+-  GridPt center{x, y};
++  // Rounded fence corners can be outside both clipped axes. A four-connected
++  // search seeded there cannot enter the rectangle. Project only the seed;
++  // retain the displacement bounds and all full-cell placement checks.
++  const GridPt center{std::clamp(x, x_min, x_max),
++                      std::clamp(y, y_min, y_max)};
+   positionsHeap.push(
+       {.manhattan_distance = 0, .p = center, .sequence = sequence++});
+   visited.insert(center);

@@ -25,7 +25,8 @@ private class ControlMailbox extends Module with InlineInstance {
 }
 
 /** Clocked endpoints behind this variant's native asynchronous fabric. */
-class FourPhaseServices(p: SocParameters, boardFactory: SocParameters => BoardProfile) extends ServiceEndpoint(p.config.programBytes) {
+class FourPhaseServices(p: SocParameters, boardFactory: SocParameters => BoardProfile,
+    preserveHierarchy: Boolean = false) extends ServiceEndpoint(p.config.programBytes, preserveHierarchy) {
   val config = p.config
   val board = boardFactory(p)
   val telemetryWords = config.application.registers.map(_.word).toVector

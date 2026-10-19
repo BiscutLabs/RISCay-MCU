@@ -72,8 +72,9 @@ proc wire_repair {} {
   # a sequential master. Existing native cells are protected independently.
   set_dont_use [get_lib_cells */*dff*]
   set_dont_use [get_lib_cells */*lat*]
+  set placement_baseline [native_repair_baseline]
   repair_design -slew_margin 10 -cap_margin 10
-  native_detailed_placement
+  native_detailed_placement $placement_baseline
   repair_graph $out/$stage-repair-after.tsv
   puts "WIRE_REPAIR_COMPLETE $stage"
 }

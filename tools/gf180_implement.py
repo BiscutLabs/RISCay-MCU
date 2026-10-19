@@ -29,7 +29,8 @@ def instances(modules,top,prefix=""):
         if cell["type"] in modules and not cell["type"].startswith(SC) and cell["type"]!=SRAM:
             yield from instances(modules,cell["type"],path+"/")
 
-def synth(mapping,pdk):
+def synth(mapping,pdk,configured_yosys=False,synthesis_timeout=600):
+    if type(synthesis_timeout) is not int or synthesis_timeout<=0:raise ValueError('SYNTHESIS_TIMEOUT')
     if (mapping/'electrical-repair').exists(): raise ValueError('REPAIR_FRESH_MAPPING_REQUIRED')
     pdk_verify(pdk)
     record=json.loads((mapping/"mapping.json").read_text())
@@ -41,16 +42,26 @@ def synth(mapping,pdk):
         if sha(mapping/f)!=h: raise ValueError("MAPPED_INPUT_CHANGED_"+f)
     files=[mapping/x for x in (mapping/"filelist.f").read_text().splitlines()]
     lib=pdk/(SC+"tt_025C_3v30.lib")
+    from physical_tools import tool
+    selected=tool('yosys') if configured_yosys else None
+    abc=(selected.executable.rsplit('/',1)[0]+'/yosys-abc' if selected else
+         linux(ROOT/'.tools/physical/root/usr/bin/yosys-abc'))
     # Normalize time-typed parameters with sv2v. No library simulation view.
     run(["wsl","-e",linux(ROOT/".tools/physical/sv2v"),"-DSYNTHESIS",*map(linux,files)],mapping/"converted.v",120)
     script=f'read_liberty -lib {linux(lib)}\nread_verilog -defer -sv {linux(mapping/"converted.v")}\n'
     script+='hierarchy -check -top RiscayMcuDigital\nsynth -top RiscayMcuDigital -noabc\n'
     script+=f'dfflibmap -liberty {linux(lib)}\n'
-    script+=f'abc -exe {linux(ROOT/".tools/physical/root/usr/bin/yosys-abc")} -liberty {linux(lib)}\n'
+    script+=f'abc -exe {abc} -liberty {linux(lib)}\n'
     script+=f'clean\ncheck\nstat -liberty {linux(lib)}\nwrite_json {linux(mapping/"netlist.json")}\n'
     script+=f'write_verilog -norename -noattr -noexpr {linux(mapping/"netlist.v")}\n'
     (mapping/"synth.ys").write_text(script)
-    run(["wsl","-e",linux(ROOT/".tools/physical/root/usr/bin/yosys"),"-s",linux(mapping/"synth.ys")],mapping/"synth.log")
+    command=(selected.command(['-s',selected.path(mapping/'synth.ys')],timeout=synthesis_timeout) if selected else
+             ["wsl","-e",linux(ROOT/".tools/physical/root/usr/bin/yosys"),"-s",linux(mapping/"synth.ys")])
+    write_json(mapping/'synthesis-tools.json',dict(configured_yosys=configured_yosys,command=command,abc=abc,timeout_seconds=synthesis_timeout,
+        inputs_sha256={str(p.resolve()):sha(p) for p in ([mapping/'converted.v',lib,Path(__file__)] +
+          (selected.input_files()+[selected.host_path(abc)] if selected else
+           [ROOT/'.tools/physical/root/usr/bin/yosys',ROOT/'.tools/physical/root/usr/bin/yosys-abc']))}))
+    run(command,mapping/"synth.log",synthesis_timeout+20)
     audit(mapping)
     # Electrical repair is part of the default mapping flow. Native internals
     # remain protected; exact graph/Liberty proofs precede output publication.
@@ -131,4 +142,6 @@ def audit(mapping, *, adapter_instances=None):
 if __name__=="__main__":
     p=argparse.ArgumentParser(description=__doc__); p.add_argument("mapping",type=Path)
     p.add_argument("--pdk",type=Path,default=ROOT/".tools/physical/pdk"); p.add_argument("--audit-only",action="store_true")
-    a=p.parse_args(); audit(a.mapping) if a.audit_only else synth(a.mapping,a.pdk)
+    p.add_argument('--configured-yosys',action='store_true',help='Use the configured pinned Yosys and sibling ABC for this matched experiment')
+    p.add_argument('--synthesis-timeout',type=int,default=600,help='Seconds; full-capacity ROM mapping may require 3600')
+    a=p.parse_args(); audit(a.mapping) if a.audit_only else synth(a.mapping,a.pdk,a.configured_yosys,a.synthesis_timeout)

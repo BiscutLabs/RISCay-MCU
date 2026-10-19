@@ -1,4 +1,70 @@
-# OpenROAD wire-repair progress backport
+# OpenROAD runtime patches
+
+## Regional placement accounting
+
+`region-blockage.patch` fixes the 26Q2 GPL placement-region accounting used by
+the BD hierarchy experiment. The original code builds a full-core site grid
+for every group, then counts every blocked site against each region's area.
+The MCU's first bounded run consequently charged 0.828853 mm² of obstruction
+to every region, reported negative utilization and diverged with `GPL-0305`.
+
+The patch clips dummy obstacles to the current region, includes overlapping
+fixed cells regardless of movable group membership, counts their intersection
+area, and respects actual row holes in grouped regions. Fixed sites overwrite
+blocked sites before dummy construction, avoiding double counting. It does not
+delete physical keep-outs or change circuit graphs. Our generated regions have
+one rectangle each; this does not add support for nonrectangular region unions.
+
+Correction is enabled consistently for the whole block only when every
+region-attached group is `PHYSICAL_CLUSTER` with one rectangle, and every row
+has the same horizontal site, spacing and grid phase. A bounded MCU run requires
+the `MODULE_REGION_ACCOUNTING corrected-uniform-physical` diagnostic. Other
+layouts retain upstream accounting. An earlier unrestricted version changed
+the mixed-row UPF regression and stranded an ungrouped resizer buffer; that
+failed evidence is retained. This scoped patch neither fixes power-domain
+ownership nor qualifies the future always-on power island. The UPF test and
+its expected results remain unchanged.
+
+`check-region-blockage.py` compares the old and candidate tools on unchanged
+upstream fixture data: outside and partially intersecting blockages, a fixed
+cell wholly/partly inside a region, overlapping fixed/blockage geometry, and
+ordinary top-level and unchanged power-domain accounting. Its receipt records
+the tools and fixture.
+These are initialization controls; full-chip convergence and final geometry
+are separate checks in [the floorplan experiment](../../../docs/hierarchical-floorplan.md).
+
+## Detailed-placement search origin
+
+`dpl-search-origin.patch` clamps the diamond-search seed to its already clipped
+search rectangle. A fractional fence corner can otherwise round outside both
+axes; none of its four neighbours is in bounds, so the search cannot reach any
+legal site even with a large displacement allowance. The patch does not change
+the rectangle, site occupancy, group membership or full-cell placement checks.
+An empty rectangle returns failure.
+
+`check-dpl-search.py OLD NEW SOURCE OUTPUT` exercises the upstream single-buffer
+fixture with an unaligned corner, an ordinary in-bounds start and a completely
+occupied one-cell region. The old corner must fail, the new one must legalize,
+the in-bounds placements must match, and both tools must reject the full region.
+Every successful result also passes `check_placement` and a full-bbox fence check.
+
+`dpl-search-golden.patch` updates only the upstream `fence01` placement and
+stdout snapshots. Tcl/Python output matches; all ten cells independently pass
+row, orientation, fence and non-overlap checks. Five placements change, with
+connectivity and masters unchanged. Total displacement improves 15.29→9.12 µm
+and maximum displacement 4.63→3.23 µm; HPWL increases 85.7→89.9 µm. No legality
+assertion or HPWL threshold is changed. Full package results for the combined
+candidate are recorded separately from the earlier wire-progress-only build.
+
+The combined scoped candidate passed **all 7,631 packaged tests**
+(`build/hierarchical-floorplan/openroad-region-build-r5.log`), plus the paired
+regional-accounting and legalizer controls in `region-controls-r5` and
+`dpl-controls-r5`. The matched P&R runs use the exact tested build executable,
+SHA-256 `20abaf17173bc8be06b658179920f739103279e54105b3c165dceab4c8ba00a1`.
+The installed package is `/nix/store/6hr4lrhg5bc173mfbrxm2plv5pjgg847-openroad-26Q2`;
+its installation relink is distinct from the retained tested binary.
+
+## Wire-repair progress backport
 
 The pinned February 2026 OpenROAD resizer repeatedly inserts buffers at one
 location on the MCU's placed graph. A live stack trace locates the loop in
@@ -32,7 +98,7 @@ P&R hashes both launcher and wrapped executable, the tool configuration, and
 this recipe/patch. Changed runtime bytes invalidate checkpoint reuse. The
 default configured executable is not silently replaced.
 
-The candidate passes all 7,631 packaged tests. The upstream no-progress fixture
+The wire-progress-only candidate passed all 7,631 packaged tests. The upstream no-progress fixture
 times out after 30 seconds on unmodified 26Q2; this candidate completes it while
 retaining its electrical violations. The ordinary `repair_slew10` control
 completes without residual violations. A separate two-buffer control reduces a

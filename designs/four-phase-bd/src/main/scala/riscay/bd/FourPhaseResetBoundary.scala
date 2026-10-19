@@ -10,7 +10,8 @@ import chisel3.util.experimental.InlineInstance
   * observer and the independent immediate output-isolation/debt paths.
   * Accepted effects are deliberately absent from the close acknowledgment.
   */
-class FourPhaseResetBoundary(holdEdges: Int, releaseEdges: Int) extends Module with InlineInstance {
+class FourPhaseResetBoundary(holdEdges: Int, releaseEdges: Int, preserveHierarchy: Boolean = false) extends Module {
+  riscay.soc.EmissionHierarchy.inlineUnless(this, preserveHierarchy)
   require(holdEdges >= 2 && releaseEdges >= 2)
   val io=IO(new Bundle {
     val observed=Input(Bool())

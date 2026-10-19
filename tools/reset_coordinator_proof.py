@@ -64,7 +64,7 @@ def helper(cone, rows, reason):
     """
     matches = set()
     for name, net in cone.module['netnames'].items():
-        if not re.fullmatch(r'resetBoundary_(?:_[0-9]+)?', name) or len(net['bits']) != 1:
+        if not re.fullmatch(r'resetBoundary_(?:_[0-9]+|_GEN(?:_[0-9]+)?)?', name) or len(net['bits']) != 1:
             continue
         try:
             valid = all(cone.evaluate(net['bits'], env) == expected for env, expected in rows)

@@ -118,7 +118,9 @@ def sram_capacities(inventory, top):
         raise ValueError('RDC_SRAM_INVENTORY')
     capacities = dict(program=inventory.get('program_bytes'), ram=inventory.get('working_ram_bytes'))
     for capacity in capacities.values(): saved_sram_address_width(capacity)
-    expected = [dict(path=f'{top}.fabric_{bank}_macros_{index}', bank=bank, index=index)
+    if type(inventory.get('services_hierarchy',False)) is not bool: raise ValueError('RDC_SRAM_HIERARCHY')
+    service='fabric.' if inventory.get('services_hierarchy',False) else 'fabric_'
+    expected = [dict(path=f'{top}.{service}{bank}_macros_{index}', bank=bank, index=index)
                 for bank, capacity in capacities.items() for index in range((capacity + 1023) // 1024)]
     if inventory.get('instances') != expected:
         raise ValueError('RDC_SRAM_INSTANCE_INVENTORY')

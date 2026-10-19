@@ -11,7 +11,8 @@ import riscay.soc._
   * bounded interval, including the CPU and its bus endpoints, not power policy.
   * Reason is retained in this POR-only domain until external reset.
   */
-class Watchdog(limit: Int, holdCycles: Int) extends Module with InlineInstance {
+class Watchdog(limit: Int, holdCycles: Int, preserveHierarchy: Boolean = false) extends Module {
+  EmissionHierarchy.inlineUnless(this, preserveHierarchy)
   val io = IO(new Bundle {
     val heartbeat = Input(Bool())
     val expired = Output(Bool())

@@ -238,6 +238,21 @@ def prepare_graph(export: Path, output: Path, manifest: dict) -> dict:
 def audit_graph(database: dict, top: str, capacities: dict | None = None) -> dict:
     modules = database["modules"]
     module = modules[top]
+    # Yosys flattens retained clocked owners with a dot; firtool's InlineInstance
+    # uses an underscore. Add aliases only, never rewrite a connection or cell.
+    # All existing equation, fanout and destination proofs still run unchanged.
+    nets = module['netnames']
+    for name, net in list(nets.items()):
+        owner, separator, local = name.partition('.')
+        if separator and owner in ('fabric', 'watchdog', 'timebase', 'resetBoundary'):
+            alias = owner + '_' + local
+            if alias in nets and nets[alias]['bits'] != net['bits']:
+                raise ValueError('RDC_HIERARCHY_ALIAS_COLLISION_' + alias)
+            nets[alias] = net
+    if 'watchdog.io_expired' in nets:
+        if 'watchdog_' in nets and nets['watchdog_']['bits'] != nets['watchdog.io_expired']['bits']:
+            raise ValueError('RDC_WATCHDOG_ALIAS_COLLISION')
+        nets['watchdog_'] = nets['watchdog.io_expired']
     if top in FIXTURE_TOPS: fixture_ports(module, top)
     cells, nets = module["cells"], module["netnames"]
     def model(cell):

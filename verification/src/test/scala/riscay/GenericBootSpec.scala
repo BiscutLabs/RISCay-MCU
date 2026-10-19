@@ -7,7 +7,8 @@ import java.util.zip.CRC32
 import chisel3._
 import chisel3.util.experimental.BoringUtils
 
-class BdGenericBootFixture(p: SocParameters) extends riscay.bd.FourPhaseSoc(p) {
+class BdGenericBootFixture(p: SocParameters, preserveHierarchy: Boolean = false)
+    extends riscay.bd.FourPhaseSoc(p,preserveHierarchy=preserveHierarchy) {
   val recovery=IO(Input(Bool()))
   applicationResetRequest := reset.asBool || watchdog.io.expired || recovery
   val spiOwned=IO(Output(Bool())); spiOwned:=fabric.io.spiClaimed
@@ -37,13 +38,14 @@ class ClickGenericBootFixture(p: SocParameters) extends riscay.click.ClickSoc(p)
 }
 
 class GenericBootSpec extends AnyFunSuite {
+  protected def preserveHierarchy: Boolean = false
   import Assembly._
   private val config=McuConfiguration(256,256,7,Vector.empty,
     ApplicationProfile(1,1,"generic-boot",Vector(HostRegister(0,"RESULT")),Vector.empty))
   private val p=SocParameters(config,watchdogCycles=1000000,spiBoot=true)
   private val program=Seq(0x300000b7L,i(0x13,2,0,0,0x123),store(1,2,52,2),breakpoint)
   private def fixture(click: Boolean, params: SocParameters=p): SocTop =
-    if(click) new ClickGenericBootFixture(params) else new BdGenericBootFixture(params)
+    if(click) new ClickGenericBootFixture(params) else new BdGenericBootFixture(params,preserveHierarchy)
   private def upload(words: Seq[Long], start: Boolean = true): String = {
     val crc=new CRC32; words.foreach(w => (0 until 4).foreach(b => crc.update(((w >>> (8*b))&255).toInt)))
     s"begin_image(${words.size*4},0,32'h${crc.getValue.toHexString},32'h00010000);\n" +

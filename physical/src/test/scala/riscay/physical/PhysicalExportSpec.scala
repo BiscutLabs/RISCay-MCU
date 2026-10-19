@@ -12,6 +12,29 @@ class PhysicalExportSpec extends AnyFunSuite {
   private def sha(bytes: Array[Byte]) = MessageDigest.getInstance("SHA-256").digest(bytes)
     .map(b => f"${b & 0xff}%02x").mkString
 
+  test("BD hierarchy experiment preserves the same native contracts and external ports") {
+    val root=Files.createTempDirectory("riscay-hierarchy-")
+    PhysicalSocExport.emit(root.resolve("inline"),variants=Seq("bd"))
+    PhysicalSocExport.emit(root.resolve("retained"),variants=Seq("bd"),preserveHierarchy=true)
+    def json(kind: String,file: String) = ujson.read(Files.readString(root.resolve(s"$kind/bd/$file")))
+    assert(json("inline","ports.json") == json("retained","ports.json"))
+    // Source hashes must differ: the purpose of this experiment is different
+    // emitted hierarchy. Native semantic contracts and resources must not.
+    val a=json("inline","contract.json")("manifest")
+    val b=json("retained","contract.json")("manifest")
+    for(key <- Seq("schema","top","time_unit","resources","design"))
+      assert(a(key)==b(key),s"native contract changed: $key")
+    val out=root.resolve("retained/bd")
+    val top=Files.readString(out.resolve("FourPhaseSoc.sv"))
+    for((kind,instance) <- Seq("FourPhaseServices" -> "fabric", "Watchdog" -> "watchdog",
+      "SleepTimebase" -> "timebase", "FourPhaseResetBoundary" -> "resetBoundary")) {
+      assert(Files.exists(out.resolve(kind+".sv")),kind)
+      assert(top.contains(s"$kind $instance ("),instance)
+    }
+    assert(json("retained","sram.json")("instances").arr.forall(_("path").str.startsWith("FourPhaseSoc.fabric.")))
+    assert(json("inline","sram.json")("instances").arr.forall(_("path").str.startsWith("FourPhaseSoc.fabric_")))
+  }
+
   test("current physical exports retain supported contracts and inline assertions for both variants") {
     val parent=Paths.get("build/physical-export-tests").toAbsolutePath; Files.createDirectories(parent)
     val root=Files.createTempDirectory(parent,"current-").resolve("exports")

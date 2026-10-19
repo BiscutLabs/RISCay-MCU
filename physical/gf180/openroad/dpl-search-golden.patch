@@ -1,0 +1,38 @@
+--- a/src/dpl/test/fence01.defok
++++ b/src/dpl/test/fence01.defok
+@@ -36,11 +36,11 @@
+     - f0/_283_ INV_X1 + PLACED ( 28380 28000 ) FS ;
+     - f0/_284_ NOR2_X1 + PLACED ( 30280 28000 ) FS ;
+     - f0/_285_ NOR2_X1 + PLACED ( 29140 28000 ) FS ;
+-    - f1/_276_ NOR2_X2 + PLACED ( 34460 28000 ) FS ;
+-    - f1/_277_ BUF_X4 + PLACED ( 34460 30800 ) N ;
+-    - f1/_278_ INV_X1 + PLACED ( 39020 28000 ) FS ;
+-    - f1/_279_ NOR2_X1 + PLACED ( 36360 28000 ) FS ;
+-    - f1/_280_ INV_X1 + PLACED ( 38260 28000 ) FS ;
++    - f1/_276_ NOR2_X2 + PLACED ( 34460 30800 ) N ;
++    - f1/_277_ BUF_X4 + PLACED ( 34460 28000 ) FS ;
++    - f1/_278_ INV_X1 + PLACED ( 37880 28000 ) FS ;
++    - f1/_279_ NOR2_X1 + PLACED ( 36360 30800 ) N ;
++    - f1/_280_ INV_X1 + PLACED ( 38260 30800 ) N ;
+ END COMPONENTS
+ PINS 2 ;
+     - input + NET input + DIRECTION INPUT + USE SIGNAL
+--- a/src/dpl/test/fence01.ok
++++ b/src/dpl/test/fence01.ok
+@@ -15,11 +15,11 @@
+ ---------------------------------------
+ Placement Analysis
+ ---------------------------------
+-total displacement         15.3 u
+-average displacement        1.5 u
+-max displacement            4.6 u
++total displacement          9.1 u
++average displacement        0.9 u
++max displacement            3.2 u
+ original HPWL              79.2 u
+-legalized HPWL             85.7 u
+-delta HPWL                    8 %
++legalized HPWL             89.9 u
++delta HPWL                   14 %
+ 
+ No differences found.

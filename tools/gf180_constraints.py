@@ -75,8 +75,20 @@ def prepare(mapping):
     _,net_aliases=graph(modules)
     sdc=[PRELUDE,"# Clocked island, bounded async entry points and SRAM half cycles."]
     cdc=[]
+    def locate(path, net):
+        if net in tree[path]['netnames']: return path, net
+        owner, separator, local = net.partition('_')
+        child = path + owner + '/'
+        if separator and owner in ('fabric','watchdog','timebase','resetBoundary') and child in tree and local in tree[child]['netnames']:
+            return child, local
+        # The retained timebase's registered Gray output is its public port;
+        # the hierarchical netlist writer can discard the redundant local name.
+        if path=='soc/' and net=='timebase_gray' and 'soc/timebase/' in tree and 'io_gray' in tree['soc/timebase/']['netnames']:
+            return 'soc/timebase/', 'io_gray'
+        raise ValueError('CLOCKED_ALIAS_MISSING_' + path + net)
     # Select registers by retained RTL net aliases and verify actual DFF drivers.
     def reg_d(path,net,indices=None):
+        path,net=locate(path,net)
         module=tree[path]; bits=module["netnames"][net]["bits"]
         pins=[]
         for index in range(len(bits)) if indices is None else indices:
@@ -145,9 +157,10 @@ def prepare(mapping):
     if len(gray_d)!=32: raise ValueError("GRAY_WIDTH_CHANGED")
     gray_q=[]
     for i in range(32):
-        d=driver(tree["soc/"],"timebase_gray",i)
+        path,net=locate('soc/','timebase_gray')
+        d=driver(tree[path],net,i)
         if not d: raise ValueError("GRAY_SOURCE_CONSTANT")
-        gray_q.append("soc/"+d[0]+"/"+d[1])
+        gray_q.append(path+d[0]+"/"+d[1])
     for q,d in zip(gray_q,gray_d):
         # Conventional STA startpoint is the source register's clock pin.
         # Including clock-to-Q makes this bound more conservative than Q-to-D.

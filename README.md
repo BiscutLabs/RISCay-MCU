@@ -96,7 +96,8 @@ boot ROM.
 
 **This is a development design, not ready for fabrication.** Detailed routing
 has zero router violations; electrical, timing and signal-integrity qualification
-remain open. See the [layout and congestion results](docs/gf180-routability.md), [area ledger](docs/area-ledger.md)
+remain open. See the [layout and congestion results](docs/gf180-routability.md),
+[module placement study](docs/hierarchical-floorplan.md), [area ledger](docs/area-ledger.md)
 and [development roadmap](docs/architecture-followups.md) for measurements and
 remaining work.
 

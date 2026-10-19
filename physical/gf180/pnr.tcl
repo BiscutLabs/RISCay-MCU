@@ -29,6 +29,12 @@ source $out/native-routing.tcl
 source $source/pnr-native-routing.tcl
 source $out/native-placement.tcl
 source $source/pnr-native-placement.tcl
+source $out/module-regions.tcl
+source $source/pnr-module-regions.tcl
+if {$module_region_guided && $stage ni {floorplan place}} {
+  set module_region_bounded 0
+  check_released_module_guides
+}
 proc connect_power {} {
   global protected_cells mapping source
   # OpenDB's dont-touch also blocks power connections. Release protection only
@@ -105,7 +111,7 @@ if {$stage eq "floorplan"} {
   insert_tiecells ${sc}tiel/ZN
   repair_tie_fanout -separation 1 ${sc}tieh/Z
   repair_tie_fanout -separation 1 ${sc}tiel/ZN
-  place_pins -hor_layers Metal3 -ver_layers Metal2
+  place_module_boundary_pins
   connect_power
   source $source/pnr-pdn.tcl
   pdngen -failed_via_report $out/pdn-vias.rpt
@@ -119,8 +125,18 @@ if {$stage eq "place"} {
   # graph audit. Wire-dependent electrical closure remains a separate gate;
   # do not silently alter protected native graphs during placement.
   cluster_native_cells
-  global_placement -density $placement_density -routability_driven
+  # This is the continuous optimizer's stopping criterion, not a placement or
+  # routing waiver. Both matched arms use it; discrete legality, native bounds
+  # and zero router DRC remain independently mandatory.
+  if {$module_region_seed} {
+    seed_module_regions
+    report_module_regions seed
+    global_placement -skip_initial_place -density $placement_density -routability_driven -overflow .15
+  } else {
+    global_placement -density $placement_density -routability_driven -overflow .15
+  }
   native_detailed_placement
+  release_module_guides
   estimate_parasitics -placement
   wire_repair
   estimate_parasitics -placement
@@ -192,6 +208,8 @@ if {$stage eq "extract"} {
 }
 source $out/protected-baseline.tcl
 if {$stage ne "floorplan"} {check_native_placement}
+if {$stage ne "floorplan"} {check_module_bounds}
+if {$stage ne "floorplan"} {report_module_regions $checkpoint}
 if {[protected_snapshot] ne $expected_protected} {error "PROTECTED_CONNECTIVITY_CHANGED"}
 puts "PROTECTED_AUDIT_PASS [llength $protected_cells]"
 connect_power

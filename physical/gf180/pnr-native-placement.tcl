@@ -31,6 +31,8 @@ proc native_locations {} {
 }
 proc restore_native_locations {saved} {
   dict for {inst record} $saved {
+    set b [$inst getBBox]
+    if {[list [$b xMin] [$b yMin] [$inst getOrient] [$inst getPlacementStatus]] eq $record} {continue}
     lassign $record x y orient status
     $inst setPlacementStatus PLACED
     $inst setOrient $orient
@@ -210,8 +212,96 @@ proc repack_native_groups {{depth 0} {parentTrial ""}} {
   }
   error NATIVE_REPACK_NO_LEGAL_NEIGHBORHOOD
 }
-proc native_detailed_placement {} {
+# Capture only compact-group geometry before electrical repair. Same-master
+# members keep these legal holes; changed masters and new cells stay movable.
+proc native_repair_baseline {} {
+  global native_placement_groups
+  set baseline {}; set block [ord::get_db_block]
+  if {[llength [oversized_native_groups]]} {error NATIVE_REPAIR_BASELINE_SPREAD}
+  foreach row $native_placement_groups {foreach name [lindex $row 2] {
+    set inst [$block findInst $name]
+    if {[dict exists $baseline $inst]} {error NATIVE_REPAIR_BASELINE_DUPLICATE}
+    set b [$inst getBBox]
+    dict set baseline $inst [list [[$inst getMaster] getName] [$b xMin] [$b yMin] [$inst getOrient] [$inst getPlacementStatus]]
+  }}
+  return $baseline
+}
+proc native_anchor_legalization {{baseline {}}} {
+  global native_placement_groups protected_cells out stage
+  if {$baseline eq "" && [llength [oversized_native_groups]]} {return 0}
+  set saved [native_locations]; set changed {}; set anchored {}; set accepted 0
+  set block [ord::get_db_block]
+  set protected {}
+  foreach row $protected_cells {dict set protected [lindex $row 0] 1}
+  try {
+    set members {}
+    foreach row $native_placement_groups {foreach name [lindex $row 2] {
+      set inst [$block findInst $name]
+      dict set members $inst 1
+    }}
+    if {$baseline ne "" && [lsort [dict keys $baseline]] ne [lsort [dict keys $members]]} {
+      error NATIVE_REPAIR_BASELINE_INVENTORY
+    }
+    dict for {inst unused} $members {
+      set name [$inst getName]
+      set status [lindex [dict get $saved $inst] 3]
+      set expected [lrange [dict get $saved $inst] 0 2]
+      if {$baseline ne ""} {
+        lassign [dict get $baseline $inst] master x y orient old_status
+        if {$status in {FIRM LOCKED COVER} || $old_status in {FIRM LOCKED COVER}} {
+          if {$status ne $old_status || $expected ne [list $x $y $orient] ||
+              [[$inst getMaster] getName] ne $master} {error NATIVE_REPAIR_FIXED_CHANGED}
+          dict set anchored $inst $expected
+          continue
+        }
+        if {[[$inst getMaster] getName] ne $master} {
+          if {[dict exists $protected $name]} {error NATIVE_REPAIR_PROTECTED_MASTER}
+          continue
+        }
+        # Repair can grow neighboring ordinary cells. Preserve the complete
+        # previously legal compact group, not a dispersed post-DPL location.
+        $inst setPlacementStatus PLACED
+        $inst setOrient $orient; $inst setLocation $x $y
+        set expected [list $x $y $orient]
+      } elseif {![dict exists $protected $name]} {continue}
+      dict set anchored $inst $expected
+      if {$status ni {FIRM LOCKED COVER} || $baseline ne ""} {
+        dict set changed $inst $status
+        $inst setPlacementStatus FIRM
+      }
+    }
+    detailed_placement -max_displacement {500 500}
+    check_placement -verbose
+    dict for {inst expected} $anchored {
+      set b [$inst getBBox]
+      if {[list [$b xMin] [$b yMin] [$inst getOrient]] ne $expected} {
+        error "NATIVE_ANCHOR_MOVED [$inst getName]"
+      }
+    }
+    # Newly inserted ordinary buffers may have started UNPLACED. Preserve their
+    # successful legalization; restore only statuses temporarily changed here.
+    dict for {inst status} $changed {$inst setPlacementStatus $status}
+    check_placement -verbose
+    repack_native_groups
+    check_placement -verbose
+    check_native_placement
+    check_module_bounds
+    set accepted 1
+  } on error {message options} {
+    if {[catch {write_db $out/$stage-native-anchor-failed.odb} diagnostic]} {
+      puts "NATIVE_DPL_DIAGNOSTIC_FAILED $diagnostic"
+    }
+    puts "NATIVE_ANCHOR_REJECTED $message"
+  } finally {
+    if {!$accepted} {restore_native_locations $saved}
+  }
+  if {$accepted} {puts NATIVE_ANCHOR_PASS}
+  return $accepted
+}
+proc native_detailed_placement {{baseline {}}} {
   global out stage
+  assign_module_helpers
+  if {[native_anchor_legalization $baseline]} {return}
   # Search radius is not a native span allowance. A wider ordinary-cell retry
   # can legalize macro-pin congestion; native groups still must fit within 64um.
   set saved [native_locations]
@@ -235,6 +325,7 @@ proc native_detailed_placement {} {
   repack_native_groups
   check_placement -verbose
   check_native_placement
+  check_module_bounds
 }
 proc check_native_placement {} {
   global native_placement_groups native_output_feeders native_input_feeders out stage

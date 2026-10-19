@@ -29,10 +29,10 @@ PROVENANCE_SCHEMA = "riscay-pnr-inputs-v6"
 MAPPING_INPUTS = ("mapping.json", "netlist.v", "netlist.json", "base.sdc", "clocked.sdc",
                   "feedback-cuts.tcl", "async.sdc", "preserve-mapped.tcl", "constraints-bound.json",
                   "electrical-repair/receipt.json")
-FLOW_INPUTS = ("pnr.tcl", "pnr-pdn.tcl", "power.tcl", "pnr-repair.tcl", "pnr-clock.tcl", "pnr-native-routing.tcl", "pnr-native-placement.tcl")
+FLOW_INPUTS = ("pnr.tcl", "pnr-pdn.tcl", "power.tcl", "pnr-repair.tcl", "pnr-clock.tcl", "pnr-native-routing.tcl", "pnr-native-placement.tcl", "pnr-module-regions.tcl")
 REPAIR_AUDIT_SOURCES = ('check_pnr_repair.py','check_pnr_clock.py','repair_gf180_design.py','gf180_physical.py',
-                      'gf180_estimate.py','repair_gf180_control.py','characterize_gf180_liberty.py','gf180_constraints.py','gf180_pnr.py','native_routing.py','native_placement.py')
-GENERATED_INPUTS = ("config.tcl", "async-pnr.sdc", "async-electrical.sdc", "async-context.json", "protected.tcl", "native-routing.tcl", "native-routing.json", "native-placement.tcl", "native-placement.json")
+                      'gf180_estimate.py','repair_gf180_control.py','characterize_gf180_liberty.py','gf180_constraints.py','gf180_pnr.py','native_routing.py','native_placement.py','module_floorplan.py')
+GENERATED_INPUTS = ("config.tcl", "async-pnr.sdc", "async-electrical.sdc", "async-context.json", "protected.tcl", "native-routing.tcl", "native-routing.json", "native-placement.tcl", "native-placement.json", "module-regions.json", "module-regions.tcl")
 RC_CORNERS = ("nom", "min", "max")
 DEFAULT_PLACEMENT_DENSITY = 0.60
 
@@ -68,6 +68,21 @@ def routability_regions(g):
     return dict(hard=hard,band=band,band_density_percent=50)
 
 
+def mapped_geometry(mapping, side, density, height):
+    from gf180_implement import leaves
+    g=geometry(side,density,height)
+    modules=json.loads((mapping/'netlist.json').read_text())['modules']
+    macros={n for n,c in leaves(modules,'RiscayMcuDigital') if c['type']==SRAM}
+    resolved=[]
+    for name,x,y in g['macro_locations']:
+        candidates=macros.intersection((name,name.replace('soc/fabric_','soc/fabric/')))
+        if len(candidates)!=1:raise ValueError('PNR_MACRO_HIERARCHY_'+name)
+        resolved.append([candidates.pop(),x,y])
+    if len(macros)!=len(resolved):raise ValueError('PNR_MACRO_INVENTORY')
+    g['macro_locations']=resolved
+    return g
+
+
 def router_violations(report, log):
     """Require independent report and final router count to agree at zero."""
     if not report.is_file(): raise ValueError('PNR_ROUTER_DRC_REPORT_MISSING')
@@ -97,7 +112,7 @@ def runtime_hashes(meta):
     executable=selected.host_path()
     wrapped=executable.with_name('.'+executable.name+'-wrapped')
     if wrapped.is_file():files.append(wrapped)
-    files += [ROOT/'physical/gf180/openroad'/name for name in ('default.nix','repair-progress.patch')]
+    files += [ROOT/'physical/gf180/openroad'/name for name in ('default.nix','repair-progress.patch','region-blockage.patch','dpl-search-origin.patch','dpl-search-golden.patch')]
     return {str(p.resolve()):sha(p) for p in files}
 
 
@@ -240,7 +255,7 @@ def assets():
                                 source_files=ASSETS,files=observed))
     return dest
 
-def configuration(mapping,out,routing,threads,side=1440,density=DEFAULT_PLACEMENT_DENSITY,height=None):
+def configuration(mapping,out,routing,threads,side=1440,density=DEFAULT_PLACEMENT_DENSITY,height=None,module_regions=False,module_repair_budget=None):
     from repair_gf180_design import validate_receipt
     validate_receipt(mapping)
     accepted=json.loads((mapping/'netlist-audit.json').read_text())
@@ -251,7 +266,7 @@ def configuration(mapping,out,routing,threads,side=1440,density=DEFAULT_PLACEMEN
                           sram=ROOT/".tools/gf180-sram",source=ROOT/"physical/gf180").items():
         lines.append(f'set {name} {brace(linux(path))}')
     lines.extend([f'set threads {threads}',f'set sc {SC}',f'set sram_cell {SRAM}'])
-    g=geometry(side,density,height)
+    g=mapped_geometry(mapping,side,density,height)
     regions=routability_regions(g)
     lines += ['set die_area {'+' '.join(map(str,g['die_um']))+'}',
               'set core_area {'+' '.join(map(str,g['core_um']))+'}',
@@ -286,6 +301,8 @@ def configuration(mapping,out,routing,threads,side=1440,density=DEFAULT_PLACEMEN
     generate(mapping,out)
     from native_placement import generate as generate_placement
     generate_placement(mapping,out)
+    from module_floorplan import generate as generate_modules
+    generate_modules(mapping,out,g,module_regions,module_repair_budget)
 
 
 def electrical_context(sdc):
@@ -354,12 +371,13 @@ def bind_flat_interfaces(modules,sdc):
         return '[concat '+" ".join('[rp '+brace(p)+']' for p in sorted(set(selected)))+']'
     return re.sub(r'\[rbus \{([^}]+)\} (\d+)\]',bind,sdc)
 
-def run(mapping,out,from_stage,to_stage,threads,side=1440,openroad=None,density=DEFAULT_PLACEMENT_DENSITY,height=None):
+def run(mapping,out,from_stage,to_stage,threads,side=1440,openroad=None,density=DEFAULT_PLACEMENT_DENSITY,height=None,module_regions=False,module_repair_budget=None):
     mapping=mapping.resolve(); out=out.resolve()
     from repair_gf180_design import validate_receipt
     validate_receipt(mapping)
     begin,end=STAGES.index(from_stage),STAGES.index(to_stage)
-    g=geometry(side,density,height)
+    g=mapped_geometry(mapping,side,density,height)
+    budget_input=None if module_repair_budget is None else dict(path=str(module_repair_budget.resolve()),sha256=sha(module_repair_budget))
     if begin>end: raise ValueError("STAGE_ORDER")
     files=[ROOT/"physical/gf180"/n for n in FLOW_INPUTS]
     hashes={file.name:sha(file) for file in files}
@@ -372,13 +390,15 @@ def run(mapping,out,from_stage,to_stage,threads,side=1440,openroad=None,density=
             raise ValueError("PNR_RESUME_DIRECTORY_CHANGED")
         if meta.get("geometry",geometry(1440))!=g:
             raise ValueError("PNR_GEOMETRY_CHANGED")
+        if meta.get('module_regions',False)!=module_regions:raise ValueError('PNR_MODULE_REGIONS_CHANGED')
+        if meta.get('module_repair_budget')!=budget_input:raise ValueError('PNR_MODULE_REPAIR_BUDGET_CHANGED')
         pdk_verify(ROOT/".tools/physical/pdk")
     if from_stage=="floorplan": out.mkdir(parents=True,exist_ok=False)
     elif not out.is_dir(): raise ValueError("MISSING_RESUME_DIRECTORY")
     routing=assets()
     snapshot,hashes=snapshot_flow(out,files)
     if not begin:
-        configuration(mapping,out,routing,threads,side,density,height)
+        configuration(mapping,out,routing,threads,side,density,height,module_regions,module_repair_budget)
         with (out/"config.tcl").open("a") as config: config.write('set source '+brace(linux(snapshot))+'\n')
         meta=dict(status="running-unqualified",source_commit=subprocess.check_output(
         ["git","rev-parse","HEAD"],cwd=ROOT,text=True).strip(),mapping_sha256=sha(mapping/"mapping.json"),
@@ -391,7 +411,7 @@ def run(mapping,out,from_stage,to_stage,threads,side=1440,openroad=None,density=
         generated_inputs_sha256={name:sha(out/name) for name in GENERATED_INPUTS},
         routing_lock_sha256=sha(ROOT/"physical/gf180/routing-lock.json"),
         wire_corners=list(RC_CORNERS),
-        die_um=g['die_um'],core_um=g['core_um'],geometry=g,threads=threads,
+        die_um=g['die_um'],core_um=g['core_um'],geometry=g,threads=threads,module_regions=module_regions,module_repair_budget=budget_input,
         limits=["digital block only; no pads/analog", "no async timing closure",
                 "initial placement and routing, no density/antenna/LVS signoff"])
         meta['openroad_runtime_sha256']=runtime_hashes(meta)
@@ -420,9 +440,14 @@ def run(mapping,out,from_stage,to_stage,threads,side=1440,openroad=None,density=
             result=subprocess.run(pnr_tool(meta).command(["-exit",
                 "-metrics",linux(out/(stage+"-metrics.json")),linux(driver)]),stdout=log,stderr=subprocess.STDOUT)
         log=(out/(stage+".log")).read_text()
-        if result.returncode or f'PNR_STAGE_COMPLETE {stage}' not in log:
+        region_mode_ok=(stage!='place' or module_regions not in ('bounded','guided') or
+                        'MODULE_REGION_ACCOUNTING corrected-uniform-physical' in log)
+        if module_regions=='guided' and stage!='floorplan':
+            region_mode_ok=region_mode_ok and 'MODULE_GUIDES_RELEASED' in log
+        if result.returncode or f'PNR_STAGE_COMPLETE {stage}' not in log or not region_mode_ok:
             meta.update(status="stopped-unqualified",failed_stage=stage,returncode=result.returncode)
             write_json(out/"run.json",meta)
+            if not region_mode_ok: raise RuntimeError('PNR_REGION_ACCOUNTING_MODE_MISSING')
             raise RuntimeError("PNR_STAGE_FAILED_"+stage+"\n"+log[-4000:])
         current_inputs(meta,mapping)
         # A regenerated checkpoint invalidates all downstream saved stages.
@@ -497,8 +522,16 @@ if __name__=="__main__":
     p.add_argument("--placement-density",type=float,default=DEFAULT_PLACEMENT_DENSITY,
                    help="Placement target (default: 0.60); comparison variants must retain the same die outline")
     p.add_argument("--openroad",help="P&R-only executable override; mapper runtime and evidence stay unchanged")
+    regions=p.add_mutually_exclusive_group()
+    regions.add_argument('--module-regions',dest='module_regions',action='store_const',const='bounded',default=False,
+                         help='BD persistent module bounds, with native clusters intact')
+    regions.add_argument('--module-seeds',dest='module_regions',action='store_const',const='seed',
+                         help='BD movable soft-region seeds; reports spill')
+    regions.add_argument('--module-guides',dest='module_regions',action='store_const',const='guided',
+                         help='BD bounded initial placement, then soft guides for local repair/CTS')
+    p.add_argument('--module-repair-budget',type=Path,help='Measured per-owner post-placement repair areas with input hashes; sizes regions at 62%% effective fill')
     a=p.parse_args()
     if (a.die_width_um is None) != (a.die_height_um is None):p.error("Specify both die width and height")
     if a.die_side_um is not None and a.die_width_um is not None:p.error("Use either side or width/height")
     width=a.die_width_um if a.die_width_um is not None else (1440 if a.die_side_um is None else a.die_side_um)
-    run(a.mapping,a.output,a.from_stage,a.to_stage,a.threads,width,a.openroad,a.placement_density,a.die_height_um)
+    run(a.mapping,a.output,a.from_stage,a.to_stage,a.threads,width,a.openroad,a.placement_density,a.die_height_um,a.module_regions,a.module_repair_budget)

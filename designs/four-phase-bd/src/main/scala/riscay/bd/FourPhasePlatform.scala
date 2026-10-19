@@ -9,8 +9,9 @@ import riscay.soc._
 
 /** This variant owns clock, reset, wake and endpoint integration. */
 abstract class FourPhasePlatform(p: SocParameters, board: SocParameters => BoardProfile,
-    clockedCpuResponse: Boolean = true, owners: OwnerTiming = OwnerTiming()) extends SocTop(p) {
-  val watchdog = withClockAndReset(watchdogClock, reset) { Module(new Watchdog(p.watchdogCycles, p.watchdogHoldCycles)) }
+    clockedCpuResponse: Boolean = true, owners: OwnerTiming = OwnerTiming(),
+    preserveHierarchy: Boolean = false) extends SocTop(p) {
+  val watchdog = withClockAndReset(watchdogClock, reset) { Module(new Watchdog(p.watchdogCycles, p.watchdogHoldCycles, preserveHierarchy)) }
   // Every pulse restarts the release history on the ungated service clock.
   // Eight edges hold at least 350 ns at the 20 MHz ceiling for observation.
   // This legacy digital pulse qualifier does not qualify physical reset settling.
@@ -38,13 +39,13 @@ abstract class FourPhasePlatform(p: SocParameters, board: SocParameters => Board
     count
   }
   protected val workClock = Wire(Clock())
-  protected val fabric = withClockAndReset(workClock, reset) { Module(new FourPhaseServices(p, board)) }
+  protected val fabric = withClockAndReset(workClock, reset) { Module(new FourPhaseServices(p, board, preserveHierarchy)) }
   // Synchronous cutoff precedes destructive native reset. These defaults apply
   // only to externally clocked verification clients; production binds ingress.
   protected val requestClosed=WireDefault(true.B)
   protected val requestRebased=WireDefault(true.B)
   protected val requestRebaseIdle=WireDefault(true.B)
-  protected val resetBoundary=withClockAndReset(serviceClock,reset) { Module(new FourPhaseResetBoundary(ApplicationResetContract.nativeHoldEdges,ApplicationResetContract.nativeReleaseEdges)) }
+  protected val resetBoundary=withClockAndReset(serviceClock,reset) { Module(new FourPhaseResetBoundary(ApplicationResetContract.nativeHoldEdges,ApplicationResetContract.nativeReleaseEdges, preserveHierarchy)) }
   resetBoundary.io.observed:=cpuResetActive
   protected val applicationCancel=WireDefault(resetBoundary.io.close)
   protected val nativeApplicationReset=WireDefault(resetBoundary.io.nativeReset)
@@ -481,7 +482,7 @@ abstract class FourPhasePlatform(p: SocParameters, board: SocParameters => Board
   fabric.io.frontClock := serviceClock
   p.lowPower match {
     case Some(lp) =>
-      val timebase = withClockAndReset(watchdogClock, reset) { Module(new SleepTimebase(lp)) }
+      val timebase = withClockAndReset(watchdogClock, reset) { Module(new SleepTimebase(lp, preserveHierarchy)) }
       val gate = withClockAndReset(serviceClock, reset) { Module(new RetainedClock) }
       gate.io.gray := timebase.io.gray; gate.io.consumedGray := fabric.io.consumedGray
       gate.io.canSleep := fabric.io.canSleep; gate.io.activity := fabric.io.activity

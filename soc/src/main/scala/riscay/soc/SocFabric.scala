@@ -15,7 +15,8 @@ object MemoryMap {
   val boot = Vector(0x300000b7L, 0x0000a103L, 0x00010067L)
 }
 /** Shared port schema only; each variant owns its service implementation. */
-abstract class ServiceEndpoint(programBytes: Int) extends Module with InlineInstance {
+abstract class ServiceEndpoint(programBytes: Int, preserveHierarchy: Boolean = false) extends Module {
+  EmissionHierarchy.inlineUnless(this, preserveHierarchy)
   val io = IO(new Bundle {
     val program = new ProgramAccessPort
     val ram = new RamAccessPort

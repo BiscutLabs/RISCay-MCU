@@ -23,7 +23,11 @@ PERIODIC = ('service', 'work', 'lf')
 def clock_nets(cells, aliases):
     clocks = {}
     for name, domain in ROOTS.items():
-        bits = aliases[name]
+        # Ordinary Yosys flatten keeps this exact root alias with a dot.
+        candidates=[n for n in (name,name.replace('/','.')) if n in aliases]
+        if not candidates or any(aliases[n]!=aliases[candidates[0]] for n in candidates):
+            raise ValueError('CLOCK_OWNER_ROOT_ALIAS')
+        bits = aliases[candidates[0]]
         if len(bits) != 1 or bits[0] in clocks:
             raise ValueError('CLOCK_OWNER_ROOT_ALIAS')
         clocks[bits[0]] = domain
@@ -45,8 +49,11 @@ def clock_nets(cells, aliases):
 
 def owner(path, local_aliases):
     parent = path.rsplit('/', 1)[0] if '/' in path else ''
-    if path.startswith('soc/fabric_'):
+    if path.startswith(('soc/fabric_', 'soc/fabric/')):
         return 'Services'
+    for prefix, label in (('soc/watchdog/', 'Watchdog'), ('soc/timebase/', 'LF timebase'),
+                          ('soc/resetBoundary/', 'Reset coordinator')):
+        if path.startswith(prefix): return label
     if parent == 'soc':
         for prefix, label in (('fabric_', 'Services'), ('timebase_', 'LF timebase'),
                               ('watchdog_', 'Watchdog'), ('resetBoundary_', 'Reset coordinator'),
@@ -124,9 +131,9 @@ def register_breakdown(sinks, selected_owner):
     return sorted(grouped.values(), key=lambda r: (-r['sinks'], r['domain'], r['identity']))
 
 
-def report(mapping, output, register_owner=None):
+def report(mapping, output, register_owner=None, synthesis_only=False):
     netlist = mapping / 'netlist.json'
-    reference = mapping / 'electrical-repair/reference/netlist.json'
+    reference = netlist if synthesis_only else mapping / 'electrical-repair/reference/netlist.json'
     libraries = [ROOT / '.tools/physical/pdk' / (SC + 'tt_025C_3v30.lib'),
                  ROOT / '.tools/gf180-sram' / (SRAM + '__tt_025C_3v30.lib')]
     inputs = [netlist, reference, *libraries, Path(__file__), ROOT / 'tools/gf180_netgraph.py']
@@ -144,6 +151,8 @@ def report(mapping, output, register_owner=None):
         result['register_owner'] = register_owner
         result['registers'] = register_breakdown(result['sinks'], register_owner)
     result['scope'] = 'Mapped clock connectivity and local storage aliases; not timing qualification'
+    if synthesis_only:
+        result['scope'] += '; unrepaired synthesis; flattened ordinary ownership remains unattributed'
     result['inputs_sha256'] = hashes
     if any(sha(Path(p)) != h for p, h in hashes.items()):
         raise ValueError('CLOCK_OWNER_INPUT_CHANGED')
@@ -158,5 +167,6 @@ if __name__ == '__main__':
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument('mapping', type=Path); p.add_argument('output', type=Path)
     p.add_argument('--registers', metavar='OWNER', help='rank local register alias sets for this owner')
+    p.add_argument('--synthesis-only',action='store_true',help='Inventory raw synthesis without a repair-reference netlist')
     a = p.parse_args()
-    print(json.dumps(report(a.mapping, a.output, a.registers), indent=2))
+    print(json.dumps(report(a.mapping, a.output, a.registers,a.synthesis_only), indent=2))

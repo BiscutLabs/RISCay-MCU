@@ -10,7 +10,8 @@ import chisel3.util.experimental.InlineInstance
 /** Always-on reference domain. Registered Gray output changes one bit per tick.
   * Reset release is synchronized here; assertion is asynchronous at the parent.
   */
-class SleepTimebase(p: LowPowerParameters) extends Module with InlineInstance {
+class SleepTimebase(p: LowPowerParameters, preserveHierarchy: Boolean = false) extends Module {
+  EmissionHierarchy.inlineUnless(this, preserveHierarchy)
   val io = IO(new Bundle { val gray = Output(UInt(32.W)) })
   val release = RegInit(3.U(2.W)); release := Cat(release(0), false.B)
   val divider = RegInit(0.U(log2Ceil(p.divider).max(1).W))

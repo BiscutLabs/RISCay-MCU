@@ -5,5 +5,5 @@ let
     sha256 = "sha256-MTJCMrhDFb+GRbLxBPTp8kB4dDlO+egmQ5qsJgYuaWw=";
   }) {};
 in pkgs.openroad.overrideAttrs (old: {
-  patches = old.patches ++ [ ./repair-progress.patch ];
+  patches = old.patches ++ [ ./repair-progress.patch ./region-blockage.patch ./dpl-search-origin.patch ./dpl-search-golden.patch ];
 })

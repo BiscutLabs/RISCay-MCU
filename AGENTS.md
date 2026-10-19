@@ -93,6 +93,12 @@
   enforce measured geometry and feeder isolation after legalization/repair, then
   check actual extracted loading and noise. Pre-fix routed timing is void as
   recorded in `docs/gf180-routability.md`.
+- For hierarchical floorplan comparisons, follow `docs/hierarchical-floorplan.md`:
+  separate synthesis hierarchy cost from placement effects, match pins/macros
+  and tool inputs. Soft seeds are not fences; bounded regions must retain every
+  original cell and verify grouped repair/CTS helpers after legalization.
+  Guided placement releases module fences only after a legal checkpoint;
+  report later spill/displacement, retaining all native compaction gates.
 - Measure same-corner setup/hold/order bounds with complete inventories; missing
   paths and nonfinite values fail. Do not shorten delays on simulation evidence.
   Adopt locally measured reversible counts after affected digital/timing checks

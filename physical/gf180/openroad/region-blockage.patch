@@ -1,0 +1,187 @@
+--- a/src/gpl/src/placerBase.cpp
++++ b/src/gpl/src/placerBase.cpp
+@@ -1090,8 +1090,50 @@
+   reset();
+ }
+ 
++// The corrected accounting is limited to uniform physical-module regions.
++// Power domains and mixed-site rows retain upstream behavior: this experiment
++// does not qualify power-domain insertion or legalizer ownership of new cells.
++static bool uniformPhysicalRegions(odb::dbBlock* block)
++{
++  bool found = false;
++  for (auto* group : block->getGroups()) {
++    if (group->getRegion()) {
++      if (group->getType() != odb::dbGroupType::PHYSICAL_CLUSTER
++          || group->getRegion()->getBoundaries().size() != 1) {
++        return false;
++      }
++      found = true;
++    }
++  }
++  if (!found) {
++    return false;
++  }
++  odb::dbSite* site = nullptr;
++  odb::Point origin;
++  for (auto* row : block->getRows()) {
++    if (site == nullptr) {
++      site = row->getSite();
++      origin = row->getOrigin();
++    }
++    const odb::Point point = row->getOrigin();
++    if (site->getWidth() <= 0 || site->getHeight() <= 0
++        || row->getSite() != site
++        || row->getDirection() != odb::dbRowDir::HORIZONTAL
++        || row->getSpacing() != site->getWidth()
++        || (point.x() - origin.x()) % site->getWidth() != 0
++        || (point.y() - origin.y()) % site->getHeight() != 0) {
++      return false;
++    }
++  }
++  return site != nullptr;
++}
++
+ void PlacerBase::init(bool check_density)
+ {
++  const bool physical_regions = uniformPhysicalRegions(db_->getChip()->getBlock());
++  if (physical_regions && group_ == nullptr) {
++    log_->report("MODULE_REGION_ACCOUNTING corrected-uniform-physical");
++  }
+   die_ = pbCommon_->getDie();
+   if (group_ != nullptr) {
+     auto boundaries = group_->getRegion()->getBoundaries();
+@@ -1127,28 +1169,32 @@
+       continue;
+     }
+ 
+-    odb::dbGroup* db_inst_group = db_inst->getGroup();
+-    if (group_ == nullptr) {
+-      if (db_inst_group
+-          && db_inst_group->getType() != odb::dbGroupType::VISUAL_DEBUG) {
+-        continue;
+-      }
+-    } else {
+-      if (!db_inst_group || db_inst_group != group_
+-          || db_inst_group->getType() == odb::dbGroupType::VISUAL_DEBUG) {
+-        continue;
++    // Membership selects movable cells. Fixed physical obstacles affect every
++    // overlapping region, whether or not they have a group of their own.
++    if (!physical_regions || !inst->isFixed()) {
++      odb::dbGroup* db_inst_group = db_inst->getGroup();
++      if (group_ == nullptr) {
++        if (db_inst_group
++            && db_inst_group->getType() != odb::dbGroupType::VISUAL_DEBUG) {
++          continue;
++        }
++      } else {
++        if (!db_inst_group || db_inst_group != group_
++            || db_inst_group->getType() == odb::dbGroupType::VISUAL_DEBUG) {
++          continue;
++        }
+       }
+     }
+ 
+     if (inst->isFixed()) {
+-      // Check whether fixed instance is
+-      // within the corearea
+-      //
+-      // outside of corearea is none of RePlAce's business
+-      if (isCoreAreaOverlap(die_, *inst)) {
++      const odb::Rect bounds(inst->lx(), inst->ly(), inst->ux(), inst->uy());
++      if (physical_regions ? region_bbox_.overlaps(bounds)
++                           : isCoreAreaOverlap(die_, *inst)) {
+         fixedInsts_.push_back(inst);
+         nonPlaceInsts_.push_back(inst);
+-        nonPlaceInstsArea_ += getOverlapWithCoreArea(die_, *inst);
++        nonPlaceInstsArea_ += physical_regions
++                                 ? region_bbox_.intersect(bounds).area()
++                                 : getOverlapWithCoreArea(die_, *inst);
+       }
+     } else {
+       placeInsts_.push_back(inst);
+@@ -1189,6 +1235,7 @@
+ // due to fragmented rows or placement blockages.
+ void PlacerBase::initInstsForUnusableSites()
+ {
++  const bool physical_regions = uniformPhysicalRegions(db_->getChip()->getBlock());
+   dbSet<dbRow> rows = db_->getChip()->getBlock()->getRows();
+ 
+   int64_t siteCountX = (die_.coreUx() - die_.coreLx()) / siteSizeX_;
+@@ -1207,10 +1254,8 @@
+   //
+   std::vector<SiteInfo> siteGrid(siteCountX * siteCountY, SiteInfo::Row);
+ 
+-  // If we have no group (top-level), check which sites are NOT covered by
+-  // actual rows Create dummy instances for unusable sites (test simple02.tcl
+-  // has an example on bottom right)
+-  if (group_ == nullptr) {
++  // Supported physical regions respect actual rows, including macro holes.
++  if (group_ == nullptr || physical_regions) {
+     std::ranges::fill(siteGrid, SiteInfo::Blocked);
+ 
+     // Mark only sites covered by actual rows as Row
+@@ -1230,6 +1275,9 @@
+       }
+     }
+ 
++  }
++
++  if (group_ == nullptr) {
+     // Mark sites intersecting with any region as Blocked
+     for (auto* group : db_->getChip()->getBlock()->getGroups()) {
+       if (group->getRegion()) {
+@@ -1311,16 +1359,19 @@
+       continue;
+     }
+ 
+-    odb::dbGroup* db_inst_group = db_inst->getGroup();
+-    if (group_ == nullptr) {
+-      if (db_inst_group
+-          && db_inst_group->getType() != odb::dbGroupType::VISUAL_DEBUG) {
+-        continue;
+-      }
+-    } else {
+-      if (!db_inst_group || db_inst_group != group_
+-          || db_inst_group->getType() == odb::dbGroupType::VISUAL_DEBUG) {
+-        continue;
++
++    if (!physical_regions) {
++      odb::dbGroup* db_inst_group = db_inst->getGroup();
++      if (group_ == nullptr) {
++        if (db_inst_group
++            && db_inst_group->getType() != odb::dbGroupType::VISUAL_DEBUG) {
++          continue;
++        }
++      } else {
++        if (!db_inst_group || db_inst_group != group_
++            || db_inst_group->getType() == odb::dbGroupType::VISUAL_DEBUG) {
++          continue;
++        }
+       }
+     }
+ 
+@@ -1388,11 +1439,18 @@
+           i++;
+         }
+         int endX = i;
+-        Instance dummy_gcell(die_.coreLx() + (siteSizeX_ * startX),
+-                             die_.coreLy() + (siteSizeY_ * j),
+-                             die_.coreLx() + (siteSizeX_ * endX),
+-                             die_.coreLy() + (siteSizeY_ * (j + 1)));
+-        instStor_.push_back(dummy_gcell);
++        const odb::Rect bounds(die_.coreLx() + siteSizeX_ * startX,
++                               die_.coreLy() + siteSizeY_ * j,
++                               die_.coreLx() + siteSizeX_ * endX,
++                               die_.coreLy() + siteSizeY_ * (j + 1));
++        // The site grid spans the whole core. Charge only the part inside this
++        // region, and keep the same clipped obstacle in the density bins.
++        if (!physical_regions || region_bbox_.overlaps(bounds)) {
++          const odb::Rect clipped
++              = physical_regions ? region_bbox_.intersect(bounds) : bounds;
++          instStor_.emplace_back(clipped.xMin(), clipped.yMin(),
++                                clipped.xMax(), clipped.yMax());
++        }
+       }
+     }
+   }
