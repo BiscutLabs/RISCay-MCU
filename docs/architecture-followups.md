@@ -32,6 +32,13 @@ remaining area work. No application policy moves into silicon.
    distribution and targeted routed hold repair.
 
 Local measurements and affected verification accompany each implementation batch.
+The [native-area action plan](native-area-action-plan.md) proposes concrete,
+ABI-preserving ownership reductions before surviving-guard tuning: one SRAM
+word loop per memory, removal of Telemetry/Housekeeping reservation round trips,
+and compact Control and native bank-result storage. It preserves the existing
+receiving-edge arbitration and memory return/eligibility lifetimes. Its area
+budgets are planning gates, not new measurements or an implemented work-order
+change. The host ABI decision still precedes frame/credit restructuring.
 Record mapped/repaired logic, clock sinks and wake activity/duration in the
 [area ledger](area-ledger.md), against the immediate parent and original baseline.
 Full extracted-RC qualification remains item 17. Physical prerequisites may be

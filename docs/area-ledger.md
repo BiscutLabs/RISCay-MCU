@@ -83,6 +83,11 @@ publication/return owners contain 3,103 of the 5,285 DLYD cells. A conservative
 lane screen identifies 715 unused or constant-at-reset candidate storage bits
 occupying 0.034636 mm²; this is neither an adopted reduction nor timing-qualified
 removal. The report proposes owner-level changes before any RTL work.
+The follow-up [action plan](native-area-action-plan.md) identifies the exact
+banks and reservation crossings to remove, preserves necessary return/eligibility
+state, and sets a proposed 1.60 mm² BD mapped-logic gate for its first four
+structural batches. This is an engineering budget, not an area result; no new
+measurement row or physical qualification is claimed.
 
 ## BD hierarchy experiment
 

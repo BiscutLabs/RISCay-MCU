@@ -304,42 +304,21 @@ separately. Resetless transient payload is a later opt-in contract, with
 invalid-data and reset-observability proof; architectural GPIO, retained banks
 and meaningful reset values are not candidates by default.
 
-## Recommended implementation order, subject to approval
+## Concrete redesign proposal
 
-This ranks area experiments, not an approved change to the
-[architecture work order](architecture-followups.md). Boot/recovery obligations
-remain ahead of area tuning, and the register-pointer ABI decision remains
-ahead of redesigning the host/Control command path. The SRAM and dead-field
-investigations do not themselves decide or change that ABI.
+The subsequent [action plan](native-area-action-plan.md) supersedes the original
+opportunity ranking. It specifies replacement storage, commit/return lifetimes,
+files, verification and engineering budgets. The first structural batches are
+SRAM lane reuse, deletion of Telemetry/Housekeeping's reservation detour at the
+existing receiving-edge arbitration, compact Control/committed CRC, and removal
+of full-state Telemetry/Housekeeping result copies. Size only surviving guards.
 
-1. **Narrow/project the proven candidate lanes**, starting with physical CPU
-   trace/writeback, Telemetry padding and capacity-sized SRAM byte addresses.
-   This establishes a safe way to optimize payload while preserving controllers.
-   The measured candidate storage pool is only 0.034636 mm²; do not promise
-   a large percentage win from this step.
-2. **Fold the native SRAM byte lanes** around one word/assembly owner and one
-   reusable macro crossing. It removes repeated storage and controllers while
-   preserving the present macro clock policy. Require reset/drain, byte-mask,
-   loader, backpressure and full-capacity tests with unchanged deadlines.
-3. **Characterize the custom publication/recovery guards as one family**,
-   starting with Telemetry/Housekeeping source controllers. Their shared
-   200 ns pattern offers a larger concentrated opportunity than another small
-   arithmetic-width change. Replace redundant waits with actual completion
-   where the state graph permits it; measure before shortening others.
-4. **Collapse Control's state transport**, then evaluate direct closed-bank
-   updates for Telemetry/Housekeeping and reused arithmetic work banks. Each
-   needs a named commit point and no extra clocked mirror.
-5. **Resolve the register-pointer host ABI before rebuilding I²C storage**.
-   Until then preserve queue capacity, snapshot atomicity and reset attribution.
-6. **Review short primitive delay recipes** once source/ACK contracts and
-   extracted electrical loading are explicit. Preserve keeper isolation and
-   parent drivers; do not exchange area for coupled-handshake glitches.
-
-The opportunities overlap. Narrowing lanes changes the SRAM/Control baseline;
-fusing stages removes their guards and capture trees. Do not add the current
-cost pools together as predicted savings. Measure each accepted batch against
-its immediate parent, and include repair, periodic sinks and wake activity.
-No revised die-size or final area target is justified by this investigation.
+In particular, the two PublicationSource owners can be removed before spending
+a campaign on their eight long guards. Memory source/return owners have different
+asynchronous eligibility and drainage obligations and remain in the first batch.
+The replacement host ABI still needs a decision before rebuilding frame storage.
+These are proposals, not implemented or timing-qualified savings. Existing cost
+pools overlap; fresh whole-chip measurements must decide each accepted batch.
 
 ## Evidence and review
 
