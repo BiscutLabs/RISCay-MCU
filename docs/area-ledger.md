@@ -75,6 +75,15 @@ energy. The separate full-capacity SPI boot test at 10 MHz takes **89.799 ms**
 for a valid primary image and **254.909 ms** for golden fallback after rejecting
 both field slots. See [verification and review](reviews/clocked-soc.md).
 
+The [storage/delay investigation](native-overhead-investigation.md) recounts
+these same maps without changing the implementation. Of BD's 1.361867 mm²
+mapped-logic excess, storage contributes 0.510617 mm², DLYD 0.394455 mm²,
+buffers/inverters 0.177535 mm² and other logic 0.279260 mm². Six native
+publication/return owners contain 3,103 of the 5,285 DLYD cells. A conservative
+lane screen identifies 715 unused or constant-at-reset candidate storage bits
+occupying 0.034636 mm²; this is neither an adopted reduction nor timing-qualified
+removal. The report proposes owner-level changes before any RTL work.
+
 ## BD hierarchy experiment
 
 Status: the remaining r13 physical campaigns were cancelled at the user's
