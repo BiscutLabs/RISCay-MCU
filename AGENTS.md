@@ -12,6 +12,12 @@
 - Keep BD and Click as independent implementations under their `designs/`
   directories. Share schemas, ISA, fixed macro models and verification utilities.
   Keep native Click signaling; do not insert hidden four-phase conversions.
+- `designs/clocked/` is the independently implemented synchronous comparison
+  chip, including its CPU. It shares the current generic MCU ABI and firmware,
+  not the async owners or their transport. The no-periodic-clock/native-primitive
+  rules below apply to BD/Click; they do not prohibit ordinary synchronous state
+  in this explicitly clocked design. Keep clocked verification and timing exports
+  distinct from async contracts. Do not revive historical board policy or reset bugs.
 - BD is the selected tape-out implementation, subject to physical qualification.
   Architecture conversions keep BD and Click functionally equal unless the user
   explicitly requests an exception. Implement each conversion natively and

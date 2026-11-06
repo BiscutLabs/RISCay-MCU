@@ -26,9 +26,10 @@ lazy val soc = project.in(file("soc")).dependsOn(shared).settings(settings)
 lazy val profiles = project.in(file("profiles")).dependsOn(soc).settings(settings)
 lazy val fourPhaseBd = project.in(file("designs/four-phase-bd")).dependsOn(profiles).settings(settings)
 lazy val twoPhaseClick = project.in(file("designs/two-phase-click")).dependsOn(profiles).settings(settings)
-lazy val verification = project.in(file("verification")).dependsOn(fourPhaseBd, twoPhaseClick, profiles).settings(settings)
-lazy val physical = project.in(file("physical")).dependsOn(fourPhaseBd, twoPhaseClick).settings(settings)
-lazy val root = project.in(file(".")).aggregate(shared, soc, profiles, fourPhaseBd, twoPhaseClick, verification, physical).settings(
+lazy val clocked = project.in(file("designs/clocked")).dependsOn(profiles).settings(settings)
+lazy val verification = project.in(file("verification")).dependsOn(fourPhaseBd, twoPhaseClick, clocked, profiles).settings(settings)
+lazy val physical = project.in(file("physical")).dependsOn(fourPhaseBd, twoPhaseClick, clocked).settings(settings)
+lazy val root = project.in(file(".")).aggregate(shared, soc, profiles, fourPhaseBd, twoPhaseClick, clocked, verification, physical).settings(
   publish / skip := true,
   Compile / sources := Seq.empty
 )
