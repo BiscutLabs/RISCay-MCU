@@ -6,9 +6,10 @@ reset/retention behavior. No application policy belongs in RTL or ROM.
 
 ## Implementation status
 
-- Clocked core and ordinary SystemVerilog export implemented.
-- SoC memory, host loader, boot, peripherals and low-power integration in progress.
-- Physical area, clock-tree and timing comparison pending the complete chip.
+- Independent clocked CPU, fabric, loader, GPIO, event, measurement and timer state.
+- Shared generic SPI/A-B boot firmware, fixed SRAM macros and I²C fallback.
+- Gated work clock with independent LF watchdog, retained sleep and coordinated reset.
+- Ordinary synchronous export; physical timing qualification remains separate.
 
 The core uses one outstanding ready/valid memory transaction. Request and
 response acceptance occur on distinct rising edges. Writeback updates the one
@@ -25,11 +26,11 @@ as BD/Click, including stalls, faults, reset and a deliberately incorrect oracle
 
 ```sh
 python tools/sbt.py "clocked/runMain riscay.clocked.EmitClockedCore build/clocked-core"
-python tools/sbt.py "verification/testOnly riscay.ClockedCoreSpec riscay.CoreSpec"
+python tools/sbt.py "clocked/runMain riscay.clocked.EmitClockedSoc build/export/clocked"
+python tools/sbt.py "verification/testOnly riscay.ClockedCoreSpec riscay.ClockedSocSpec riscay.ClockedFabricSpec riscay.ClockedBoundarySpec riscay.ClockedSleepSpec riscay.ClockedDeepSleepSpec riscay.ClockedGenericBootSpec riscay.ClockedFirmwareSpec"
 ```
 
-The approved implementation order is core, SRAM/fabric/boot, services, reset and
-sleep integration, then whole-chip compatibility and a matched area comparison.
-Each verified batch receives independent review. BD remains the selected
-physical target; the clocked variant does not qualify or change either async
-implementation.
+See the [clocked design contract](../../docs/clocked-design.md) for ownership,
+clock and reset rules, shared verification and remaining physical obligations.
+BD remains the selected physical target; this variant changes neither async
+implementation. Area comparisons belong in the [ledger](../../docs/area-ledger.md).

@@ -8,14 +8,14 @@ import riscay.click.ClickSoc
 import riscay.profiles._
 import java.util.zip.CRC32
 
-class SocSpec extends AnyFunSuite {
+class SocSpec extends AnyFunSuite with SocImplementationSuite {
   import Assembly._
   private val config = McuConfiguration(256, 32, 3,
     Vector(MeasurementChannel(0, "test", MeasurementUnit.Count, 0)),
     ApplicationProfile(0x54455354L, 1, "test", Vector(HostRegister(0,"RESULT"), HostRegister(1,"SECOND")), Vector.empty))
   private val p = SocParameters(config, watchdogCycles = 100000, staleMs = 2)
-  private def top(click: Boolean, params: SocParameters = p, board: SocParameters => BoardProfile = x => new GenericBoard(x)): SocTop =
-    if(click) new ClickSoc(params, board) else new FourPhaseSoc(params, board)
+  private def top(click: Boolean, params: SocParameters = p, board: SocParameters => BoardProfile = x => new GenericBoard(x)): chisel3.RawModule =
+    if(synchronous) new riscay.clocked.ClockedSoc(params) else if(click) new ClickSoc(params, board) else new FourPhaseSoc(params, board)
   private def hex(word: Long): String = "32'h" + java.lang.Long.toHexString(word & 0xffffffffL)
   private def checksum(program: Seq[Long]): Long = {
     val crc = new CRC32
@@ -30,8 +30,8 @@ class SocSpec extends AnyFunSuite {
     ${if(start >= 0) s"command($start);" else ""}
   """
 
-  for(click <- Seq(false, true)) {
-    val name = if(click) "click" else "four-phase"
+  for(click <- variants) {
+    val name = if(synchronous) "clocked" else if(click) "click" else "four-phase"
     test(s"$name SoC: I2C loader validation, RAM lanes, telemetry, lock, CPU protection and full reset") {
       val program = Seq(
         0x200000b7L, // x1 = working RAM
@@ -70,7 +70,7 @@ initial forever begin
   ${if(click) "#1;" else "wait(!traceEvent);"}
 end
 """
-      ClockedSimulation.run(top(click), name, s"""
+      run(top(click), name, s"""
         read_words(0,0,0);
         if(snapshot[0+:32] !== 32'h00010000 || snapshot[96+:32] !== 256 || supported !== 255) $$fatal(1,"BAD_DEVICE_ABI");
         read_words(2,1,0); if(supported !== 0) $$fatal(1,"ABSENT_CHANNEL_ALIASED");
@@ -89,8 +89,8 @@ end
         ${upload(program)}
         wait(protectedTrap); wait(mode == 4); checkProtection=0;
         if(protectionRetired !== ${program.size}) $$fatal(1,"PROTECTION_RETIREMENT_COUNT");
-        if({dut.fabric_program_macros_0.mem[3],dut.fabric_program_macros_0.mem[2],
-            dut.fabric_program_macros_0.mem[1],dut.fabric_program_macros_0.mem[0]} !== ${hex(program.head)})
+        if({${if(synchronous) "dut.fabric.programSram.macros_0" else "dut.fabric_program_macros_0"}.mem[3],${if(synchronous) "dut.fabric.programSram.macros_0" else "dut.fabric_program_macros_0"}.mem[2],
+            ${if(synchronous) "dut.fabric.programSram.macros_0" else "dut.fabric_program_macros_0"}.mem[1],${if(synchronous) "dut.fabric.programSram.macros_0" else "dut.fabric_program_macros_0"}.mem[0]} !== ${hex(program.head)})
           $$fatal(1,"PROTECTED_STORE_MODIFIED_CODE");
         if(!locked || !programmed || mode != 4) $$fatal(1,"PROTECTED_STORE_DID_NOT_TRAP mode=%d",mode);
         read_words(128,0,0);
@@ -124,7 +124,7 @@ end
     }
     test(s"$name SoC: independent watchdog resets a stalled application and stopped service clock") {
       val program = Seq(0x300000b7L, i(0x13,2,0,0,-1), store(1,2,12,2), i(0x03,3,2,1,16), jal(0,-8)) // clear/wait, never kicks
-      ClockedSimulation.run(top(click, p.copy(watchdogCycles = 5000)), name + "-watchdog", s"""
+      run(top(click, p.copy(watchdogCycles = 5000)), name + "-watchdog", s"""
         ${upload(program)}
         wait(systemReset); #5000;
         if(!resetReason || !locked || !programmed || mode != 2) $$fatal(1,"WATCHDOG_RESET_FAILED");
@@ -144,11 +144,15 @@ end
   }
   test("SoC harness rejects a deliberately wrong host ABI expectation") {
     val failure = intercept[IllegalArgumentException] {
-      ClockedSimulation.run(top(click=false), "negative-control", """
+      run(top(click=false), "negative-control", """
         read_words(0,0,0);
         if(snapshot[0+:32] !== 32'h99999999) $fatal(1,"DELIBERATE_BAD_ABI");
       """)
     }
     assert(failure.getMessage.contains("DELIBERATE_BAD_ABI"))
   }
+}
+
+class ClockedSocSpec extends SocSpec {
+  override protected def synchronous: Boolean = true
 }

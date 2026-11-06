@@ -13,7 +13,7 @@ import java.util.zip.CRC32
 /** Real compiler output is uploaded through I2C, never preloaded into MCU RAM.
   * Expectations use integer arithmetic independent of the C implementation.
   */
-class FirmwareSpec extends AnyFunSuite {
+class FirmwareSpec extends AnyFunSuite with SocImplementationSuite {
   private lazy val built = {
     val root=Paths.get("").toAbsolutePath
     Files.createDirectories(root.resolve("build"))
@@ -34,8 +34,8 @@ class FirmwareSpec extends AnyFunSuite {
   private val results=Vector(17L,0x1234L,0x80000001L,0xdeadbeefL)
     .zip(Vector(3L,7L,11L,13L)).map { case (a,b) => expected(a,b) }
 
-  for(click <- Seq(false,true); app <- Seq("event_loop","runtime_stress")) {
-    val name=if(click) "click" else "four-phase"
+  for(click <- variants; app <- Seq("event_loop","runtime_stress")) {
+    val name=if(synchronous) "clocked" else if(click) "click" else "four-phase"
     test(s"$name compiled $app fits on-chip memory and its observed stack bound") {
       val base=built.resolve(app)
       val report=ujson.read(Files.readString(base.resolve("report.json")))
@@ -55,7 +55,7 @@ class FirmwareSpec extends AnyFunSuite {
       val config=production.copy(application=profile,measurements=Vector.empty)
       val p=SocParameters(config,staleMs=3000,watchdogCycles=32,watchdogHoldCycles=2,
         lowPower=Some(LowPowerParameters.gf180Slow))
-      val top=if(click) () => new ClickSoc(p) else () => new FourPhaseSoc(p)
+      val top=if(synchronous) () => new riscay.clocked.ClockedSoc(p) else if(click) () => new ClickSoc(p) else () => new FourPhaseSoc(p)
       val check=if(app=="event_loop") """
         if(snapshot[32+:32] !== 4 || !snapshot[65] || snapshot[96+:32] !== 4 ||
            snapshot[128+:32] !== 1 || snapshot[192+:32] !== 32'h600d600d) $fatal(1,"COMPILED_EVENT_RESULT");
@@ -65,7 +65,7 @@ class FirmwareSpec extends AnyFunSuite {
         ${results.zipWithIndex.map { case (n,i) => s"if(snapshot[${32*(i+2)}+:32] !== ${hex(n)}) $$fatal(1,\"COMPILED_DIVIDE_RESULT_$i\");" }.mkString("\n")}
         watermark=snapshot[224+:32];
       """
-      val directory=ClockedSimulation.run(top(),s"$name-firmware-$app",s"""
+      val directory=run(top(),s"$name-firmware-$app",s"""
         #3000000;
         start_bus(); write_byte(8'h6a); write_byte(1);
         write_word(${image.length}); write_word(0); write_word(${hex(crc.getValue)}); write_word(32'h00010000);
@@ -114,3 +114,5 @@ class FirmwareSpec extends AnyFunSuite {
     }
   }
 }
+
+class ClockedFirmwareSpec extends FirmwareSpec {override protected def synchronous: Boolean = true}

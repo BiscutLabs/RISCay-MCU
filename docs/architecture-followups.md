@@ -12,6 +12,11 @@ implementation and functional regressions. Click physical timing and sizing work
 remains frozen; area and sink accounting still accompany functional changes.
 Document temporary internal divergence and any approved ABI transition.
 
+The user-approved [clocked comparison MCU](clocked-design.md) is a third,
+independent implementation of the same ABI, including a synchronous CPU. Its
+ordinary clocked state is intentional; it neither reverses the native migration
+nor changes BD's tape-out selection.
+
 ## Work order
 
 The [external boot batch](boot-slots.md) is verified: A/B slots, external golden,

@@ -7,6 +7,21 @@ import java.util.zip.CRC32
 import chisel3._
 import chisel3.util.experimental.BoringUtils
 
+class ClockedGenericBootFixture(p: SocParameters)
+    extends riscay.clocked.ClockedSoc(p) {
+  val recovery=IO(Input(Bool()))
+  applicationResetRequest := reset.asBool || watchdog.io.expired || recovery
+  val spiOwned=IO(Output(Bool())); spiOwned:=fabric.io.spiClaimed
+  val adcBusy=IO(Output(Bool())); adcBusy:=fabric.io.adcBusy
+  val gpioEvent=IO(Output(Bool())); gpioEvent:=BoringUtils.bore(fabric.gpioActivity)
+  val loaderWrite=IO(Output(Bool())); loaderWrite:=BoringUtils.bore(fabric.programLoaderCommit)
+  val pauseBootStatus=IO(Input(Bool()));val statusWaiting=IO(Output(Bool()))
+  statusWaiting:=core.request.valid && core.request.bits.operation===1.U &&
+    core.request.bits.address===(MemoryMap.mmio+76).U &&
+    BoringUtils.bore(fabric.controlState.bootSession) && BoringUtils.bore(fabric.controlState.bootIndex)===0.U
+  fabric.io.request.valid:=core.request.valid && !(pauseBootStatus && statusWaiting)
+  core.request.ready:=fabric.io.request.ready && !(pauseBootStatus && statusWaiting)
+}
 class BdGenericBootFixture(p: SocParameters, preserveHierarchy: Boolean = false)
     extends riscay.bd.FourPhaseSoc(p,preserveHierarchy=preserveHierarchy) {
   val recovery=IO(Input(Bool()))
@@ -37,15 +52,15 @@ class ClickGenericBootFixture(p: SocParameters) extends riscay.click.ClickSoc(p)
   requestBridge.out.ready:=fabric.io.request.ready && !(pauseBootStatus && statusWaiting)
 }
 
-class GenericBootSpec extends AnyFunSuite {
+class GenericBootSpec extends AnyFunSuite with SocImplementationSuite {
   protected def preserveHierarchy: Boolean = false
   import Assembly._
   private val config=McuConfiguration(256,256,7,Vector.empty,
     ApplicationProfile(1,1,"generic-boot",Vector(HostRegister(0,"RESULT")),Vector.empty))
   private val p=SocParameters(config,watchdogCycles=1000000,spiBoot=true)
   private val program=Seq(0x300000b7L,i(0x13,2,0,0,0x123),store(1,2,52,2),breakpoint)
-  private def fixture(click: Boolean, params: SocParameters=p): SocTop =
-    if(click) new ClickGenericBootFixture(params) else new BdGenericBootFixture(params,preserveHierarchy)
+  private def fixture(click: Boolean, params: SocParameters=p): chisel3.RawModule =
+    if(synchronous) new ClockedGenericBootFixture(params) else if(click) new ClickGenericBootFixture(params) else new BdGenericBootFixture(params,preserveHierarchy)
   private def upload(words: Seq[Long], start: Boolean = true): String = {
     val crc=new CRC32; words.foreach(w => (0 until 4).foreach(b => crc.update(((w >>> (8*b))&255).toInt)))
     s"begin_image(${words.size*4},0,32'h${crc.getValue.toHexString},32'h00010000);\n" +
@@ -178,8 +193,8 @@ end
     assert(small.last==256 && large.last==2048 && small.init==large.init)
     assert(GenericBootRom.words.last==0xc0dec0deL)
   }
-  for(click <- Seq(false,true); scenario <- Seq("newest","newer-corrupt","newer-header-corrupt","both-corrupt","blank-fields","incompatible-newer","bad-directory","all-corrupt")) {
-    test(s"${if(click) "Click" else "BD"} A/B external boot $scenario") {
+  for(click <- variants; scenario <- Seq("newest","newer-corrupt","newer-header-corrupt","both-corrupt","blank-fields","incompatible-newer","bad-directory","all-corrupt")) {
+    test(s"${if(synchronous) "Clocked" else if(click) "Click" else "BD"} A/B external boot $scenario") {
       val aa=slot(resultProgram(0x111),1)
       val bb=slot(resultProgram(0x222),2,if(scenario=="incompatible-newer") 257 else 256)
       val gg=slot(resultProgram(0x333),0)
@@ -191,7 +206,7 @@ end
       val fallback=Set("bad-directory","all-corrupt")(scenario)
       val expected=if(fallback) 0x123 else if(Set("both-corrupt","blank-fields")(scenario)) 0x333
         else if(Set("newer-corrupt","newer-header-corrupt","incompatible-newer")(scenario)) 0x111 else 0x222
-      ClockedSimulation.run(fixture(click),"generic-ab-"+scenario,s"""
+      run(fixture(click),"generic-ab-"+scenario,s"""
         protectFactory=1;wait(readReturns>0);wait(!spiOwned);
         ${if(fallback) s"if(programmed) $$fatal(1,\"AB_INVALID_IMAGE_STARTED\");${upload(program)}" else ""}
         wait(mode==4);read_words(128,0,0);
@@ -200,8 +215,8 @@ end
         """,model(data,click),deadlineNs=1000000000L,processTimeoutSeconds=480)
     }
   }
-  for(click <- Seq(false,true); cut <- Seq("commit","erase-por","header-watchdog","incompatible-erase-por","oversized-erase-por","newer-b-erase-por")) {
-    test(s"${if(click) "Click" else "BD"} A/B persistence $cut preserves the previous bootable image") {
+  for(click <- variants; cut <- Seq("commit","erase-por","header-watchdog","incompatible-erase-por","oversized-erase-por","newer-b-erase-por")) {
+    test(s"${if(synchronous) "Clocked" else if(click) "Click" else "BD"} A/B persistence $cut preserves the previous bootable image") {
       val previous=slot(resultProgram(0x111),1)
       val invalidNewer=if(cut=="incompatible-erase-por") slot(resultProgram(0x555),9,257)
         else if(cut=="oversized-erase-por") slot(resultProgram(0x555)++Seq.fill(124)(i(0x13,0,0,0,0)),9) else Vector.empty
@@ -213,7 +228,7 @@ end
       val por=cut.endsWith("por")
       // Exercise the real LF watchdog, with the existing recovery fixture's
       // shorter interval so ENTER_LOADER does not dominate simulation time.
-      ClockedSimulation.run(fixture(click,p.copy(watchdogCycles=100000)),"generic-ab-persist-"+cut,s"""
+      run(fixture(click,p.copy(watchdogCycles=100000)),"generic-ab-persist-"+cut,s"""
         protectFactory=1;protectedFieldBase=$previousBase;wait(mode==4);command(9);expect_error(0);
         wait(systemReset);wait(!systemReset);wait(!spiOwned);#100000;
         ${upload(resultProgram(0x222),start=false)} command(10);wait(eraseCount==1);
@@ -235,11 +250,11 @@ end
         """,model(data,click),deadlineNs=1500000000L,processTimeoutSeconds=600)
     }
   }
-  for(click <- Seq(false,true); invalidDirectory <- Seq(false,true)) {
-    test(s"${if(click) "Click" else "BD"} A/B refuses persistence with ${if(invalidDirectory) "invalid directory" else "exhausted generation"}") {
+  for(click <- variants; invalidDirectory <- Seq(false,true)) {
+    test(s"${if(synchronous) "Clocked" else if(click) "Click" else "BD"} A/B refuses persistence with ${if(invalidDirectory) "invalid directory" else "exhausted generation"}") {
       val original=factory(slot(resultProgram(0x111),0xffffffffL),Vector.empty,slot(resultProgram(0x333),0))
       val data=if(invalidDirectory) original.updated(28,original(28)^1) else original
-      ClockedSimulation.run(fixture(click,p.copy(watchdogCycles=100000)),"generic-ab-refuse-"+invalidDirectory,s"""
+      run(fixture(click,p.copy(watchdogCycles=100000)),"generic-ab-refuse-"+invalidDirectory,s"""
         protectFactory=1;protectedFieldBase=8192;
         ${if(invalidDirectory) "wait(readReturns>0);wait(!spiOwned);#100000;" else """
           wait(mode==4);command(9);expect_error(0);
@@ -255,13 +270,13 @@ end
         """,model(data,click),deadlineNs=1500000000L,processTimeoutSeconds=600)
     }
   }
-  for(click <- Seq(false,true); fallback <- Seq(false,true)) {
-    test(s"${if(click) "Click" else "BD"} production full-capacity A/B boot ${if(fallback) "golden fallback" else "primary"}") {
+  for(click <- variants; fallback <- Seq(false,true)) {
+    test(s"${if(synchronous) "Clocked" else if(click) "Click" else "BD"} production full-capacity A/B boot ${if(fallback) "golden fallback" else "primary"}") {
       val full=p.copy(config=config.copy(programBytes=2048,workingRamBytes=1024))
       def padded(value: Int)=resultProgram(value)++Seq.fill(508)(i(0x13,0,0,0,0))
       val a=slot(padded(0x111),1);val b=slot(padded(0x222),2);val g=slot(padded(0x333),0)
       val data=factory(if(fallback) badBody(a) else a,if(fallback) badBody(b) else b,g)
-      ClockedSimulation.run(fixture(click,full),"generic-ab-full-"+fallback,s"""
+      run(fixture(click,full),"generic-ab-full-"+fallback,s"""
         protectFactory=1;wait(mode==4);read_words(128,0,0);
         if(snapshot[0+:32]!==32'h${if(fallback) "333" else "222"} || appInstructions!=4 || eraseCount)
           $$fatal(1,"AB_FULL_CAPACITY_BOOT_FAILED");
@@ -269,12 +284,12 @@ end
         """,model(data,click),deadlineNs=10000000000L,processTimeoutSeconds=3600)
     }
   }
-  for(click <- Seq(false,true); scenario <- Seq("valid","corrupt","incompatible","blank")) {
-    test(s"${if(click) "Click" else "BD"} generic SPI boot $scenario") {
+  for(click <- variants; scenario <- Seq("valid","corrupt","incompatible","blank")) {
+    test(s"${if(synchronous) "Clocked" else if(click) "Click" else "BD"} generic SPI boot $scenario") {
       val bytes=if(scenario=="blank") Vector.empty
         else if(scenario=="incompatible") image(false).updated(20,1) else image(scenario=="corrupt")
       val valid=scenario=="valid"
-      ClockedSimulation.run(if(click) new riscay.click.ClickSoc(p) else new riscay.bd.FourPhaseSoc(p),
+      run(if(synchronous) new riscay.clocked.ClockedSoc(p) else if(click) new riscay.click.ClickSoc(p) else new riscay.bd.FourPhaseSoc(p),
         "generic-boot-"+scenario, s"""
         wait(readReturns>0);
         ${if(valid) "wait(mode==4);" else "#100000;"}
@@ -289,9 +304,9 @@ end
         """,model(bytes,click),deadlineNs=100000000L,processTimeoutSeconds=180)
     }
   }
-  for(click <- Seq(false,true)) {
-    test(s"${if(click) "Click" else "BD"} rejected host mutation cannot corrupt the ROM owner's progress result") {
-      ClockedSimulation.run(fixture(click),"generic-transport-isolation","""
+  for(click <- variants) {
+    test(s"${if(synchronous) "Clocked" else if(click) "Click" else "BD"} rejected host mutation cannot corrupt the ROM owner's progress result") {
+      run(fixture(click),"generic-transport-isolation","""
         pauseBootStatus=1;wait(statusWaiting);
         command(4);expect_error(3);
         // This is precisely between BEGIN_OPEN's accepted effect and ROM's
@@ -301,9 +316,9 @@ end
           $fatal(1,"HOST_ERROR_ABORTED_VALID_FLASH_BOOT");
         """,model(image(false),click),deadlineNs=100000000L,processTimeoutSeconds=240)
     }
-    test(s"${if(click) "Click" else "BD"} full-capacity persistence crosses the 256-byte page boundary") {
+    test(s"${if(synchronous) "Clocked" else if(click) "Click" else "BD"} full-capacity persistence crosses the 256-byte page boundary") {
       val padded=program++Seq.fill(60)(i(0x13,0,0,0,0))
-      ClockedSimulation.run(fixture(click),"generic-persist-page",s"""
+      run(fixture(click),"generic-persist-page",s"""
         wait(readReturns>0);#100000;
         ${upload(padded,start=false)} command(10);wait(commitRecords==1);
         polls=0;read_words(1,0,8);
@@ -314,9 +329,9 @@ end
         if(appInstructions!=4 || !programmed) $$fatal(1,"FULL_CAPACITY_PERSIST_BOOT");
         """,model(Vector.empty,click),deadlineNs=1000000000L,processTimeoutSeconds=480)
     }
-    test(s"${if(click) "Click" else "BD"} ENTER_LOADER uses the independent watchdog despite application kicks") {
+    test(s"${if(synchronous) "Clocked" else if(click) "Click" else "BD"} ENTER_LOADER uses the independent watchdog despite application kicks") {
       val kicking=Seq(0x300000b7L,0x57445137L,i(0x13,2,0,2,-185),store(1,2,32,2),jal(0,-4))
-      ClockedSimulation.run(fixture(click,p.copy(watchdogCycles=100000)),"generic-enter-loader",s"""
+      run(fixture(click,p.copy(watchdogCycles=100000)),"generic-enter-loader",s"""
         wait(readReturns>0);#100000;
         ${upload(kicking,start=false)} command(5);wait(mode==3);#500000;
         command(9);expect_error(0);
@@ -331,8 +346,8 @@ end
         read_words(1,0,8);if(snapshot[0]) $$fatal(1,"LOCKED_ENTER_LOADER_EFFECT");
         """,model(Vector.empty,click)+"\ninteger savedInstructions;\n",deadlineNs=150000000L,processTimeoutSeconds=240)
     }
-    test(s"${if(click) "Click" else "BD"} explicit write-through, POR boot and lock") {
-      ClockedSimulation.run(if(click) new riscay.click.ClickSoc(p) else new riscay.bd.FourPhaseSoc(p),
+    test(s"${if(synchronous) "Clocked" else if(click) "Click" else "BD"} explicit write-through, POR boot and lock") {
+      run(if(synchronous) new riscay.clocked.ClockedSoc(p) else if(click) new riscay.click.ClickSoc(p) else new riscay.bd.FourPhaseSoc(p),
         "generic-persist",s"""
         wait(readReturns>0);#100000;
         ${upload(program,start=false)}
@@ -353,8 +368,8 @@ end
         if(eraseCount!=1 || commitRecords!=1) $$fatal(1,"LOCKED_FLASH_WRITE");
         """,model(Vector.empty,click),deadlineNs=200000000L,processTimeoutSeconds=240)
     }
-    test(s"${if(click) "Click" else "BD"} flash read-back failure never commits") {
-      ClockedSimulation.run(fixture(click),"generic-persist-failure",s"""
+    test(s"${if(synchronous) "Clocked" else if(click) "Click" else "BD"} flash read-back failure never commits") {
+      run(fixture(click),"generic-persist-failure",s"""
         wait(readReturns>0);#100000;
         ${upload(program,start=false)}
         discardWrites=1;command(10);
@@ -367,10 +382,10 @@ end
         """,model(Vector.empty,click),deadlineNs=200000000L,processTimeoutSeconds=240)
     }
     for(point <- Seq("boot-por","boot-watchdog","persist-por","persist-watchdog","persist-header-watchdog","persist-magic-watchdog")) {
-      test(s"${if(click) "Click" else "BD"} recovery at $point") {
+      test(s"${if(synchronous) "Clocked" else if(click) "Click" else "BD"} recovery at $point") {
         val updating=point.startsWith("persist")
         val por=point.endsWith("por")
-        ClockedSimulation.run(fixture(click),"generic-"+point,s"""
+        run(fixture(click),"generic-"+point,s"""
           ${if(updating) s"wait(readReturns>0);#100000;${upload(program,start=false)} command(10);wait(eraseCount==1);"
             else "@(posedge serviceClock);while(!loaderWrite) @(posedge serviceClock);#1;"}
           ${if(point=="persist-header-watchdog") "wait(opcode==2 && phase==4 && written>=20);" else ""}
@@ -391,10 +406,10 @@ end
           """,model(if(updating) Vector.empty else image(false),click),deadlineNs=250000000L,processTimeoutSeconds=240)
       }
     }
-    test(s"${if(click) "Click" else "BD"} shared ADC bus drains, resumes and never raises a GPIO event") {
+    test(s"${if(synchronous) "Clocked" else if(click) "Click" else "BD"} shared ADC bus drains, resumes and never raises a GPIO event") {
       val shared=p.copy(config=config.copy(measurements=Vector(MeasurementChannel(0,"sample",1,0))),
         adc=Some(AdcParameters(2,100000)),lowPower=Some(LowPowerParameters()))
-      ClockedSimulation.run(fixture(click,shared),"generic-shared-spi","""
+      run(fixture(click,shared),"generic-shared-spi","""
         gpioIn=0; wait(readReturns>0);wait(!spiOwned);watchGpio=1;
         wait(conversions>=2);wait(!adcCsN);
         // Recovery requests the bus while the ADC owns it. The entire native
@@ -427,4 +442,8 @@ always @(negedge adcSclk) if(!adcCsN) begin adcShift=adcShift<<1;adcMiso=adcShif
 """,deadlineNs=100000000L,processTimeoutSeconds=240,referenceHalfPeriodNs=1250)
     }
   }
+}
+
+class ClockedGenericBootSpec extends GenericBootSpec {
+  override protected def synchronous: Boolean = true
 }

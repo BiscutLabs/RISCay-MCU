@@ -8,7 +8,7 @@ import riscay.click.ClickSoc
 import riscay.profiles._
 import java.util.zip.CRC32
 
-class DeepSleepSpec extends AnyFunSuite {
+class DeepSleepSpec extends AnyFunSuite with SocImplementationSuite {
   import Assembly._
   private val lp = LowPowerParameters.gf180Slow
   private val config = McuConfiguration(256,32,3,
@@ -17,8 +17,8 @@ class DeepSleepSpec extends AnyFunSuite {
   private val p = SocParameters(config, staleMs=3000, watchdogCycles=32, watchdogHoldCycles=2,
     adc=Some(AdcParameters(halfPeriodCycles=2,intervalCycles=10000000)),lowPower=Some(lp))
   private def top(click: Boolean, params: SocParameters = p,
-      board: SocParameters => BoardProfile = x => new GenericBoard(x)): SocTop =
-    if(click) new ClickSoc(params,board) else new FourPhaseSoc(params,board)
+      board: SocParameters => BoardProfile = x => new GenericBoard(x)): chisel3.RawModule =
+    if(synchronous) new riscay.clocked.ClockedSoc(params) else if(click) new ClickSoc(params,board) else new FourPhaseSoc(params,board)
   private def upload(program: Seq[Long]): String = {
     val crc = new CRC32
     program.foreach(w => (0 until 4).foreach(b => crc.update(((w >>> (8*b)) & 255).toInt)))
@@ -49,11 +49,11 @@ task set_period(input [31:0] ms); begin
   start_bus(); write_byte(8'h6a); write_byte(7); write_word(ms); stop_bus();
 end endtask
 """
-  for(click <- Seq(false,true)) {
-    val name = if(click) "click" else "four-phase"
+  for(click <- variants) {
+    val name = if(synchronous) "clocked" else if(click) "click" else "four-phase"
     test(s"$name on-die brownout resets sleeping, partial-upload and locked states") {
       val params=p.copy(config=config.copy(programBytes=32,workingRamBytes=32),adc=None)
-      ClockedSimulation.run(top(click,params),name+"-supply-reset",s"""
+      run(top(click,params),name+"-supply-reset",s"""
         #3000000; wait(!serviceClockEnable);
         dut.supplyMonitor.supply_voltage=2.8; #1;
         if(!systemReset || dut.porReleased || programmed || locked) $$fatal(1,"SLEEP_BROWNOUT");
@@ -78,7 +78,7 @@ end endtask
     test(s"$name I2C probe tolerates immediate and mid-probe startup at service frequency bounds") {
       val params=p.copy(config=config.copy(programBytes=16,workingRamBytes=16),adc=None)
       for((hz,startup) <- Seq((20000000.0,0),(8000000.0,15000))) {
-        ClockedSimulation.run(top(click,params),name+"-probe-corners","""
+        run(top(click,params),name+"-probe-corners","""
           #3000000;
           repeat(3) begin
             wait(!serviceClockEnable);
@@ -96,7 +96,7 @@ end endtask
       val params=p.copy(config=config.copy(programBytes=16,workingRamBytes=32),adc=None)
       // Three production-length bus timeouts need a larger host runtime budget;
       // keep the 200 ms simulated deadline and all source-off checks unchanged.
-      ClockedSimulation.run(top(click,params),name+"-host-timeout","""
+      run(top(click,params),name+"-host-timeout","""
         #3000000;
         // Abandoned valid write: its opcode must never commit on later recovery.
         start_bus(); write_byte(8'h6a); write_byte(1); write_byte(4);
@@ -154,7 +154,7 @@ end endtask
         i(0x03,4,2,2,4),i(0x13,4,0,4,1000),store(2,4,8,2),
         i(0x03,5,2,2,16),store(2,5,52,2),
         i(0x13,3,0,0,1),store(2,3,48,2),i(0x03,6,2,1,0),store(2,6,52,2),breakpoint)
-      ClockedSimulation.run(top(click),name+"-deep-source",s"""
+      run(top(click),name+"-deep-source",s"""
         #3000000; wait(!serviceClockEnable); #100;
         savedEdges=fastEdges; #500000;
         if(fastEdges != savedEdges || serviceClock !== 0 || !sleeping) $$fatal(1,"FAST_SOURCE_NOT_OFF");
@@ -189,7 +189,7 @@ end endtask
   }
   test("slow elapsed time carries fractional milliseconds and bounds sample age across service outages") {
     val params=p.copy(adc=None,watchdogCycles=1000,lowPower=Some(lp.copy(stopServiceClock=false)))
-    ClockedSimulation.run(new FabricFixture(params),"slow-elapsed","""
+    run(if(synchronous) new ClockedFabricFixture(params) else new FabricFixture(params),"slow-elapsed","""
       #1000000; referenceEnabled=0; #1000;
       bus(1,32'h30000004,0);
       expected=((lfEdges-2)*129354)/1000;
@@ -218,4 +218,8 @@ task bus(input [1:0] op,input [31:0] addr,input [31:0] data); begin
 end endtask
     """,referenceHalfPeriodNs=100000)
   }
+}
+
+class ClockedDeepSleepSpec extends DeepSleepSpec {
+  override protected def synchronous: Boolean = true
 }

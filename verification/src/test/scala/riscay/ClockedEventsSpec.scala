@@ -36,6 +36,20 @@ class ClickEventFixture(p: SocParameters) extends ClickFabricFixture(p) {
     !fabric.io.controlReply.bits.memory.error
 }
 
+class SynchronousEventFixture(p: SocParameters) extends ClockedFabricFixture(p) {
+  val injectedEvents=IO(Input(UInt(6.W)));BoringUtils.drive(fabric.events):=injectedEvents
+  val eventView=IO(Output(UInt(6.W)));eventView:=BoringUtils.bore(fabric.pending)
+  val eventCut=IO(Output(Bool()));eventCut:=BoringUtils.bore(fabric.mmioObserved)
+  val eventCancel=IO(Output(Bool()));eventCancel:=fabric.io.applicationCancel
+  val eventArriving=IO(Output(Bool()));eventArriving:=fabric.io.request.valid &&
+    fabric.io.request.bits.address>=MemoryMap.mmio.U &&
+    fabric.io.request.bits.address<(MemoryMap.mmio+MemoryMap.mmioBytes).U && fabric.io.request.bits.operation=/=Operation.Halt.U
+  val eventReplace=IO(Output(Bool()));eventReplace:=BoringUtils.bore(fabric.replaceDeadline)
+  val eventClear=IO(Output(Bool()));eventClear:=fabric.io.request.fire &&
+    fabric.io.request.bits.operation===2.U && fabric.io.request.bits.address===(MemoryMap.mmio+12).U &&
+    !BoringUtils.bore(fabric.control.result.memory.error)
+}
+
 class ClockedEventsSpec extends AnyFunSuite {
   private val p=SocParameters(McuConfiguration(16,16,7,Vector.empty,
     ApplicationProfile(1,1,"event-order",Vector.empty,Vector.empty)),watchdogCycles=10000000)
@@ -68,7 +82,7 @@ class ClockedEventsSpec extends AnyFunSuite {
         #2;injectedEvents=0;end
     endtask
   """
-  test("both event registers refine the arrival-cutoff oracle and produce identical random histories") {
+  test("all event registers refine the arrival-cutoff oracle and produce identical random histories") {
     val random=new Random(271828)
     val checkpoints=Vector.newBuilder[Int]
     val stimulus=(0 until 96).map { i =>
@@ -96,10 +110,12 @@ class ClockedEventsSpec extends AnyFunSuite {
       """
     }.mkString
     val expected=checkpoints.result()
-    val histories=Seq(false,true).map { click =>
-      val base=ClockedSimulation.run(if(click) new ClickEventFixture(p) else new BdEventFixture(p),
-        if(click) "click-event-oracle" else "bd-event-oracle",
-        "#100000;clear_all();traceEnabled=1;"+stimulus+"traceEnabled=0;",tasks,deadlineNs=10000000)
+    val histories=Seq("bd","click","clocked").map { variant =>
+      val click=variant=="click"
+      val synchronous=variant=="clocked"
+      val base=ClockedSimulation.run(if(synchronous) new SynchronousEventFixture(p) else if(click) new ClickEventFixture(p) else new BdEventFixture(p),
+        variant+"-event-oracle",
+        "#100000;clear_all();traceEnabled=1;"+stimulus+"traceEnabled=0;",tasks,deadlineNs=10000000,synchronous=synchronous)
       val log=Files.readString(base.resolve("simulation.log"))
       val oracle=new EventReferenceModel
       var cut=Option.empty[EventReferenceModel.Clear]
@@ -118,6 +134,6 @@ class ClockedEventsSpec extends AnyFunSuite {
       val history=log.linesIterator.filter(_.startsWith("EVENT_CHECKPOINT ")).map(_.split(" ")(1).toInt).toVector
       assert(history==expected);history
     }
-    assert(histories.head==histories.last)
+    assert(histories.forall(_==histories.head))
   }
 }

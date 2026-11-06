@@ -61,6 +61,24 @@ Keep failing logs. Do not weaken functional deadlines, retention checks or error
 oracles to accommodate an implementation failure. A host-process timeout is
 distinct from a simulated deadline and must be reported if changed.
 
+## Clocked comparison design
+
+The fast gate also runs the clocked core, SoC, fabric, reset-boundary and sleep
+cases, plus the same generic SPI-boot cases. Event history is compared across all
+three implementations. The extended clocked suites reuse the existing test bodies:
+
+```text
+python tools/sbt.py "verification/testOnly riscay.ClockedDeepSleepSpec riscay.ClockedGenericBootSpec riscay.ClockedFirmwareSpec riscay.ClockedPhysicalEstimateSpec"
+python tools/sbt.py "clocked/runMain riscay.clocked.EmitClockedSoc build/export/clocked"
+python tools/map_clocked.py build/export/clocked build/map-clocked
+```
+
+The mapping command requires configured physical tools and the same GF180 PDK.
+It measures flattened mapped area before repair/CTS/routing and emits one run
+receipt. `clocked.json` deliberately replaces the async timing contract; do not
+run the native export checker on a synchronous design. See the
+[clocked contract](clocked-design.md) for its separate clock/reset obligations.
+
 ## Exports and structural rules
 
 ```text

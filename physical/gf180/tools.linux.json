@@ -1,8 +1,17 @@
 {
   "schema": 1,
   "tools": {
-    "yosys": {"executable": "yosys"},
-    "sta": {"executable": "sta"},
-    "openroad": {"executable": "openroad"}
+    "yosys": {
+      "executable": "yosys"
+    },
+    "sta": {
+      "executable": "sta"
+    },
+    "openroad": {
+      "executable": "openroad"
+    },
+    "sv2v": {
+      "executable": "sv2v"
+    }
   }
 }

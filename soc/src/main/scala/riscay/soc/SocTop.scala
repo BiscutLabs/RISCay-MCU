@@ -10,7 +10,8 @@ import riscay._
   * Sensing, timebase and loader protection are POR-only. Release
   * into the service clock also delays Click startup; async assertion is immediate.
   */
-abstract class SocTop(val p: SocParameters) extends AsyncModule {
+trait SocPorts { this: RawModule =>
+  val p: SocParameters
   val serviceClock = IO(Input(Clock())); val watchdogClock = IO(Input(Clock()))
   val scl = IO(Input(Bool())); val sda = IO(Input(Bool())); val sdaLow = IO(Output(Bool()))
   val gpioIn = IO(Input(UInt(32.W))); val gpioOut = IO(Output(UInt(32.W))); val gpioOe = IO(Output(UInt(32.W)))
@@ -21,6 +22,9 @@ abstract class SocTop(val p: SocParameters) extends AsyncModule {
   val serviceClockEnable = IO(Output(Bool()))
   val trace = IO(Output(new Retirement)); val traceEvent = IO(Output(Bool()))
   val commit = IO(Output(Valid(new MemoryRequest)))
+}
+
+abstract class SocTop(val p: SocParameters) extends AsyncModule with SocPorts {
   contract.endpoint("system_reset", systemReset)
   contract.endpoint("reset_reason", resetReason)
   contract.endpoint("scl", scl); contract.endpoint("sda", sda); contract.endpoint("sda_low", sdaLow)

@@ -15,7 +15,7 @@ from run_receipt import RunReceipt
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 FAST_SUITES = (
-    'ClockedCoreSpec',
+    'ClockedCoreSpec', 'ClockedSocSpec', 'ClockedFabricSpec', 'ClockedSleepSpec', 'ClockedBoundarySpec',
     'TimestampMathSpec', 'AppRegistersSpec', 'AppSnapshotRecoverySpec', 'EventReferenceSpec', 'ClockedEventsSpec', 'CoreSpec', 'HostSchemaSpec', 'AsyncFabricSpec', 'AsyncControlSpec',
     'AsyncCrcSpec', 'AsyncHousekeepingSpec', 'AsyncFrameStoreSpec',
     'BootIngressSpec', 'QuiescingReceiptSpec', 'QuiescingBridgeSpec', 'SleepSpec',
@@ -80,12 +80,14 @@ def main():
         result = unittest.TextTestRunner(stream=stream, verbosity=2).run(suite)
     status = 'pass' if result.wasSuccessful() and accepted_skips(result.skipped) else 'fail'
     outputs = [args.output/'python.log']
-    requested = [] if args.python_only else ['riscay.'+s for s in FAST_SUITES]+[
-        'riscay.GenericBootSpec', 'riscay.physical.PhysicalExportSpec', 'riscay.physical.PhysicalTimingSpec']
+    fast_suites = ['riscay.'+s for s in FAST_SUITES]
+    boot_suites = ['riscay.GenericBootSpec','riscay.ClockedGenericBootSpec']
+    physical_suites = ['riscay.physical.PhysicalExportSpec','riscay.physical.PhysicalTimingSpec']
+    requested = [] if args.python_only else fast_suites + boot_suites + physical_suites
     executed = {}; diagnostic = None
     if status == 'pass' and not args.python_only:
         commands = ['libraryRuntime', 'verification/testOnly '+ ' '.join('riscay.'+s for s in FAST_SUITES),
-                    'verification/testOnly riscay.GenericBootSpec -- -z "generic SPI boot"', 'physical/test']
+                    'verification/testOnly '+ ' '.join(boot_suites)+' -- -z "generic SPI boot"', 'physical/test']
         started = time.time()
         code = run.command([sys.executable, str(ROOT/'tools/sbt.py'), '--bootstrap', *commands],
                            cwd=ROOT, log=args.output/'scala.log')
@@ -100,10 +102,10 @@ def main():
             # alongside the run's outputs rather than an unrelated Ivy cache.
             run.tools += run.capture([Path(runtime.read_text(encoding='utf-8').strip())])
             outputs.append(runtime)
-            executed.update(reports(ROOT/'verification/target/test-reports', requested[:-3], started))
-            executed.update(reports(ROOT/'verification/target/test-reports', ['riscay.GenericBootSpec'],
+            executed.update(reports(ROOT/'verification/target/test-reports', fast_suites, started))
+            executed.update(reports(ROOT/'verification/target/test-reports', boot_suites,
                                     started, contains='generic SPI boot'))
-            executed.update(reports(ROOT/'physical/target/test-reports', requested[-2:], started))
+            executed.update(reports(ROOT/'physical/target/test-reports', physical_suites, started))
             outputs += [ROOT/('physical' if '.physical.' in name else 'verification')/
                         'target/test-reports'/('TEST-'+name+'.xml') for name in executed]
         except (ValueError, ET.ParseError) as error:

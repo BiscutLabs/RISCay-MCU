@@ -9,6 +9,7 @@ import riscay.soc._
 
 /** Direct service-bus fixture complements the full serial-host/CPU SoC tests. */
 class FabricFixture(p: SocParameters) extends riscay.bd.FourPhasePlatform(p, x => new GenericBoard(x)) {
+  val resetSettled=IO(Output(Bool()));resetSettled:= !(applicationCancel || nativeApplicationReset || nativeCoreReset)
   val request = IO(Flipped(Decoupled(new MemoryRequest)))
   val response = IO(Decoupled(new MemoryResponse))
   val timeNow = IO(Output(UInt(32.W))); timeNow := fabric.io.now
@@ -35,6 +36,7 @@ class ResetCrossingFixture(p: SocParameters) extends FabricFixture(p) {
 }
 
 class ClickFabricFixture(p: SocParameters) extends riscay.click.ClickPlatform(p, x => new GenericBoard(x)) {
+  val resetSettled=IO(Output(Bool()));resetSettled:= !(applicationCancel || nativeApplicationReset || nativeCoreReset)
   val request = IO(Flipped(Decoupled(new MemoryRequest)))
   val response = IO(Decoupled(new MemoryResponse))
   val timeNow = IO(Output(UInt(32.W))); timeNow := fabric.io.now
@@ -60,7 +62,31 @@ class ClickResetCrossingFixture(p: SocParameters) extends ClickFabricFixture(p) 
   watchdog.io.heartbeat := Mux(heartbeatEnabled, fabric.io.heartbeat, false.B)
 }
 
-class FabricSpec extends AnyFunSuite {
+class ClockedFabricFixture(p: SocParameters) extends riscay.clocked.ClockedSoc(p) {
+  val resetSettled=IO(Output(Bool()));resetSettled:= !(cpuResetActive || coreReset || systemReset)
+  val request=IO(Flipped(Decoupled(new MemoryRequest)))
+  val response=IO(Decoupled(new MemoryResponse))
+  val timeNow=IO(Output(UInt(32.W)))
+  timeNow:=chisel3.util.experimental.BoringUtils.bore(fabric.housekeeping.state.now)
+  core.request.ready:=false.B;core.response.valid:=false.B;core.response.bits:=0.U.asTypeOf(new MemoryResponse)
+  fabric.io.request<>request;response<>fabric.io.response
+  trace:=0.U.asTypeOf(new Retirement);traceEvent:=false.B
+}
+class ClockedKickFixture(p: SocParameters) extends ClockedFabricFixture(p) {
+  val ack=IO(Input(Bool()));val heartbeat=IO(Output(Bool()))
+  fabric.io.watchdogAck:=ack;heartbeat:=fabric.io.heartbeat
+}
+class ClockedWaitValidationFixture(p: SocParameters) extends ClockedFabricFixture(p) {
+  val sleepEligible=IO(Output(Bool()));sleepEligible:=fabric.io.canSleep
+}
+class ClockedResetCrossingFixture(p: SocParameters) extends ClockedFabricFixture(p) {
+  val heartbeatEnabled=IO(Input(Bool()))
+  val resetObserved=IO(Output(Bool()));resetObserved:=cpuResetActive
+  val gatedClock=IO(Output(Clock()));gatedClock:=workClock
+  watchdog.io.heartbeat:=Mux(heartbeatEnabled,fabric.io.heartbeat,false.B)
+}
+
+class FabricSpec extends AnyFunSuite with SocImplementationSuite {
   private val config = McuConfiguration(16, 16, 1,
     Vector(MeasurementChannel(0,"first",2,0), MeasurementChannel(1,"second",1,-3)),
     ApplicationProfile(123,1,"fixture",Vector(HostRegister(0,"COUNT")),Vector.empty))
@@ -91,15 +117,15 @@ task write_bus(input [31:0] address, input [31:0] value);
 begin issue(2,address,value,15); answer(0,0,3); end endtask
 reg [31:0] timeValue;
 """
-  for(click <- Seq(false,true)) {
-    def fixture(p: SocParameters): SocTop = if(click) new ClickFabricFixture(p) else new FabricFixture(p)
-    def waitFixture(p: SocParameters): SocTop = if(click) new ClickWaitValidationFixture(p) else new WaitValidationFixture(p)
-    def resetFixture(p: SocParameters): SocTop = if(click) new ClickResetCrossingFixture(p) else new ResetCrossingFixture(p)
-    def kickFixture(p: SocParameters): SocTop = if(click) new ClickKickFixture(p) else new KickFixture(p)
-    val variant = if(click) "click" else "bd"
+  for(click <- variants) {
+    def fixture(p: SocParameters): RawModule = if(synchronous) new ClockedFabricFixture(p) else if(click) new ClickFabricFixture(p) else new FabricFixture(p)
+    def waitFixture(p: SocParameters): RawModule = if(synchronous) new ClockedWaitValidationFixture(p) else if(click) new ClickWaitValidationFixture(p) else new WaitValidationFixture(p)
+    def resetFixture(p: SocParameters): RawModule = if(synchronous) new ClockedResetCrossingFixture(p) else if(click) new ClickResetCrossingFixture(p) else new ResetCrossingFixture(p)
+    def kickFixture(p: SocParameters): RawModule = if(synchronous) new ClockedKickFixture(p) else if(click) new ClickKickFixture(p) else new KickFixture(p)
+    val variant = if(synchronous) "clocked" else if(click) "click" else "bd"
   test(s"$variant: invalid boot/WAIT read masks fault promptly without parking or consuming events and leases") {
     val params = SocParameters(config, watchdogCycles=1000000, lowPower=Some(LowPowerParameters()))
-    ClockedSimulation.run(waitFixture(params), "wait-validation", """
+    run(waitFixture(params), "wait-validation", """
       // Freeze the timebase before its first edge so a lease cannot age and
       // no periodic event can accidentally release a malformed WAIT.
       referenceEnabled=0;
@@ -137,12 +163,12 @@ end endtask
   }
 
   test(s"$variant: deadline replacement consumes stale or coincident expiry, preserves GPIO, and arms the next wait") {
-    ClockedSimulation.run(fixture(SocParameters(config,serviceHz=100000,watchdogCycles=1000000)),
+    run(fixture(SocParameters(config,serviceHz=100000,watchdogCycles=1000000)),
       "deadline-replacement","""
       // Create the GPIO event after coherent application reset has reopened.
       // The bounded setup must not silently wait out a stuck reset controller.
       repeat(180) @(negedge serviceClock);
-      if(dut.applicationCancel || dut.nativeApplicationReset || dut.nativeCoreReset)
+      if(!resetSettled)
         $fatal(1,"DEADLINE_SETUP_RESET_DID_NOT_REOPEN");
       gpioIn=1; #1000;
       write_bus(32'h30000038,2); // Only deadline wakes the blocking read.
@@ -190,7 +216,7 @@ end endtask
   test(s"$variant: watchdog reset data uses two service edges and the retained clock has complete pulses") {
     val params=SocParameters(config,watchdogCycles=32,watchdogHoldCycles=2,
       lowPower=Some(LowPowerParameters.gf180Slow.copy(stopServiceClock=false)))
-    ClockedSimulation.run(resetFixture(params),"reset-crossing","""
+    run(resetFixture(params),"reset-crossing","""
       heartbeatEnabled=1;
       @(negedge serviceClock); request_valid=1; request_bits_operation=1;
       request_bits_address=32'h30000000; request_bits_mask=15;
@@ -237,7 +263,7 @@ end
 """,referenceHalfPeriodNs=17003)
   }
   test(s"$variant: clocked services: access errors, byte lanes, backpressure, events, failed/stale samples and interrupted reset") {
-    ClockedSimulation.run(fixture(SocParameters(config, staleMs=2)), "fabric", """
+    run(fixture(SocParameters(config, staleMs=2)), "fabric", """
       issue(0,0,0,15); answer(32'h300000b7,0,7);
       issue(2,0,0,15); answer(0,1,2);
       issue(0,32'h20000000,0,15); answer(0,1,2);
@@ -299,7 +325,7 @@ end
   }
   test(s"$variant: zero-channel, zero-GPIO profile elaborates and rejects absent resources") {
     val minimal = config.copy(gpioCount=0, measurements=Vector.empty)
-    ClockedSimulation.run(fixture(SocParameters(minimal)), "empty-profile", """
+    run(fixture(SocParameters(minimal)), "empty-profile", """
       read_words(0,0,0);
       if(snapshot[160+:32] !== 0 || snapshot[192+:32] !== 0) $fatal(1,"NONEMPTY_CAPACITIES");
       read_words(2,0,0); if(supported !== 0) $fatal(1,"ABSENT_MEASUREMENT");
@@ -308,7 +334,7 @@ end
   }
   test(s"$variant: watchdog kicks queue behind CDC acknowledgement; lease writes cannot substitute for the magic word") {
     val params=SocParameters(config,watchdogCycles=1000,lowPower=Some(LowPowerParameters.gf180Slow))
-    ClockedSimulation.run(kickFixture(params),"kick-queue","""
+    run(kickFixture(params),"kick-queue","""
       // Stop reference before its first edge: no automatic bootstrap tick.
       referenceEnabled=0;
       write_bus(32'h3000003c,0);
@@ -331,7 +357,7 @@ end
   test(s"$variant: sparse application words reject holes and share coherent snapshot data across byte boundaries") {
     val sparse=config.copy(application=config.application.copy(registers=Vector(
       HostRegister(0,"FIRST"),HostRegister(1,"NEXT"),HostRegister(17,"MIDDLE"),HostRegister(63,"LAST"))))
-    ClockedSimulation.run(fixture(SocParameters(sparse)),"sparse-application","""
+    run(fixture(SocParameters(sparse)),"sparse-application","""
       write_bus(32'h30000034,32'h12345678);
       write_bus(32'h30000030,1); write_bus(32'h30000034,32'h02468ace);
       write_bus(32'h30000030,17); write_bus(32'h30000034,32'h89abcdef);
@@ -362,3 +388,5 @@ end
   }
   }
 }
+
+class ClockedFabricSpec extends FabricSpec {override protected def synchronous: Boolean = true}

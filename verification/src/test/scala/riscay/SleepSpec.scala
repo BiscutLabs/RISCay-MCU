@@ -8,7 +8,7 @@ import riscay.click.ClickSoc
 import riscay.profiles._
 import java.util.zip.CRC32
 
-class SleepSpec extends AnyFunSuite {
+class SleepSpec extends AnyFunSuite with SocImplementationSuite {
   import Assembly._
   private val config = McuConfiguration(256, 32, 3,
     Vector(MeasurementChannel(0,"battery",MeasurementUnit.Volt,-3)),
@@ -17,8 +17,8 @@ class SleepSpec extends AnyFunSuite {
   private val p = SocParameters(config, watchdogCycles=4000,
     adc=Some(AdcParameters(halfPeriodCycles=2)), lowPower=Some(LowPowerParameters(maximumSleepMs=1000)))
   private def top(click: Boolean, params: SocParameters = p,
-      board: SocParameters => BoardProfile = x => new GenericBoard(x)): SocTop =
-    if(click) new ClickSoc(params,board) else new FourPhaseSoc(params,board)
+      board: SocParameters => BoardProfile = x => new GenericBoard(x)): chisel3.RawModule =
+    if(synchronous) new riscay.clocked.ClockedSoc(params) else if(click) new ClickSoc(params,board) else new FourPhaseSoc(params,board)
   private def upload(program: Seq[Long]): String = {
     val crc = new CRC32
     program.foreach(w => (0 until 4).foreach(b => crc.update(((w >>> (8*b)) & 255).toInt)))
@@ -46,8 +46,8 @@ task set_period(input [31:0] ms); begin
   start_bus(); write_byte(8'h6a); write_byte(7); write_word(ms); stop_bus();
 end endtask
 """
-  for(click <- Seq(false,true)) {
-    val name = if(click) "click" else "four-phase"
+  for(click <- variants) {
+    val name = if(synchronous) "clocked" else if(click) "click" else "four-phase"
     test(s"$name retained sleep: masked tick, deadline, memory/lock retention and live host/ADC") {
       val program = Seq(0x200000b7L,0x30000137L,
         i(0x13,3,0,0,0x123),store(1,3,0,2),
@@ -57,7 +57,7 @@ end endtask
         i(0x03,4,2,2,4),i(0x13,4,0,4,200),store(2,4,8,2),
         i(0x03,5,2,2,16),store(2,5,52,2),
         i(0x13,3,0,0,1),store(2,3,48,2),i(0x03,6,2,1,0),store(2,6,52,2),breakpoint)
-      ClockedSimulation.run(top(click,p.copy(watchdogCycles=10000)),name+"-sleep",s"""
+      run(top(click,p.copy(watchdogCycles=10000)),name+"-sleep",s"""
         #300000;
         if(sleepEntries < 5 || asleepCycles < awakeCycles || conversions < 3) $$fatal(1,"BOOT_NOT_SLEEPING");
         ${upload(program)}
@@ -94,7 +94,7 @@ end endtask
       val program = Seq(0x300000b7L,
         store(1,0,56,2),i(0x13,2,0,0,-1),store(1,2,12,2),
         i(0x13,2,0,0,500),store(1,2,60,2),i(0x03,3,2,1,16),store(1,3,52,2),breakpoint)
-      ClockedSimulation.run(top(click),name+"-sleep-wake",s"""
+      run(top(click),name+"-sleep-wake",s"""
         ${upload(program)}
         wait(sleeping); command(8); #100000;
         if(mode !== 4 || resetReason) $$fatal(1,"HOST_WAKE_LOST");
@@ -121,7 +121,7 @@ end endtask
     intercept[IllegalArgumentException](p.copy(staleMs=10))
     intercept[IllegalArgumentException](p.copy(adc=Some(AdcParameters(intervalCycles=1000))))
   }
-  for(click <- Seq(false,true)) test(s"${if(click) "click" else "bd"}: sleep entry/GPIO race, response stalls, and elapsed time after a short service interruption") {
+  for(click <- variants) test(s"${if(synchronous) "clocked" else if(click) "click" else "bd"}: sleep entry/GPIO race, response stalls, and elapsed time after a short service interruption") {
     val params = p.copy(adc=None,watchdogCycles=10000)
     val tasks = """
 task transaction(input [1:0] op, input [31:0] addr, input [31:0] data);
@@ -138,7 +138,7 @@ always @(posedge serviceClock) if(!systemReset && commit_valid) commits=commits+
 reg [31:0] savedResponse, beforeTime;
 integer beforeCommits;
 """
-    ClockedSimulation.run(if(click) new ClickFabricFixture(params) else new FabricFixture(params),"sleep-races","""
+    run(if(synchronous) new ClockedFabricFixture(params) else if(click) new ClickFabricFixture(params) else new FabricFixture(params),"sleep-races","""
       transaction(2,32'h30000038,4); // GPIO wake only; millisecond ticks masked.
       transaction(2,32'h3000003c,1000);
       transaction(2,32'h3000000c,32'hffffffff);
@@ -173,4 +173,8 @@ integer beforeCommits;
       if(!response_bits_data[2]) $fatal(1,"PENDING_EVENT_LOST_AT_ENTRY");
     """,tasks,referenceHalfPeriodNs=1250)
   }
+}
+
+class ClockedSleepSpec extends SleepSpec {
+  override protected def synchronous: Boolean = true
 }

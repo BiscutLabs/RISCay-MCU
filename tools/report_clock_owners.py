@@ -20,9 +20,9 @@ ROOTS = {'serviceClock': 'service', 'soc/gate_io_clockOut': 'work',
 PERIODIC = ('service', 'work', 'lf')
 
 
-def clock_nets(cells, aliases):
+def clock_nets(cells, aliases, roots=None):
     clocks = {}
-    for name, domain in ROOTS.items():
+    for name, domain in (ROOTS if roots is None else roots).items():
         # Ordinary Yosys flatten keeps this exact root alias with a dot.
         candidates=[n for n in (name,name.replace('/','.')) if n in aliases]
         if not candidates or any(aliases[n]!=aliases[candidates[0]] for n in candidates):
@@ -65,11 +65,11 @@ def owner(path, local_aliases):
     return parent or 'Top'
 
 
-def inventory(cells, aliases, pins, original_cells=None, original_aliases=None):
+def inventory(cells, aliases, pins, original_cells=None, original_aliases=None, *, roots=None):
     missing = {c['type'] for c in cells.values()} - pins.keys()
     if missing:
         raise ValueError('CLOCK_OWNER_MISSING_LIBRARY_CELL: ' + ','.join(sorted(missing)))
-    clocks = clock_nets(cells, aliases)
+    clocks = clock_nets(cells, aliases, roots)
     original_cells = original_cells or cells
     original_aliases = original_aliases or aliases
     originals = {n.replace('\\', ''): c for n, c in original_cells.items()}

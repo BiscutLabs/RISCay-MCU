@@ -7,15 +7,16 @@ import chisel3.util.experimental.InlineInstance
 import java.nio.file.{Files, Path}
 import riscay.McuConfiguration
 
-/** Technology inventory accompanies the library's unchanged async contract. */
+/** Fixed-macro inventory accompanies the explicitly selected export format. */
 object SramInventory {
   val macroName = "gf180mcu_ocd_ip_sram__sram1024x8m8wm1"
-  def write(base: Path, config: McuConfiguration, preserveHierarchy: Boolean = false): Unit = {
-    val top = ujson.read(Files.readString(base.resolve("contract.json")))("manifest")("top").str
+  def write(base: Path, config: McuConfiguration, preserveHierarchy: Boolean = false, synchronous: Boolean = false): Unit = {
+    val top = if(synchronous) ujson.read(Files.readString(base.resolve("clocked.json")))("top").str
+      else ujson.read(Files.readString(base.resolve("contract.json")))("manifest")("top").str
     val services = if(preserveHierarchy) "fabric." else "fabric_"
     val instances = Seq("program" -> config.programBytes, "ram" -> config.workingRamBytes).flatMap {
       case(bank, bytes) => (0 until (bytes + 1023) / 1024).map(i =>
-        ujson.Obj("path" -> s"$top.$services${bank}_macros_$i", "bank" -> bank, "index" -> i))
+        ujson.Obj("path" -> (if(synchronous) s"$top.fabric.${if(bank=="program") "programSram" else bank}.macros_$i" else s"$top.$services${bank}_macros_$i"), "bank" -> bank, "index" -> i))
     }
     Files.writeString(base.resolve("sram.json"), ujson.write(ujson.Obj(
       "schema" -> "riscay-gf180-sram-v1", "macro" -> macroName,

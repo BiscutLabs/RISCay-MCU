@@ -8,34 +8,39 @@ import java.nio.file.{Files, Path, Paths}
 import java.util.concurrent.TimeUnit
 import scala.jdk.CollectionConverters._
 
-/** Clocked SoC harness: public export contract + actual primitive models.
-  * AsyncTest remains in use for the clockless core/route randomized campaigns.
+/** Shared pin-level SoC harness. Native designs use their public contracts and
+  * actual primitive models; the explicitly synchronous backend uses ordinary
+  * RTL/port metadata. AsyncTest owns clockless core/route campaigns.
   */
 object ClockedSimulation {
-  def run(gen: => AsyncModule, name: String, body: String, extra: String = "",
+  def run(gen: => chisel3.RawModule, name: String, body: String, extra: String = "",
       referenceHalfPeriodNs: Int = 163, onChipOscillator: Boolean = false,
       chipParameters: riscay.soc.LowPowerParameters = riscay.soc.LowPowerParameters(),
       serviceStartupNs: Int = 500, deadlineNs: Long = 100000000L,
       serviceModelHz: Double = 10000000, processTimeoutSeconds: Int = 90,
       serviceHalfPeriodNs: Double = 50, maximumDelaySubtree: Option[String] = None,
       primitiveDelayOverrides: Map[(String,String),Long] = Map.empty,
-      powerOnResetNs: Long = 2000): Path = {
+      powerOnResetNs: Long = 2000, synchronous: Boolean = false): Path = {
+    require(!synchronous || (maximumDelaySubtree.isEmpty && primitiveDelayOverrides.isEmpty))
     require(serviceHalfPeriodNs > 0)
     require(powerOnResetNs > 0)
     val root = Paths.get("build/soc-tests").toAbsolutePath; Files.createDirectories(root)
     val base = Files.createTempDirectory(root, name)
     Simulator().check(base.resolve("simulator"))
-    var design: AsyncModule = null
+    var design: chisel3.RawModule = null
     // Icarus does not bind extracted Chisel verification layers automatically.
     // Keep their bodies inline so every hardware assertion actually executes.
-    ExportDesign.emit(chisel3.layer.elideBlocks { design=gen; design }, base)
+    if(synchronous) riscay.clocked.ClockedExport.emit({design=gen;design},base)
+    else ExportDesign.emit(chisel3.layer.elideBlocks { design=gen; design.asInstanceOf[AsyncModule] }, base)
     design match {
       case soc: riscay.soc.SocTop => riscay.soc.SramInventory.write(base, soc.p.config)
+      case soc: riscay.clocked.ClockedSoc => riscay.soc.SramInventory.write(base,soc.p.config,synchronous=true)
       case _ =>
     }
-    val manifest = ujson.read(Files.readString(base.resolve("contract.json")))("manifest")
+    val manifest = if(synchronous) ujson.Obj("top" -> ujson.read(Files.readString(base.resolve("clocked.json")))("top"))
+      else ujson.read(Files.readString(base.resolve("contract.json")))("manifest")
     def nodes(n: ujson.Value): Seq[ujson.Value] = Seq(n) ++ n("children").arr.flatMap(c => nodes(c("contract")))
-    val resources = nodes(manifest("design")).flatMap(_("primitives").arr).map(_("resource").str).distinct
+    val resources = (if(synchronous) Seq.empty else nodes(manifest("design"))).flatMap(_("primitives").arr).map(_("resource").str).distinct
     val models = resources.map { resource =>
       val file = base.resolve(resource.split('/').last)
       val stream = Option(getClass.getResourceAsStream("/" + resource)).getOrElse(sys.error(resource))

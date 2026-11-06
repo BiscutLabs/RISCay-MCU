@@ -5,10 +5,10 @@ RISCay-MCU is an asynchronous RV32E microcontroller built in Chisel with
 process. It combines a small RISC-V CPU, on-chip SRAM, firmware loading, GPIO,
 measurement interfaces and event-driven sleep.
 
-The project has two independent implementations: **four-phase bundled data (BD)**
-and **native two-phase Click**. BD is the primary implementation for physical
-development; Click is maintained as a functional reference. Both use the same
-ISA and software interfaces.
+The project has three independent implementations: **four-phase bundled data
+(BD)**, **native two-phase Click**, and a [fully clocked comparison MCU](designs/clocked/README.md).
+BD is the primary implementation for physical development; Click remains a native
+functional reference. All three use the same ISA and software interfaces.
 
 ## Features
 
@@ -24,7 +24,7 @@ ISA and software interfaces.
 Application behavior lives in firmware. Board profiles describe pin assignments,
 measurement metadata and capacities.
 
-The CPU and major SoC datapaths use native request/acknowledge handshakes.
+The BD and Click CPU and major SoC datapaths use native request/acknowledge handshakes.
 The low-frequency timebase, watchdog, reset qualification, service coordination,
 wire sampling and production SRAM access still use clocks. See the
 [architecture and remaining clocked boundaries](docs/async-residual-state.md).

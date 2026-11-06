@@ -18,6 +18,10 @@
   rules below apply to BD/Click; they do not prohibit ordinary synchronous state
   in this explicitly clocked design. Keep clocked verification and timing exports
   distinct from async contracts. Do not revive historical board policy or reset bugs.
+  Its raw watchdog reset isolates pads; synchronized cancellation closes the fabric
+  and resets the CPU on the same work edge. Accepted SRAM effects drain. Keep
+  I2C sampling on the service clock and require a live work edge at host commit.
+  Reuse shared chip-test bodies/oracles for the synchronous variant.
 - BD is the selected tape-out implementation, subject to physical qualification.
   Architecture conversions keep BD and Click functionally equal unless the user
   explicitly requests an exception. Implement each conversion natively and
@@ -63,7 +67,7 @@
   sequential helpers hidden in a native owner, and no combinational path from
   declared periodic clock inputs to native storage. Divided clocks need explicit
   classification; this audit is not a timing or RDC proof.
-- Every current export uses `tools/check_export.py` to consume that audit without
+- Every current native export uses `tools/check_export.py` to consume that audit without
   modifying generated probes. Physical flows additionally prove the complete
   mapped graph, protected primitives, reviewed keeper arcs and no unused added
   cells. Keep the fixed SRAM model checks. Historical baseline mapping has an

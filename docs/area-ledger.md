@@ -25,6 +25,56 @@ repair and placement whitespace. Record actual cell use after routing. If repair
 exceeds it, revise the budget or architecture; do not waive a failing path. The
 [repair contract](architecture-followups.md#routed-hold-repair) specifies the gates.
 
+## Clocked comparison implementation
+
+The independent synchronous chip, including its CPU, maps to **0.531833 mm²**
+of logic, excluding the same three GF180 SRAM macros. The current BD flat
+reference is **1.893700 mm²**: a difference of **−1.361867 mm² (−71.92%)**.
+This is an architectural comparison, not a change to either native design.
+
+| Mapped implementation | Logic, mm² | Repaired logic, mm² | Guard / allowance / DLYD area, mm² | Periodic sinks: service / work / LF | Total periodic sinks |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| BD flat reference | 1.893700 | Not measured for this flat map | 0.400304 / 0 / 0.394455 | 1,188 / 1,803 / 78 | 3,069 |
+| Clocked | 0.531833 | Not measured | 0 / 0 / 0 | 539 / 2,362 / 78 | 2,979 |
+
+Both counts include the three SRAM clock pins and exclude the separate SDA wake
+event. Synchronous CPU storage contributes to work sinks; BD native storage is
+not a periodic sink. Thus the 90-sink reduction does not describe the much larger
+total storage/transport difference. The clocked map contains no DLYD cells or
+native primitives.
+
+The comparison uses the identical Yosys 0.62 and ABC binaries, pinned GF180
+7-track TT Liberty, flat ordinary synthesis, digital pad/reset shell, 2 KiB
+program SRAM, 1 KiB working SRAM, seven GPIOs, ADC, low-power configuration and
+4,224-byte generic SPI boot ROM. BD's protected native recipes remain intact;
+ordinary clocked logic is available to synthesis. The tool/library hashes match
+the retained `build/hierarchical-floorplan/flat-map-r3/receipt.json`; this batch
+does not rerun that unchanged BD design. The new measurement and full clock-pin
+inventory are `build/clocked-comparison/map-r2/{area,clocks,receipt}.json`.
+The failed first tool-launch attempt remains in `map-r1`.
+
+These are **mapped results before repair, CTS or routing**, with no frequency
+target or timing-closure claim. They are not die area or power measurements.
+The clocked chip still needs its own electrical repair, clock trees, LF CDC,
+reset distribution and routed setup/hold/SRAM-aperture qualification.
+
+The unchanged 12 MHz digital-model wake workload produces:
+
+| Wake | Observations per variant | BD work edges / duration, µs | Clocked work edges / duration, µs |
+| --- | ---: | ---: | ---: |
+| Maintenance | 22 | 30 / 3.147 | 27 / 2.439 |
+| ADC sample | 3 | 221 / 18.772 | 176 / 14.856 |
+| 43-instruction firmware | 2 | 3,242 / 270.524 | 501 / 41.939 |
+
+Every observation agrees within its category. Telemetry command counts are zero
+for both. The reference is `build/housekeeping-view/activity-r1.json`; the new
+simulation is identified by `build/gf180-estimate/clocked-export.txt`. This shared
+workload uses `spiBoot=false` and I²C upload, unlike the production SPI-boot map.
+Native model delays and ideal synchronous edges are not post-layout latency or
+energy. The separate full-capacity SPI boot test at 10 MHz takes **89.799 ms**
+for a valid primary image and **254.909 ms** for golden fallback after rejecting
+both field slots. See [verification and review](reviews/clocked-soc.md).
+
 ## BD hierarchy experiment
 
 Status: the remaining r13 physical campaigns were cancelled at the user's

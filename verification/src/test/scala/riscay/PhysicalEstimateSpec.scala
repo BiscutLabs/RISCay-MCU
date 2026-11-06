@@ -12,14 +12,18 @@ import java.util.zip.CRC32
 /** Activity evidence only: native timing models, not a mapped timing/power test.
   * Generic workload fixture, never a deployment qualification.
   */
-class PhysicalEstimateSpec extends AnyFunSuite {
+class ClockedActivityFixture(p: SocParameters) extends riscay.clocked.ClockedSoc(p) {
+  val work=chisel3.IO(chisel3.Output(chisel3.Clock()));work:=workClock
+}
+
+class PhysicalEstimateSpec extends AnyFunSuite with SocImplementationSuite {
   import Assembly._
-  for(click <- Seq(false,true)) {
-    val name=if(click) "click" else "four-phase"
+  for(click <- variants) {
+    val name=if(synchronous) "clocked" else if(click) "click" else "four-phase"
     test(s"$name full-capacity GF180 estimate has bounded maintenance, ADC and firmware wakes") {
       val p=SocParameters(Groundlark.configuration,staleMs=3000,watchdogCycles=32,watchdogHoldCycles=2,
         adc=Some(AdcParameters(intervalCycles=10000000)),lowPower=Some(LowPowerParameters.gf180Slow))
-      val top=if(click) () => new ClickSoc(p,x => new GenericBoard(x))
+      val top=if(synchronous) () => new ClockedActivityFixture(p) else if(click) () => new ClickSoc(p,x => new GenericBoard(x))
         else () => new FourPhaseSoc(p,x => new GenericBoard(x))
       // Each iteration: wait for a deadline, acknowledge consumed events, read GPIO,
       // perform 32 integer additions, store the result, renew the lease and park.
@@ -33,9 +37,9 @@ class PhysicalEstimateSpec extends AnyFunSuite {
       program.foreach(w => (0 until 4).foreach(b => crc.update(((w >>> (8*b)) & 255).toInt)))
       // A diagnostic comparison only: the 1 ps run must never qualify removal
       // of the physical ACK guard. Production RTL keeps the reviewed policy.
-      val ackBypass=sys.env.get("RISCAY_ACK_ACTIVITY_BYPASS").contains("1") && !click
+      val ackBypass=sys.env.get("RISCAY_ACK_ACTIVITY_BYPASS").contains("1") && !click && !synchronous
       val ackGuardNs=if(ackBypass) 0.001 else 32.0
-      val ackMonitor=if(click) "" else s"""
+      val ackMonitor=if(click || synchronous) "" else s"""
         integer ackRiseEdges=0, ackFallEdges=0;
         integer ackSourceRises=0, ackSourceFalls=0;
         real ackRiseAt=0, ackFallAt=0, ackWaitNs=0;
@@ -96,12 +100,12 @@ class PhysicalEstimateSpec extends AnyFunSuite {
         always @(negedge adcSclk) if(!adcCsN) begin adcShift=adcShift<<1; adcMiso=adcShift[15]; end
         always @(posedge serviceClock) fastEdges=fastEdges+1;
         // This POR-owned bridge uses the gated work clock in both variants.
-        always @(posedge dut.soc.ca_child_control_command_bridge.clock) workEdges=workEdges+1;
+        always @(posedge ${if(synchronous) "work" else "dut.soc.ca_child_control_command_bridge.clock"}) workEdges=workEdges+1;
         // Count accepted owner commands, not phase edges or offered retries.
-        always @(posedge dut.soc.ca_child_telemetry_command_bridge.clock)
+${if(synchronous) "// No Telemetry transport exists in the synchronous design." else """        always @(posedge dut.soc.ca_child_telemetry_command_bridge.clock)
           if(dut.soc.ca_child_telemetry_command_bridge.in_valid &&
              dut.soc.ca_child_telemetry_command_bridge.in_ready)
-            telemetryTransactions=telemetryTransactions+1;
+            telemetryTransactions=telemetryTransactions+1;"""}
         initial forever begin
           ${if(click) "wait(traceEvent != seen); seen=traceEvent;" else "wait(traceEvent);"}
           if(trace_valid && trace_pc>=32'h10000000) begin
@@ -121,7 +125,7 @@ class PhysicalEstimateSpec extends AnyFunSuite {
           $$display("TELEMETRY_ACTIVITY,%0d,%0d,%0d,%0d",measured,retired,conversions,telemetryTransactions);
         end
       """
-      val dir=ClockedSimulation.run(top(),s"$name-physical-estimate",body,monitor+ackMonitor,
+      val dir=run(top(),s"$name-physical-estimate",body,monitor+ackMonitor,
         referenceHalfPeriodNs=64677286,onChipOscillator=true,chipParameters=p.lowPower.get,
         serviceStartupNs=64,serviceModelHz=12000000,deadlineNs=6000000000L,processTimeoutSeconds=300,
         primitiveDelayOverrides=if(ackBypass) Map(("ca_child_control","acknowledge_guard") -> 1000L) else Map.empty)
@@ -132,3 +136,5 @@ class PhysicalEstimateSpec extends AnyFunSuite {
     }
   }
 }
+
+class ClockedPhysicalEstimateSpec extends PhysicalEstimateSpec {override protected def synchronous: Boolean = true}
