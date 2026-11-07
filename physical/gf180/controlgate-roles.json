@@ -563,7 +563,8 @@
       "output_guard": "matched-control-delay"
     },
     "FourPhaseHousekeeping": {
-      "bank_guard": "matched-control-delay"
+      "bank_guard": "matched-control-delay",
+      "state_data_delay": "whole-transform-allowance"
     }
   },
   "schema": "riscay-controlgate-roles-v1",

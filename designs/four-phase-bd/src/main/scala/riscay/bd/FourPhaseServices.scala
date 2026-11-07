@@ -97,7 +97,7 @@ class FourPhaseServices(p: SocParameters, boardFactory: SocParameters => BoardPr
   val canProgram = !locked && !started && !controlState.bootSession && !controlState.persistPending && !io.applicationCancel && !io.program.busy && !loaderPending && !controlBusy
 
   val housekeepingCommand = IO(Decoupled(new HousekeepingCommand))
-  val housekeepingReply = IO(Flipped(Decoupled(new HousekeepingReply)))
+  val housekeepingReply = IO(Flipped(Decoupled(new HousekeepingEffects)))
   val housekeepingView=IO(Input(new HousekeepingState))
   val housekeepingBankReady=IO(Input(Bool()))
   val housekeepingState=housekeepingView
@@ -105,7 +105,7 @@ class FourPhaseServices(p: SocParameters, boardFactory: SocParameters => BoardPr
   // edge. Keep this POR acknowledgement, not a mirror of architectural state;
   // the asynchronous oscillator-wake input must not see a moving native bank.
   val consumedTimeAck=RegInit(0.U(32.W))
-  when(housekeepingReply.fire) { consumedTimeAck:=housekeepingReply.bits.state.consumed }
+  when(housekeepingReply.fire) { consumedTimeAck:=housekeepingReply.bits.consumed }
   val housekeepingOutstanding = RegInit(false.B)
   val housekeepingInFlight = RegInit(0.U.asTypeOf(new HousekeepingCommand))
   val housekeepingBarrierBusy = Wire(Bool())
@@ -672,7 +672,8 @@ class FourPhaseServices(p: SocParameters, boardFactory: SocParameters => BoardPr
   housekeepingReply.ready := housekeepingOutstanding &&
     (!housekeepingOwnedReply || io.housekeepingSource.publication.ready)
   io.housekeepingSource.publication.valid:=housekeepingOutstanding && housekeepingReply.valid && housekeepingOwnedReply
-  io.housekeepingSource.publication.bits:=housekeepingReply.bits.state.now(0)
+  // The publication slot arbitrates identity/acceptance; it carries no payload.
+  io.housekeepingSource.publication.bits:=false.B
   // Publication is a same-edge receipt, with no auxiliary sender to drain.
   // Downstream backpressure cannot prevent reservation of an otherwise idle slot.
   io.housekeepingSource.quiet:= !housekeepingOutstanding && !housekeepingOrderedPending &&

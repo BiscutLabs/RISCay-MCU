@@ -6,9 +6,9 @@ libraries, mapper and accepted repair flow for matched production comparisons.
 Full routed physical requalification remains migration item 17.
 
 The **BD mapped-logic milestone below 2.3 mm² excluding SRAM is achieved**.
-The BD SRAM, publication-slot, Control and Telemetry rewrites map to **1.519368 mm² flat**,
-or **1.598560 mm²** with ordinary hierarchy retained; the latter repairs to
-**1.767953 mm²**. This reaches the current 1.60 mm² structural-batch target.
+The BD SRAM, publication-slot, Control, Telemetry and Housekeeping rewrites map to
+**1.506013 mm² flat**, or **1.587209 mm²** with ordinary hierarchy retained;
+the latter repairs to **1.749243 mm²**. This reaches the current 1.60 mm² structural-batch target.
 Matched parents, clock inventories, activity and open timing are recorded below.
 The earlier Housekeeping batch maps to **1.987975 / 2.800265 mm²**
 (BD / Click) and repairs to **2.209548 / 3.051047 mm²**, including the expanded
@@ -1092,3 +1092,80 @@ full reset-distribution or statistical-mismatch qualification is claimed.
 Evidence: `build/bd-telemetry-effects/{map-r1,software-map-r1,flat-r1,area-r1.json,
 clocks-r1.json,summary-r1.json,activity-r1.json,timing-bind-r1,application-bank-r1,
 software-bank-r1}`, the focused logs and `build/bd-telemetry-effects-ci-r1/receipt.json`.
+
+## BD Housekeeping compact effects
+
+Batch 4b retains the 259-bit architectural bank and publishes 41 effect bits,
+including consumed time captured by Services on its original receiving edge.
+The parent computes next state and effects once; the Join retains its command
+through bank capture and full return. No periodic storage, crossing or guard is
+added, and Click is unchanged. See the [contract](native-housekeeping-effects.md)
+and [independent review](reviews/bd-housekeeping-effects.md).
+
+| Measurement | Original BD baseline | Telemetry parent | Housekeeping effects |
+| --- | ---: | ---: | ---: |
+| Flat mapped logic, mm² | 1.893700 | 1.519368 | **1.506013** |
+| Hierarchical mapped logic, mm² | 1.971463 | 1.598560 | **1.587209** |
+| Hierarchical repaired logic, mm² | 2.196947 | 1.767953 | **1.749243** |
+| Repair addition, mm² | 0.225484 | 0.169393 | 0.162034 |
+| Housekeeping native recipe, mm² | 0.054971 | 0.054971 | 0.043105 |
+| Housekeeping native payload bits | 676 | 676 | 449 |
+| All native payload bits | 9,229 | 6,007 | 5,780 |
+| Guards / allowances, mm² | 0.400304 / 0 | 0.270313 / 0 | unchanged |
+| DLYD cells / area, mm² | 5,285 / 0.394455 | 3,573 / 0.266677 | unchanged |
+| Flat periodic sinks, service / work / LF | 1,188 / 1,803 / 78 | 1,188 / 1,556 / 78 | unchanged |
+| Hierarchical periodic sinks, service / work / LF | 1,253 / 1,942 / 78 | 1,253 / 1,688 / 78 | unchanged |
+| Services sinks, service / work | 64 / 916 | 64 / 912 | unchanged |
+
+The immediate-parent comparison uses the same reference profile, Yosys 0.62/ABC,
+PDK, three macros and accepted repair flow. Flat synthesis is also matched to the
+original baseline. Repaired columns are each batch's recorded totals: the Control
+batch additionally introduced bounded ordinary data-driver trees, so the original
+repaired total is not a fresh rerun under that newer repair policy. Areas exclude
+the unchanged 0.466241 mm² SRAM LEF footprint. Flat logic
+falls 0.013356 mm² (0.88%) from the immediate parent and 0.387688 mm² (20.47%)
+from the original comparison. Hierarchical repaired logic falls 20.38% overall.
+The combined Telemetry/Housekeeping native recipes are 0.075080 mm², within
+the plan's 0.080 mm² budget. Flat periodic sinks total 2,822, down 247 overall;
+native storage falls by 3,449 bits (37.37%). DLYD purpose remains 2,424 custom
+ordering/reset, 596 bundling, 90 seed/reset admission and 463 publication cells.
+
+All 27 native-model wake windows per variant exactly match the Telemetry parent:
+BD maintenance / ADC / firmware use 30 / 221 / 4,139 work edges and
+3.147358 / 18.772483 / 345.275095 µs. Click remains 27 / 216 / 3,199 edges.
+Telemetry commands remain zero in this workload. Relative to the original BD,
+firmware work edges are **27.67% higher** (3,242 -> 4,139), principally because
+the SRAM loop waits for each byte channel's full return. Original deadlines pass.
+These counts and durations are neither energy nor silicon-latency measurements.
+
+Final full-capacity 2 KiB BD boot at the unchanged 10 MHz service model passes
+primary and golden recovery: **333.860569 / 953.315969 ms**, with **3,338,586 /
+9,533,140** work/service edges and 18,288 / 52,592 SPI edges. Both measurements
+exactly match the Control batch. ROM remains 4,224 bytes and the testbench does
+not preload application RAM. Records are in
+`build/bd-housekeeping-effects/full-boot-r1.json`; the final two-case test run is
+`build/bd-housekeeping-effects-full-boot-r1.log`.
+
+The ten new repaired local timing cases include the complete parent arithmetic.
+With two-sided 20% engineering derating and 2 ns reserve, effects setup is at
+least +6.950 ns without receipt-cycle credit; state-bank setup is +18.915 ns
+without that credit and +68.915 ns with the one existing work edge. Same-event
+feedback hold is **nominal** +0.880 ns, not mismatch/routed qualification.
+All selected data-driver trees remain characterized and below 2 ns slew.
+The separate ordinary 50 ns Housekeeping qualifier still fails at SS/hot;
+its bank's conditional read allowance does not apply to that path. Full results,
+coverage and open physical obligations are in the independent review.
+
+All four structural batches now beat the 1.60 mm² flat target. BD is still
+**2.83 times** the 0.531833 mm² synchronous logic comparison; this is an
+intermediate architectural improvement, not an optimized die or tape-out result.
+No new P&R was run. The 0.05 mm² routed hold-repair reserve remains separate.
+The remaining native inventory is led by I²C (2,224 storage bits, 0.191465 mm²
+protected recipes) and the CPU (1,203 bits, 0.100637 mm² recipes). These recipe
+areas exclude ordinary logic and parent repair buffers; they are not whole-owner
+flat-area estimates. The next host restructuring still depends on B's ABI decision.
+
+Evidence: `build/bd-housekeeping-effects/{map-r1,flat-r1,area-r1.json,
+clocks-r1.json,flat-clocks-r1.json,summary-r1.json,activity-r1.json,timing-r1,
+housekeeping-bank-r1,ordinary-data-production-r1}`, focused and extended logs,
+and `build/bd-housekeeping-effects-ci-r1/receipt.json`.

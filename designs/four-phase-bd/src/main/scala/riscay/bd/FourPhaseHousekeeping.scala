@@ -7,13 +7,14 @@ import chiselasync.bundled._
 import chiselasync.core.{AsyncModule,ResetDomain}
 import chiselasync.metadata.{BundledTiming,ModelTime}
 import chiselasync.protocol.FourPhase
-import chiselasync.primitives.{ControlGate, EventRegister, GateOperation}
+import chiselasync.primitives.{AsymmetricCElement, ControlGate, EventRegister, GateOperation, PassiveDataAllowance}
 import riscay.soc._
 
-/** The bank is an explicit transform input, covered by stage bundling. */
-class HousekeepingUpdate extends Bundle {
-  val state=new HousekeepingState
-  val command=new HousekeepingCommand
+/** Effects only; consumed is captured at the actual clocked receiving edge. */
+class HousekeepingEffects extends Bundle {
+  val recovery=Bool();val consumed=UInt(32.W)
+  val timeValid=Bool();val tick=Bool();val due=Bool();val leaseExpired=Bool()
+  val startAdc=Bool();val kick=Bool();val resetApplication=Bool();val cpuCompletion=Bool()
 }
 
 /** Native time, application timer/lease, kick and acquisition coordination.
@@ -22,7 +23,7 @@ class HousekeepingUpdate extends Bundle {
   */
 class FourPhaseHousekeeping(p: SocParameters,domain: ResetDomain) extends AsyncModule(domain) {
   val command=fourPhaseInput("command",new HousekeepingCommand)
-  val reply=fourPhaseOutput("reply",new HousekeepingReply)
+  val reply=fourPhaseOutput("reply",new HousekeepingEffects)
 
   private val timing=OwnerTiming.base
   private val cell=ModelTime.ps(1000)
@@ -39,12 +40,34 @@ class FourPhaseHousekeeping(p: SocParameters,domain: ResetDomain) extends AsyncM
   private val state=asyncChild("state")(d => new FourPhaseFifo(Bool(),1,timing,Seq(false.B),cell,d))
   private val join=asyncChild("join")(d => new FourPhaseJoin(Bool(),new HousekeepingCommand,timing,cell,d))
   private val update=asyncChild("update")(d => new FourPhaseStage(
-    new HousekeepingUpdate,new HousekeepingReply,
-    (x: HousekeepingUpdate) => transition(x.state,x.command),timing,d))
+    new HousekeepingEffects,new HousekeepingEffects,(x: HousekeepingEffects) => x,timing,d))
   FourPhase.connect(join.left,state.out); FourPhase.connect(join.right,command)
-  update.in.req:=join.out.req;join.out.ack:=update.in.ack
-  update.in.bits.state:=view;update.in.bits.command:=join.out.bits.right
-  bank.trigger:=reply.ack;bank.d:=update.out.bits.state.asUInt
+  update.in.req:=join.out.req
+  private val commandReturn=Module(new AsymmetricCElement(2,0,0,cell))
+  commandReturn.reset:=reset;commandReturn.common:=Cat(update.in.ack,reply.ack)
+  commandReturn.rising:=0.U;commandReturn.falling:=0.U
+  contract.primitive("command_return",commandReturn,Map("COMMON"->BigInt(2),"RISING"->BigInt(0),"FALLING"->BigInt(0),
+    "DELAY_FS"->BigInt(cell.fs),"RESET_VALUE"->BigInt(0),"COMMON_INVERT"->BigInt(0),
+    "RISING_INVERT"->BigInt(0),"FALLING_INVERT"->BigInt(0)),resetRef,"held command through bank capture and complete reply return")
+  join.out.ack:=commandReturn.q
+  // Keep one transform in this owner: preserving the identity-stage hierarchy
+  // must not duplicate arithmetic shared by the state and publication effects.
+  private val next=transition(view,join.out.bits.right)
+  update.in.bits:=effects(next)
+  private val operands=WireDefault(UInt((view.getWidth+join.out.bits.right.getWidth).W),
+    Cat(view.asUInt,join.out.bits.right.asUInt))
+  contract.endpoint("effect_source",operands);contract.endpoint("effect_input",update.in.bits)
+  contract.dataPathTiming("effect_transform_path","effect_source","effect_input",timing,
+    "full held-command/closed-state effect transform; compose with update payload capture, not identity-stage input only",
+    delayOwner=Seq("update"),delayCell="data_delay")
+  bank.trigger:=reply.ack
+  bank.d:=PassiveDataAllowance(this,"state_data_delay",next.state.asUInt,timing.dataDelay.model,resetRef)
+  contract.endpoint("state_data_source",operands);contract.endpoint("state_data",bank.d)
+  contract.endpoint("command_capture",join.out.req);contract.endpoint("bank_capture",bank.trigger)
+  contract.dataPathTiming("state_data_path","state_data_source","state_data",timing,
+    "full held-command/closed-state transform, actual receiving ACK capture",delayCell="state_data_delay")
+  contract.setupHold("state_aperture","command_capture","state_data_source","state_data","bank_capture",
+    "state_view",ModelTime.ps(100),ModelTime.ps(100))
   // Relative bank capture-to-feedback ordering. This digital model is not a
   // physical target: size this owner's own path at each corner before adoption.
   private val settled=Module(new ControlGate(1,GateOperation.Buffer,ModelTime.ps(10000)))
@@ -55,6 +78,14 @@ class FourPhaseHousekeeping(p: SocParameters,domain: ResetDomain) extends AsyncM
   state.in.bits:=false.B;state.in.req:=settled.q.asBool
   update.out.ack:=state.in.ack;reply.req:=update.out.req;reply.bits:=update.out.bits
   dontTouch(state.in);dontTouch(update.out)
+
+  private def effects(r: HousekeepingReply): HousekeepingEffects = {
+    val out=Wire(new HousekeepingEffects)
+    out.recovery:=r.recovery;out.consumed:=r.state.consumed
+    out.timeValid:=r.timeValid;out.tick:=r.tick;out.due:=r.due;out.leaseExpired:=r.leaseExpired
+    out.startAdc:=r.startAdc;out.kick:=r.kick;out.resetApplication:=r.resetApplication
+    out.cpuCompletion:=r.cpuCompletion;out
+  }
 
   private def transition(s: HousekeepingState, c: HousekeepingCommand): HousekeepingReply = {
     val r=WireDefault(0.U.asTypeOf(new HousekeepingReply)); r.state:=s

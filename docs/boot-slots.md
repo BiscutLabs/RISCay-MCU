@@ -112,20 +112,21 @@ silicon timing bounds or power estimates.
 
 | Variant / path | Boot time | Work-clock edges | Service-clock edges | SPI clock edges |
 | --- | ---: | ---: | ---: | ---: |
-| BD, first field image | 353.740 ms | 3,537,380 | 3,537,380 | 18,288 |
-| BD, both fields corrupt → golden | 1,010.872 ms | 10,108,699 | 10,108,699 | 52,592 |
+| BD, first field image | 333.861 ms | 3,338,586 | 3,338,586 | 18,288 |
+| BD, both fields corrupt → golden | 953.316 ms | 9,533,140 | 9,533,140 | 52,592 |
 | Click, first field image | 398.812 ms | 3,988,102 | 3,988,102 | 18,288 |
 | Click, both fields corrupt → golden | 1,139.618 ms | 11,396,164 | 11,396,164 | 52,592 |
 
 The model executes 425,518 ROM instructions on the primary path and 1,208,031
 on the fallback path in each variant. ROM bit-banging and the retained clocked
 SRAM boundary dominate this boot activity. Evidence is the `FULL_CAPACITY_BOOT`
-records in `build/soc-tests/generic-ab-full-*`. The four-case rerun after the
-time-width and Housekeeping changes passes in
-`build/housekeeping-view/full-boot-r1.log`, with exact records and copied suite
-results in `full-boot-r1.json` and `full-boot-r1-reports`. No application RAM is
-preloaded by the testbench. Relative to the boot batch, the qualification change
-adds 0.1/3.9 µs on BD's primary/fallback paths and 6.4/10.0 µs on Click's.
+records in `build/soc-tests/generic-ab-full-*`. BD's rows are the final integrated
+native-area rewrite: both cases pass in
+`build/bd-housekeeping-effects-full-boot-r1.log`, with exact measurements and
+source paths in `build/bd-housekeeping-effects/full-boot-r1.json`. They match the
+preceding Control batch. Click is unchanged; its rows retain the earlier passing
+`build/housekeeping-view/full-boot-r1.log` and associated `full-boot-r1.json`
+measurements. No application RAM is preloaded by the testbench.
 
 ## Verification and remaining physical obligations
 

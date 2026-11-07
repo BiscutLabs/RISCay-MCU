@@ -25,7 +25,9 @@ verified, including full-capacity boot measurements in both variants.
   Telemetry traffic and clocked sample projections in both variants.
   The [Housekeeping view](native-housekeeping-view.md) removes its clocked state
   mirror and obsolete elapsed lanes, retaining command arbitration and the
-  consumed-time wake acknowledgement.
+  consumed-time wake acknowledgement. The scoped [BD area rewrite](native-area-action-plan.md)
+  reuses SRAM byte crossings, removes reservation detours and compacts Control,
+  Telemetry and Housekeeping transport; Click remains the unchanged reference.
 - [ ] **B. Register-pointer host interface.** Replace the framed loader; do not
   build a permanent second transport. Decide the versioned wire ABI and host
   transition before RTL. Absorbs 11a2/11a2b, 13c, R5 epoch work and the R6 public

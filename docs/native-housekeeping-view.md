@@ -12,8 +12,9 @@ periodic clock is introduced. The independent LF watchdog remains unchanged.
 ## Ownership and representation
 
 BD replaces its wide feedback FIFO and Join operand with a one-bit seeded credit
-and one closed architectural bank. The update stage explicitly receives the bank
-and the accepted command as bundled inputs. A receipt ACK captures the result once;
+and one closed architectural bank. The BD [compact-effects implementation](native-housekeeping-effects.md) computes
+next state and effects once from the closed bank and retained command. Its update
+stage stores only effects; a receipt ACK captures the state bank directly once;
 a relative bank-to-feedback guard prevents reuse before capture completes. The
 bank is initialized to `HousekeepingState.initial`, not an empty FIFO payload.
 
@@ -94,7 +95,10 @@ predicate is assumed. All selector Q paths receive the ordinary one-period setup
 and same-edge hold screen, because steady-state correlation alone does not prove
 decoder transitions harmless. Negative bypass controls cover both selector values.
 
-The final repaired BD campaign checks ten PVT/slew cases. The 920 periodic
+The historical view-batch repaired BD campaign checked ten PVT/slew cases. These
+figures do not qualify later storage rewrites; the current effects contract and
+area-ledger entry record their new checks and remaining ordinary qualifier failures.
+At that earlier revision, the 920 periodic
 bank-reader endpoints have at least +192.568 ns later-read setup and +1.247 ns
 same-edge hold. Bank-to-feedback ordering is at least +11.105 ns with nine DLYD
 cells. The 17 returning/selector sources reach 1,074 periodic targets; their

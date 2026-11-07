@@ -20,7 +20,9 @@ keeps its native reservation owners. BD Control now uses a
 [closed architectural/effects bank](native-control-bank.md) and commits CRC on
 Stored; Click retains its state FIFO, Join and speculative CRC path. BD
 [Telemetry](native-telemetry-effects.md) now publishes a three-bit effects reply
-from its existing closed banks; Click retains its full-state reply.
+from its existing closed banks. BD [Housekeeping](native-housekeeping-effects.md)
+also retains its architectural bank and publishes only 41 effect bits. Click
+retains the corresponding full-state replies.
 The external ABI and reset/retention behavior remain equal;
 Click remains an unchanged functional regression reference during this pass.
 
@@ -49,9 +51,10 @@ ABI-preserving ownership reductions before surviving-guard tuning: one SRAM
 word loop per memory, removal of Telemetry/Housekeeping reservation round trips,
 and compact Control and native bank-result storage. It preserves the existing
 receiving-edge arbitration and memory return/eligibility lifetimes. Its area
-budgets are planning gates; [batches 1–4a](area-ledger.md) now measure
-1.519368 mm² flat BD logic. Housekeeping bank-result reduction remains
-next in this BD-only pass. The host ABI decision still precedes frame/credit restructuring.
+budgets are planning gates; [batches 1–4](area-ledger.md) now measure
+1.506013 mm² flat BD logic, with 3,449 fewer native storage bits and 247 fewer
+flat periodic sinks. This completes the scoped BD-only rewrite, including final
+full-capacity primary/golden boot checks. The remaining physical gates are still open. The host ABI decision still precedes frame/credit restructuring.
 Record mapped/repaired logic, clock sinks and wake activity/duration in the
 [area ledger](area-ledger.md), against the immediate parent and original baseline.
 Full extracted-RC qualification remains item 17. Physical prerequisites may be

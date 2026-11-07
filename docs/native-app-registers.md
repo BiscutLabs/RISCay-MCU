@@ -30,7 +30,9 @@ bank retain their existing roles.
 `out.fire`. Only a live or attributed recovery reply raises bank ACK; revoked
 replies drain without changing the bank. The qualified ACK clocks the native
 event register. Feedback waits for base ACK, bank completion and the owner's
-relative output guard. Full fork return holds the payload throughout capture.
+relative output guard. BD now publishes only [compact effects](native-telemetry-effects.md);
+the Join holds the accepted command through bank capture and full return. The
+closed bank supplies the state view directly; the fork carries no state copy.
 
 `telemetryReturning` closes clocked readers immediately after acceptance and
 reopens only after the receipt observes synchronized native reply return-to-zero.

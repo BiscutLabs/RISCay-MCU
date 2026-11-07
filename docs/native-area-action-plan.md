@@ -1,6 +1,6 @@
 # Native area: concrete redesign plan
 
-Status: **BD implementation in progress**. The user selected BD first; Click
+Status: **BD batches 1–4 implemented and verified locally**. The user selected BD first; Click
 keeps its current independent implementation during these batches. Source
 baseline: `1f256eb`; approved-plan commit: `30dc3f2`.
 Batch 1's [word loop](native-sram-word-loop.md) is implemented, independently
@@ -15,7 +15,13 @@ Batch 3 replaces Control transport and speculative CRC with a
 323 Control payload bits, with [independent review and local timing](reviews/bd-control-bank.md).
 Batch 4a [Telemetry effects](native-telemetry-effects.md) is also implemented
 and [reviewed](reviews/bd-telemetry-effects.md): **1.519368 mm²** flat logic,
-259 Telemetry payload bits. Batch 4b, Housekeeping effects, remains next.
+259 Telemetry payload bits. Batch 4b [Housekeeping effects](native-housekeeping-effects.md)
+reduces its payload storage to 449 bits: **1.506013 mm² flat**, **1.749243 mm²
+hierarchical repaired**. The four batches remove 3,449 native bits and 247 flat
+periodic sinks. The 1.60 mm² target is met; firmware work edges are 27.67% above
+the original baseline, chiefly from full-return byte sequencing. Local timing,
+remaining qualifier failures and the final verification are recorded in its
+[review](reviews/bd-housekeeping-effects.md) and the [ledger](area-ledger.md).
 This replaces the opportunity ranking in the
 [overhead investigation](native-overhead-investigation.md), not its measurements.
 The plan is based on the actual owners, their commit/return dependencies and the
@@ -46,8 +52,8 @@ larger replacements below.
 | 4. Telemetry/HK result copies | 515 / 676 bits; 0.100338 mm² combined | Keep banks and held commands, store only effects; at most 272 / 464 bits; recipes at most 0.080 mm² combined |
 
 These are **design budgets, not mapped predictions or timing results**. Counts
-and caps refer to BD's reference production profile; independently recount Click
-with the equivalent native architecture. Other capacities/software-sample
+and caps refer to BD's reference production profile. Click stays unchanged in
+this BD-first pass; any later equivalent conversion needs its own inventory. Other capacities/software-sample
 configurations need formulas and their own generated inventories. C-element
 keeper state is accounted in recipe area, not in these latch/FF bit totals.
 Price each replacement using its actual cell type: a closed EventRegister bank
@@ -364,9 +370,10 @@ an additional total by adding overlapping historical opportunity pools.
 
 ## Execution and evidence for each batch
 
-1. Implement the independent BD and native Click versions with shared semantic
-   oracles. Keep Click phase/rearm/ACK policy; no new Click sizing/P&R campaign.
-   Leave the independent synchronous design as the comparison reference.
+1. The user selected BD first after this plan was reviewed. Implement these
+   batches only in BD, retaining shared semantic oracles and unchanged Click
+   regressions. Keep Click and the independent synchronous design as comparison
+   references; a later Click conversion requires its own scope and review.
 2. Run affected chip tests listed above, fast CI, generation audits and RDC
    proofs. Preserve behavioral expectations and deadlines. Test cancellation
    and backpressure at every changed ownership transition; no new count-only
@@ -394,5 +401,6 @@ Keep the separate 0.05 mm² routed hold-repair reserve. Results from pre-fix
 wire units or missing SPEF remain void. A mapped-area milestone is never the
 tape-out gate.
 
-This planning batch rereads source and reconciles existing evidence only. It
-does not claim new simulation, synthesis, delay qualification or P&R results.
+The original planning review used source and existing measurements. Implemented
+batches and their fresh verification are linked in the status above; none claims
+new routed qualification.

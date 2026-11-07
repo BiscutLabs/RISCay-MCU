@@ -245,7 +245,7 @@ abstract class FourPhasePlatform(p: SocParameters, board: SocParameters => Board
   val housekeepingCommandBridge=asyncChild("housekeeping_command_bridge")(d =>
     new chiselasync.clocked.DecoupledToFourPhase(Bool(), 2, d))
   val housekeepingReplyBridge=asyncChild("housekeeping_reply_bridge")(d =>
-    new FourPhaseServiceReplyReceipt(new HousekeepingReply, d))
+    new FourPhaseServiceReplyReceipt(new HousekeepingEffects, d))
   housekeepingCommandBridge.clock:=workClock; housekeepingReplyBridge.clock:=workClock
   housekeeping.command.req:=housekeepingCommandBridge.out.req
   housekeepingCommandBridge.out.ack:=housekeeping.command.ack

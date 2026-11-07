@@ -28,7 +28,49 @@ class AsyncHousekeepingSpec extends AnyFunSuite {
   private def top(click: Boolean): AsyncModule = if(click)
     new riscay.click.ClickHousekeeping(p,new ResetDomain("root"))
     else new riscay.bd.FourPhaseHousekeeping(p,new ResetDomain("root"))
+  private def bdCampaign(steps: Seq[Step]): String = {
+    val source=steps.zipWithIndex.map { case(s,i) =>
+      val values=defaults++s.command
+      val data=fields.map(f => s"command_bits_$f=32'h${values.getOrElse(f,0L).toHexString};").mkString("\n")
+      s"""command_bits_recovery=0;$data #${(i%3+1)*31000000L};
+        command_req=1;wait(command_ack);#2;command_req=0;wait(!command_ack);#2;
+      """
+    }.mkString("\n")
+    val bankFields=Seq("now","consumed","deadline","armed","lease","wakeMask",
+      "period","nextPeriod","periodPending","countdown","requested")
+    val bank=bankFields.map("view_"+_).mkString("{",",","}")
+    var consumed=0L
+    val sink=steps.zipWithIndex.map { case(s,i) =>
+      val oldConsumed=consumed
+      val values=defaults++s.command
+      if(values.getOrElse("timeValid",0L)!=0L) consumed=values.getOrElse("target",0L) & 0xffffffffL
+      val effectExpected=s.expected.toSeq.filterNot(_._1.startsWith("state_")) ++ Seq(
+        "consumed"->consumed,"recovery"->0L,"timeValid"->values.getOrElse("timeValid",0L),
+        "resetApplication"->values.getOrElse("resetApplication",0L),
+        "cpuCompletion"->values.getOrElse("cpuCompletion",0L))
+      val checks=effectExpected.sortBy(_._1).map { case(k,v) =>
+        s"if(reply_bits_$k !== 32'h${v.toHexString}) $$fatal(1,\"HOUSEKEEPING_${i}_$k actual=%h\",reply_bits_$k);"
+      }.mkString("\n")
+      val committed=(s.expected.toSeq.filter(_._1.startsWith("state_")) ++ Seq("state_consumed"->consumed))
+        .sortBy(_._1).map { case(k,v) =>
+          s"if(view_${k.stripPrefix("state_")} !== 32'h${v.toHexString}) $$fatal(1,\"HOUSEKEEPING_COMMITTED_$k\");"
+        }.mkString("\n")
+      s"""savedBank=$bank;wait(reply_req);#2;$checks
+        repeat(5) begin #${(i%5+1)*41000000L};$checks
+          if($bank !== savedBank) $$fatal(1,"HOUSEKEEPING_BANK_CHANGED_BEFORE_ACCEPTANCE");
+        end
+        // This is the receiving edge: the reply holds the new consumed value,
+        // while the live bank still holds the old one until ACK-to-Q propagates.
+        reply_ack=1;#2;
+        if(view_consumed !== 32'h${oldConsumed.toHexString}) $$fatal(1,"HOUSEKEEPING_SAME_EDGE_OLD_BANK");
+        wait(!reply_req);#37000000;reply_ack=0;#2;
+        #1000000000;$committed
+      """
+    }.mkString("\n")
+    s"fork begin $source end begin reg [$$bits($bank)-1:0] savedBank;$sink end join #1000000000;"
+  }
   private def campaign(click: Boolean,steps: Seq[Step]): String = {
+    if(!click) return bdCampaign(steps)
     val source=steps.zipWithIndex.map { case(s,i) =>
       val phase=if(click) (i+1)%2 else 1
       val values=defaults++s.command
@@ -140,6 +182,49 @@ class AsyncHousekeepingSpec extends AnyFunSuite {
           #1000000000; reset=0; #1000000000;
           if(reply_req || command_ack) $$fatal(1,"HOUSEKEEPING_POR_REPLAY");
           ${if(click) "start=1;" else ""} ${campaign(click,after)}
+        """ }
+      }
+    }
+    if(!click) {
+      test("bd native housekeeping: compact consumed effect captures the new target and retains invalid targets") {
+        val steps=Seq(
+          Step(Map("timeValid"->1L,"target"->7L),state("consumed"->7)),
+          Step(Map("timeValid"->0L,"target"->99L),state("consumed"->7)),
+          Step(Map("timeValid"->1L,"target"->0L),state("consumed"->0)))
+        AsyncTest.run(top(false),1L to 16L,fresh("bd-consumed-receipt")) { _ =>
+          campaign(false,steps)
+        }
+      }
+      test("bd native housekeeping: a later command cannot change a held reply or the first bank capture") {
+        AsyncTest.run(top(false),Seq(1L,2L,19L),fresh("bd-command-borrow")) { _ => s"""
+          begin
+            reg second_offered=0;
+            command_bits_started=1;command_bits_adcBusy=1;command_bits_recovery=0;
+            fork
+              begin
+                command_bits_write=1;command_bits_offset=60;command_bits_data=5;command_bits_cpuCompletion=1;
+                #31000000;command_req=1;wait(command_ack);#2;command_req=0;wait(!command_ack);#2;
+                command_bits_data=9;command_bits_recovery=1;second_offered=1;
+                #31000000;command_req=1;wait(command_ack);#2;command_req=0;wait(!command_ack);#2;
+              end
+              begin
+                wait(reply_req);#300000000;
+                if(!second_offered || !command_req || view_lease!==0 ||
+                  !reply_bits_cpuCompletion || reply_bits_recovery || reply_bits_leaseExpired || reply_bits_kick)
+                  $$fatal(1,"HOUSEKEEPING_BORROW_FIRST_HELD");
+                reply_ack=1;wait(!reply_req);#37000000;
+                if(view_lease!==5) $$fatal(1,"HOUSEKEEPING_BORROW_FIRST_COMMITTED");
+                reply_ack=0;#2;
+                wait(reply_req);#300000000;
+                if(view_lease!==5 || !reply_bits_cpuCompletion || !reply_bits_recovery ||
+                  reply_bits_leaseExpired || reply_bits_kick)
+                  $$fatal(1,"HOUSEKEEPING_BORROW_SECOND_HELD");
+                reply_ack=1;wait(!reply_req);#37000000;reply_ack=0;#2;
+              end
+            join
+            #1000000000;
+            if(view_lease!==9 || delivered_reply!=2) $$fatal(1,"HOUSEKEEPING_BORROW_EXACTLY_ONCE");
+          end
         """ }
       }
     }
