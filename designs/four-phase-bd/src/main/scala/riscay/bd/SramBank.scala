@@ -11,16 +11,16 @@ import riscay.soc._
   * lane ports are mutually exclusive by native execution-credit ordering.
   * CLK remains the service clock; there is no request-derived clock generator.
   */
-class SramBank(bytes: Int) extends Module with InlineInstance {
+class SramBank(bytes: Int, lanes: Int = 4) extends Module with InlineInstance {
   require(bytes > 0 && bytes % 4 == 0)
   val io = IO(new Bundle {
-    val request = Flipped(Vec(4, Decoupled(new SramByteRequest)))
-    val response = Vec(4, Decoupled(UInt(8.W)))
+    val request = Flipped(Vec(lanes, Decoupled(new SramByteRequest)))
+    val response = Vec(lanes, Decoupled(UInt(8.W)))
   })
   val idle :: access :: capture :: answer :: Nil = Enum(4)
   val state = RegInit(idle)
   val selected = PriorityEncoder(VecInit(io.request.map(_.valid)).asUInt)
-  val tag = Reg(UInt(2.W))
+  val tag = if(lanes > 1) Reg(UInt(log2Ceil(lanes).W)) else WireDefault(0.U(1.W))
   private val addressWidth = log2Ceil(bytes).max(1)
   // The incoming bus and admission assertions remain full width. Only a
   // successfully admitted byte offset is compacted into this retained owner.
@@ -43,7 +43,7 @@ class SramBank(bytes: Int) extends Module with InlineInstance {
     macroCell.io.GWEN := gwen; macroCell.io.WEN := 0.U
     macroCell.io.A := address; macroCell.io.D := data
   }
-  for(i <- 0 until 4) {
+  for(i <- 0 until lanes) {
     io.request(i).ready := state === idle && selected === i.U && !reset.asBool
     io.response(i).valid := state === answer && tag === i.U && !reset.asBool
     io.response(i).bits := result
@@ -59,7 +59,7 @@ class SramBank(bytes: Int) extends Module with InlineInstance {
     saved.write := io.request(selected).bits.write
     saved.data := io.request(selected).bits.data
     saved.enable := io.request(selected).bits.enable
-    tag := selected; state := access
+    if(lanes > 1) { tag := selected }; state := access
   }
   when(state === access) { state := capture }
   when(state === capture) {
@@ -67,5 +67,5 @@ class SramBank(bytes: Int) extends Module with InlineInstance {
       macros.zipWithIndex.map { case(m,i) => i.U -> m.io.Q }))
     state := answer
   }
-  when(state === answer && io.response(tag).fire) { state := idle }
+  when(state === answer && (if(lanes == 1) io.response.head.fire else io.response(tag).fire)) { state := idle }
 }

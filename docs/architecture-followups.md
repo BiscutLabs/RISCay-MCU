@@ -12,6 +12,11 @@ implementation and functional regressions. Click physical timing and sizing work
 remains frozen; area and sink accounting still accompany functional changes.
 Document temporary internal divergence and any approved ABI transition.
 
+The user has scoped the current native-area redesign **BD first**. BD's
+[SRAM word loop](native-sram-word-loop.md) reuses one byte crossing while Click
+retains four lanes. The external ABI and reset/retention behavior remain equal;
+Click remains an unchanged functional regression reference during this pass.
+
 The user-approved [clocked comparison MCU](clocked-design.md) is a third,
 independent implementation of the same ABI, including a synchronous CPU. Its
 ordinary clocked state is intentional; it neither reverses the native migration

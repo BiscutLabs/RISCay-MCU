@@ -1,6 +1,13 @@
 # Native area: concrete redesign plan
 
-Status: **proposal, no RTL or mapping changes**. Source baseline: `1f256eb`.
+Status: **BD implementation in progress**. The user selected BD first; Click
+keeps its current independent implementation during these batches. Source
+baseline: `1f256eb`; approved-plan commit: `30dc3f2`.
+Batch 1's [word loop](native-sram-word-loop.md) is implemented, independently
+reviewed and verified locally: flat mapped logic is **1.718196 mm²**, down
+0.175504 mm². [Evidence and limits](reviews/bd-sram-word-loop.md) include its
+longer firmware wake. Remaining batches below are the next replacements;
+their implementation is not part of this batch's acceptance.
 This replaces the opportunity ranking in the
 [overhead investigation](native-overhead-investigation.md), not its measurements.
 The plan is based on the actual owners, their commit/return dependencies and the

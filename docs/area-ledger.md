@@ -6,7 +6,10 @@ libraries, mapper and accepted repair flow for matched production comparisons.
 Full routed physical requalification remains migration item 17.
 
 The **BD mapped-logic milestone below 2.3 mm² excluding SRAM is achieved**.
-The Housekeeping batch maps to **1.987975 / 2.800265 mm²**
+The BD SRAM rewrite now maps to **1.718196 mm² flat**, or **1.798993 mm²** with
+ordinary hierarchy retained; the latter repairs to **1.988072 mm²**. Its matched
+parent, clock inventory and activity tradeoff are recorded below.
+The earlier Housekeeping batch maps to **1.987975 / 2.800265 mm²**
 (BD / Click) and repairs to **2.209548 / 3.051047 mm²**, including the expanded
 A/B boot ROM and current parent-driver recipe. The matched parent and
 single-writer Telemetry results are recorded in their batch rows below.
@@ -17,7 +20,8 @@ Generic boot introduces new ROM/decode timing
 obligations; the parent's local timing passes do not qualify those paths.
 
 BD is the tape-out target; Click physical timing/sizing work is frozen, while
-architecture conversions now cover both native implementations. Allocate
+architecture conversions cover both unless the user requests an exception;
+the current area rewrite is explicitly BD-first. Allocate
 **0.05 mm² of additional standard-cell area for routed hold repair** in the BD
 planning budget (about 2.5% of current mapped logic). This is an allowance, not
 inserted area or a predicted requirement, and is separate from electrical/CTS
@@ -88,6 +92,74 @@ banks and reservation crossings to remove, preserves necessary return/eligibilit
 state, and sets a proposed 1.60 mm² BD mapped-logic gate for its first four
 structural batches. This is an engineering budget, not an area result; no new
 measurement row or physical qualification is claimed.
+
+## BD SRAM word-loop rewrite
+
+Batch 1 of the [area action plan](native-area-action-plan.md) replaces the four
+unrolled byte paths with one native word loop and one byte crossing pair per
+memory. Click is unchanged under the user's BD-first exception. The following
+are fresh matched measurements. See the [independent review](reviews/bd-sram-word-loop.md)
+for the digital and local timing checks and remaining physical obligations.
+
+| Comparison | Before, mm² | After, mm² | Change |
+| --- | ---: | ---: | ---: |
+| Flat mapped logic | 1.893700 | 1.718196 | −0.175504 (−9.27%) |
+| Hierarchical mapped logic | 1.971463 | 1.798993 | −0.172470 (−8.75%) |
+| Hierarchical repaired logic | 2.196947 | 1.988072 | −0.208875 (−9.51%) |
+| Hierarchical electrical-repair addition | 0.225484 | 0.189079 | −0.036405 |
+| Native SRAM recipes, both memories | 0.209185 | 0.050722 | −0.158463 |
+| Guards / passive allowances | 0.400304 / 0 | 0.375384 / 0 | −0.024920 / 0 |
+| DLYD | 0.394455 | 0.371169 | −0.023287 |
+
+The same Yosys 0.62/ABC binaries, GF180 libraries, reference configuration and
+three SRAM macros are used. Logic excludes their unchanged 0.466241 mm² LEF
+footprint. Flat and hierarchical comparisons are separate; no flat repaired
+area is claimed. The native graphs remain protected and the complete repair
+proof passes. This is pre-placement evidence, not routed timing or die area.
+
+| Clock/storage inventory | Before | After |
+| --- | ---: | ---: |
+| Flat periodic sinks: service / work / LF | 1,188 / 1,803 / 78 | 1,188 / 1,632 / 78 |
+| Flat total periodic sinks | 3,069 | 2,898 |
+| Hierarchical periodic sinks: service / work / LF | 1,253 / 1,942 / 78 | 1,253 / 1,794 / 78 |
+| Hierarchical total periodic sinks | 3,273 | 3,125 |
+| Hierarchical Services sinks: service / work / LF | 64 / 916 / 0 | 64 / 912 / 0 |
+| Native latch/FF bits | 9,229 | 7,250 |
+| DLYD cells | 5,285 | 4,973 |
+
+The flat mapper merges more ordinary logic, hence its 171-sink reduction versus
+148 with hierarchy. Both include three macro clock pins and exclude the SDA
+event. The two SRAM owners contain 90 / 89 declared storage bits and together
+meet the 0.080 mm² recipe budget. The remaining flat-logic gap to the four-batch
+1.60 mm² stretch target is 0.118196 mm².
+
+DLYD by mapped purpose after this batch: custom ordering/reset **3,784 /
+0.282426 mm²**, ordering/bundling **597 / 0.044558 mm²**, seed/reset admission
+**100 / 0.007464 mm²**, publication ordering **492 / 0.036721 mm²**. These are
+subsets, not additional area. New SRAM guards keep conservative counts; no old
+owner's measured shorter count was transferred to them.
+
+At the unchanged 12 MHz digital-model workload, maintenance remains **30 work
+edges / 3.147 µs** and acquisition **221 / 18.772 µs**. The 43-instruction wake
+changes from **3,242 / 270.524 µs** to **4,166 / 347.525 µs** (+28.5% edges).
+The reusable byte channel waits for complete return before the next byte; the
+old lanes overlapped those returns. Original firmware/deadline checks pass.
+Telemetry commands remain zero. These activity counts do not measure energy:
+the smaller circuit also changes switched capacitance. Click remains at
+27 maintenance, 216 acquisition and 3,199 firmware work edges.
+
+Full-capacity 2 KiB BD SPI boot at 10 MHz takes **364.828 ms** from the primary
+slot and **1,042.319 ms** through golden fallback, with **3,648,259 / 10,423,174**
+work/service edges respectively. Both execute the expected application result.
+These are digital-model measurements, separate from the 12 MHz wake workload.
+
+Evidence: `build/bd-word-loop/{map-r4,flat-r1,baseline-repair-r1}`,
+`area-r4.json`, `baseline-area-r3.json`, `clocks-r4.json`,
+`baseline-clocks-r3.json`, `flat-clocks-r1.json` and `activity-r1.json`.
+The historical raw baseline was repaired afresh because its old receipt no
+longer validated against changed working files. That failure is retained.
+An accidental run with the default Yosys 0.33 configuration was stopped and
+excluded; `map-r4` explicitly uses the baseline's pinned 0.62 tool configuration.
 
 ## BD hierarchy experiment
 

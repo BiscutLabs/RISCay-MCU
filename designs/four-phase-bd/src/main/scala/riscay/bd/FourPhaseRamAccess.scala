@@ -14,22 +14,22 @@ import riscay.soc._
   * releases active independently of publication; full busy also includes the
   * native return owner. effectsDrained excludes that owner to avoid a cycle.
   */
-class RamAccess(domain: ResetDomain) extends ClockedBridge(domain, 2) {
-  val io = IO(Flipped(new RamAccessPort))
+class RamAccess(domain: ResetDomain, addressBits: Int = 32, capacity: BigInt = BigInt(1)<<32) extends ClockedBridge(domain, 2) {
+  val io = IO(Flipped(new RamAccessPort(1)))
   dontTouch(io)
   val word=fourPhaseOutput("word",UInt(32.W))
   val captureRequest=IO(Input(Bool())); val captureAcknowledge=IO(Output(Bool()))
   val returnIdle=IO(Input(Bool())); val effectsDrained=IO(Output(Bool()))
   val receipt=asyncChild("capture_receipt")(d => new FourPhaseRamCaptureReceipt(d))
   receipt.clock:=clock; receipt.request:=captureRequest; captureAcknowledge:=receipt.acknowledge
-  val native = asyncChild("native")(d => new FourPhaseSram(d))
+  val native = asyncChild("native")(d => new FourPhaseSram(d,addressBits))
 
   val command = asyncChild("command_bridge")(d => new DecoupledToFourPhase(new SramWordRequest, 2, d))
   command.clock := clock
   FourPhase.connect(native.request,command.out); FourPhase.connect(word,native.response)
-  val requests = (0 until 4).map(i => asyncChild(s"byte_request_$i")(d => new FourPhaseServiceReplyReceipt(new SramByteRequest, d)))
-  val replies = (0 until 4).map(i => asyncChild(s"byte_reply_$i")(d => new DecoupledToFourPhase(UInt(8.W), 2, d)))
-  for(i <- 0 until 4) {
+  val requests = (0 until 1).map(i => asyncChild(s"byte_request_$i")(d => new FourPhaseServiceReplyReceipt(new SramByteRequest, d)))
+  val replies = (0 until 1).map(i => asyncChild(s"byte_reply_$i")(d => new DecoupledToFourPhase(UInt(8.W), 2, d)))
+  for(i <- 0 until 1) {
     requests(i).clock := clock; replies(i).clock := clock
     FourPhase.connect(requests(i).in, native.byteRequest(i)); FourPhase.connect(native.byteResponse(i), replies(i).out)
     io.bytes(i) <> requests(i).out; replies(i).in <> io.completions(i)
@@ -44,7 +44,11 @@ class RamAccess(domain: ResetDomain) extends ClockedBridge(domain, 2) {
     val drained = returned && bytesReturned && command.in.ready && replies.map(_.in.ready).reduce(_ && _) && receipt.idle
     command.in.valid := io.request.valid && !active && drained && ownerReturned
     command.in.bits := io.request.bits; io.request.ready := !active && drained && ownerReturned
-    when(command.in.fire) { active := true.B }
+    when(command.in.fire) {
+      assert(io.request.bits.address < capacity.U,"SRAM_WORD_ADDRESS_OUT_OF_RANGE")
+      assert((io.request.bits.address >> addressBits) === 0.U,"SRAM_WORD_ADDRESS_TRUNCATION")
+      active := true.B
+    }
     receipt.accept:=active
     when(receipt.accepted) { active:=false.B }
     effectsDrained:= !active && drained && !localReset.asBool

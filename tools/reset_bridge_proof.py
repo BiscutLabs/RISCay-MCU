@@ -5,6 +5,7 @@ Every payload exemption needs exact capture/self muxes, reset ownership and
 request/return equations. Producer hold/reset contracts need a separate audit.
 """
 from itertools import product
+import re
 
 
 class Cone:
@@ -127,6 +128,15 @@ def sram_capacities(inventory, top):
     return capacities
 
 
+def sram_receipt_lanes(module, bank):
+    prefix = 'ca_child_' + bank + '_access'
+    pattern = re.compile(re.escape(prefix) + r'\.ca_child_byte_request_(\d+)\.out_valid')
+    lanes = sorted(int(m[1]) for name in module['netnames'] if (m := pattern.fullmatch(name)))
+    if not lanes or lanes != list(range(len(lanes))) or len(lanes) > 4:
+        raise ValueError('RDC_SRAM_RECEIPT_INVENTORY')
+    return lanes
+
+
 def prove_sram_capture(module, bank, por_reset, capacity):
     """Exact held-source -> unreset macro input storage, never a bank-wide waiver.
 
@@ -145,8 +155,9 @@ def prove_sram_capture(module, bank, por_reset, capacity):
     check_flop_reset(state, clock, reset)
     fields = dict(address=32, write=1, data=8, enable=1)
     retained_fields = dict(fields, address=saved_sram_address_width(capacity))
+    lanes = sram_receipt_lanes(module, bank)
     inputs = {}
-    for lane in range(4):
+    for lane in lanes:
         receipt = access + '.ca_child_byte_request_' + str(lane)
         if cone.bits(receipt + '.clock') != clock:
             raise ValueError('RDC_SRAM_RECEIPT_CLOCK')
@@ -158,7 +169,7 @@ def prove_sram_capture(module, bank, por_reset, capacity):
                 raise ValueError('RDC_SRAM_NATIVE_ALIAS')
             inputs[lane, field] = bits
     registers = {}
-    for field, width in {**retained_fields, 'tag': 2}.items():
+    for field, width in {**retained_fields, **({'tag': (len(lanes)-1).bit_length()} if len(lanes)>1 else {})}.items():
         name = prefix + ('tag' if field == 'tag' else 'saved_' + field)
         q = cone.bits(name)
         drivers = {cone.drivers[b][0] for b in q}
@@ -185,34 +196,35 @@ def prove_sram_capture(module, bank, por_reset, capacity):
         else: raise ValueError('RDC_SRAM_CAPTURE_LOGIC_' + kind)
         return leaf(branch[index], env, leaves)
 
-    for value, mask, rst in product(range(4), range(16), range(2)):
+    for value, mask, rst in product(range(4), range(1 << len(lanes)), range(2)):
         env = {}; cone.bind(env, state['connections']['Q'], value); cone.bind(env, reset, rst)
         # Chisel PriorityEncoder's no-valid default is the last lane. No
         # payload/tag capture may occur in that case, even though ready is high.
-        selected = (mask & -mask).bit_length()-1 if mask else 3
-        for lane in range(4):
+        selected = (mask & -mask).bit_length()-1 if mask else lanes[-1]
+        for lane in lanes:
             cone.bind(env, cone.bits(access + '.ca_child_byte_request_' + str(lane) + '.out_valid'), (mask >> lane) & 1)
-        if cone.evaluate(cone.bits(prefix + 'selected'), env) != selected:
+        if len(lanes)>1 and cone.evaluate(cone.bits(prefix + 'selected'), env) != selected:
             raise ValueError('RDC_SRAM_SELECTED')
-        for lane in range(4):
+        for lane in lanes:
             ready = cone.bits(access + '.ca_child_byte_request_' + str(lane) + '.out_ready')
             if cone.evaluate(ready, env) != (value == 0 and not rst and selected == lane):
                 raise ValueError('RDC_SRAM_READY')
         capture = value == 0 and bool(mask) and not rst
         for field in fields:
             _, pins = registers[field]
-            leaves = set(pins['Q'] + sum([inputs[i, field] for i in range(4)], []))
+            leaves = set(pins['Q'] + sum([inputs[i, field] for i in lanes], []))
             # Full native and receipt aliases were checked above. Only the
             # capacity-proved low address prefix enters saved storage.
             expected = inputs[selected, field][:retained_fields[field]] if capture else pins['Q']
             if [leaf(b, env, leaves) for b in pins['D']] != expected:
                 raise ValueError('RDC_SRAM_CAPTURE_' + field)
-        _, tag = registers['tag']
-        for old in range(4):
-            tag_env = dict(env); cone.bind(tag_env, tag['Q'], old)
-            if cone.evaluate(tag['D'], tag_env) != (selected if capture else old):
-                raise ValueError('RDC_SRAM_TAG')
-    return dict(prefix=prefix, rows=128, capacity=capacity,
+        if len(lanes)>1:
+            _, tag = registers['tag']
+            for old in lanes:
+                tag_env = dict(env); cone.bind(tag_env, tag['Q'], old)
+                if cone.evaluate(tag['D'], tag_env) != (selected if capture else old):
+                    raise ValueError('RDC_SRAM_TAG')
+    return dict(prefix=prefix, rows=4*(1 << len(lanes))*2, lanes=lanes, capacity=capacity,
                 source_fields=fields, retained_fields=retained_fields,
                 payload=[registers[f][0] for f in fields],
                 contract='retained native byte bus, receipt ACK on exact macro-controller capture')

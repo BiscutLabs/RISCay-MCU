@@ -4,8 +4,13 @@ Each variant owns native word sequencing and an explicit clocked byte-access
 `SramBank` boundary under its `designs/` directory. Item 6 digital verification
 and independent review pass; physical timing remains unqualified. Both use the same fixed physical macro, `gf180mcu_ocd_ip_sram__sram1024x8m8wm1`. Groundlark has
 two macros for 2 KiB program storage and one macro for 1 KiB working storage.
-The boot ROM, loader, permanent supervisor and architectural registers are
-unchanged in purpose. No external memory or new pins are required.
+The generic boot ROM loads firmware from external SPI storage or the host loader;
+there is no application supervisor or policy in silicon.
+
+The current BD-first [word-loop conversion](native-sram-word-loop.md) replaces
+the unrolled lane stores and four byte crossings with one retained word and one
+reusable byte crossing per memory. Click remains on its four-lane implementation.
+The macro pin clock and accepted-effect/reset obligations remain unchanged.
 
 C1b removes the eight duplicate 42-bit clocked byte-request payload banks.
 Each native lane issue stage retains its request until the actual macro

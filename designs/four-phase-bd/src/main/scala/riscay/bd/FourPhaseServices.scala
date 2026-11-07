@@ -26,14 +26,14 @@ private class ControlMailbox extends Module with InlineInstance {
 
 /** Clocked endpoints behind this variant's native asynchronous fabric. */
 class FourPhaseServices(p: SocParameters, boardFactory: SocParameters => BoardProfile,
-    preserveHierarchy: Boolean = false) extends ServiceEndpoint(p.config.programBytes, preserveHierarchy) {
+    preserveHierarchy: Boolean = false) extends ServiceEndpoint(p.config.programBytes, preserveHierarchy, memoryLanes=1) {
   val config = p.config
   val board = boardFactory(p)
   val telemetryWords = config.application.registers.map(_.word).toVector
   val telemetryCommand = IO(Decoupled(new TelemetryCommand(p.softwareSampleChannels.size)))
   val telemetryReply = IO(Flipped(Decoupled(new TelemetryReply(p.softwareSampleChannels.size, telemetryWords.size))))
-  val program = Module(new SramBank(config.programBytes))
-  val ram = Module(new SramBank(config.workingRamBytes))
+  val program = Module(new SramBank(config.programBytes,1))
+  val ram = Module(new SramBank(config.workingRamBytes,1))
   program.io.request <> io.program.bytes; io.program.completions <> program.io.response
   ram.io.request <> io.ram.bytes; io.ram.completions <> ram.io.response
   for(request <- Seq(io.program.request, io.ram.request)) {

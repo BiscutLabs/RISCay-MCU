@@ -68,24 +68,24 @@ class SramByteRequest extends Bundle {
   val data = UInt(8.W)
   val enable = Bool()
 }
-class SramAccessPort extends Bundle {
+class SramAccessPort(lanes: Int = 4) extends Bundle {
   val request = Decoupled(new SramWordRequest)
   val response = Flipped(Decoupled(UInt(32.W)))
   val busy = Input(Bool())
-  val bytes = Flipped(Vec(4, Decoupled(new SramByteRequest)))
-  val completions = Vec(4, Decoupled(UInt(8.W)))
+  val bytes = Flipped(Vec(lanes, Decoupled(new SramByteRequest)))
+  val completions = Vec(lanes, Decoupled(UInt(8.W)))
 }
 
 /** Working RAM returns its retained word on a native port, outside Services. */
-class RamAccessPort extends Bundle {
+class RamAccessPort(lanes: Int = 4) extends Bundle {
   val request = Decoupled(new SramWordRequest)
   val busy = Input(Bool())
-  val bytes = Flipped(Vec(4, Decoupled(new SramByteRequest)))
-  val completions = Vec(4, Decoupled(UInt(8.W)))
+  val bytes = Flipped(Vec(lanes, Decoupled(new SramByteRequest)))
+  val completions = Vec(lanes, Decoupled(UInt(8.W)))
 }
 
 /** Program uses the same native-word boundary schema as working RAM. */
-class ProgramAccessPort extends RamAccessPort
+class ProgramAccessPort(lanes: Int = 4) extends RamAccessPort(lanes)
 
 /** Shared boundary schema only. The design-specific native owner holds one RAM
   * reservation through commit/publication or cancellation and complete drainage.

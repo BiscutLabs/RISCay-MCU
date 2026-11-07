@@ -114,9 +114,9 @@ abstract class FourPhasePlatform(p: SocParameters, board: SocParameters => Board
   host.frameAcceptEnable := fabric.io.clockRunning
   host.snapshotAcceptEnable := fabric.io.clockRunning && fabric.bankReadReady
   fabric.io.i2c <> host.host; sdaLow := host.pullLow
-  val programAccess = asyncChild("program_access")(d => new ProgramAccess(d))
+  val programAccess = asyncChild("program_access")(d => new ProgramAccess(d,log2Ceil(p.config.programBytes).max(2),p.config.programBytes))
   val programReturn = asyncChild("program_return")(d => new FourPhaseProgramReturn(d))
-  val ramAccess = asyncChild("ram_access")(d => new RamAccess(d))
+  val ramAccess = asyncChild("ram_access")(d => new RamAccess(d,log2Ceil(p.config.workingRamBytes).max(2),p.config.workingRamBytes))
   val ramReturn = asyncChild("ram_return")(d => new FourPhaseRamReturn(d))
   programAccess.clock := workClock; ramAccess.clock := workClock
   programAccess.io <> fabric.io.program; ramAccess.io <> fabric.io.ram

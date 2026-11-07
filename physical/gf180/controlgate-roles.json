@@ -486,6 +486,13 @@
       "output_delay": "matched-control-delay",
       "request_delay": "matched-control-delay"
     },
+    "FourPhaseSram": {
+      "assembly_data_delay": "whole-transform-allowance",
+      "history_data_delay": "whole-transform-allowance",
+      "lane_data_delay": "whole-transform-allowance",
+      "output_guard": "matched-control-delay",
+      "request_data_delay": "whole-transform-allowance"
+    },
     "FourPhaseTelemetry": {
       "output_guard": "matched-control-delay"
     },

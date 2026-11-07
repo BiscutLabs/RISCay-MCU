@@ -15,7 +15,7 @@ from pathlib import Path
 import subprocess
 
 from gf180_estimate import ROOT, linux, sha, verify_hash
-from reset_bridge_proof import Cone, prove_receiver, prove_phase_pair, prove_completion_idle, prove_sram_capture, sram_capacities
+from reset_bridge_proof import sram_receipt_lanes, Cone, prove_receiver, prove_phase_pair, prove_completion_idle, prove_sram_capture, sram_capacities
 from reset_coordinator_proof import prove_coordinator, work_clock
 from quiescing_receipt_proof import prove_masked_request
 from quiescing_request_hold_proof import prove_request_hold
@@ -428,7 +428,7 @@ def audit_graph(database: dict, top: str, capacities: dict | None = None) -> dic
         # raw/status cones. No control, reset, clock or other register is waived.
         receivers=['ca_child_'+n+'_grant_bridge' for n in ('program','telemetry','housekeeping')]
         receivers += ['ca_child_'+n+'_access.ca_child_byte_request_'+str(i)
-                      for n in ('program','ram') for i in range(4)]
+                      for n in ('program','ram') for i in sram_receipt_lanes(module,n)]
         quiescing=['ca_child_request_bridge','ca_child_admission_grant_bridge']
         receivers += quiescing
         for prefix in receivers:

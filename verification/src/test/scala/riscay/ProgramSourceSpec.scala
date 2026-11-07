@@ -45,12 +45,11 @@ class BdProgramSourceFixture(p: SocParameters, directIngress: Boolean = true) ex
 
   val holdStoredReply=IO(Input(Bool())); val holdProgramByte=IO(Input(Bool()))
   val programLane=IO(Input(UInt(2.W))); val programByteWaiting=IO(Output(Bool()))
-  for(i <- 0 until 4) {
-    val hold=holdProgramByte && programLane === i.U
-    programAccess.io.completions(i).valid:=fabric.io.program.completions(i).valid && !hold
-    fabric.io.program.completions(i).ready:=programAccess.io.completions(i).ready && !hold
-  }
-  programByteWaiting:=fabric.io.program.completions(programLane).valid
+  val selectedByte=programAccess.io.bytes.head.bits.address(1,0) === programLane
+  val holdProgramCompletion=holdProgramByte && selectedByte
+  programAccess.io.completions.head.valid:=fabric.io.program.completions.head.valid && !holdProgramCompletion
+  fabric.io.program.completions.head.ready:=programAccess.io.completions.head.ready && !holdProgramCompletion
+  programByteWaiting:=fabric.io.program.completions.head.valid && selectedByte
   fabric.io.programSource.grant.valid:=programGrant.out.valid && !holdGrant
   programGrant.out.ready:=fabric.io.programSource.grant.ready && !holdGrant
   programDecision.in.valid:=fabric.io.programSource.decision.valid && !holdDecision

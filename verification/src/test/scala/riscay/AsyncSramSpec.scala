@@ -42,8 +42,10 @@ class AsyncSramSpec extends AnyFunSuite {
       ${if(click) "" else "request_req=0; wait(!request_ack); #1000000;"}
     """
   }.mkString
-  private def bytes(click: Boolean, ts: Seq[Tx], lane: Int, stop: Int = -1) = ts.zipWithIndex.map { case(t,n) =>
-    val p=phase(click,n); val r=s"byteRequest_$lane"; val s=s"byteResponse_$lane"
+  private def bytes(click: Boolean, ts: Seq[Tx], lane: Int, stop: Int = -1) =
+    ts.zipWithIndex.flatMap { case(t,n) => (if(click) Seq(lane) else 0 until 4).map(l => (t,n,l)) }.map { case(t,n,lane) =>
+    val p=phase(click,n); val port=if(click) lane else 0
+    val r=s"byteRequest_$port"; val s=s"byteResponse_$port"
     val value=(t.data >> (lane*8)) & 255; val answer=(t.result >> (lane*8)) & 255
     s"""
       wait(${r}_req == $p); #2000000;
@@ -64,13 +66,14 @@ class AsyncSramSpec extends AnyFunSuite {
       """}
     """
   }.mkString
-  private def sink(click: Boolean, ts: Seq[Tx]) = "begin integer base0,base1,base2,base3; base0=delivered_byteRequest_0; base1=delivered_byteRequest_1; base2=delivered_byteRequest_2; base3=delivered_byteRequest_3; " + ts.zipWithIndex.map { case(t,n) =>
+  private def sink(click: Boolean, ts: Seq[Tx]) = "begin integer base0,base1,base2,base3; " +
+    (0 until (if(click) 4 else 1)).map(l => s"base$l=delivered_byteRequest_$l; ").mkString + ts.zipWithIndex.map { case(t,n) =>
     val p=phase(click,n)
     s"""
       wait(response_req == $p); #2000000;
       repeat(10) begin #91000000;
         if(response_bits !== 32'h${t.result.toHexString}) $$fatal(1,"SRAM_NATIVE_RESULT_$n");
-        ${(0 until 4).map(l => s"if(delivered_byteRequest_$l != base$l + ${n+1}) $$fatal(1,\"SRAM_WORD_OVERTAKE_${n}_$l\");").mkString("\n")}
+        ${(0 until (if(click) 4 else 1)).map(l => s"if(delivered_byteRequest_$l != base$l + ${(n+1)*(if(click) 1 else 4)}) $$fatal(1,\"SRAM_WORD_OVERTAKE_${n}_$l\");").mkString("\n")}
       end
       response_ack=$p;
       ${if(click) "#2000000;" else "wait(!response_req); #73000000; response_ack=0; #2000000;"}
@@ -80,10 +83,10 @@ class AsyncSramSpec extends AnyFunSuite {
     fork
       begin ${source(click,ts)} end
       begin ${sink(click,ts)} end
-      ${(0 until 4).map(l => s"begin ${bytes(click,ts,l)} end").mkString("\n")}
+      ${(0 until (if(click) 4 else 1)).map(l => s"begin ${bytes(click,ts,l)} end").mkString("\n")}
     join
     #1000000000;
-    ${(Seq("request","response") ++ (0 until 4).flatMap(l => Seq(s"byteRequest_$l",s"byteResponse_$l"))).map { p =>
+    ${(Seq("request","response") ++ (0 until (if(click) 4 else 1)).flatMap(l => Seq(s"byteRequest_$l",s"byteResponse_$l"))).map { p =>
       if(click) s"if(${p}_req !== ${p}_ack) $$fatal(1,\"SRAM_NATIVE_NOT_IDLE_$p\");"
       else s"if(${p}_req || ${p}_ack) $$fatal(1,\"SRAM_NATIVE_NOT_IDLE_$p\");"
     }.mkString("\n")}
@@ -106,15 +109,15 @@ class AsyncSramSpec extends AnyFunSuite {
             ${if(click) "start=1;" else ""}
             fork
               begin ${source(click,tx)} end
-              ${(0 until 4).map(l => s"begin ${bytes(click,tx,l,abort)} end").mkString("\n")}
+              ${(0 until (if(click) 4 else 1)).map(l => s"begin ${bytes(click,tx,l,abort)} end").mkString("\n")}
             join_none
-            ${if(abort<4) s"wait(byteRequest_${abort}_req);" else "wait(response_req);"}
+            ${if(abort<4) if(click) s"wait(byteRequest_${abort}_req);" else s"wait(byteRequest_0_req && byteRequest_0_bits_address[1:0] == 2\'d$abort);" else "wait(response_req);"}
             #23000000; reset=1; disable fork;
             request_req=0; response_ack=0; ${if(click) "start=0;" else ""}
-            ${(0 until 4).map(l => s"byteRequest_${l}_ack=0; byteResponse_${l}_req=0;").mkString("\n")}
+            ${(0 until (if(click) 4 else 1)).map(l => s"byteRequest_${l}_ack=0; byteResponse_${l}_req=0;").mkString("\n")}
             #1000000000; reset=0; #1000000000;
             if(response_req || request_ack) $$fatal(1,"SRAM_POR_STALE_WORD");
-            ${(0 until 4).map(l => s"if(byteRequest_${l}_req || byteResponse_${l}_ack) $$fatal(1,\"SRAM_POR_REPLAY_$l\");").mkString("\n")}
+            ${(0 until (if(click) 4 else 1)).map(l => s"if(byteRequest_${l}_req || byteResponse_${l}_ack) $$fatal(1,\"SRAM_POR_REPLAY_$l\");").mkString("\n")}
             ${if(click) "start=1;" else ""}
             ${campaign(click,tx)}
           """
