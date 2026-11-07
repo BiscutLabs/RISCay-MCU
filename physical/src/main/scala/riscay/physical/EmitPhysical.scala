@@ -52,17 +52,25 @@ object PhysicalSocExport {
       },out)
       SramInventory.write(out,p.config,variant == "bd" && preserveHierarchy)
       ChipWrapper.write(out,p.lowPower.get)
+      val exactSample = if(variant=="bd") p.adc.map { adc =>
+        val c=riscay.bd.ExactSampleRatio(adc.numerator,adc.denominator)
+        ujson.Obj("input_bits"->12,"numerator"->adc.numerator,"denominator"->adc.denominator,
+          "multiplier"->c.multiplier.toString,"shift"->c.shift,"stored_result_bits"->c.resultWidth,
+          "validation"->"all-4096-inputs-exact-before-low32")
+      }.getOrElse(ujson.Null) else ujson.Null
       Files.writeString(out.resolve("physical-policy.json"),ujson.write(ujson.Obj(
         "schema" -> "riscay-physical-policy-v4", "variant" -> variant,
         "purpose" -> "generic MCU evaluation fixture; not qualified for tapeout",
         "architecture" -> "generic-mcu", "profile_behavior" -> false,
         "preserve_clocked_hierarchy" -> (variant == "bd" && preserveHierarchy),
+        "exact_adc_ratio" -> exactSample,
         "spi_boot" -> true, "rom_bytes" -> p.bootWords.size*4,
         "gpio_count" -> p.config.gpioCount,
         "service_max_hz" -> ApplicationResetContract.maximumServiceHz, "lf_max_hz" -> 12,
         "timing_policy" -> "current-supported-digital", "qualification" -> "unqualified",
         "owner_targets_fs" -> ujson.Obj("execute_request" -> "80000000",
-          "elapsed_step_request" -> "100000000", "control_source_ack" ->
+          "elapsed_step_request" -> "100000000", "sample_scale_request" ->
+            (if(variant=="bd") "80000000" else "unchanged-native-click"), "control_source_ack" ->
             (if(variant=="bd") "32000000" else "unchanged-native-click")),
         "timing_intent" -> "contract.json", "contract_sha256" -> sha(out.resolve("contract.json")),
         "ports_sha256" -> sha(out.resolve("ports.json")), "verification_layers" -> "inline",

@@ -65,7 +65,7 @@ class AsyncScalingSpec extends AnyFunSuite {
     test(s"$name native sample: clockless exact ratios and reply backpressure") {
       val random=new scala.util.Random(0x53414d50L)
       val raw=Seq(0L,1L,4095L,4094L,2048L) ++ Seq.fill(64)(random.nextInt(4096).toLong)
-      for((n,d) <- Seq((25300,4095),(1000,4095),(7,1),(999983,2147483647))) {
+      for((n,d) <- Seq((25300,4095),(1000,4095),(7,1),(999983,2147483647),(Int.MaxValue,1),(1,Int.MaxValue))) {
         def top(): AsyncModule = if(click) new riscay.click.ClickSample(n,d,new ResetDomain("root"))
           else new riscay.bd.FourPhaseSample(n,d,new ResetDomain("root"))
         val expected=raw.map(x => Map("reply_bits"->((BigInt(x)*n/d)&mask)))

@@ -18,6 +18,9 @@ object OwnerTiming {
   val execute: BundledTiming = BundledTiming.simulation(dataMax=RegisterTiming.executeData)
     .copy(matchedDelay=ModelTime.ps(80000),dataAllowance=DataAllowance.Passive)
   val elapsedStep: BundledTiming = OwnerTiming.base.copy(matchedDelay=ModelTime.ps(100000))
+  // Initial conservative relative request target for the exact ADC multiplier.
+  // Its own mapped cone, not another owner's margin, decides qualification.
+  val sampleScale: BundledTiming = OwnerTiming.base.copy(matchedDelay=ModelTime.ps(80000))
   val controlTransaction: BundledTiming = OwnerTiming.base.copy(matchedDelay=ModelTime.ps(80000))
   val controlAck: ModelTime = ModelTime.ps(32000)
   def check(t: BundledTiming): Unit = require(

@@ -22,7 +22,10 @@ Stored; Click retains its state FIFO, Join and speculative CRC path. BD
 [Telemetry](native-telemetry-effects.md) now publishes a three-bit effects reply
 from its existing closed banks. BD [Housekeeping](native-housekeeping-effects.md)
 also retains its architectural bank and publishes only 41 effect bits. Click
-retains the corresponding full-state replies.
+retains the corresponding full-state replies. The follow-on
+[three adaptive area loops](area-optimization-loops.md) are also BD-only: the
+first replaces the ADC scaler with an exact single-stage constant transform;
+Click retains its radix pipeline. Both keep the same integer/scaling ABI.
 The external ABI and reset/retention behavior remain equal;
 Click remains an unchanged functional regression reference during this pass.
 

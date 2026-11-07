@@ -125,30 +125,57 @@ class FourPhaseElapsed(micros: Seq[Int], domain: ResetDomain,
     "publication_event", "history_captured", ModelTime.ps(100), ModelTime.ps(100))
 }
 
-/** Three clockless four-bit rational transforms; no multiplier or divider. */
-class FourPhaseSample(numerator: Int, denominator: Int, domain: ResetDomain) extends AsyncModule(domain) {
-  require(numerator > 0 && denominator > 0)
-  private val width = log2Ceil(denominator).max(1)
-  private val timing = OwnerTiming.base
-  private val cell = ModelTime.ps(1000)
+/** Exact finite-domain strength reduction. The input is twelve bits; the
+  * result keeps the existing floor(raw*n/d), modulo-32-bit ABI.
+  */
+object ExactSampleRatio {
+  case class Coefficient(multiplier: BigInt, shift: Int, resultWidth: Int)
+  def apply(numerator: Int, denominator: Int): Coefficient = {
+    require(numerator > 0 && denominator > 0)
+    val common = BigInt(numerator).gcd(BigInt(denominator))
+    val n = BigInt(numerator) / common
+    val d = BigInt(denominator) / common
+    val maximum = BigInt(4095) * n / d
+    val width = maximum.bitLength.max(1).min(32)
+    if(maximum == 0) return Coefficient(0,0,width)
+    // 2^k > 4095*d makes the upward reciprocal error smaller than 1/d,
+    // the distance of any nonintegral exact quotient from its next integer.
+    // Search lower shifts too, but accept only exhaustive finite-domain equality.
+    val guaranteedShift = (BigInt(4095)*d).bitLength
+    val result = (0 to guaranteedShift).iterator.map { k =>
+      val m = ((n << k) + d - 1) / d
+      Coefficient(m,k,width)
+    }.find { c =>
+      (0 to 4095).forall(x => ((BigInt(x)*c.multiplier) >> c.shift) == BigInt(x)*n/d)
+    }
+    require(result.nonEmpty,"EXACT_SAMPLE_RECIPROCAL_NOT_FOUND")
+    result.get
+  }
+}
+
+/** One native arithmetic stage; no periodic clock or coefficient state.
+  * Coefficients are elaboration constants, never a profile-specific policy.
+  * Keep only the live quotient in protected storage; pad the ABI after capture.
+  */
+class FourPhaseSample(numerator: Int, denominator: Int, domain: ResetDomain,
+    timing: BundledTiming = OwnerTiming.sampleScale) extends AsyncModule(domain) {
+  OwnerTiming.check(timing)
+  private val coefficient = ExactSampleRatio(numerator,denominator)
   val command = fourPhaseInput("command", UInt(12.W))
   val reply = fourPhaseOutput("reply", UInt(32.W))
-  private val prepare = asyncChild("prepare")(d => new FourPhaseStage(UInt(12.W), new SampleWork(width),
-    (raw: UInt) => { val w = WireDefault(0.U.asTypeOf(new SampleWork(width))); w.raw := raw; w }, timing, d))
-  private val steps = (0 until 3).map { group =>
-    asyncChild(s"radix_$group")(d => new FourPhaseStage(new SampleWork(width), new SampleWork(width), (x: SampleWork) => {
-      val w = WireDefault(x); var q = x.quotient; var r = x.remainder
-      for(bit <- (11 - group * 4) to (8 - group * 4) by -1) {
-        val next = ConstantScaling.step(q, r, x.raw(bit), numerator, denominator)
-        q = next._1; r = next._2(width-1,0)
+  private val scale = asyncChild("scale")(d => new FourPhaseStage(
+    UInt(12.W), UInt(coefficient.resultWidth.W), (raw: UInt) => {
+      if(coefficient.multiplier == 0) 0.U(coefficient.resultWidth.W)
+      else {
+        // Never truncate before the shift: generic ratios can exceed 32 bits.
+        val product = raw * coefficient.multiplier.U
+        val quotient = product >> coefficient.shift
+        quotient(coefficient.resultWidth-1,0)
       }
-      w.quotient := q; w.remainder := r; w
-    }, timing, d))
-  }
-  FourPhase.connect(prepare.in, command); FourPhase.connect(steps.head.in, prepare.out)
-  steps.sliding(2).foreach { pair => FourPhase.connect(pair(1).in, pair(0).out) }
-  dontTouch(steps.last.out) // Preserve the complete registered native boundary.
-  reply.bits := steps.last.out.bits.quotient; reply.req := steps.last.out.req; steps.last.out.ack := reply.ack
+    },OwnerTiming.passive(timing),d))
+  FourPhase.connect(scale.in,command)
+  reply.bits:=scale.out.bits.pad(32);reply.req:=scale.out.req;scale.out.ack:=reply.ack
+  dontTouch(scale.out)
 }
 
 /** POR-only clocked capture/publication boundary, not an arithmetic machine.

@@ -1169,3 +1169,64 @@ Evidence: `build/bd-housekeeping-effects/{map-r1,flat-r1,area-r1.json,
 clocks-r1.json,flat-clocks-r1.json,summary-r1.json,activity-r1.json,timing-r1,
 housekeeping-bank-r1,ordinary-data-production-r1}`, focused and extended logs,
 and `build/bd-housekeeping-effects-ci-r1/receipt.json`.
+
+## Adaptive area loop 1: exact ADC arithmetic
+
+The [three-loop experiment](area-optimization-loops.md) starts at `a978eae`.
+Loop 1 replaces four ADC scaling stages with one exact finite-domain constant
+multiply/shift stage, projecting the production result to 15 stored bits.
+All 4,096 inputs are checked at elaboration against integer division; the public
+32-bit result, signed offset, sample/priming rules and source retention remain.
+Click and the independently clocked implementation are unchanged.
+
+| Measurement | Immediate parent | Loop 1 |
+| --- | ---: | ---: |
+| Flat mapped logic, mm² | 1.506013 | 1.477870 |
+| Hierarchical mapped logic, mm² | 1.587209 | 1.555462 |
+| Hierarchical repaired logic, mm² | 1.749243 | 1.713602 |
+| Repair addition, mm² | 0.162034 | 0.158140 |
+| Native storage bits | 5,780 | 5,571 |
+| SPI/ADC native storage bits | 546 | 337 |
+| SPI/ADC native recipes, mm² | 0.065492 | 0.053541 |
+| Guards / allowances, mm² | 0.270313 / 0 | 0.271946 / 0 |
+| DLYD cells / area, mm² | 3,573 / 0.266677 | 3,597 / 0.268469 |
+| Flat periodic sinks, service / work / LF | 1,188 / 1,556 / 78 | unchanged |
+| Hierarchical periodic sinks, service / work / LF | 1,253 / 1,688 / 78 | unchanged |
+| Services sinks, service / work | 64 / 912 | unchanged |
+
+Same pinned Yosys 0.62/ABC, PDK, profile, macros and repair policy. Logic excludes
+the unchanged 0.466241 mm² SRAM LEF footprint. Flat logic falls 0.028142 mm²
+(1.87%); repaired hierarchical logic falls 0.035641 mm² (2.04%). BD is now
+2.779 times the unchanged 0.531833 mm² clocked flat map. DLYD purpose is 2,424 custom ordering/reset, 625 bundling, 90 seed/reset
+admission and 458 publication cells (0.180920 / 0.046648 / 0.006717 /
+0.034184 mm²). The stronger single-stage request guard increases delay-cell area slightly; deleting intermediate storage,
+controllers and arithmetic more than offsets it. No surviving guard was shortened.
+The four removed stage-publication entries are retired in the guard inventory;
+the replacement does not inherit their measurements.
+
+All 27 activity windows per variant complete. BD ADC wakes improve from
+221 to 220 work edges and 18.772483 to 18.689149 µs; maintenance remains
+30 edges / 3.147358 µs and firmware 4,139 / 345.275095 µs. Click remains
+27 / 216 / 3,199 edges. These are native-model activity/duration measurements,
+not silicon energy. Telemetry command counts remain zero.
+
+Functional evidence: 32 focused scaling/SPI tests; fresh CI passes 397 Python
+and 227 Scala cases; both generation and RDC audits pass. Extended testing is
+15/17: both accelerated-maintenance cases fail MAINTENANCE_STARVED_SLEEP with
+zero entries. A fresh detached `a978eae` run reproduces both failures exactly;
+these fixtures have no ADC. Keep those failures and the original oracle open.
+Normal and deep sleep, boot, watchdog/host recovery and activity checks pass.
+The initial CI receipt also correctly failed because the guard inventory changed
+during its run; the final CI rerun is input-stable and passes.
+
+[Independent production review](reviews/bd-area-loops.md) passes ten repaired
+corner/slew cases: source/scaler setup +98.739 ns, consumer setup +48.451 ns,
+complete source/output return hold +129.829 / +62.981 ns, all with 20% two-sided
+variation plus 2 ns. Generic standalone pending-input rearm remains unqualified;
+the production open pulse uses the actual minimum 3,200 ns next-conversion
+admission bound. Whole-chip qualifier/electrical,
+routed min/max RC, reset distribution, noise and mismatch qualification remain
+open; there is no new P&R or die-area claim. Evidence is under
+`build/area-loops/loop1/`: `map-r3`, `flat-r1`, `area-r3.json`, `clocks-r3.json`,
+`summary-r2.json`, `ci-r2`, `extended-r1.log`, `parent-scaling-sleep-r1.log` and
+retained failed mapping/timing attempts.

@@ -515,82 +515,6 @@
         "baseline_owner_metadata_module": "FourPhaseStage_26"
       },
       {
-        "instance": "FourPhaseSoc.ca_child_spi_adc.ca_child_native.ca_child_scale.ca_child_prepare.ca_primitive_output_delay",
-        "owner": "FourPhaseSoc.ca_child_spi_adc.ca_child_native.ca_child_scale.ca_child_prepare",
-        "owner_module": "FourPhaseStage",
-        "owner_metadata_module": "FourPhaseStage_9",
-        "primitive_id": "output_delay",
-        "original_parameters": {
-          "DELAY_FS": 31000000,
-          "OP": 0,
-          "RESET_VALUE": 0,
-          "WIDTH": 1
-        },
-        "stages": 8,
-        "purpose": "ordering-publication",
-        "classification": "ordering",
-        "disposition": "measure-canonical-stage",
-        "previous_stages": 27,
-        "baseline_owner_metadata_module": "FourPhaseStage_27"
-      },
-      {
-        "instance": "FourPhaseSoc.ca_child_spi_adc.ca_child_native.ca_child_scale.ca_child_radix_0.ca_primitive_output_delay",
-        "owner": "FourPhaseSoc.ca_child_spi_adc.ca_child_native.ca_child_scale.ca_child_radix_0",
-        "owner_module": "FourPhaseStage",
-        "owner_metadata_module": "FourPhaseStage_10",
-        "primitive_id": "output_delay",
-        "original_parameters": {
-          "DELAY_FS": 31000000,
-          "OP": 0,
-          "RESET_VALUE": 0,
-          "WIDTH": 1
-        },
-        "stages": 8,
-        "purpose": "ordering-publication",
-        "classification": "ordering",
-        "disposition": "measure-canonical-stage",
-        "previous_stages": 27,
-        "baseline_owner_metadata_module": "FourPhaseStage_28"
-      },
-      {
-        "instance": "FourPhaseSoc.ca_child_spi_adc.ca_child_native.ca_child_scale.ca_child_radix_1.ca_primitive_output_delay",
-        "owner": "FourPhaseSoc.ca_child_spi_adc.ca_child_native.ca_child_scale.ca_child_radix_1",
-        "owner_module": "FourPhaseStage",
-        "owner_metadata_module": "FourPhaseStage_11",
-        "primitive_id": "output_delay",
-        "original_parameters": {
-          "DELAY_FS": 31000000,
-          "OP": 0,
-          "RESET_VALUE": 0,
-          "WIDTH": 1
-        },
-        "stages": 8,
-        "purpose": "ordering-publication",
-        "classification": "ordering",
-        "disposition": "measure-canonical-stage",
-        "previous_stages": 27,
-        "baseline_owner_metadata_module": "FourPhaseStage_29"
-      },
-      {
-        "instance": "FourPhaseSoc.ca_child_spi_adc.ca_child_native.ca_child_scale.ca_child_radix_2.ca_primitive_output_delay",
-        "owner": "FourPhaseSoc.ca_child_spi_adc.ca_child_native.ca_child_scale.ca_child_radix_2",
-        "owner_module": "FourPhaseStage",
-        "owner_metadata_module": "FourPhaseStage_12",
-        "primitive_id": "output_delay",
-        "original_parameters": {
-          "DELAY_FS": 31000000,
-          "OP": 0,
-          "RESET_VALUE": 0,
-          "WIDTH": 1
-        },
-        "stages": 8,
-        "purpose": "ordering-publication",
-        "classification": "ordering",
-        "disposition": "measure-canonical-stage",
-        "previous_stages": 27,
-        "baseline_owner_metadata_module": "FourPhaseStage_30"
-      },
-      {
         "instance": "FourPhaseSoc.ca_child_spi_adc.ca_child_native.ca_child_scaled.ca_child_left.ca_primitive_output_delay",
         "owner": "FourPhaseSoc.ca_child_spi_adc.ca_child_native.ca_child_scaled.ca_child_left",
         "owner_module": "LongHoldBuffer",
@@ -630,7 +554,7 @@
         "instance": "FourPhaseSoc.ca_child_spi_adc.ca_child_native.ca_child_finish.ca_primitive_output_delay",
         "owner": "FourPhaseSoc.ca_child_spi_adc.ca_child_native.ca_child_finish",
         "owner_module": "FourPhaseStage",
-        "owner_metadata_module": "FourPhaseStage_13",
+        "owner_metadata_module": "FourPhaseStage_10",
         "primitive_id": "output_delay",
         "original_parameters": {
           "DELAY_FS": 31000000,
@@ -667,7 +591,7 @@
         "instance": "FourPhaseSoc.ca_child_core.ca_child_address.ca_primitive_output_delay",
         "owner": "FourPhaseSoc.ca_child_core.ca_child_address",
         "owner_module": "FourPhaseStage",
-        "owner_metadata_module": "FourPhaseStage_14",
+        "owner_metadata_module": "FourPhaseStage_11",
         "primitive_id": "output_delay",
         "original_parameters": {
           "DELAY_FS": 31000000,
@@ -722,7 +646,7 @@
         "instance": "FourPhaseSoc.ca_child_core.ca_child_execute.ca_primitive_output_delay",
         "owner": "FourPhaseSoc.ca_child_core.ca_child_execute",
         "owner_module": "FourPhaseStage",
-        "owner_metadata_module": "FourPhaseStage_15",
+        "owner_metadata_module": "FourPhaseStage_12",
         "primitive_id": "output_delay",
         "original_parameters": {
           "DELAY_FS": 31000000,
@@ -741,7 +665,7 @@
         "instance": "FourPhaseSoc.ca_child_transactions.ca_child_reply.ca_primitive_output_delay",
         "owner": "FourPhaseSoc.ca_child_transactions.ca_child_reply",
         "owner_module": "FourPhaseStage",
-        "owner_metadata_module": "FourPhaseStage_16",
+        "owner_metadata_module": "FourPhaseStage_13",
         "primitive_id": "output_delay",
         "original_parameters": {
           "DELAY_FS": 31000000,
@@ -2105,6 +2029,86 @@
         "classification": "ordering",
         "disposition": "measure-canonical-stage",
         "previous_stages": 27
+      },
+      {
+        "instance": "FourPhaseSoc.ca_child_spi_adc.ca_child_native.ca_child_scale.ca_child_prepare.ca_primitive_output_delay",
+        "owner": "FourPhaseSoc.ca_child_spi_adc.ca_child_native.ca_child_scale.ca_child_prepare",
+        "owner_module": "FourPhaseStage",
+        "owner_metadata_module": "FourPhaseStage_9",
+        "primitive_id": "output_delay",
+        "original_parameters": {
+          "DELAY_FS": 31000000,
+          "OP": 0,
+          "RESET_VALUE": 0,
+          "WIDTH": 1
+        },
+        "stages": 8,
+        "purpose": "ordering-publication",
+        "classification": "ordering",
+        "disposition": "measure-canonical-stage",
+        "previous_stages": 27,
+        "baseline_owner_metadata_module": "FourPhaseStage_27",
+        "retired_reason": "ADC exact finite-domain stage fusion; no inherited sizing for the replacement stage"
+      },
+      {
+        "instance": "FourPhaseSoc.ca_child_spi_adc.ca_child_native.ca_child_scale.ca_child_radix_0.ca_primitive_output_delay",
+        "owner": "FourPhaseSoc.ca_child_spi_adc.ca_child_native.ca_child_scale.ca_child_radix_0",
+        "owner_module": "FourPhaseStage",
+        "owner_metadata_module": "FourPhaseStage_10",
+        "primitive_id": "output_delay",
+        "original_parameters": {
+          "DELAY_FS": 31000000,
+          "OP": 0,
+          "RESET_VALUE": 0,
+          "WIDTH": 1
+        },
+        "stages": 8,
+        "purpose": "ordering-publication",
+        "classification": "ordering",
+        "disposition": "measure-canonical-stage",
+        "previous_stages": 27,
+        "baseline_owner_metadata_module": "FourPhaseStage_28",
+        "retired_reason": "ADC exact finite-domain stage fusion; no inherited sizing for the replacement stage"
+      },
+      {
+        "instance": "FourPhaseSoc.ca_child_spi_adc.ca_child_native.ca_child_scale.ca_child_radix_1.ca_primitive_output_delay",
+        "owner": "FourPhaseSoc.ca_child_spi_adc.ca_child_native.ca_child_scale.ca_child_radix_1",
+        "owner_module": "FourPhaseStage",
+        "owner_metadata_module": "FourPhaseStage_11",
+        "primitive_id": "output_delay",
+        "original_parameters": {
+          "DELAY_FS": 31000000,
+          "OP": 0,
+          "RESET_VALUE": 0,
+          "WIDTH": 1
+        },
+        "stages": 8,
+        "purpose": "ordering-publication",
+        "classification": "ordering",
+        "disposition": "measure-canonical-stage",
+        "previous_stages": 27,
+        "baseline_owner_metadata_module": "FourPhaseStage_29",
+        "retired_reason": "ADC exact finite-domain stage fusion; no inherited sizing for the replacement stage"
+      },
+      {
+        "instance": "FourPhaseSoc.ca_child_spi_adc.ca_child_native.ca_child_scale.ca_child_radix_2.ca_primitive_output_delay",
+        "owner": "FourPhaseSoc.ca_child_spi_adc.ca_child_native.ca_child_scale.ca_child_radix_2",
+        "owner_module": "FourPhaseStage",
+        "owner_metadata_module": "FourPhaseStage_12",
+        "primitive_id": "output_delay",
+        "original_parameters": {
+          "DELAY_FS": 31000000,
+          "OP": 0,
+          "RESET_VALUE": 0,
+          "WIDTH": 1
+        },
+        "stages": 8,
+        "purpose": "ordering-publication",
+        "classification": "ordering",
+        "disposition": "measure-canonical-stage",
+        "previous_stages": 27,
+        "baseline_owner_metadata_module": "FourPhaseStage_30",
+        "retired_reason": "ADC exact finite-domain stage fusion; no inherited sizing for the replacement stage"
       }
     ],
     "click": [
