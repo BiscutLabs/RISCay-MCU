@@ -7,39 +7,45 @@ import chisel3.util.experimental.BoringUtils
 import riscay.soc._
 
 class BdRecoveryOwnershipFixture(p: SocParameters) extends BdPublicationSourceFixture(p) {
-
   val holdReserve=IO(Input(UInt(2.W)))
-  for((bridge,i) <- Seq(telemetryReserve,housekeepingReserve).zipWithIndex) {
-    val available=Seq(telemetryReserveAvailable,housekeepingReserveAvailable)(i)
-    bridge.in.valid:=sources(i).reserve.valid && available && !holdReserve(i)
-    sources(i).reserve.ready:=bridge.in.ready && available && !holdReserve(i)
+  for((slot,i) <- slots.zipWithIndex) {
+    slot.io.client.reserve.valid:=sources(i).reserve.valid && !holdReserve(i)
+    sources(i).reserve.ready:=slot.io.client.reserve.ready && !holdReserve(i)
   }
 
-  val holdFinal=IO(Input(UInt(2.W))); val holdFinalReturn=IO(Input(UInt(2.W)))
-  val finalReturns=Seq(telemetryFinalReturn,housekeepingFinalReturn)
-  for((receipt,i) <- finalReturns.zipWithIndex) {
-    receipt.quiet:=Seq(telemetryReserve,housekeepingReserve)(i).in.ready &&
-      Seq(telemetryDecision,housekeepingDecision)(i).in.ready &&
-      Seq(telemetryPublication,housekeepingPublication)(i).in.ready &&
-      !grants(i).out.valid && !drains(i).out.valid && sources(i).quiet && !holdFinal(i)
-    // Test-only hold applied while the actual request is already high. It
-    // prolongs the old ACK return without inventing a new receipt transaction.
-    receipt.request:=Seq(telemetrySource,housekeepingSource)(i).finalRequest || holdFinalReturn(i)
+  // Extend an already-offered real reply request. This prevents its receipt's
+  // actual ACK from returning; it creates neither a new request nor a fake ACK.
+  // Tests arm this only after replyWaiting/recoveryReplyWaiting is asserted.
+  val holdReplyReturn=IO(Input(UInt(2.W)))
+  telemetryReplyBridge.in.req:=telemetry.reply.req || holdReplyReturn(0)
+  housekeepingReplyBridge.in.req:=housekeeping.reply.req || holdReplyReturn(1)
+  val actualReplyRequest=IO(Output(UInt(2.W)))
+  actualReplyRequest:=Cat(housekeeping.reply.req,telemetry.reply.req)
+  val actualReplyAcknowledge=IO(Output(UInt(2.W)))
+  actualReplyAcknowledge:=Cat(housekeepingReplyBridge.in.ack,telemetryReplyBridge.in.ack)
+  val commandReturned=IO(Output(UInt(2.W)))
+  commandReturned:=Cat(housekeepingCommandBridge.in.ready,telemetryCommandBridge.in.ready)
+  val bankReaderReady=IO(Output(UInt(2.W)))
+  bankReaderReady:=Cat(fabric.housekeepingBankReady,fabric.telemetryBankReady)
+  val channelsReturned=IO(Output(UInt(2.W)))
+  channelsReturned:=Cat(slots.reverse.map(_.io.channelsReturned))
+  withClockAndReset(workClock,reset) {
+    for(i <- 0 until 2) {
+      when(holdReplyReturn(i)) {
+        assert(actualReplyRequest(i) || actualReplyAcknowledge(i),
+          "RECOVERY_TEST_RETURN_STALL_WITHOUT_ACTIVE_REPLY")
+      }
+    }
   }
-  val finalRequest=IO(Output(UInt(2.W)))
-  finalRequest:=Cat(Seq(housekeepingSource.finalRequest,telemetrySource.finalRequest))
-  val finalAcknowledge=IO(Output(UInt(2.W)))
-  finalAcknowledge:=Cat(finalReturns.reverse.map(_.acknowledge))
-  val finalPending=IO(Output(UInt(2.W))); finalPending:=finalRequest ^ finalAcknowledge
 
-  val nativeDebt=IO(Output(UInt(2.W))); nativeDebt:=Cat(housekeepingSource.recoveryDebt,telemetrySource.recoveryDebt)
+  val nativeDebt=IO(Output(UInt(2.W))); nativeDebt:=Cat(slots.reverse.map(_.io.client.recoveryDebt))
   val returnFence=IO(Output(UInt(2.W))); returnFence:=Cat(housekeepingReturnFence,telemetryReturnFence)
-  val eligible=IO(Output(UInt(2.W))); eligible:=Cat(housekeepingSource.eligible,telemetrySource.eligible)
+  val eligible=IO(Output(UInt(2.W))); eligible:=Cat(slots.reverse.map(_.io.client.eligible))
   val serviceEligible=IO(Output(UInt(2.W))); serviceEligible:=Cat(sources.reverse.map(_.eligible))
-  val nativeRecoveryRole=IO(Output(UInt(2.W))); nativeRecoveryRole:=Cat(housekeepingSource.ownerRecovery,telemetrySource.ownerRecovery)
+  val nativeRecoveryRole=IO(Output(UInt(2.W))); nativeRecoveryRole:=Cat(slots.reverse.map(_.io.client.ownerRecovery))
   val qualifiedReset=IO(Output(Bool())); qualifiedReset:=fabric.io.cpuReset
   val recoveryGrantWaiting=IO(Output(UInt(2.W)))
-  recoveryGrantWaiting:=Cat(grants.reverse.map(g => g.out.valid && g.out.bits.recovery))
+  recoveryGrantWaiting:=Cat(grants.reverse.map(g => g.valid && g.bits.recovery))
   val recoveryReplyWaiting=IO(Output(UInt(2.W)))
   recoveryReplyWaiting:=Cat(housekeepingReplyBridge.out.valid && housekeepingReplyBridge.out.bits.recovery,
     telemetryReplyBridge.out.valid && telemetryReplyBridge.out.bits.recovery)
@@ -52,7 +58,7 @@ class BdRecoveryOwnershipFixture(p: SocParameters) extends BdPublicationSourceFi
   val recoveryPublication=IO(Output(UInt(2.W)))
   recoveryPublication:=Cat(sources.reverse.map(s => s.publication.fire && s.ownerRecovery))
   val recoveryDrain=IO(Output(UInt(2.W)))
-  recoveryDrain:=Cat(drains.reverse.map(d => d.out.fire && d.out.bits.recovery))
+  recoveryDrain:=Cat(drains.reverse.map(d => d.fire && d.bits.recovery))
   val recoveryCommand=IO(Output(UInt(2.W)))
   recoveryCommand:=Cat(fabric.housekeepingCommand.fire && fabric.housekeepingCommand.bits.recovery,
     fabric.telemetryCommand.fire && fabric.telemetryCommand.bits.recovery)

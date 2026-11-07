@@ -10,11 +10,16 @@ class PublicationSourceSpec extends AnyFunSuite {
     ApplicationProfile(1,1,"publication-source",Vector.empty,Vector.empty)),watchdogCycles=10000000)
   private val tasks="""
 integer accepted=0,answers=0,i,n;
+reg checkBorrowed=0;
 integer reserves[0:1],decisions[0:1],commits[0:1],publications[0:1],drains[0:1],commands[0:1],published[0:1];
 initial for(i=0;i<2;i=i+1) begin
   reserves[i]=0;decisions[i]=0;commits[i]=0;publications[i]=0;drains[i]=0;commands[i]=0;published[i]=0;
 end
 always @(posedge serviceClock) if(!reset) begin
+  if(checkBorrowed && commandAccepted[0] && (commandOffset_0 !== 24 || commandData_0 !== 1))
+    $fatal(1,"PUBLICATION_TELEMETRY_BORROW_CHANGED");
+  if(checkBorrowed && commandAccepted[1] && (commandOffset_1 !== 56 || commandData_1 !== 1))
+    $fatal(1,"PUBLICATION_HOUSEKEEPING_BORROW_CHANGED");
   if(request_valid && request_ready) accepted=accepted+1;
   if(response_valid && response_ready) answers=answers+1;
   for(i=0;i<2;i=i+1) begin
@@ -61,53 +66,74 @@ end endtask
   for(click <- Seq(false,true)) {
     val name=if(click) "click" else "bd"
     def fixture: SocTop=if(click) new ClickPublicationSourceFixture(p) else new BdPublicationSourceFixture(p)
-    test(s"$name publication sources: deadline validation waits for both grants and decision ingresses") {
-      ClockedSimulation.run(fixture,name+"-publication-atomic","""
-        #10000; settled;
-        for(n=0;n<2;n=n+1) begin
-          @(negedge serviceClock); holdGrant=1<<n;
-          offer(32'h30000008,100+n); wait(grantWaiting==3); #3000;
-          if(accepted != n || commits[0] != n || commits[1] != n || !validatedReply)
-            $fatal(1,"PUBLICATION_PARTIAL_GRANT_COMMIT");
-          @(negedge serviceClock); holdDecision=1<<(1-n); holdGrant=0; #3000;
-          if(accepted != n || decisions[0] != n || decisions[1] != n || !validatedReply)
-            $fatal(1,"PUBLICATION_PARTIAL_DECISION_COMMIT");
-          @(negedge serviceClock); holdDecision=0; accepted_offer; answer; settled;
-          if(accepted != n+1 || answers != n+1 || commits[0] != n+1 || commits[1] != n+1 ||
-             commands[0] != n+1 || commands[1] != n+1 || publications[0] != n+1 || publications[1] != n+1)
-            $fatal(1,"PUBLICATION_ATOMIC_COUNTS");
-        end
-      """,tasks)
-    }
-    test(s"$name publication sources: queued uncommitted grants cancel across repeated raw resets") {
-      ClockedSimulation.run(fixture,name+"-publication-cancel","""
-        #10000; settled; @(negedge serviceClock); holdGrant=3;
-        offer(32'h30000008,100); wait(grantWaiting==3); #2;
-        raw_reset; #1000; raw_reset;
-        @(negedge serviceClock); holdGrant=0; settled;
-        if(accepted || answers || response_valid || commits[0] || commits[1] ||
-           commands[0] || commands[1] || publications[0] || publications[1] ||
-           decisions[0] != 1 || decisions[1] != 1)
-          $fatal(1,"PUBLICATION_CANCELLED_GRANT_EFFECT");
-        write_bus(32'h30000018,1); settled;
-        if(accepted != 1 || answers != 1 || commands[0] != 1 || commands[1] || gpioOut !== 1)
-          $fatal(1,"PUBLICATION_CANCELLED_GRANT_REUSE");
-      """,tasks)
-    }
-    test(s"$name publication sources: reset cancels staged telemetry but retains ordered housekeeping effects") {
-      ClockedSimulation.run(fixture,name+"-publication-staged-reset","""
-        #10000; settled; @(negedge serviceClock); holdCommand=3;
-        offer(32'h30000008,100); accepted_offer; #1000;
-        if(commits[0] != 1 || commits[1] != 1 || commands[0] || commands[1] || response_valid)
-          $fatal(1,"PUBLICATION_STAGED_COMMIT");
-        raw_reset; #1000; @(negedge serviceClock); holdCommand=0; settled; #10000;
-        if(accepted != 1 || answers || response_valid || commands[0] || commands[1] != 1 ||
-           publications[0] || publications[1] != 1 || drains[0] != 1 || drains[1] != 1)
-          $fatal(1,"PUBLICATION_STAGED_RESET_EFFECTS");
-        write_bus(32'h30000018,1); settled;
-        if(answers != 1 || gpioOut !== 1) $fatal(1,"PUBLICATION_STAGED_RESET_REUSE");
-      """,tasks)
-    }
+for((owner,address) <- Seq(0 -> "32'h30000018",1 -> "32'h30000038")) {
+  val label=if(owner==0) "telemetry" else "housekeeping"
+  val bit=1<<owner
+  val other=1-owner
+  val visible=if(owner==0) "gpioOut" else "visibleMask"
+  val resetValue=if(owner==0) 0 else 15
+  test(s"$name publication sources: $label validation waits for its grant and decision ingress") {
+    ClockedSimulation.run(fixture,name+s"-publication-$label-atomic",s"""
+      #10000; settled;
+      @(negedge serviceClock); holdGrant=$bit;
+      offer($address,1); wait(grantWaiting[$owner]); #3000;
+      if(grantWaiting !== $bit || accepted || answers || commits[0] || commits[1] ||
+          decisions[0] || decisions[1] || !validatedReply)
+        $$fatal(1,"PUBLICATION_PARTIAL_GRANT_COMMIT");
+      @(negedge serviceClock); holdDecision=$bit; holdGrant=0; #3000;
+      if(accepted || answers || commits[0] || commits[1] || decisions[0] || decisions[1] || !validatedReply)
+        $$fatal(1,"PUBLICATION_PARTIAL_DECISION_COMMIT");
+      // An unrelated owner must not become a second reservation dependency.
+      @(negedge serviceClock); holdDecision=${3^bit}; accepted_offer; answer; settled;
+      if(accepted != 1 || answers != 1 || reserves[$owner] != 1 || decisions[$owner] != 1 || commits[$owner] != 1 ||
+          commands[$owner] != 1 || publications[$owner] != 1 || published[$owner] != 1 || drains[$owner] != 1 ||
+          reserves[$other] || decisions[$other] || commits[$other] || commands[$other] ||
+          publications[$other] || published[$other] || drains[$other] || $visible !== 1)
+        $$fatal(1,"PUBLICATION_ATOMIC_COUNTS");
+      @(negedge serviceClock); holdDecision=0;
+    """,tasks)
+  }
+  test(s"$name publication sources: $label uncommitted grant cancels across repeated raw resets") {
+    ClockedSimulation.run(fixture,name+s"-publication-$label-cancel",s"""
+      #10000; settled; @(negedge serviceClock); holdGrant=$bit;
+      offer($address,1); wait(grantWaiting[$owner]); #2;
+      raw_reset; #1000; raw_reset;
+      @(negedge serviceClock); holdGrant=0; settled;
+      if(accepted || answers || response_valid || commits[0] || commits[1] ||
+          commands[0] || commands[1] || publications[0] || publications[1] ||
+          published[0] || published[1] || drains[0] || drains[1] ||
+          decisions[$owner] != 1 || decisions[$other] || $visible !== $resetValue)
+        $$fatal(1,"PUBLICATION_CANCELLED_GRANT_EFFECT");
+      write_bus($address,1); settled;
+      if(accepted != 1 || answers != 1 || decisions[$owner] != 2 || commits[$owner] != 1 ||
+          commands[$owner] != 1 || publications[$owner] != 1 || published[$owner] != 1 || drains[$owner] != 1 ||
+          commands[$other] || publications[$other] || published[$other] || drains[$other] || $visible !== 1)
+        $$fatal(1,"PUBLICATION_CANCELLED_GRANT_REUSE");
+    """,tasks)
+  }
+  test(s"$name publication sources: $label accepted payload survives reset but cannot restore its old CPU view") {
+    ClockedSimulation.run(fixture,name+s"-publication-$label-staged-reset",s"""
+      #10000; settled; @(negedge serviceClock); holdCommand=$bit;
+      offer($address,1); accepted_offer; #1000;
+      if(commits[$owner] != 1 || commits[$other] || commands[0] || commands[1] || response_valid)
+        $$fatal(1,"PUBLICATION_STAGED_COMMIT");
+      // Mutate the unaccepted bus after the real acceptance. The eventual
+      // native command must use the retained original payload, even after reset.
+      @(negedge serviceClock); checkBorrowed=1;
+      request_bits_address=32'h30000008;request_bits_data=32'hdeadbeef;
+      raw_reset; #1000; @(negedge serviceClock); holdCommand=0; settled; #10000;
+      if(accepted != 1 || answers || response_valid || commands[$owner] != 1 || publications[$owner] != 1 ||
+          published[$owner] != 1 || drains[$owner] != 1 || commands[$other] || publications[$other] ||
+          published[$other] || drains[$other] || $visible !== $resetValue)
+        $$fatal(1,"PUBLICATION_STAGED_RESET_EFFECTS");
+      write_bus($address,1); settled;
+      if(accepted != 2 || answers != 1 || commands[$owner] != 2 || publications[$owner] != 2 ||
+          published[$owner] != 2 || drains[$owner] != 2 || $visible !== 1)
+        $$fatal(1,"PUBLICATION_STAGED_RESET_REUSE");
+    """,tasks)
+  }
+}
+
     test(s"$name publication sources: reset during stalled actual publication cannot return an old CPU reply") {
       ClockedSimulation.run(fixture,name+"-publication-held-reset","""
         #10000; settled; @(negedge serviceClock); holdPublication=1;

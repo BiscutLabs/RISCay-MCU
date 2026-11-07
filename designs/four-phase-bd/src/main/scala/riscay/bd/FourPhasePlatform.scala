@@ -312,143 +312,23 @@ abstract class FourPhasePlatform(p: SocParameters, board: SocParameters => Board
   fabric.io.telemetryDraining := !telemetryCommandBridge.in.ready ||
     (telemetryReturning && telemetryReplyBridge.in.ack)
 
-  // Native proof ownership clears debt after original slot and final receipt
-  // return. The temporary receipt only observes the remaining clocked client.
-  val telemetrySource=asyncChild("telemetry_source")(d => new FourPhasePublicationSource(d,splitRecoveryReset=true))
-  val telemetryReserve=asyncChild("telemetry_reserve_bridge")(d => new chiselasync.clocked.DecoupledToFourPhase(new PublicationReservation,2,d))
-  val telemetryGrant=asyncChild("telemetry_grant_bridge")(d => new chiselasync.clocked.FourPhaseToDecoupled(new PublicationReservation,2,d))
-  val telemetryDecision=asyncChild("telemetry_decision_bridge")(d => new chiselasync.clocked.DecoupledToFourPhase(Bool(),2,d))
-  val telemetryPublication=asyncChild("telemetry_publication_bridge")(d => new chiselasync.clocked.DecoupledToFourPhase(Bool(),2,d))
-  val telemetryDrain=asyncChild("telemetry_drain_bridge")(d => new chiselasync.clocked.FourPhaseToDecoupled(new PublicationReservation,2,d))
-  Seq(telemetryReserve,telemetryDecision,telemetryPublication).foreach { b =>
-    b.clock:=workClock; dontTouch(b.in); dontTouch(b.out)
-  }
-  Seq(telemetryGrant,telemetryDrain).foreach { b => b.clock:=workClock; dontTouch(b.in); dontTouch(b.out) }
-  chiselasync.protocol.FourPhase.connect(telemetrySource.reserve,telemetryReserve.out)
-  chiselasync.protocol.FourPhase.connect(telemetryGrant.in,telemetrySource.grant)
-  chiselasync.protocol.FourPhase.connect(telemetrySource.decision,telemetryDecision.out)
-  chiselasync.protocol.FourPhase.connect(telemetrySource.publication,telemetryPublication.out)
-  chiselasync.protocol.FourPhase.connect(telemetryDrain.in,telemetrySource.drain)
-  // Gate only new clocked ingress. Never truncate a bridge's active native request.
-  val telemetryReserveAvailable=Wire(Bool())
-  telemetryReserve.in.bits:=fabric.io.telemetrySource.reserve.bits
-  telemetryReserve.in.valid:=fabric.io.telemetrySource.reserve.valid && telemetryReserveAvailable
-  fabric.io.telemetrySource.reserve.ready:=telemetryReserve.in.ready && telemetryReserveAvailable
-  dontTouch(fabric.io.telemetrySource.reserve.ready)
-  dontTouch(fabric.io.telemetrySource.reserve.valid)
-  fabric.io.telemetrySource.grant <> telemetryGrant.out
-  telemetryDecision.in <> fabric.io.telemetrySource.decision
-  telemetryPublication.in <> fabric.io.telemetrySource.publication
-  fabric.io.telemetrySource.drain <> telemetryDrain.out
-  telemetrySource.applicationReset:=nativeApplicationReset.asAsyncReset
-  telemetrySource.recoveryReset:=applicationIsolation.asAsyncReset
-  val telemetryOwnerIdle=withClockAndReset(workClock,reset) {
-    val first=RegNext(telemetrySource.idle,false.B); RegNext(first,false.B)
-  }
-  val telemetrySourceEmpty=telemetryOwnerIdle && telemetryReserve.in.ready &&
-    telemetryDecision.in.ready && telemetryPublication.in.ready && !telemetryGrant.out.valid && !telemetryDrain.out.valid
-  val telemetryFinalReturn=asyncChild("telemetry_final_return")(d => new FourPhaseReturnReceipt(d))
-  telemetryFinalReturn.clock:=workClock
-  telemetryFinalReturn.request:=telemetrySource.finalRequest
-  telemetrySource.finalAcknowledge:=telemetryFinalReturn.acknowledge
-  // The native offer already proves original owner return. Using ownerIdle,
-  // gated reserve.ready, debt or this receipt here would create a circular wait.
-  telemetryFinalReturn.quiet:=telemetryReserve.in.ready && telemetryDecision.in.ready &&
-    telemetryPublication.in.ready && !telemetryGrant.out.valid && !telemetryDrain.out.valid &&
-    fabric.io.telemetrySource.quiet
-  val telemetryBoundary=withClockAndReset(workClock,reset) { Module(new FourPhasePublicationBoundary) }
-  telemetryReserveAvailable:=telemetryBoundary.io.available
-  telemetryBoundary.io.cancel:=applicationCancel
-  // Debt stays high through the complete attributed return; clean is held
-  // until the next reset. The complete physical CDC aperture remains open.
-  telemetryBoundary.io.nativeClean:= !telemetrySource.recoveryDebt && !telemetrySource.recoveryReturning
-  telemetryBoundary.io.empty:=telemetrySourceEmpty
-  telemetryBoundary.io.quiet:=fabric.io.telemetrySource.quiet
-  telemetryBoundary.io.reserved:=fabric.io.telemetrySource.reserve.fire
-  telemetryBoundary.io.reservationRecovery:=fabric.io.telemetrySource.reserve.bits.recovery
-  telemetryBoundary.io.decided:=fabric.io.telemetrySource.decision.fire
-  telemetryBoundary.io.committed:=fabric.io.telemetrySource.decision.bits
-  fabric.io.telemetrySource.eligible:=telemetryBoundary.io.eligible
-  fabric.io.telemetrySource.ownerRecovery:=telemetryBoundary.io.recovery
-  fabric.io.telemetrySource.recoveryDebt:=telemetryBoundary.io.debt
-  fabric.io.telemetrySource.occupied:=telemetryBoundary.io.occupied
-  fabric.io.telemetrySource.returnFence:=telemetryBoundary.io.debt
-  fabric.io.telemetrySource.draining:=telemetryBoundary.io.debt || telemetryBoundary.io.occupied
-
-  // Native proof ownership clears debt after original slot and final receipt
-  // return. The temporary receipt only observes the remaining clocked client.
-  val housekeepingSource=asyncChild("housekeeping_source")(d => new FourPhasePublicationSource(d,splitRecoveryReset=true))
-  val housekeepingReserve=asyncChild("housekeeping_reserve_bridge")(d => new chiselasync.clocked.DecoupledToFourPhase(new PublicationReservation,2,d))
-  val housekeepingGrant=asyncChild("housekeeping_grant_bridge")(d => new chiselasync.clocked.FourPhaseToDecoupled(new PublicationReservation,2,d))
-  val housekeepingDecision=asyncChild("housekeeping_decision_bridge")(d => new chiselasync.clocked.DecoupledToFourPhase(Bool(),2,d))
-  val housekeepingPublication=asyncChild("housekeeping_publication_bridge")(d => new chiselasync.clocked.DecoupledToFourPhase(Bool(),2,d))
-  val housekeepingDrain=asyncChild("housekeeping_drain_bridge")(d => new chiselasync.clocked.FourPhaseToDecoupled(new PublicationReservation,2,d))
-  Seq(housekeepingReserve,housekeepingDecision,housekeepingPublication).foreach { b =>
-    b.clock:=workClock; dontTouch(b.in); dontTouch(b.out)
-  }
-  Seq(housekeepingGrant,housekeepingDrain).foreach { b => b.clock:=workClock; dontTouch(b.in); dontTouch(b.out) }
-  chiselasync.protocol.FourPhase.connect(housekeepingSource.reserve,housekeepingReserve.out)
-  chiselasync.protocol.FourPhase.connect(housekeepingGrant.in,housekeepingSource.grant)
-  chiselasync.protocol.FourPhase.connect(housekeepingSource.decision,housekeepingDecision.out)
-  chiselasync.protocol.FourPhase.connect(housekeepingSource.publication,housekeepingPublication.out)
-  chiselasync.protocol.FourPhase.connect(housekeepingDrain.in,housekeepingSource.drain)
-  // Gate only new clocked ingress. Never truncate a bridge's active native request.
-  val housekeepingReserveAvailable=Wire(Bool())
-  housekeepingReserve.in.bits:=fabric.io.housekeepingSource.reserve.bits
-  housekeepingReserve.in.valid:=fabric.io.housekeepingSource.reserve.valid && housekeepingReserveAvailable
-  fabric.io.housekeepingSource.reserve.ready:=housekeepingReserve.in.ready && housekeepingReserveAvailable
-  dontTouch(fabric.io.housekeepingSource.reserve.ready)
-  dontTouch(fabric.io.housekeepingSource.reserve.valid)
-  fabric.io.housekeepingSource.grant <> housekeepingGrant.out
-  housekeepingDecision.in <> fabric.io.housekeepingSource.decision
-  housekeepingPublication.in <> fabric.io.housekeepingSource.publication
-  fabric.io.housekeepingSource.drain <> housekeepingDrain.out
-  housekeepingSource.applicationReset:=nativeApplicationReset.asAsyncReset
-  housekeepingSource.recoveryReset:=applicationIsolation.asAsyncReset
-  val housekeepingOwnerIdle=withClockAndReset(workClock,reset) {
-    val first=RegNext(housekeepingSource.idle,false.B); RegNext(first,false.B)
-  }
-  val housekeepingSourceEmpty=housekeepingOwnerIdle && housekeepingReserve.in.ready &&
-    housekeepingDecision.in.ready && housekeepingPublication.in.ready && !housekeepingGrant.out.valid && !housekeepingDrain.out.valid
-  val housekeepingFinalReturn=asyncChild("housekeeping_final_return")(d => new FourPhaseReturnReceipt(d))
-  housekeepingFinalReturn.clock:=workClock
-  housekeepingFinalReturn.request:=housekeepingSource.finalRequest
-  housekeepingSource.finalAcknowledge:=housekeepingFinalReturn.acknowledge
-  // The native offer already proves original owner return. Using ownerIdle,
-  // gated reserve.ready, debt or this receipt here would create a circular wait.
-  housekeepingFinalReturn.quiet:=housekeepingReserve.in.ready && housekeepingDecision.in.ready &&
-    housekeepingPublication.in.ready && !housekeepingGrant.out.valid && !housekeepingDrain.out.valid &&
-    fabric.io.housekeepingSource.quiet
-  val housekeepingBoundary=withClockAndReset(workClock,reset) { Module(new FourPhasePublicationBoundary) }
-  housekeepingReserveAvailable:=housekeepingBoundary.io.available
-  housekeepingBoundary.io.cancel:=applicationCancel
-  // Debt stays high through the complete attributed return; clean is held
-  // until the next reset. The complete physical CDC aperture remains open.
-  housekeepingBoundary.io.nativeClean:= !housekeepingSource.recoveryDebt && !housekeepingSource.recoveryReturning
-  housekeepingBoundary.io.empty:=housekeepingSourceEmpty
-  housekeepingBoundary.io.quiet:=fabric.io.housekeepingSource.quiet
-  housekeepingBoundary.io.reserved:=fabric.io.housekeepingSource.reserve.fire
-  housekeepingBoundary.io.reservationRecovery:=fabric.io.housekeepingSource.reserve.bits.recovery
-  housekeepingBoundary.io.decided:=fabric.io.housekeepingSource.decision.fire
-  housekeepingBoundary.io.committed:=fabric.io.housekeepingSource.decision.bits
-  fabric.io.housekeepingSource.eligible:=housekeepingBoundary.io.eligible
-  fabric.io.housekeepingSource.ownerRecovery:=housekeepingBoundary.io.recovery
-  fabric.io.housekeepingSource.recoveryDebt:=housekeepingBoundary.io.debt
-  fabric.io.housekeepingSource.occupied:=housekeepingBoundary.io.occupied
-  fabric.io.housekeepingSource.returnFence:=housekeepingBoundary.io.debt
-  fabric.io.housekeepingSource.draining:=housekeepingBoundary.io.debt || housekeepingBoundary.io.occupied
-
-  // Diagnostic-only held-grant checks. Native levels never choose a POR write
-  // enable or value; the clocked mirror must agree with the actual source.
-  withClockAndReset(workClock,reset) {
-    for((native,port) <- Seq((telemetrySource,fabric.io.telemetrySource),
-        (housekeepingSource,fabric.io.housekeepingSource))) {
-      when(port.decision.fire && port.decision.bits) {
-        assert(native.eligible,"PUBLICATION_NATIVE_COMMIT_INELIGIBLE")
-        assert(native.ownerRecovery === port.grant.bits.recovery &&
-          native.ownerRecovery === port.ownerRecovery,"PUBLICATION_NATIVE_COMMIT_ROLE")
-      }
-    }
+  // Reserve/decision/publication all originate on this receiving work edge.
+  // One POR slot owns that arbitration; only the real command/reply cross to
+  // the native bank. Cancellation revokes presentation, never accepted effects.
+  val telemetrySlot=withClockAndReset(workClock,reset) { Module(new FourPhasePublicationSlot) }
+  telemetrySlot.io.client <> fabric.io.telemetrySource
+  telemetrySlot.io.cancel:=applicationCancel
+  telemetrySlot.io.commandAccepted:=telemetryCommandBridge.in.fire
+  telemetrySlot.io.channelsReturned:=telemetryCommandBridge.in.ready &&
+    !telemetryReplyBridge.in.ack && fabric.telemetryBankReady
+  val housekeepingSlot=withClockAndReset(workClock,reset) { Module(new FourPhasePublicationSlot) }
+  housekeepingSlot.io.client <> fabric.io.housekeepingSource
+  housekeepingSlot.io.cancel:=applicationCancel
+  housekeepingSlot.io.commandAccepted:=housekeepingCommandBridge.in.fire
+  housekeepingSlot.io.channelsReturned:=housekeepingCommandBridge.in.ready &&
+    !housekeepingReplyBridge.in.ack && fabric.housekeepingBankReady
+  Seq(telemetrySlot,housekeepingSlot).foreach { slot =>
+    dontTouch(slot.io.client); dontTouch(slot.io.cancel)
   }
 
   p.lowPower match {

@@ -673,8 +673,10 @@ class FourPhaseServices(p: SocParameters, boardFactory: SocParameters => BoardPr
     (!housekeepingOwnedReply || io.housekeepingSource.publication.ready)
   io.housekeepingSource.publication.valid:=housekeepingOutstanding && housekeepingReply.valid && housekeepingOwnedReply
   io.housekeepingSource.publication.bits:=housekeepingReply.bits.state.now(0)
+  // Publication is a same-edge receipt, with no auxiliary sender to drain.
+  // Downstream backpressure cannot prevent reservation of an otherwise idle slot.
   io.housekeepingSource.quiet:= !housekeepingOutstanding && !housekeepingOrderedPending &&
-    !io.housekeepingDraining && io.housekeepingSource.publication.ready
+    !io.housekeepingDraining
   housekeepingQueued:=queueNext
   when(housekeepingCommand.fire) {
     housekeepingOutstanding:=true.B; housekeepingInFlight:=housekeepingCommand.bits
@@ -768,7 +770,7 @@ class FourPhaseServices(p: SocParameters, boardFactory: SocParameters => BoardPr
   io.telemetrySource.publication.valid:=telemetryOutstanding && telemetryReply.valid && telemetryOwnedReply
   io.telemetrySource.publication.bits:=telemetryReply.bits.state.output(0)
   io.telemetrySource.quiet:= !telemetryOutstanding && !telemetryCommitPending &&
-    !io.telemetryDraining && io.telemetrySource.publication.ready
+    !io.telemetryDraining
   val telemetryApplyBank=IO(Output(Bool()))
   telemetryApplyBank:= !io.applicationCancel &&
     ((telemetryReply.bits.recovery && io.telemetrySource.ownerRecovery && io.telemetrySource.eligible) ||

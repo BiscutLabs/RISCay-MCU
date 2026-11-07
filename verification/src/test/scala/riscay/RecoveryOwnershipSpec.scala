@@ -150,7 +150,7 @@ end endtask
         if(answers != 1 || visibleMask !== 1) $fatal(1,"RECOVERY_GRANT_REUSE_RESPONSE");
       """,tasks,deadlineNs=2000000)
     }
-    test(s"$name recovery ownership: a reset after native debt clear revokes the still-returning recovery") {
+    if(click) test(s"$name recovery ownership: a reset after native debt clear revokes the still-returning recovery") {
       ClockedSimulation.run(fixture(),name+"-recovery-return-reset","""
         #10000; settled; checkpoint;
         @(negedge serviceClock); holdReserve=3; holdDrain=3; raw_reset; #20000;
@@ -172,6 +172,34 @@ end endtask
           $fatal(1,"RECOVERY_RETURN_RESET_COUNTS");
       """,tasks,deadlineNs=2000000)
     }
+if(!click) test("bd recovery ownership: reset during actual reply return revokes accepted recovery") {
+  ClockedSimulation.run(fixture(),"bd-recovery-return-reset","""
+    #10000; settled; checkpoint;
+    @(negedge serviceClock); holdReserve=3; holdReply=3; raw_reset; #20000;
+    if(qualifiedReset || nativeDebt !== 3 || sourceBusy !== 0)
+      $fatal(1,"RECOVERY_PRE_RESERVE_QUIET_SETUP");
+    if(returnFence !== 3) $fatal(1,"RECOVERY_MISSING_FULL_RETURN_FENCE");
+    for(n=0;n<2;n=n+1) if(commands[n] != baseCommands[n] || decisions[n] != baseDecisions[n])
+      $fatal(1,"RECOVERY_COMMAND_BEFORE_RESERVATION");
+    @(negedge serviceClock); holdReserve=0; #20000;
+    if(recoveryReplyWaiting !== 3 || actualReplyRequest !== 3 || actualReplyAcknowledge !== 0)
+      $fatal(1,"RECOVERY_RETURN_SETUP");
+    @(negedge serviceClock); holdReplyReturn=3; holdReply=0; #20000;
+    if(actualReplyRequest !== 0 || actualReplyAcknowledge !== 3 || nativeDebt !== 3 ||
+        returnFence !== 3 || bankReaderReady !== 0 || channelsReturned !== 0)
+      $fatal(1,"RECOVERY_MISSING_FULL_RETURN_FENCE");
+    raw_reset;
+    @(negedge serviceClock); holdGrant=3; holdReplyReturn=0; #20000;
+    if(nativeDebt !== 3 || returnFence !== 3 || recoveryGrantWaiting !== 3 || response_valid)
+      $fatal(1,"RECOVERY_OLD_RETURN_CLEARED_NEW_DEBT");
+    for(n=0;n<2;n=n+1) if(commands[n] != baseCommands[n]+1 || publications[n] != basePublications[n]+1)
+      $fatal(1,"RECOVERY_OLD_RETURN_REPLAYED_PROOF");
+    @(negedge serviceClock); holdGrant=0; settled;
+    for(n=0;n<2;n=n+1) if(commands[n] != baseCommands[n]+2 || publications[n] != basePublications[n]+2)
+      $fatal(1,"RECOVERY_RETURN_RESET_COUNTS");
+  """,tasks,deadlineNs=2000000)
+}
+
     test(s"$name recovery ownership: prolonged application reset preserves independent housekeeping and continuous observations") {
       ClockedSimulation.run(fixture(p.copy(serviceHz=1000)),name+"-recovery-maintenance","""
         #10000; settled; checkpoint;

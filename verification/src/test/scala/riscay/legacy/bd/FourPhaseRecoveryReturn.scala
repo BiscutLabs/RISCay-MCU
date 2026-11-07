@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 package riscay.bd
 
+// Historical helper for legacy BD publication-source protocol tests only.
+
 import chisel3._
 import chisel3.util.Cat
 import chiselasync.core.{AsyncModule,ResetDomain}

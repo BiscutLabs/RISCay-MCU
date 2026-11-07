@@ -10,7 +10,8 @@ class PublicationReservation extends Bundle {
   val tag=Bool()
 }
 
-/** Clocked-client schema only; each design owns native reservation and receipts. */
+/** Receiving-clock client schema. BD owns the slot on that arbitration edge;
+  * Click retains its independent native reservation/receipt implementation. */
 class PublicationSourceBoundaryPort extends Bundle {
   val reserve=Decoupled(new PublicationReservation)
   val grant=Flipped(Decoupled(new PublicationReservation))
@@ -19,9 +20,9 @@ class PublicationSourceBoundaryPort extends Bundle {
   val drain=Flipped(Decoupled(new PublicationReservation))
   val eligible=Input(Bool())
   val ownerRecovery=Input(Bool())
-  val recoveryDebt=Input(Bool()) // Native sticky debt, asserted by every application reset.
+  val recoveryDebt=Input(Bool()) // Sticky reset debt; each implementation owns its reset crossing.
   val occupied=Input(Bool()) // Actual owner/crossings, excluding reset debt.
-  val returnFence=Input(Bool()) // Native debt/cleanup fence; clocked client receipt remains until direct interconnect.
+  val returnFence=Input(Bool()) // Debt/cleanup fence through the actual channel return.
   val draining=Input(Bool())
   val quiet=Output(Bool()) // Old dispatch/command/reply/publication fully drained.
 }

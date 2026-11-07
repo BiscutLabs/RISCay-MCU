@@ -83,6 +83,23 @@ def composed_launch_bounds(paths,launch_delays):
             for source,edge,delay in paths[mode])
     return bounds
 
+def services_register_aliases(aliases):
+    """Bind the same named storage in inline and retained Services hierarchy.
+
+    Only these exact register names are accepted. If both hierarchy aliases
+    survive, they must identify the identical ordered bit vector.
+    """
+    registers={}
+    for alias,bits in aliases.items():
+        match=re.fullmatch(r'soc/fabric(?:_|/)(snapshot_\d+|upperTime|softwareTimestamp|controlState_selector)',alias)
+        if match:
+            name=match.group(1)
+            if name in registers and registers[name]!=bits:
+                raise ValueError('BANK_SERVICES_ALIAS_MISMATCH_'+name)
+            registers[name]=bits
+    return registers
+
+
 def main():
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('mapping',type=Path);parser.add_argument('output',type=Path)
@@ -176,7 +193,8 @@ def main():
         print('TARGET_DOMAINS',[(p,domains[p.rsplit('/',1)[0]]) for p in targets if domains[p.rsplit('/',1)[0]]!='work'],flush=True)
         assert targets and all(domains[p.rsplit('/',1)[0]] in ('work','service') for p in targets)
         og,oa=graph(original['modules'])
-        snapshot_bits={bit for name,bits in oa.items() if name.startswith('soc/fabric_snapshot_') for bit in bits}
+        service_registers=services_register_aliases(oa)
+        snapshot_bits={bit for name,bits in service_registers.items() if name.startswith('snapshot_') for bit in bits}
         snapshot_cells={p.replace('\\','') for p,c in og.items() if set(c['connections'].get('Q',())) & snapshot_bits}
 
         # Repair preserves logical nets but may interpose buffers. Classify readers
@@ -188,12 +206,11 @@ def main():
             assert all(p.rsplit('/',1)[0] in snapshot_cells | control_cells for p in targets), 'BANK_UNQUALIFIED_READER'
         time_cells=[];time_targets=[];time_launch_cells=[];native_time_ingress=[];native_time_targets=[];elapsed_ingress=[];other_time_ingress=[];elapsed_ack=None
         if args.bank in ('software','adc'):
-            time_bits=set(oa['soc/fabric_upperTime'])
+            time_bits=set(service_registers['upperTime'])
             time_cells=sorted(p.replace('\\','') for p,c in og.items() if set(c['connections'].get('Q',())) & time_bits)
             assert time_cells and all(p in periodic for p in time_cells), 'TIME_COUNTER_BINDING'
             time_targets=frontier.periodic_targets([p+'/Q' for p in time_cells])
-            accepted_bits={bit for name,bits in oa.items() if name in
-                ('soc/fabric_softwareTimestamp','soc/ca_child_spi_adc/admissionTime') for bit in bits}
+            accepted_bits=set(service_registers.get('softwareTimestamp',())) | set(oa.get('soc/ca_child_spi_adc/admissionTime',()))
             admission_cells={p.replace('\\','') for p,c in og.items() if set(c['connections'].get('Q',())) & accepted_bits}
             allowed=set(time_cells)|snapshot_cells|admission_cells
             assert time_targets and all(p.rsplit('/',1)[0] in allowed for p in time_targets), 'TIME_UNQUALIFIED_READER'
@@ -250,7 +267,7 @@ def main():
             flag_net=cells[qualification_cells[0]]['connections']['Q'][0]
             bank_nets=[cells[p]['connections']['Q'][0] for p in bank]
             checker=BankIndependence(cells,library(ROOT/'.tools/physical/pdk'/(SC+CORNERS[0]+'.lib')),bank_nets,{flag_net:1},[(p,'A1') for p in cuts])
-            selector_bits=oa['soc/fabric_controlState_selector'][8:24]
+            selector_bits=service_registers['controlState_selector'][8:24]
             selector_sources=[]
             for bit in selector_bits:
                 sources=[p.replace('\\','') for p,c in og.items() if bit in c['connections'].get('Q',())]

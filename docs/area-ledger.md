@@ -6,9 +6,10 @@ libraries, mapper and accepted repair flow for matched production comparisons.
 Full routed physical requalification remains migration item 17.
 
 The **BD mapped-logic milestone below 2.3 mm² excluding SRAM is achieved**.
-The BD SRAM rewrite now maps to **1.718196 mm² flat**, or **1.798993 mm²** with
-ordinary hierarchy retained; the latter repairs to **1.988072 mm²**. Its matched
-parent, clock inventory and activity tradeoff are recorded below.
+The BD SRAM and publication-slot rewrites now map to **1.591292 mm² flat**,
+or **1.669761 mm²** with ordinary hierarchy retained; the latter repairs to
+**1.855785 mm²**. This reaches the current 1.60 mm² structural-batch target.
+Matched parents, clock inventories, activity and open timing are recorded below.
 The earlier Housekeeping batch maps to **1.987975 / 2.800265 mm²**
 (BD / Click) and repairs to **2.209548 / 3.051047 mm²**, including the expanded
 A/B boot ROM and current parent-driver recipe. The matched parent and
@@ -23,7 +24,7 @@ BD is the tape-out target; Click physical timing/sizing work is frozen, while
 architecture conversions cover both unless the user requests an exception;
 the current area rewrite is explicitly BD-first. Allocate
 **0.05 mm² of additional standard-cell area for routed hold repair** in the BD
-planning budget (about 2.5% of current mapped logic). This is an allowance, not
+planning budget (about 3.1% of current mapped logic). This is an allowance, not
 inserted area or a predicted requirement, and is separate from electrical/CTS
 repair and placement whitespace. Record actual cell use after routing. If repair
 exceeds it, revise the budget or architecture; do not waive a failing path. The
@@ -160,6 +161,58 @@ The historical raw baseline was repaired afresh because its old receipt no
 longer validated against changed working files. That failure is retained.
 An accidental run with the default Yosys 0.33 configuration was stopped and
 excluded; `map-r4` explicitly uses the baseline's pinned 0.62 tool configuration.
+
+## BD publication-slot rewrite
+
+Batch 2 removes Telemetry and Housekeeping's native reservation round trips,
+retaining the existing receiving-edge arbiter and actual native command/reply
+paths. Each POR-owned slot has six functional control bits, no payload and no
+new synchronizer. Click is unchanged. See the [contract](publication-slot.md)
+and [review](reviews/bd-publication-slot.md).
+
+| Matched measurement | Original baseline | SRAM-loop parent | Publication slot |
+| --- | ---: | ---: | ---: |
+| Flat mapped logic, mm² | 1.893700 | 1.718196 | 1.591292 |
+| Hierarchical mapped logic, mm² | 1.971463 | 1.798993 | 1.669761 |
+| Hierarchical repaired logic, mm² | 2.196947 | 1.988072 | 1.855785 |
+| Repair addition, mm² | 0.225484 | 0.189079 | 0.186023 |
+| Guard / allowance area, mm² | 0.400304 / 0 | 0.375384 / 0 | 0.268732 / 0 |
+| DLYD cells / area, mm² | 5,285 / 0.394455 | 4,973 / 0.371169 | 3,549 / 0.264886 |
+| Flat periodic sinks: service / work / LF | 1,188 / 1,803 / 78 | 1,188 / 1,632 / 78 | 1,188 / 1,556 / 78 |
+| Flat total periodic sinks | 3,069 | 2,898 | 2,822 |
+| Hierarchical periodic sinks: service / work / LF | 1,253 / 1,942 / 78 | 1,253 / 1,794 / 78 | 1,253 / 1,688 / 78 |
+| Hierarchical total periodic sinks | 3,273 | 3,125 | 3,019 |
+| Services hierarchical sinks: service / work / LF | 64 / 916 / 0 | 64 / 912 / 0 | 64 / 912 / 0 |
+| Native latch/FF bits | 9,229 | 7,250 | 7,242 |
+
+This batch removes **0.126905 mm² flat logic**, **0.132287 mm² repaired
+hierarchical logic**, 1,424 DLYD cells and 76 flat / 106 hierarchical periodic
+sinks. The existing Services payload/scheduler state is unchanged; deleted
+auxiliary crossings account for the sink reduction. The integrated flat map
+is now below the plan's **1.60 mm²** stretch target, before the remaining Control
+and bank-result reductions. This does not establish an optimized design or a
+smaller routable die.
+
+DLYD purpose inventory: custom ordering/reset **2,396 / 0.178830 mm²**,
+ordering/bundling **577 / 0.043065 mm²**, seed/reset admission **100 /
+0.007464 mm²**, publication ordering **476 / 0.035527 mm²**. These are subsets
+of DLYD area. Only deleted owners' entries were removed; no surviving guard
+count was shortened or borrowed from another owner.
+
+The comparison uses the same Yosys 0.62/ABC, libraries, reference capacities
+and three macros (0.466241 mm² LEF, excluded). The full repair graph proof and
+protected-native inventory pass. Repair is structurally accepted, with remaining
+whole-chip electrical and routed obligations; no flat repaired result is claimed.
+Evidence: `build/bd-publication-slot/{map-r1,flat-r1}`, `area-r1.json`,
+`clocks-r1.json` and `flat-clocks-r1.json`.
+
+The 12 MHz digital-model maintenance and ADC wakes remain **30 / 221 work
+edges**, at **3.147 / 18.772 µs**. The 43-instruction wake falls from the SRAM
+parent's **4,166 / 347.525 µs** to **4,138 / 345.192 µs**. Telemetry commands
+remain zero in these windows. Click remains **27 / 216 / 3,199** work edges.
+All 22 maintenance, three ADC and two firmware observations agree within each
+category. Source logs and hashes are in `activity-r1.json`. These are activity
+measurements, not energy or routed latency.
 
 ## BD hierarchy experiment
 

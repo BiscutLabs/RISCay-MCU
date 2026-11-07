@@ -60,6 +60,7 @@ end endtask
   for(click <- Seq(false,true)) {
     val name=if(click) "click" else "bd"
     def fixture(): SocTop=if(click) new ClickRecoveryOwnershipFixture(p) else new BdRecoveryOwnershipFixture(p)
+    if(click) {
     for(first <- Seq(0,1)) {
       test(s"$name final recovery receipt: independent clocked client stall, release order $first") {
         ClockedSimulation.run(fixture(),name+s"-final-client-$first",s"""
@@ -95,18 +96,60 @@ end endtask
           $fatal(1,"FINAL_CLIENT_FRESH_PROOF_COUNTS");
       """,tasks,deadlineNs=2000000)
     }
-    if(!click) test("bd final recovery receipt: actual high ACK must return before debt release") {
-      ClockedSimulation.run(fixture(),"bd-final-client-ack-return","""
+    }
+if(!click) {
+  for(first <- Seq(0,1)) {
+    test(s"bd recovery return: actual reply ACK stalls debt release, return order $first") {
+      ClockedSimulation.run(fixture(),s"bd-reply-return-$first",s"""
         #10000;checkpoint;
-        @(negedge serviceClock);holdFinal=3;
+        @(negedge serviceClock);holdReply=3;
         raw_reset;#20000;
-        if(finalRequest !== 3 || finalAcknowledge !== 0) $fatal(1,"FINAL_CLIENT_ACK_SETUP");
-        @(negedge serviceClock);holdFinalReturn=3;holdFinal=0;
+        if(recoveryReplyWaiting !== 3 || actualReplyRequest !== 3 || actualReplyAcknowledge !== 0)
+          $$fatal(1,"FINAL_CLIENT_ACK_SETUP");
+        for(n=0;n<2;n=n+1) if(commands[n] != baseCommands[n]+1 || publications[n] != basePublications[n])
+          $$fatal(1,"FINAL_CLIENT_UNACCEPTED_PROOF_COUNTS");
+        @(negedge serviceClock);holdReplyReturn=3;holdReply=0;
         #20000;
-        if(finalRequest !== 0 || finalAcknowledge !== 3) $fatal(1,"FINAL_CLIENT_ACK_RETURN_BOUND");
+        if(actualReplyRequest !== 0 || actualReplyAcknowledge !== 3 || bankReaderReady !== 0 || channelsReturned !== 0)
+          $$fatal(1,"FINAL_CLIENT_ACK_RETURN_BOUND");
+        for(n=0;n<2;n=n+1) if(commands[n] != baseCommands[n]+1 || publications[n] != basePublications[n]+1)
+          $$fatal(1,"FINAL_CLIENT_PROOF_COUNTS");
         offer_cpu;#20000;stalled;
-        @(negedge serviceClock);holdFinalReturn=0;complete_cpu;
+        @(negedge serviceClock);holdReplyReturn=${3 ^ (1<<first)};#20000;
+        if(nativeDebt !== ${3 ^ (1<<first)} || returnFence !== ${3 ^ (1<<first)} ||
+            actualReplyAcknowledge !== ${3 ^ (1<<first)} || bankReaderReady !== ${1<<first} ||
+            request_ready || accepted || response_valid)
+          $$fatal(1,"FINAL_CLIENT_INDEPENDENT_RETURN");
+        @(negedge serviceClock);holdReplyReturn=0;complete_cpu;
+        if(actualReplyAcknowledge !== 0 || bankReaderReady !== 3 || channelsReturned !== 3)
+          $$fatal(1,"FINAL_CLIENT_ACTUAL_RETURN_NOT_SETTLED");
       """,tasks,deadlineNs=2000000)
     }
+  }
+  test("bd recovery return: repeated reset revokes accepted proof while its actual reply ACK remains high") {
+    ClockedSimulation.run(fixture(),"bd-reply-return-reset","""
+      #10000;checkpoint;
+      @(negedge serviceClock);holdReply=3;
+      raw_reset;#20000;
+      if(recoveryReplyWaiting !== 3 || actualReplyRequest !== 3 || actualReplyAcknowledge !== 0)
+        $fatal(1,"FINAL_CLIENT_ACK_SETUP");
+      @(negedge serviceClock);holdReplyReturn=3;holdReply=0;
+      #20000;
+      if(actualReplyRequest !== 0 || actualReplyAcknowledge !== 3 || bankReaderReady !== 0 || channelsReturned !== 0)
+        $fatal(1,"FINAL_CLIENT_ACK_RETURN_BOUND");
+      minimumFresh=2;
+      raw_reset;#20000;
+      offer_cpu;#20000;stalled;
+      for(n=0;n<2;n=n+1) if(commands[n] != baseCommands[n]+1 || publications[n] != basePublications[n]+1)
+        $fatal(1,"FINAL_CLIENT_OLD_PROOF_IDENTITY");
+      @(negedge serviceClock);holdReplyReturn=0;complete_cpu;
+      for(n=0;n<2;n=n+1) if(commands[n] != baseCommands[n]+2 || publications[n] != basePublications[n]+2)
+        $fatal(1,"FINAL_CLIENT_FRESH_PROOF_COUNTS");
+      if(actualReplyAcknowledge !== 0 || bankReaderReady !== 3 || channelsReturned !== 3)
+        $fatal(1,"FINAL_CLIENT_ACTUAL_RETURN_NOT_SETTLED");
+    """,tasks,deadlineNs=2000000)
+  }
+}
+
   }
 }

@@ -235,6 +235,49 @@ def prepare_graph(export: Path, output: Path, manifest: dict) -> dict:
         converted_sha256=sha(output / "converted.v"), netlist_sha256=sha(output / "netlist.json"))
 
 
+def prove_publication_slots(module, por_reset):
+    """The BD receiving-edge arbiter owns no raw/native lifetime crossing.
+
+    This adds no taint exemptions. Check its actual control storage clock/reset
+    and the cancellation alias after the coordinator proof has succeeded.
+    """
+    cone=Cone(module)
+    clock=work_clock(cone)
+    cutoff=cone.bits('ca_child_request_bridge.close')
+    checked=[]
+    for owner in ('telemetry','housekeeping'):
+        prefix=owner+'Slot_'
+        if cone.bits(prefix+'io_cancel') != cutoff:
+            raise ValueError('RDC_PUBLICATION_SLOT_CANCEL_'+owner)
+        registers=[]
+        defaults={'phase':(3,0),'debt':(1,1),'revoked':(1,1),'role':(1,0),'tag':(1,0)}
+        for field in ('phase','debt','revoked','role','tag'):
+            name=prefix+field
+            # The diagnostic tag has no functional reader once assertions are
+            # stripped. It may disappear completely; actual role/debt/phase
+            # state remains mandatory and no crossing is exempted by this case.
+            if field=='tag' and name not in module['netnames']:
+                if any(prefix+'io_client_'+port+'_bits_tag' in module['netnames']
+                       for port in ('grant','drain')):
+                    raise ValueError('RDC_PUBLICATION_SLOT_UNBOUND_TAG_'+owner)
+                continue
+            vector=cone.bits(name)
+            if all(b in ('0','1') for b in vector):
+                if field != 'tag' or vector!=['0']:
+                    raise ValueError('RDC_PUBLICATION_SLOT_CONSTANT_STATE_'+name)
+                continue
+            cell_name,cell=cone.flop(name)
+            pins=cell['connections'];params=cell['parameters']
+            width,initial=defaults[field]
+            if (pins['CLK']!=clock or params['CLK_POLARITY']!='1' or
+                params['ARST_POLARITY']!='1' or not por_reset(pins['ARST'],clock) or
+                len(pins['Q'])!=width or int(params['ARST_VALUE'],2)!=initial):
+                raise ValueError('RDC_PUBLICATION_SLOT_LIFETIME_'+name)
+            registers.append(cell_name)
+        checked.append(dict(owner=owner,registers=registers))
+    return dict(status='pass',contract='POR receiving-work-edge slot; coordinated cancellation; no exemptions',slots=checked)
+
+
 def audit_graph(database: dict, top: str, capacities: dict | None = None) -> dict:
     modules = database["modules"]
     module = modules[top]
@@ -376,7 +419,8 @@ def audit_graph(database: dict, top: str, capacities: dict | None = None) -> dic
     for name, cell in cells.items():
         if model(cell) in NATIVE_STATE and raw.intersection(cell["connections"].get("reset", [])):
             seeds["raw-native-Q:" + name] = {b for p, v in cell["connections"].items() if cell["port_directions"][p] == "output" for b in v}
-            allowed={'ca_child_'+owner+'_source.ca_primitive_debt_storage' for owner in ('telemetry','housekeeping')}
+            allowed=({'ca_child_'+owner+'_source.ca_primitive_debt_storage' for owner in ('telemetry','housekeeping')}
+                     if top in CLICK_TOPS else set())
             if top in SOC_TOPS and name not in allowed:
                 reset_owner_violations.append(dict(source='raw-reset',sink=name,pin='reset',kind='unexpected raw-reset native storage'))
     for name, net in nets.items():
@@ -385,7 +429,7 @@ def audit_graph(database: dict, top: str, capacities: dict | None = None) -> dic
     if top in SOC_TOPS:
         # Required production aliases. ownerRecovery is optimized into the
         # reservation/grant payload; a suffix-only search silently missed it.
-        for owner in ('telemetry','housekeeping'):
+        for owner in (('telemetry','housekeeping') if top in CLICK_TOPS else ()):
             for status in ('recoveryDebt','grant_bits_recovery','recoveryReturning'):
                 name='ca_child_'+owner+'_source.'+status
                 seeds['native:'+name]=set(bits(name))
@@ -424,9 +468,12 @@ def audit_graph(database: dict, top: str, capacities: dict | None = None) -> dic
     held_data_inputs=[]
     if top in SOC_TOPS:
         receiver_proofs.append(prove_coordinator(module,por_reset))
+        if top not in CLICK_TOPS:
+            receiver_proofs.append(prove_publication_slots(module,por_reset))
         # These are the documented native held-bus boundaries reached by the
         # raw/status cones. No control, reset, clock or other register is waived.
-        receivers=['ca_child_'+n+'_grant_bridge' for n in ('program','telemetry','housekeeping')]
+        grant_owners=('program','telemetry','housekeeping') if top in CLICK_TOPS else ('program',)
+        receivers=['ca_child_'+n+'_grant_bridge' for n in grant_owners]
         receivers += ['ca_child_'+n+'_access.ca_child_byte_request_'+str(i)
                       for n in ('program','ram') for i in sram_receipt_lanes(module,n)]
         quiescing=['ca_child_request_bridge','ca_child_admission_grant_bridge']

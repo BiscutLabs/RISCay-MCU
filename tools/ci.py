@@ -54,7 +54,8 @@ def main():
     args = parser.parse_args()
     args.output.mkdir(parents=True, exist_ok=False)
     # Include firmware, fixed models, policies and resources as well as Scala.
-    tracked = subprocess.check_output(['git', 'ls-files', '-z'], cwd=ROOT).decode().split('\0')
+    tracked = subprocess.check_output(
+        ['git', 'ls-files', '--cached', '--others', '--exclude-standard', '-z'], cwd=ROOT).decode().split('\0')
     inputs = [ROOT/p for p in tracked if p and (ROOT/p).is_file() and
               Path(p).suffix.lower() in {'.scala','.sbt','.json','.py','.v','.sv','.hex','.c','.h','.s','.ld','.properties','.yml'}]
     tools = [Path(sys.executable), *ROOT.glob('tools/*.py')]

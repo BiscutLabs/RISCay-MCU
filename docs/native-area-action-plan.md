@@ -6,8 +6,11 @@ baseline: `1f256eb`; approved-plan commit: `30dc3f2`.
 Batch 1's [word loop](native-sram-word-loop.md) is implemented, independently
 reviewed and verified locally: flat mapped logic is **1.718196 mm²**, down
 0.175504 mm². [Evidence and limits](reviews/bd-sram-word-loop.md) include its
-longer firmware wake. Remaining batches below are the next replacements;
-their implementation is not part of this batch's acceptance.
+longer firmware wake. Batch 2 removes the Telemetry/Housekeeping reservation
+detours: [publication slots](publication-slot.md) bring the flat map to
+**1.591292 mm²**, below the 1.60 mm² stretch target. Its [review](reviews/bd-publication-slot.md)
+retains an open, pre-existing ordinary Housekeeping qualifier timing failure.
+Batches 3 and 4 remain next; their implementation is not part of these results.
 This replaces the opportunity ranking in the
 [overhead investigation](native-overhead-investigation.md), not its measurements.
 The plan is based on the actual owners, their commit/return dependencies and the

@@ -1,6 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 package riscay.bd
 
+// Historical component fixture only. Production BD uses FourPhasePublicationSlot
+// at the existing receiving-clock arbiter; retain this model for the original
+// native protocol regression, not as an implementation option.
+
 import chisel3._
 import chisel3.util.Cat
 import chiselasync.bundled.LongHoldBuffer

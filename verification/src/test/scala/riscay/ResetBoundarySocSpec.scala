@@ -201,8 +201,8 @@ wire [16:0] gatePredicates = {
   dut.fabric_completionAvailable, ~dut.applicationCancel, ~dut.fabric_resetRecovery,
   dut._ca_child_admission_grant_bridge_out_valid, ~dut.fabric_bootWait, ~dut.fabric_eventWait,
   ~dut.fabric_memoryBusy, ~dut.fabric_loaderWrite, ~dut.fabric_telemetryBarrier,
-  ~dut.fabric_housekeepingBarrierBusy, ~dut.telemetryBoundary_io_debt,
-  ~dut.housekeepingBoundary_io_debt, ~dut.fabric_controlBusy,
+  ~dut.fabric_housekeepingBarrierBusy, ~dut.${if(click) "telemetryBoundary_io_debt" else "telemetrySlot_io_client_recoveryDebt"},
+  ~dut.${if(click) "housekeepingBoundary_io_debt" else "housekeepingSlot_io_client_recoveryDebt"}, ~dut.fabric_controlBusy,
   dut._ca_child_ram_grant_bridge_out_valid, dut.fabric_io_ramSource_decision_ready,
   ~dut.ramServiceDebt, dut._ca_child_ram_access_io_request_ready};
 wire gateOtherReady = &gatePredicates;
