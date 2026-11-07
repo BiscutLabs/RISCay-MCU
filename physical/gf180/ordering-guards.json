@@ -223,102 +223,10 @@
         "previous_stages": 27
       },
       {
-        "instance": "FourPhaseSoc.ca_child_control.ca_child_state.head_ca_child_stage0.ca_child_storage.ca_primitive_output_delay",
-        "owner": "FourPhaseSoc.ca_child_control.ca_child_state.head_ca_child_stage0.ca_child_storage",
-        "owner_module": "LongHoldBuffer",
-        "owner_metadata_module": "LongHoldBuffer_12",
-        "primitive_id": "output_delay",
-        "original_parameters": {
-          "DELAY_FS": 31000000,
-          "OP": 0,
-          "RESET_VALUE": 0,
-          "WIDTH": 1
-        },
-        "stages": 8,
-        "purpose": "ordering-publication",
-        "classification": "ordering",
-        "disposition": "measure-canonical-stage",
-        "previous_stages": 27
-      },
-      {
-        "instance": "FourPhaseSoc.ca_child_control.ca_child_join.ca_child_left.ca_primitive_output_delay",
-        "owner": "FourPhaseSoc.ca_child_control.ca_child_join.ca_child_left",
-        "owner_module": "LongHoldBuffer",
-        "owner_metadata_module": "LongHoldBuffer_13",
-        "primitive_id": "output_delay",
-        "original_parameters": {
-          "DELAY_FS": 31000000,
-          "OP": 0,
-          "RESET_VALUE": 0,
-          "WIDTH": 1
-        },
-        "stages": 8,
-        "purpose": "ordering-publication",
-        "classification": "ordering",
-        "disposition": "measure-canonical-stage",
-        "previous_stages": 27
-      },
-      {
-        "instance": "FourPhaseSoc.ca_child_control.ca_child_join.ca_child_right.ca_primitive_output_delay",
-        "owner": "FourPhaseSoc.ca_child_control.ca_child_join.ca_child_right",
-        "owner_module": "LongHoldBuffer",
-        "owner_metadata_module": "LongHoldBuffer_14",
-        "primitive_id": "output_delay",
-        "original_parameters": {
-          "DELAY_FS": 31000000,
-          "OP": 0,
-          "RESET_VALUE": 0,
-          "WIDTH": 1
-        },
-        "stages": 8,
-        "purpose": "ordering-publication",
-        "classification": "ordering",
-        "disposition": "measure-canonical-stage",
-        "previous_stages": 27
-      },
-      {
-        "instance": "FourPhaseSoc.ca_child_control.ca_child_update.ca_primitive_output_delay",
-        "owner": "FourPhaseSoc.ca_child_control.ca_child_update",
-        "owner_module": "FourPhaseStage",
-        "owner_metadata_module": "FourPhaseStage_4",
-        "primitive_id": "output_delay",
-        "original_parameters": {
-          "DELAY_FS": 31000000,
-          "OP": 0,
-          "RESET_VALUE": 0,
-          "WIDTH": 1
-        },
-        "stages": 8,
-        "purpose": "ordering-publication",
-        "classification": "ordering",
-        "disposition": "measure-canonical-stage",
-        "previous_stages": 27,
-        "baseline_owner_metadata_module": "FourPhaseStage_20"
-      },
-      {
-        "instance": "FourPhaseSoc.ca_child_control.ca_child_crc.ca_primitive_output_delay",
-        "owner": "FourPhaseSoc.ca_child_control.ca_child_crc",
-        "owner_module": "FourPhaseStage",
-        "owner_metadata_module": "FourPhaseStage_5",
-        "primitive_id": "output_delay",
-        "original_parameters": {
-          "DELAY_FS": 31000000,
-          "OP": 0,
-          "RESET_VALUE": 0,
-          "WIDTH": 1
-        },
-        "stages": 8,
-        "purpose": "ordering-publication",
-        "classification": "ordering",
-        "disposition": "measure-canonical-stage",
-        "previous_stages": 27,
-        "baseline_owner_metadata_module": "FourPhaseStage_21"
-      },
-      {
         "instance": "FourPhaseSoc.ca_child_housekeeping.ca_child_state.head_ca_child_stage0.ca_child_storage.ca_primitive_output_delay",
         "owner": "FourPhaseSoc.ca_child_housekeeping.ca_child_state.head_ca_child_stage0.ca_child_storage",
         "owner_module": "LongHoldBuffer",
-        "owner_metadata_module": "LongHoldBuffer_15",
+        "owner_metadata_module": "LongHoldBuffer_12",
         "primitive_id": "output_delay",
         "original_parameters": {
           "DELAY_FS": 31000000,
@@ -336,7 +244,7 @@
         "instance": "FourPhaseSoc.ca_child_housekeeping.ca_child_join.ca_child_left.ca_primitive_output_delay",
         "owner": "FourPhaseSoc.ca_child_housekeeping.ca_child_join.ca_child_left",
         "owner_module": "LongHoldBuffer",
-        "owner_metadata_module": "LongHoldBuffer_16",
+        "owner_metadata_module": "LongHoldBuffer_13",
         "primitive_id": "output_delay",
         "original_parameters": {
           "DELAY_FS": 31000000,
@@ -354,7 +262,7 @@
         "instance": "FourPhaseSoc.ca_child_housekeeping.ca_child_join.ca_child_right.ca_primitive_output_delay",
         "owner": "FourPhaseSoc.ca_child_housekeeping.ca_child_join.ca_child_right",
         "owner_module": "LongHoldBuffer",
-        "owner_metadata_module": "LongHoldBuffer_17",
+        "owner_metadata_module": "LongHoldBuffer_14",
         "primitive_id": "output_delay",
         "original_parameters": {
           "DELAY_FS": 31000000,
@@ -372,7 +280,7 @@
         "instance": "FourPhaseSoc.ca_child_housekeeping.ca_child_update.ca_primitive_output_delay",
         "owner": "FourPhaseSoc.ca_child_housekeeping.ca_child_update",
         "owner_module": "FourPhaseStage",
-        "owner_metadata_module": "FourPhaseStage_6",
+        "owner_metadata_module": "FourPhaseStage_5",
         "primitive_id": "output_delay",
         "original_parameters": {
           "DELAY_FS": 31000000,
@@ -391,7 +299,7 @@
         "instance": "FourPhaseSoc.ca_child_telemetry.ca_child_state.head_ca_child_stage0.ca_child_storage.ca_primitive_output_delay",
         "owner": "FourPhaseSoc.ca_child_telemetry.ca_child_state.head_ca_child_stage0.ca_child_storage",
         "owner_module": "LongHoldBuffer",
-        "owner_metadata_module": "LongHoldBuffer_18",
+        "owner_metadata_module": "LongHoldBuffer_15",
         "primitive_id": "output_delay",
         "original_parameters": {
           "DELAY_FS": 31000000,
@@ -409,7 +317,7 @@
         "instance": "FourPhaseSoc.ca_child_telemetry.ca_child_join.ca_child_left.ca_primitive_output_delay",
         "owner": "FourPhaseSoc.ca_child_telemetry.ca_child_join.ca_child_left",
         "owner_module": "LongHoldBuffer",
-        "owner_metadata_module": "LongHoldBuffer_19",
+        "owner_metadata_module": "LongHoldBuffer_16",
         "primitive_id": "output_delay",
         "original_parameters": {
           "DELAY_FS": 31000000,
@@ -427,7 +335,7 @@
         "instance": "FourPhaseSoc.ca_child_telemetry.ca_child_join.ca_child_right.ca_primitive_output_delay",
         "owner": "FourPhaseSoc.ca_child_telemetry.ca_child_join.ca_child_right",
         "owner_module": "LongHoldBuffer",
-        "owner_metadata_module": "LongHoldBuffer_20",
+        "owner_metadata_module": "LongHoldBuffer_17",
         "primitive_id": "output_delay",
         "original_parameters": {
           "DELAY_FS": 31000000,
@@ -445,7 +353,7 @@
         "instance": "FourPhaseSoc.ca_child_telemetry.ca_child_update.ca_primitive_output_delay",
         "owner": "FourPhaseSoc.ca_child_telemetry.ca_child_update",
         "owner_module": "FourPhaseStage",
-        "owner_metadata_module": "FourPhaseStage_7",
+        "owner_metadata_module": "FourPhaseStage_6",
         "primitive_id": "output_delay",
         "original_parameters": {
           "DELAY_FS": 31000000,
@@ -464,7 +372,7 @@
         "instance": "FourPhaseSoc.ca_child_elapsed_scaler.ca_child_native.ca_child_owner.head_ca_child_stage0.ca_child_storage.ca_primitive_output_delay",
         "owner": "FourPhaseSoc.ca_child_elapsed_scaler.ca_child_native.ca_child_owner.head_ca_child_stage0.ca_child_storage",
         "owner_module": "LongHoldBuffer",
-        "owner_metadata_module": "LongHoldBuffer_21",
+        "owner_metadata_module": "LongHoldBuffer_18",
         "primitive_id": "output_delay",
         "original_parameters": {
           "DELAY_FS": 31000000,
@@ -482,7 +390,7 @@
         "instance": "FourPhaseSoc.ca_child_elapsed_scaler.ca_child_native.ca_child_step.ca_primitive_output_delay",
         "owner": "FourPhaseSoc.ca_child_elapsed_scaler.ca_child_native.ca_child_step",
         "owner_module": "FourPhaseStage",
-        "owner_metadata_module": "FourPhaseStage_8",
+        "owner_metadata_module": "FourPhaseStage_7",
         "primitive_id": "output_delay",
         "original_parameters": {
           "DELAY_FS": 31000000,
@@ -501,7 +409,7 @@
         "instance": "FourPhaseSoc.ca_child_spi_adc.ca_child_native.ca_child_state.head_ca_child_stage0.ca_child_storage.ca_primitive_output_delay",
         "owner": "FourPhaseSoc.ca_child_spi_adc.ca_child_native.ca_child_state.head_ca_child_stage0.ca_child_storage",
         "owner_module": "LongHoldBuffer",
-        "owner_metadata_module": "LongHoldBuffer_22",
+        "owner_metadata_module": "LongHoldBuffer_19",
         "primitive_id": "output_delay",
         "original_parameters": {
           "DELAY_FS": 31000000,
@@ -519,7 +427,7 @@
         "instance": "FourPhaseSoc.ca_child_spi_adc.ca_child_native.ca_child_owner.ca_child_left.ca_primitive_output_delay",
         "owner": "FourPhaseSoc.ca_child_spi_adc.ca_child_native.ca_child_owner.ca_child_left",
         "owner_module": "LongHoldBuffer",
-        "owner_metadata_module": "LongHoldBuffer_23",
+        "owner_metadata_module": "LongHoldBuffer_20",
         "primitive_id": "output_delay",
         "original_parameters": {
           "DELAY_FS": 31000000,
@@ -537,7 +445,7 @@
         "instance": "FourPhaseSoc.ca_child_spi_adc.ca_child_native.ca_child_owner.ca_child_right.ca_primitive_output_delay",
         "owner": "FourPhaseSoc.ca_child_spi_adc.ca_child_native.ca_child_owner.ca_child_right",
         "owner_module": "LongHoldBuffer",
-        "owner_metadata_module": "LongHoldBuffer_24",
+        "owner_metadata_module": "LongHoldBuffer_21",
         "primitive_id": "output_delay",
         "original_parameters": {
           "DELAY_FS": 31000000,
@@ -555,7 +463,7 @@
         "instance": "FourPhaseSoc.ca_child_spi_adc.ca_child_native.ca_child_captured.ca_child_left.ca_primitive_output_delay",
         "owner": "FourPhaseSoc.ca_child_spi_adc.ca_child_native.ca_child_captured.ca_child_left",
         "owner_module": "LongHoldBuffer",
-        "owner_metadata_module": "LongHoldBuffer_25",
+        "owner_metadata_module": "LongHoldBuffer_22",
         "primitive_id": "output_delay",
         "original_parameters": {
           "DELAY_FS": 31000000,
@@ -573,7 +481,7 @@
         "instance": "FourPhaseSoc.ca_child_spi_adc.ca_child_native.ca_child_captured.ca_child_right.ca_primitive_output_delay",
         "owner": "FourPhaseSoc.ca_child_spi_adc.ca_child_native.ca_child_captured.ca_child_right",
         "owner_module": "LongHoldBuffer",
-        "owner_metadata_module": "LongHoldBuffer_26",
+        "owner_metadata_module": "LongHoldBuffer_23",
         "primitive_id": "output_delay",
         "original_parameters": {
           "DELAY_FS": 31000000,
@@ -591,7 +499,7 @@
         "instance": "FourPhaseSoc.ca_child_spi_adc.ca_child_native.ca_child_assemble.ca_primitive_output_delay",
         "owner": "FourPhaseSoc.ca_child_spi_adc.ca_child_native.ca_child_assemble",
         "owner_module": "FourPhaseStage",
-        "owner_metadata_module": "FourPhaseStage_9",
+        "owner_metadata_module": "FourPhaseStage_8",
         "primitive_id": "output_delay",
         "original_parameters": {
           "DELAY_FS": 31000000,
@@ -610,7 +518,7 @@
         "instance": "FourPhaseSoc.ca_child_spi_adc.ca_child_native.ca_child_scale.ca_child_prepare.ca_primitive_output_delay",
         "owner": "FourPhaseSoc.ca_child_spi_adc.ca_child_native.ca_child_scale.ca_child_prepare",
         "owner_module": "FourPhaseStage",
-        "owner_metadata_module": "FourPhaseStage_10",
+        "owner_metadata_module": "FourPhaseStage_9",
         "primitive_id": "output_delay",
         "original_parameters": {
           "DELAY_FS": 31000000,
@@ -629,7 +537,7 @@
         "instance": "FourPhaseSoc.ca_child_spi_adc.ca_child_native.ca_child_scale.ca_child_radix_0.ca_primitive_output_delay",
         "owner": "FourPhaseSoc.ca_child_spi_adc.ca_child_native.ca_child_scale.ca_child_radix_0",
         "owner_module": "FourPhaseStage",
-        "owner_metadata_module": "FourPhaseStage_11",
+        "owner_metadata_module": "FourPhaseStage_10",
         "primitive_id": "output_delay",
         "original_parameters": {
           "DELAY_FS": 31000000,
@@ -648,7 +556,7 @@
         "instance": "FourPhaseSoc.ca_child_spi_adc.ca_child_native.ca_child_scale.ca_child_radix_1.ca_primitive_output_delay",
         "owner": "FourPhaseSoc.ca_child_spi_adc.ca_child_native.ca_child_scale.ca_child_radix_1",
         "owner_module": "FourPhaseStage",
-        "owner_metadata_module": "FourPhaseStage_12",
+        "owner_metadata_module": "FourPhaseStage_11",
         "primitive_id": "output_delay",
         "original_parameters": {
           "DELAY_FS": 31000000,
@@ -667,7 +575,7 @@
         "instance": "FourPhaseSoc.ca_child_spi_adc.ca_child_native.ca_child_scale.ca_child_radix_2.ca_primitive_output_delay",
         "owner": "FourPhaseSoc.ca_child_spi_adc.ca_child_native.ca_child_scale.ca_child_radix_2",
         "owner_module": "FourPhaseStage",
-        "owner_metadata_module": "FourPhaseStage_13",
+        "owner_metadata_module": "FourPhaseStage_12",
         "primitive_id": "output_delay",
         "original_parameters": {
           "DELAY_FS": 31000000,
@@ -686,7 +594,7 @@
         "instance": "FourPhaseSoc.ca_child_spi_adc.ca_child_native.ca_child_scaled.ca_child_left.ca_primitive_output_delay",
         "owner": "FourPhaseSoc.ca_child_spi_adc.ca_child_native.ca_child_scaled.ca_child_left",
         "owner_module": "LongHoldBuffer",
-        "owner_metadata_module": "LongHoldBuffer_27",
+        "owner_metadata_module": "LongHoldBuffer_24",
         "primitive_id": "output_delay",
         "original_parameters": {
           "DELAY_FS": 31000000,
@@ -704,7 +612,7 @@
         "instance": "FourPhaseSoc.ca_child_spi_adc.ca_child_native.ca_child_scaled.ca_child_right.ca_primitive_output_delay",
         "owner": "FourPhaseSoc.ca_child_spi_adc.ca_child_native.ca_child_scaled.ca_child_right",
         "owner_module": "LongHoldBuffer",
-        "owner_metadata_module": "LongHoldBuffer_28",
+        "owner_metadata_module": "LongHoldBuffer_25",
         "primitive_id": "output_delay",
         "original_parameters": {
           "DELAY_FS": 31000000,
@@ -722,7 +630,7 @@
         "instance": "FourPhaseSoc.ca_child_spi_adc.ca_child_native.ca_child_finish.ca_primitive_output_delay",
         "owner": "FourPhaseSoc.ca_child_spi_adc.ca_child_native.ca_child_finish",
         "owner_module": "FourPhaseStage",
-        "owner_metadata_module": "FourPhaseStage_14",
+        "owner_metadata_module": "FourPhaseStage_13",
         "primitive_id": "output_delay",
         "original_parameters": {
           "DELAY_FS": 31000000,
@@ -741,7 +649,7 @@
         "instance": "FourPhaseSoc.ca_child_core.ca_child_state.head_ca_child_stage0.ca_child_storage.ca_primitive_output_delay",
         "owner": "FourPhaseSoc.ca_child_core.ca_child_state.head_ca_child_stage0.ca_child_storage",
         "owner_module": "LongHoldBuffer",
-        "owner_metadata_module": "LongHoldBuffer_29",
+        "owner_metadata_module": "LongHoldBuffer_26",
         "primitive_id": "output_delay",
         "original_parameters": {
           "DELAY_FS": 31000000,
@@ -759,7 +667,7 @@
         "instance": "FourPhaseSoc.ca_child_core.ca_child_address.ca_primitive_output_delay",
         "owner": "FourPhaseSoc.ca_child_core.ca_child_address",
         "owner_module": "FourPhaseStage",
-        "owner_metadata_module": "FourPhaseStage_15",
+        "owner_metadata_module": "FourPhaseStage_14",
         "primitive_id": "output_delay",
         "original_parameters": {
           "DELAY_FS": 31000000,
@@ -778,7 +686,7 @@
         "instance": "FourPhaseSoc.ca_child_core.ca_child_join.ca_child_left.ca_primitive_output_delay",
         "owner": "FourPhaseSoc.ca_child_core.ca_child_join.ca_child_left",
         "owner_module": "LongHoldBuffer",
-        "owner_metadata_module": "LongHoldBuffer_30",
+        "owner_metadata_module": "LongHoldBuffer_27",
         "primitive_id": "output_delay",
         "original_parameters": {
           "DELAY_FS": 31000000,
@@ -796,7 +704,7 @@
         "instance": "FourPhaseSoc.ca_child_core.ca_child_join.ca_child_right.ca_primitive_output_delay",
         "owner": "FourPhaseSoc.ca_child_core.ca_child_join.ca_child_right",
         "owner_module": "LongHoldBuffer",
-        "owner_metadata_module": "LongHoldBuffer_31",
+        "owner_metadata_module": "LongHoldBuffer_28",
         "primitive_id": "output_delay",
         "original_parameters": {
           "DELAY_FS": 31000000,
@@ -814,7 +722,7 @@
         "instance": "FourPhaseSoc.ca_child_core.ca_child_execute.ca_primitive_output_delay",
         "owner": "FourPhaseSoc.ca_child_core.ca_child_execute",
         "owner_module": "FourPhaseStage",
-        "owner_metadata_module": "FourPhaseStage_16",
+        "owner_metadata_module": "FourPhaseStage_15",
         "primitive_id": "output_delay",
         "original_parameters": {
           "DELAY_FS": 31000000,
@@ -833,7 +741,7 @@
         "instance": "FourPhaseSoc.ca_child_transactions.ca_child_reply.ca_primitive_output_delay",
         "owner": "FourPhaseSoc.ca_child_transactions.ca_child_reply",
         "owner_module": "FourPhaseStage",
-        "owner_metadata_module": "FourPhaseStage_17",
+        "owner_metadata_module": "FourPhaseStage_16",
         "primitive_id": "output_delay",
         "original_parameters": {
           "DELAY_FS": 31000000,
@@ -852,7 +760,7 @@
         "instance": "FourPhaseSoc.ca_child_elapsed_scaler.ca_child_native.ca_child_step.ca_primitive_request_delay",
         "owner": "FourPhaseSoc.ca_child_elapsed_scaler.ca_child_native.ca_child_step",
         "owner_module": "FourPhaseStage",
-        "owner_metadata_module": "FourPhaseStage_8",
+        "owner_metadata_module": "FourPhaseStage_7",
         "primitive_id": "request_delay",
         "original_parameters": {
           "DELAY_FS": 100000000,

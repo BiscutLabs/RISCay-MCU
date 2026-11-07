@@ -8,10 +8,11 @@ import chiselasync.core.ResetDomain
 import chiselasync.metadata.BundledTiming
 import riscay.soc.Crc32Command
 
-/** One native result store. Control retains the command context until the
-  * result and that context have both been captured by its state owner.
+/** Shared BD combinational transform plus an independently testable native
+  * result stage. Control retains its own word/CRC and calls compute on Stored.
   * The reflected CRC consumes the word least-significant byte first, without
-  * final complement; only Control's Stored transition commits the candidate.
+  * final complement. Control now invokes compute directly on its Stored commit;
+  * the independent stage remains available to the shared CRC verification.
   */
 object FourPhaseCrc32 {
   // Build the fixed GF(2) transform at elaboration, not with runtime arithmetic.
@@ -27,10 +28,13 @@ object FourPhaseCrc32 {
       .foldLeft(BigInt(0))((mask, j) => mask.setBit(j))
   }
 
+  /** Fixed GF(2) word transform; callers own retention and commit. */
+  def compute(crc: UInt, word: UInt): UInt = {
+    val folded = crc ^ word
+    Cat(rows.reverse.map(mask => (folded & mask.U(32.W)).xorR))
+  }
+
   def stage(domain: ResetDomain) = new FourPhaseStage(new Crc32Command, UInt(32.W),
-    (x: Crc32Command) => {
-      val folded = x.crc ^ x.word
-      val computed = Cat(rows.reverse.map(mask => (folded & mask.U(32.W)).xorR))
-      Mux(x.pending, computed, x.crc)
-    }, OwnerTiming.base, domain)
+    (x: Crc32Command) => Mux(x.pending, compute(x.crc,x.word), x.crc),
+    OwnerTiming.base, domain)
 }

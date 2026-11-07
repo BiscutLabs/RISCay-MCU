@@ -7,73 +7,81 @@ import chiselasync.bundled._
 import chiselasync.core.{AsyncModule, ResetDomain}
 import chiselasync.metadata.{BundledTiming, ModelTime}
 import chiselasync.protocol.FourPhase
-import chiselasync.primitives.{AsymmetricCElement, ControlGate, GateOperation}
+import chiselasync.primitives.{ControlGate, EventRegister, GateOperation, PassiveDataAllowance}
 import riscay._
 import riscay.soc._
 
-/** POR-owned native state token. Application reset is a serialized command;
-  * accepted SRAM completion is accounted independently of application lifetime.
-  * Peripheral commits route through explicit endpoint boundaries.
+/** One closed architectural bank and one result bank. The command is borrowed
+  * until capture, and no new capture may occur before the reply fully returns.
+  * Application reset is a command; accepted loader effects have POR lifetime.
   */
 class FourPhaseControl(p: SocParameters, domain: ResetDomain,
     owners: OwnerTiming = OwnerTiming()) extends AsyncModule(domain) {
   val command = fourPhaseInput("command", new ControlCommand)
   val reply = fourPhaseOutput("reply", new ControlReply(p.config.programBytes))
-  private val timing = OwnerTiming.passive(owners.controlOwner)
-  private val cell = ModelTime.ps(1000)
-  private val state = asyncChild("state")(d => new FourPhaseFifo(new ControlToken(p.config.programBytes), 1,
-    timing, Seq(ControlToken.initial(p.config.programBytes)), cell, d))
-  private val join = asyncChild("join")(d => new FourPhaseJoin(new ControlToken(p.config.programBytes), new ControlCommand, timing, cell, d))
-  private val update = asyncChild("update")(d => new FourPhaseStage(new Joined(new ControlToken(p.config.programBytes), new ControlCommand),
-    new ControlReply(p.config.programBytes), (x: Joined[ControlToken, ControlCommand]) => transition(x.left.state, x.right, x.left.pendingCrc), OwnerTiming.passive(owners.controlUpdate), d))
-  // Compute only the candidate CRC here; update retains the entire context.
-  // Every feedback starts from architectural crc, even while loaderPending
-  // survives other commands. Only Stored commits the candidate to that state.
-  private val crc = asyncChild("crc")(FourPhaseCrc32.stage)
-  private val fork = asyncChild("fork")(d => new FourPhaseFork(new ControlReply(p.config.programBytes), 2, cell, d))
-  // The unbuffered fork contract describes its complete payload on both branches.
-  // Retain the fields that the state feedback branch does not consume.
-  dontTouch(fork.out(0))
-  FourPhase.connect(join.left, state.out); FourPhase.connect(join.right, command)
-  update.in.req := join.out.req; update.in.bits := join.out.bits
-  // Keep the source held beyond update's distributed latch closure. Both ACK
-  // polarities traverse this native guard; the source cannot start its return
-  // before the guarded rise or reuse its payload before the guarded fall.
-  private val captureAck = Module(new ControlGate(1, GateOperation.Buffer, owners.controlAck))
-  captureAck.reset := reset; captureAck.a := update.in.ack.asUInt; captureAck.b := 0.U
-  join.out.ack := captureAck.q.asBool
-  contract.primitive("acknowledge_guard", captureAck, Map("WIDTH" -> BigInt(1), "OP" -> BigInt(0),
-    "DELAY_FS" -> BigInt(owners.controlAck.fs), "RESET_VALUE" -> BigInt(0)),
-    contract.endpoint("capture_ack_reset", reset),
-    "native both-edge source-retention guard after update capture; full physical envelope remains unqualified")
-  private val captureAckSource = WireDefault(update.in.ack)
-  private val captureAckReturn = WireDefault(join.out.ack)
-  dontTouch(captureAckSource); dontTouch(captureAckReturn)
-  contract.endpoint("capture_ack_source", captureAckSource)
-  contract.endpoint("capture_ack_return", captureAckReturn)
-  FourPhase.connect(fork.in, update.out)
-  private def rendezvous(id: String, a: Bool, b: Bool): Bool = {
-    val gate = Module(new AsymmetricCElement(2, 0, 0, cell))
-    gate.reset := reset; gate.common := Cat(a,b); gate.rising := 1.U; gate.falling := 0.U
-    contract.primitive(id, gate, Map("COMMON" -> BigInt(2), "RISING" -> BigInt(0), "FALLING" -> BigInt(0),
-      "DELAY_FS" -> BigInt(cell.fs), "RESET_VALUE" -> BigInt(0), "COMMON_INVERT" -> BigInt(0),
-      "RISING_INVERT" -> BigInt(0), "FALLING_INVERT" -> BigInt(0)), contract.endpoint(id+"_reset", reset),
-      "retained CRC/context rendezvous with complete native return")
-    gate.q
+  private val timing=OwnerTiming.passive(owners.controlTransaction)
+  private val cell=ModelTime.ps(1000)
+  private val resetRef=contract.endpoint("reset",reset)
+  private val transaction=asyncChild("transaction")(d =>
+    new FourPhaseStage(UInt(3.W),UInt(3.W),(kind: UInt) => kind,timing,d))
+  transaction.in.req:=command.req; transaction.in.bits:=command.bits.kind
+  transaction.out.ack:=reply.ack
+  private class Effects extends Bundle {
+    val programWrite=Bool();val periodUpdate=Bool();val period=UInt(32.W)
+    val hostWake=Bool();val memory=new MemoryResponse
   }
-  crc.in.bits.crc := fork.out(0).bits.state.crc
-  crc.in.bits.word := fork.out(0).bits.state.loaderWord
-  crc.in.bits.pending := fork.out(0).bits.state.loaderPending
-  crc.in.req := fork.out(0).req
-  state.in.bits.state := fork.out(0).bits.state; state.in.bits.pendingCrc := crc.out.bits
-  state.in.req := rendezvous("crc_context_request", fork.out(0).req, crc.out.req)
-  crc.out.ack := state.in.ack
-  // Rising ACK proves complete state capture. Falling ACK also waits for CRC
-  // ingress return, so a new context cannot hide its required request-low phase.
-  fork.out(0).ack := rendezvous("crc_context_return", state.in.ack, crc.in.ack)
-  FourPhase.connect(reply, fork.out(1))
+  private val stateType=new ControlState(p.config.programBytes)
+  private val initialState=ControlState.initial(p.config.programBytes).litValue
+  private val state=Module(new EventRegister(stateType.getWidth,cell,initialState))
+  private val effectsType=new Effects
+  private val effects=Module(new EventRegister(effectsType.getWidth,cell))
+  private val capture=transaction.in.ack
+  for((id,bank,initial) <- Seq(("state_bank",state,initialState),("effect_bank",effects,BigInt(0)))) {
+    bank.reset:=reset;bank.trigger:=capture
+    contract.primitive(id,bank,Map("WIDTH"->BigInt(bank.q.getWidth),"DELAY_FS"->BigInt(cell.fs),
+      "RESET_VALUE"->initial),resetRef,"closed POR bank; one capture per complete command/reply return")
+  }
+  private val stateView=state.q.asTypeOf(stateType)
+  private val next=transition(stateView,command.bits)
+  private val nextEffects=Wire(new Effects)
+  nextEffects.programWrite:=next.programWrite; nextEffects.periodUpdate:=next.periodUpdate
+  nextEffects.period:=next.period;nextEffects.hostWake:=next.hostWake;nextEffects.memory:=next.memory
+  private val operands=WireDefault(UInt((stateType.getWidth+command.bits.getWidth).W),
+    Cat(state.q,command.bits.asUInt))
+  private def bankData(id: String,value: UInt): UInt = {
+    val data=PassiveDataAllowance(this,id,value,timing.dataDelay.model,resetRef)
+    contract.endpoint(id+"_source",operands);contract.endpoint(id+"_data",data)
+    contract.dataPathTiming(id+"_path",id+"_source",id+"_data",timing,
+      "full state/held-command transform, including committed Stored CRC",delayCell=id)
+    data
+  }
+  state.d:=bankData("state_data_delay",next.state.asUInt)
+  effects.d:=bankData("effect_data_delay",nextEffects.asUInt)
+  private def guarded(id: String,input: Bool,delay: ModelTime): Bool = {
+    val g=Module(new ControlGate(1,GateOperation.Buffer,delay))
+    g.reset:=reset;g.a:=input.asUInt;g.b:=0.U
+    contract.primitive(id,g,Map("WIDTH"->BigInt(1),"OP"->BigInt(0),"DELAY_FS"->BigInt(delay.fs),
+      "RESET_VALUE"->BigInt(0)),resetRef,"relative closed-bank capture/source-retention ordering; both edges")
+    g.q.asBool
+  }
+  command.ack:=guarded("acknowledge_guard",capture,owners.controlAck)
+  reply.req:=guarded("output_guard",transaction.out.req,owners.controlAck)
+  reply.bits.kind:=transaction.out.bits;reply.bits.state:=stateView
+  private val result=effects.q.asTypeOf(effectsType)
+  reply.bits.programWrite:=result.programWrite;reply.bits.periodUpdate:=result.periodUpdate
+  reply.bits.period:=result.period;reply.bits.hostWake:=result.hostWake;reply.bits.memory:=result.memory
+  Seq("capture_event"->capture,"held_state"->state.q,"held_effects"->effects.q,
+    "capture_ack_source"->capture,"capture_ack_return"->command.ack,
+    "command_offer"->command.req,"reply_offer"->reply.req).foreach { case(id,value) =>
+      dontTouch(value);contract.endpoint(id,value)
+    }
+  for((id,held) <- Seq(("state","held_state"),("effect","held_effects"))) {
+    contract.setupHold(id+"_aperture","command_offer",id+"_data_delay_source",id+"_data_delay_data",
+      "capture_event",held,ModelTime.ps(100),ModelTime.ps(100))
+  }
+  contract.capacity(1)
 
-  private def transition(s: ControlState, c: ControlCommand, pendingCrc: UInt): ControlReply = {
+  private def transition(s: ControlState, c: ControlCommand): ControlReply = {
     val r = WireDefault(0.U.asTypeOf(new ControlReply(p.config.programBytes))); r.kind := c.kind; r.state := s
     val n = r.state
     val config = p.config
@@ -90,7 +98,7 @@ class FourPhaseControl(p: SocParameters, domain: ResetDomain,
     switch(c.kind) {
       is(ControlKind.Stored.U) {
         when(s.loaderPending) {
-          n.received := s.received + 4.U; n.crc := pendingCrc; n.loaderPending := false.B
+          n.received := s.received + 4.U; n.crc := FourPhaseCrc32.compute(s.crc,s.loaderWord); n.loaderPending := false.B
         }
       }
       is(ControlKind.ResetApplication.U) {

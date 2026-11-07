@@ -16,7 +16,10 @@ The user has scoped the current native-area redesign **BD first**. BD's
 [SRAM word loop](native-sram-word-loop.md) reuses one byte crossing while Click
 retains four lanes. BD also replaces Telemetry/Housekeeping reservation round
 trips with a [payload-free receiving-edge slot](publication-slot.md); Click
-keeps its native reservation owners. The external ABI and reset/retention behavior remain equal;
+keeps its native reservation owners. BD Control now uses a
+[closed architectural/effects bank](native-control-bank.md) and commits CRC on
+Stored; Click retains its state FIFO, Join and speculative CRC path.
+The external ABI and reset/retention behavior remain equal;
 Click remains an unchanged functional regression reference during this pass.
 
 The user-approved [clocked comparison MCU](clocked-design.md) is a third,
@@ -44,8 +47,8 @@ ABI-preserving ownership reductions before surviving-guard tuning: one SRAM
 word loop per memory, removal of Telemetry/Housekeeping reservation round trips,
 and compact Control and native bank-result storage. It preserves the existing
 receiving-edge arbitration and memory return/eligibility lifetimes. Its area
-budgets are planning gates; [batches 1 and 2](area-ledger.md) now measure
-1.591292 mm² flat BD logic. Control and native bank-result reductions remain
+budgets are planning gates; [batches 1–3](area-ledger.md) now measure
+1.531099 mm² flat BD logic. Native bank-result reductions remain
 next in this BD-only pass. The host ABI decision still precedes frame/credit restructuring.
 Record mapped/repaired logic, clock sinks and wake activity/duration in the
 [area ledger](area-ledger.md), against the immediate parent and original baseline.

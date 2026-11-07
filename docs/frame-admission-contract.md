@@ -28,7 +28,9 @@ loader classification at D and same-edge admission busy history.
 
 The periodic sender now stores only a 108-bit `ControlCommandHeader`. A separate
 POR-owned two-bit retiring-bank identity selects the immutable native frame for
-Control's existing native Join input. A one-bit pending flag owns that bank.
+the native Control input. A one-bit pending flag owns that bank. Click retains
+its Join capture; BD's [architectural-bank rewrite](native-control-bank.md)
+captures the borrowed frame's transition directly into its closed banks.
 The native `ControlCommand` schema remains 379 bits; neither native payload
 storage nor a new acknowledgment synchronizer is added. Non-Host commands mask
 the borrowed frame to zero. Never use the live descriptor selector for this
@@ -63,10 +65,10 @@ D-to-R: native acceptance can be stalled. Actual bank return, the unchanged
 ready-by-third-next-A deadline and reuse at O remain checked independently; the clocked sender is still a temporary boundary.
 
 The new physical path is native bank Q through the retiring-selector mux and
-Host mask to actual Control Join capture. D gives the existing sender's full
+Host mask to actual Control capture (BD state/effect banks; Click Join). D gives the existing sender's full
 settling cycle before its native request. This is a digital ordering argument,
 not a physical timing waiver. Qualify selector/mask maximum delay, bank-Q setup,
-source hold through the latest Join capture and earliest R/mask removal at all
+source hold through the latest relevant capture and earliest R/mask removal at all
 corners with routed RC. Prior clocked-snapshot or Control-local timing results
 do not qualify this new input path. BD also requires its native ACK qualification
 chain to settle low before bank/kind can change after synchronized sender idle.

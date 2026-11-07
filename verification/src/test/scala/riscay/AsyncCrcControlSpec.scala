@@ -8,7 +8,8 @@ import java.util.zip.CRC32
 import org.scalatest.funsuite.AnyFunSuite
 import riscay.soc._
 
-/** Composed Control feedback, with independent native stalls and real captures.
+/** Independent Control stalls and real captures: Click's composed feedback and
+  * BD's closed architectural/effect banks with CRC committed only on Stored.
   * Guard-output holds extend legal protocol latency; no payload/capture is forced.
   * These digital tests do not qualify physical capture or C-element envelopes.
   */
@@ -188,7 +189,9 @@ class AsyncCrcControlSpec extends AnyFunSuite {
     #2;
   """
 
-  for(click <- Seq(false,true); scenario <- Seq("offer","accept","return","reply","por")) {
+  // Click retains the CRC/context rendezvous. Its existing fixtures and both
+  // phase polarities remain unchanged. BD's one-bank replacements follow below.
+  for(click <- Seq(true); scenario <- Seq("offer","accept","return","reply","por")) {
     val variant=if(click) "click" else "bd"
     test(s"$variant CRC retained context: independent $scenario stall, native captures and exact publication") {
       for(phase <- (if(click) Seq(0,1) else Seq(1))) {
@@ -284,6 +287,250 @@ class AsyncCrcControlSpec extends AnyFunSuite {
             disable boundary_observers;
           end"""
         }
+      }
+    }
+  }
+
+  private case class BdBindings(stateCapture: String, stateD: String, stateQ: String,
+    stateWidth: Int, initialState: BigInt, effectCapture: String, effectD: String,
+    effectQ: String, effectWidth: Int, kindCapture: String, kindQ: String,
+    requestGuard: String, acknowledgeGuard: String, outputGuard: String,
+    stateFields: Map[String,(Int,Int)]) {
+    def field(name: String, wire: String): String = {
+      val (lo,width)=stateFields(name)
+      if(width==1) s"$wire[$lo]" else s"$wire[${lo+width-1}:$lo]"
+    }
+  }
+  private def bdBindings(directory: Path): BdBindings = {
+    val n=ujson.read(Files.readString(directory.resolve("export/contract.json")))("manifest")("design")
+    val transaction=child(n,"transaction")
+    val state=primitive(n,"state_bank","ChiselAsyncEventRegister_v1")
+    val effect=primitive(n,"effect_bank","ChiselAsyncEventRegister_v1")
+    val kind=primitive(transaction,"payload","ChiselAsyncClosingLatch_v1",3)
+    val reply=n("channels").arr.filter(_("id").str=="reply")
+    require(reply.size==1,"CRC_BANK_REPLY_CHANNEL")
+    val fields=reply.head("layout").arr.filter(_("field").str.startsWith("bits.state."))
+      .sortBy(_("lsb").num.toInt)
+    require(fields.nonEmpty,"CRC_BANK_STATE_LAYOUT")
+    val first=fields.head("lsb").num.toInt
+    var width=0
+    val layout=fields.map { f =>
+      val lo=f("lsb").num.toInt-first;val bits=f("width").num.toInt
+      require(lo==width && bits>0 && !f("signed").bool,"CRC_BANK_STATE_CONTIGUOUS")
+      width+=bits
+      f("field").str.stripPrefix("bits.state.") -> (lo,bits)
+    }.toMap
+    require(width==state("parameters")("WIDTH").str.toInt,"CRC_BANK_STATE_WIDTH")
+    require(layout("crc")._2==32 && layout("loaderWord")._2==32 &&
+      layout("loaderPending")._2==1 && layout("received")._2==BigInt(config.programBytes).bitLength,
+      "CRC_BANK_ACCOUNTING_WIDTHS")
+    def guard(owner: ujson.Value,id: String): String = {
+      val g=primitive(owner,id,"ChiselAsyncControlGate_v1",1)
+      require(g("parameters")("OP").str=="0",s"CRC_BANK_GUARD:$id")
+      path(g("rtl_path").str)+".q"
+    }
+    val sp=path(state("rtl_path").str);val ep=path(effect("rtl_path").str)
+    val kp=path(kind("rtl_path").str)
+    BdBindings(sp+".trigger",sp+".d",sp+".q",width,BigInt(state("parameters")("RESET_VALUE").str),
+      ep+".trigger",ep+".d",ep+".q",effect("parameters")("WIDTH").str.toInt,kp+".closed",kp+".q",
+      guard(transaction,"request_delay"),guard(n,"acknowledge_guard"),guard(n,"output_guard"),layout)
+  }
+  private def bdFields(b: BdBindings,wire: String,stored: Boolean,ended: Boolean=false): String = {
+    val fields=Map("received" -> (if(stored) 4L else 0L),
+      "crc" -> (if(stored) pendingCrcValue else 0xffffffffL),
+      "loaderPending" -> (if(stored) 0L else 1L),"loaderWord" -> word,
+      "imageLength" -> 4L,"imageId" -> 19L,"expectedCrc" -> checksum,
+      "mode" -> (if(ended) 2L else 1L),"programmed" -> (if(ended) 1L else 0L))
+    fields.toSeq.sortBy(_._1).map { case(k,v) =>
+      s"if(${b.field(k,wire)} !== ${hex(v)}) $$fatal(1,\"CRC_BANK_ACCOUNTING:$k\");"
+    }.mkString("\n")
+  }
+  private def bdObservers(b: BdBindings): String = s"""
+    fork : bank_observers
+      begin : state_capture_watch forever begin
+        @(posedge ${b.stateCapture}); #1;
+        if(!reset && tracking) begin
+          state_captures=state_captures+1;
+          if(accounting_checks) begin
+            case(state_captures)
+              1: begin ${bdFields(b,b.stateD,stored=false)} end
+              2,3: begin ${bdFields(b,b.stateD,stored=true)} end
+              4: begin ${bdFields(b,b.stateD,stored=true,ended=true)} end
+              default: $$fatal(1,"CRC_BANK_EXTRA_CAPTURE");
+            endcase
+          end
+          captured_state=${b.stateD}; #20000000;
+          if(!reset && tracking && ${b.stateQ} !== captured_state)
+            $$fatal(1,"CRC_BANK_CAPTURE_Q");
+        end
+      end end
+      begin : effect_capture_watch forever begin
+        @(posedge ${b.effectCapture}); #1;
+        if(!reset && tracking) begin
+          effect_captures=effect_captures+1;captured_effects=${b.effectD}; #20000000;
+          if(!reset && tracking && ${b.effectQ} !== captured_effects)
+            $$fatal(1,"CRC_BANK_EFFECT_CAPTURE_Q");
+        end
+      end end
+      begin : kind_capture_watch forever begin
+        @(posedge ${b.kindCapture}); #1;
+        if(!reset && tracking) kind_captures=kind_captures+1;
+      end end
+      begin : retained_state_watch forever begin
+        @(${b.stateQ} or ${b.effectQ} or ${b.kindQ}); #1;
+        if(!reset && hold_banks && (${b.stateQ} !== held_state ||
+          ${b.effectQ} !== held_effects || ${b.kindQ} !== held_kind))
+          $$fatal(1,"CRC_BANK_CONTEXT_CHANGED_WHILE_HELD");
+      end end
+    join_none
+    #2;
+  """
+  private def bdDeclarations(b: BdBindings): String = s"""
+    integer state_captures=0,effect_captures=0,kind_captures=0,before_reset_replies=0;
+    reg tracking=0,accounting_checks=0,hold_banks=0;
+    reg [${b.stateWidth-1}:0] captured_state,held_state;
+    reg [${b.effectWidth-1}:0] captured_effects,held_effects;
+    reg [2:0] held_kind;
+  """
+  private def bdBegin: String = normal(false,1,0,frame(1,4,0,checksum,0x10000L,0,0,0,19),
+    "if(reply_bits_state_mode !== 1 || reply_bits_state_loaderPending || reply_bits_state_received != 0) $fatal(1,\"CRC_CONTROL_BEGIN\");")
+
+  // Deleted BD rendezvous forces are replaced by stalls at the surviving
+  // request, source-return and result-publication boundaries. The oracle still
+  // inspects actual state/effect captures; no payload or capture pin is forced.
+  for(scenario <- Seq("offer","accept","return","reply")) {
+    test(s"bd committed CRC bank: independent $scenario stall, retained frame and exact accounting") {
+      val directory=fresh(s"bd-bank-$scenario")
+      AsyncTest.run(top(false),Seq(1L,2L,19L),directory) { _ =>
+        val b=bdBindings(directory)
+        val forceBefore=scenario match {
+          case "offer" => s"force ${b.outputGuard}=1'b0;"
+          case "accept" => s"force ${b.requestGuard}=1'b0;"
+          case _ => ""
+        }
+        val initialStall=scenario match {
+          case "accept" => s"""
+            #300000000;
+            if(state_captures || effect_captures || kind_captures || command_ack || reply_req)
+              $$fatal(1,"CRC_BANK_ACCEPT_STALL");
+            release ${b.requestGuard};
+          """
+          case "offer" => s"""
+            wait(state_captures==1 && effect_captures==1); #20000000;
+            ${bdFields(b,b.stateQ,stored=false)}
+            #300000000;
+            if(reply_req || state_captures!=1 || effect_captures!=1 || kind_captures!=1)
+              $$fatal(1,"CRC_BANK_OFFER_STALL");
+            release ${b.outputGuard};
+          """
+          case "return" => s"""
+            wait(command_ack); #2; force ${b.acknowledgeGuard}=1'b1;
+            wait(!command_req); #2;
+          """
+          case _ => ""
+        }
+        val returnStall=if(scenario=="return") s"""
+          reply_ack=1;wait(!reply_req);#300000000;
+          if(!command_ack || state_captures!=1 || effect_captures!=1 || kind_captures!=1)
+            $$fatal(1,"CRC_BANK_RETURN_STALL");
+          reply_ack=0;#300000000;
+          if(!command_ack || state_captures!=1 || effect_captures!=1 || kind_captures!=1)
+            $$fatal(1,"CRC_BANK_SOURCE_RETURN_STALL");
+          hold_banks=0;release ${b.acknowledgeGuard};
+        """ else s"""
+          reply_ack=1;wait(!reply_req);#37000000;
+          if(state_captures!=1 || effect_captures!=1 || kind_captures!=1)
+            $$fatal(1,"CRC_BANK_REUSED_BEFORE_REPLY_RETURN");
+          hold_banks=0;reply_ack=0;#2;
+        """
+        s"""begin : committed_crc_test
+          ${bdDeclarations(b)}
+          ${bdObservers(b)}
+          $bdBegin
+          tracking=1;accounting_checks=1;$forceBefore
+          fork
+            begin : source_stream
+              ${source(false,1,0,frame(2,0,word))}
+              // The accepted WORD frame may now be overwritten. Stored must
+              // use the retained loaderWord, never these later frame bytes.
+              command_bits_frame_bytes_5=8'h5a;#2;
+              ${source(false,1,1,frame(2,0,0x76543210L))}
+            end
+            begin : stalled_consumer
+              $initialStall
+              wait(reply_req);#20000000;
+              ${stateChecks(stored=false)}
+              if(reply_bits_kind!==0 || !reply_bits_programWrite)
+                $$fatal(1,"CRC_CONTROL_WORD_REPLY");
+              held_state=${b.stateQ};held_effects=${b.effectQ};held_kind=${b.kindQ};hold_banks=1;
+              #300000000;
+              if(state_captures!=1 || effect_captures!=1 || kind_captures!=1)
+                $$fatal(1,"CRC_BANK_STALLED_EXACTLY_ONCE");
+              $returnStall
+              wait(reply_req);#20000000;
+              ${stateChecks(stored=true)}
+              if(reply_bits_kind!==1 || reply_bits_programWrite)
+                $$fatal(1,"CRC_CONTROL_STORED_REPLY");
+              ${finishReply(false,1)}
+            end
+          join
+          #1000000000;
+          if(state_captures!=2 || effect_captures!=2 || kind_captures!=2)
+            $$fatal(1,"CRC_BANK_CAPTURE_EXACTLY_ONCE");
+          ${normal(false,1,1,Seq.empty,stateChecks(stored=true))}
+          ${normal(false,1,0,frame(3),stateChecks(stored=true,ended=true))}
+          if(state_captures!=4 || effect_captures!=4 || kind_captures!=4 || delivered_reply!=5)
+            $$fatal(1,"CRC_BANK_REPLY_EXACTLY_ONCE");
+          tracking=0;disable bank_observers;
+        end"""
+      }
+    }
+  }
+
+  for(abort <- Seq("before_capture","kind_capture","bank_capture","reply","return")) {
+    test(s"bd committed CRC bank: POR at $abort aborts the transaction and restores cold accounting") {
+      val directory=fresh(s"bd-bank-por-$abort")
+      AsyncTest.run(top(false),Seq(1L,2L,19L),directory) { _ =>
+        val b=bdBindings(directory)
+        val before=if(abort=="before_capture") s"force ${b.requestGuard}=1'b0;" else ""
+        val point=abort match {
+          case "before_capture" => "wait(command_req);#300000000;if(state_captures || effect_captures) $fatal(1,\"CRC_BANK_POR_PRECAPTURE\");"
+          case "kind_capture" => s"@(posedge ${b.kindCapture});#1;"
+          case "bank_capture" => s"@(posedge ${b.stateCapture});#1;"
+          case "reply" => "wait(reply_req);#20000000;"
+          case "return" => s"""
+            wait(command_ack);#2;force ${b.acknowledgeGuard}=1'b1;
+            wait(!command_req);wait(reply_req);#2;reply_ack=1;wait(!reply_req);#2;
+          """
+        }
+        val release=abort match {
+          case "before_capture" => s"release ${b.requestGuard};"
+          case "return" => s"release ${b.acknowledgeGuard};"
+          case _ => ""
+        }
+        s"""begin : bank_por_test
+          ${bdDeclarations(b)}
+          ${bdObservers(b)}
+          $bdBegin
+          tracking=1;$before
+          fork : abortable_source
+            begin ${source(false,1,0,frame(2,0,word))} end
+          join_none
+          #2;$point
+          before_reset_replies=delivered_reply;tracking=0;hold_banks=0;
+          reset=1;disable abortable_source;command_req=0;reply_ack=0;
+          #2;$release
+          #1000000000;reset=0;#1000000000;
+          if(command_ack || reply_req || ${b.stateQ}!==${b.stateWidth}'h${b.initialState.toString(16)} ||
+             ${b.effectQ}!==0 || ${b.kindQ}!==0)
+            $$fatal(1,"CRC_CONTROL_POR_STALE");
+          ${normal(false,1,1,Seq.empty,stateChecks(stored=false,cold=true))}
+          ${normal(false,1,0,frame(3),stateChecks(stored=false,cold=true)+
+            "if(reply_bits_state_lastError !== 6) $fatal(1,\"CRC_CONTROL_POR_ACCOUNTING\");")}
+          if(delivered_reply!=before_reset_replies+2)
+            $$fatal(1,"CRC_CONTROL_POR_EXACTLY_ONCE");
+          disable bank_observers;
+        end"""
       }
     }
   }

@@ -18,6 +18,7 @@ object OwnerTiming {
   val execute: BundledTiming = BundledTiming.simulation(dataMax=RegisterTiming.executeData)
     .copy(matchedDelay=ModelTime.ps(80000),dataAllowance=DataAllowance.Passive)
   val elapsedStep: BundledTiming = OwnerTiming.base.copy(matchedDelay=ModelTime.ps(100000))
+  val controlTransaction: BundledTiming = OwnerTiming.base.copy(matchedDelay=ModelTime.ps(80000))
   val controlAck: ModelTime = ModelTime.ps(32000)
   def check(t: BundledTiming): Unit = require(
     (Seq(t.matchedDelay.fs,t.outputDelay.fs,t.dataDelay.max.fs,t.latchDelay.max.fs) ++
@@ -26,12 +27,11 @@ object OwnerTiming {
 }
 
 case class OwnerTiming(
-    controlOwner: BundledTiming = OwnerTiming.base,
-    controlUpdate: BundledTiming = OwnerTiming.base,
+    controlTransaction: BundledTiming = OwnerTiming.controlTransaction,
     elapsedOwner: BundledTiming = OwnerTiming.base,
     elapsedStep: BundledTiming = OwnerTiming.elapsedStep,
     controlAck: ModelTime = OwnerTiming.controlAck) {
-  Seq(controlOwner,controlUpdate,elapsedOwner,elapsedStep).foreach(OwnerTiming.check)
+  Seq(controlTransaction,elapsedOwner,elapsedStep).foreach(OwnerTiming.check)
   require(controlAck.fs > 0 && controlAck.fs <= ApplicationResetContract.digitalDelayLimitFs,
     "control ACK guard exceeds supported digital timing-policy limit")
 }

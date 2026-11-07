@@ -90,6 +90,9 @@ class AsyncControlSpec extends AnyFunSuite {
         "imageId"->19L,"expectedCrc"->oracle.getValue,"crc"->0xffffffffL))) ++
       words.zipWithIndex.flatMap { case(w,i) => Seq(
         Step(0,frame(2,i*4L,w),changes=Map("loaderPending"->1L,"loaderWord"->w),write=1),
+        Step(0,Seq(0,i&255,0,4),changes=Map("selector"->((i.toLong<<16)|4L))),
+        Step(0,frame(7,1),changes=Map("lastError"->4L),period=1),
+        Step(0,frame(8),changes=Map("lastError"->0L),wake=1),
         Step(1,changes=Map("loaderPending"->0L,"received"->((i+1)*4L),"crc"->partial(i))),
         Step(2), // Queued while Stored is executing: accounting precedes recovery.
         Step(1)) // Duplicate completion is inert.
@@ -163,10 +166,26 @@ class AsyncControlSpec extends AnyFunSuite {
       require(actual.map(_._3).sum==width,s"CAPACITY_WIDTH:$id")
     }
     check(root,"reply",reply,replyBits)
-    check(child(root,"update"),"out",reply,replyBits)
-    check(child(root,"state"),"out",token,tokenBits)
-    val left=child(child(root,"join"),if(click) "left_storage" else "left")
-    check(left,"in",token,tokenBits); check(left,"out",token,tokenBits)
+    if(click) {
+      check(child(root,"update"),"out",reply,replyBits)
+      check(child(root,"state"),"out",token,tokenBits)
+      val left=child(child(root,"join"),"left_storage")
+      check(left,"in",token,tokenBits); check(left,"out",token,tokenBits)
+    } else {
+      def bank(id: String,width: Int,initial: BigInt): Unit = {
+        val records=root("primitives").arr.filter(_("id").str==id)
+        require(records.size==1,s"CAPACITY_BANK:$id")
+        val record=records.head
+        require(record("model").str=="ChiselAsyncEventRegister_v1",s"CAPACITY_CLOSED_BANK:$id")
+        require(record("parameters")("WIDTH").str.toInt==width,s"CAPACITY_BANK_WIDTH:$id")
+        require(BigInt(record("parameters")("RESET_VALUE").str)==initial,s"CAPACITY_BANK_INITIAL:$id")
+      }
+      bank("state_bank",stateBits,BigInt("ffffffff",16)<<107)
+      bank("effect_bank",68,BigInt(0))
+      val transaction=child(root,"transaction")
+      require(transaction("channels").arr.filter(_("id").str=="out").head("layout").arr
+        .map(_("width").num.toInt).sum==3,"CAPACITY_KIND_STORAGE")
+    }
   }
   private def source(click: Boolean, steps: Seq[Step]): String = steps.zipWithIndex.map { case(s,i) =>
     val phase=if(click) (i+1)%2 else 1
@@ -274,7 +293,7 @@ class AsyncControlSpec extends AnyFunSuite {
         if(delivered_reply != ${steps.size}) $$fatal(1,"CRC_EXACTLY_ONCE");
       """ }
     }
-    test(s"$name native CRC: POR after actual capture before publication aborts pending accounting") {
+    if(click) test(s"$name native CRC: POR after actual capture before publication aborts pending accounting") {
       val before=Seq(Step(0,frame(1,4,0,0,0x10000L,0,0,0,1),changes=Map(
         "mode"->1L,"imageLength"->4L,"imageId"->1L)))
       val after=Seq(Step(1),Step(0,frame(3),changes=Map("lastError"->6L)))
@@ -304,6 +323,36 @@ class AsyncControlSpec extends AnyFunSuite {
         fork begin ${source(click,after)} end begin ${sink(click,after)} end join
         #1000000000;
       """ }
+    }
+    if(!click) for(stored <- Seq(false,true)) {
+      test(s"bd native Control: POR at actual ${if(stored) "Stored CRC" else "host-word"} bank capture aborts publication") {
+        val begin=Step(0,frame(1,4,0,0,0x10000L,0,0,0,1),changes=Map(
+          "mode"->1L,"imageLength"->4L,"imageId"->1L))
+        val word=Step(0,frame(2,0,0xabcdef01L),changes=Map("loaderPending"->1L,"loaderWord"->0xabcdef01L),write=1)
+        val before=if(stored) Seq(begin,word) else Seq(begin)
+        val after=Seq(Step(1),Step(0,frame(3),changes=Map("lastError"->6L)))
+        val directory=fresh("bd-bank-por-"+stored)
+        AsyncTest.run(top(false),Seq(1L,2L,19L),directory) { _ =>
+          val root=ujson.read(Files.readString(directory.resolve("export/contract.json")))("manifest")("design")
+          val bank=root("primitives").arr.filter(_("id").str=="state_bank")
+          require(bank.size==1 && bank.head("model").str=="ChiselAsyncEventRegister_v1","CONTROL_POR_BANK_BINDING")
+          val capture="dut."+bank.head("rtl_path").str.split('.').drop(1).mkString(".")+".trigger"
+          s"""
+          fork begin ${source(false,before)} end begin ${sink(false,before)} end join
+          #1000000000;
+          command_bits_kind=${if(stored) 1 else 0};
+          command_bits_frame_length=9;command_bits_frame_bytes_0=2;
+          command_bits_frame_bytes_1=0;command_bits_frame_bytes_2=0;command_bits_frame_bytes_3=0;command_bits_frame_bytes_4=0;
+          command_bits_frame_bytes_5=1;command_bits_frame_bytes_6=239;command_bits_frame_bytes_7=205;command_bits_frame_bytes_8=171;
+          #2;command_req=1;@(posedge $capture);#1;
+          if(reply_req) $$fatal(1,"CONTROL_ALREADY_PUBLISHED");
+          reset=1;command_req=0;reply_ack=0;
+          #1000000000;reset=0;#1000000000;
+          fork begin ${source(false,after)} end begin ${sink(false,after)} end join
+          #1000000000;
+          """
+        }
+      }
     }
     test(s"$name native MMIO/loader: POR cancels a stalled reply and reinstalls cold state") {
       val steps=Seq(Step(0,Seq(0,1,0,7),changes=Map("selector"->0x010007L)))

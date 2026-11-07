@@ -11,6 +11,7 @@ from repair_gf180_design import (graph_proof, validate_receipt, split_output_fee
     buffer_native_resets, buffer_sram_clocks, validate_sram_clock_drivers, prune_added_orphan_ties, EVIDENCE, sha)
 from repair_gf180_design import buffer_native_outputs, validate_native_output_drivers, buffer_native_inputs, validate_native_input_drivers, native_input_targets, flat
 from repair_gf180_design import buffer_ordinary_outputs, buffer_parent_outputs
+from repair_gf180_design import buffer_ordinary_data_outputs, validate_ordinary_data_outputs
 
 
 def cell(kind, **pins):
@@ -20,7 +21,7 @@ def cell(kind, **pins):
 
 BUF='pin(I){direction:input;} pin(Z){direction:output; function:"I";}'
 INV='pin(I){direction:input;} pin(Z){direction:output; function:"!I";}'
-LIB={SC+'buf_1':BUF,SC+'buf_2':BUF,SC+'buf_16':BUF,SC+'clkbuf_8':BUF,SC+'inv_1':INV,
+LIB={SC+'buf_1':BUF,SC+'buf_2':BUF,SC+'buf_4':BUF,SC+'buf_16':BUF,SC+'clkbuf_8':BUF,SC+'inv_1':INV,
      SC+'tieh':'pin(Z){direction:output; function:"1";}',
      SC+'tiel':'pin(ZN){direction:output; function:"0";}',
      SC+'dff_1':'ff(IQ,IQN){clocked_on:"I";} '+BUF,
@@ -603,6 +604,134 @@ class GlobalRepairTest(unittest.TestCase):
                     with self.assertRaisesRegex(ValueError,error):check(bad)
                 (p/'netlist-audit.json').write_text('stale')
                 with self.assertRaisesRegex(ValueError,'REPAIR_AUDIT_CHANGED'):check(receipt)
+
+
+def q_owner(n):
+    ports={'clk':dict(direction='input',bits=[1]),'data':dict(direction='input',bits=[2]),'aliasA':dict(direction='output',bits=[3]),'aliasB':dict(direction='output',bits=[3])}
+    cells={'state':cell('dff_1',CLK=1,D=2,Q=3)}
+    for i in range(n):
+        cells['load'+str(i)]=cell('inv_1',I=3,ZN=10+i);ports['out'+str(i)]=dict(direction='output',bits=[10+i])
+    return dict(ports=ports,cells=cells)
+
+def q_fixture(n=300):
+    body=q_owner(n);top=dict(ports={'clk':dict(direction='input',bits=[1]),'data':dict(direction='input',bits=[2])},cells={})
+    for j,name in enumerate(('a','b')):
+        connections={'clk':[1],'data':[2],'aliasA':[10+j],'aliasB':[10+j]}
+        for i in range(n):connections['out'+str(i)]=[100+j*n+i];top['ports'][name+str(i)]=dict(direction='output',bits=[100+j*n+i])
+        top['cells'][name]=dict(type='owner',connections=connections,port_directions={p:r['direction'] for p,r in body['ports'].items()})
+    return dict(modules={'top':top,'owner':body})
+
+class OrdinaryQRepairTest(unittest.TestCase):
+    def proof(self,a,b,protected={}):return graph_proof(a,b,'top',protected,[LIB]*5)
+    def test_large_tree_shared_instance_protection_and_aliases(self):
+        a=q_fixture();b=deepcopy(a);protected={'a/state':'a'}
+        result=buffer_ordinary_data_outputs(b,'top',protected)
+        self.proof(a,b,protected)
+        self.assertEqual({r['driver'] for r in result['inventory'] if r['disposition']=='distribution'},{'b/state/Q'})
+        self.assertEqual(b['modules']['top']['cells']['a']['type'],'owner')
+        self.assertEqual(b['modules']['owner'],a['modules']['owner'])
+        g=flat(b,'top');self.assertEqual(g['boundaries']['b/aliasA'],g['boundaries']['b/aliasB'])
+        validate_ordinary_data_outputs(b,'top',result['inventory'],result['buffers'])
+        frozen=deepcopy(b);again=buffer_ordinary_data_outputs(b,'top',protected)
+        self.assertEqual(again['buffers'],[]);self.assertEqual(b,frozen)
+    def test_clock_reset_branches_remain_direct_and_native_top_outputs_skip(self):
+        for pin in ('CLK','CLKN','RESET_B','SET_B'):
+            with self.subTest(pin=pin):
+                a=dict(modules={'top':q_owner(20)});a['modules']['top']['ports'].pop('aliasA');a['modules']['top']['ports'].pop('aliasB')
+                a['modules']['top']['cells']['branch']=cell('inv_1',I=3,ZN=100)
+                a['modules']['top']['cells']['target']=cell('dff_1',D=2,Q=101,**{pin:100})
+                before=deepcopy(a);res=buffer_ordinary_data_outputs(a,'top',{})
+                self.proof(before,a);validate_ordinary_data_outputs(a,'top',res['inventory'],res['buffers'])
+                self.assertEqual(a['modules']['top']['cells']['branch']['connections']['I'],[3])
+                self.assertEqual([r['pin'] for x in res['inventory'] for r in x['retained']],['branch/I'])
+        a=dict(modules={'top':q_owner(20)})
+        self.assertEqual(buffer_ordinary_data_outputs(a,'top',{})['buffers'],[])
+        a=q_fixture(20);a['modules']['owner']['cells']['protected']=cell('buf_1',I=3,Z=99)
+        self.assertEqual(buffer_ordinary_data_outputs(a,'top',{'a/protected':'a','b/protected':'b'})['buffers'],[])
+    def test_missing_or_rewired_original_sink_rejected(self):
+        a=q_fixture(20);b=deepcopy(a);buffer_ordinary_data_outputs(b,'top',{})
+        kind=b['modules']['top']['cells']['b']['type']
+        bad=deepcopy(b);bad['modules'][kind]['cells'].pop('load0')
+        with self.assertRaisesRegex(ValueError,'REPAIR_ORIGINAL_CELL_REMOVED'):self.proof(a,bad)
+        bad=deepcopy(b);bad['modules'][kind]['cells']['load0']['connections']['I']=['0']
+        with self.assertRaisesRegex(ValueError,'REPAIR_GRAPH_CHANGED'):self.proof(a,bad)
+    def test_control_ancestry_crosses_protected_combinational_keeper(self):
+        a=dict(modules={'top':q_owner(20)});body=a['modules']['top'];body['ports'].pop('aliasA');body['ports'].pop('aliasB')
+        body['cells']['ordinary']=cell('and2_1',A1=3,A2=2,Z=100)
+        body['cells']['nativeA']=cell('and2_1',A1=100,A2=102,Z=101)
+        body['cells']['nativeB']=cell('inv_1',I=101,ZN=102)
+        body['cells']['capture']=cell('dff_1',CLK=101,D=2,Q=103)
+        before=deepcopy(a);protected={'nativeA':'native','nativeB':'native','capture':'storage'}
+        result=buffer_ordinary_data_outputs(a,'top',protected)
+        self.proof(before,a,protected)
+        self.assertEqual(a['modules']['top']['cells']['ordinary']['connections']['A1'],[3])
+        self.assertEqual([r['pin'] for x in result['inventory'] for r in x['retained']],['ordinary/A1'])
+        self.assertEqual([r['reason'] for x in result['inventory'] for r in x['retained']],['clock-or-reset-cone'])
+        # A buffer on this branch preserves logic but must fail direct-control proof.
+        bad=deepcopy(a);cells=bad['modules']['top']['cells'];cells['illegal']=cell('buf_4',I=3,Z=999);cells['ordinary']['connections']['A1']=[999]
+        self.proof(before,bad,protected)
+        with self.assertRaisesRegex(ValueError,'REPAIR_Q_CONTROL_BRANCH_CHANGED'):validate_ordinary_data_outputs(bad,'top',result['inventory'],result['buffers'])
+    def test_logically_equivalent_root_bypass_rejected(self):
+        a=q_fixture(20);b=deepcopy(a);res=buffer_ordinary_data_outputs(b,'top',{})
+        kind=b['modules']['top']['cells']['b']['type'];c=b['modules'][kind]['cells']
+        root=next(r['roots'][0].split('/')[-1] for r in res['inventory'] if r['driver']=='b/state/Q')
+        c['load0']['connections']['I']=c[root]['connections']['I'][:]
+        self.proof(a,b)
+        with self.assertRaisesRegex(ValueError,'REPAIR_Q_CONTROL_BRANCH_CHANGED'):validate_ordinary_data_outputs(b,'top',res['inventory'],res['buffers'])
+    def test_cross_hierarchy_root_includes_all_leaf_loads(self):
+        a=q_fixture(16);top=a['modules']['top'];top['cells']['outer']=cell('inv_1',I=11,ZN=999);top['ports']['outer']=dict(direction='output',bits=[999])
+        b=deepcopy(a);res=buffer_ordinary_data_outputs(b,'top',{})
+        self.proof(a,b);validate_ordinary_data_outputs(b,'top',res['inventory'],res['buffers'])
+        self.assertEqual({r['driver'] for r in res['inventory'] if r['disposition']=='distribution'},{'b/state/Q'})
+
+
+def data_criterion_fixture():
+    top=dict(ports={k:dict(direction='input',bits=[i+1]) for i,k in enumerate(('a','b','c'))},cells={'driver':cell('nor3_4',A1=1,A2=2,A3=3,ZN=4)})
+    for i in range(20):
+        top['cells']['load'+str(i)]=cell('inv_1',I=4,ZN=10+i)
+        top['ports']['out'+str(i)]=dict(direction='output',bits=[10+i])
+    return dict(modules={'top':top})
+
+def data_criterion_library(cap,upper):
+    tables=''.join(t+'(table){index_1("0.02, 2.0"); index_2("0.001, '+str(upper)+'"); values("1, 2", "2, 3");}' for t in ('cell_rise','cell_fall','rise_transition','fall_transition'))
+    # Irrelevant power axes deliberately disagree with timing; they must not
+    # select a tree or silently contribute a minimum load bound.
+    output='pin(ZN){direction:output; function:"!(A1|A2|A3)"; timing(){related_pin:"A1"; '+tables+'} internal_power(){rise_power(table){index_2("0.001, 0.002");}}}'
+    return {SC+'nor3_4':''.join('pin('+p+'){direction:input; capacitance:0.01;}' for p in ('A1','A2','A3'))+output,
+            SC+'inv_1':'pin(I){direction:input; capacitance:'+str(cap)+';} pin(ZN){direction:output; function:"!I";}',
+            SC+'buf_4':'pin(I){direction:input; capacitance:0.01;} pin(Z){direction:output; function:"I";}'}
+
+class DataCriterionTests(unittest.TestCase):
+    def test_same_corner_actual_load_selects_only_failed_timing_envelopes(self):
+        fast=data_criterion_library(.01,.3);slow=data_criterion_library(.03,.7)
+        before=data_criterion_fixture();a=deepcopy(before)
+        result=buffer_ordinary_data_outputs(a,'top',{},combinational_libraries=[('fast',fast),('slow',slow)])
+        self.assertEqual(result['buffers'],[]);self.assertEqual(a,before)
+        # Slow actual load0.6 does not get compared with fast table max0.3.
+        self.assertFalse(any(c['over_table'] for r in result['inventory'] for c in r['load_envelope']))
+        a=data_criterion_fixture();slow=data_criterion_library(.03,.5)
+        a['modules']['top']['netnames']={'$auto$jsonparse.cc:552:json_import$2':dict(bits=[4],attributes={},hide_name=0)}
+        result=buffer_ordinary_data_outputs(a,'top',{},combinational_libraries=[('fast',fast),('slow',slow)])
+        self.assertTrue(result['buffers'])
+        row=next(r for r in result['inventory'] if r['disposition']=='distribution')
+        self.assertEqual([c['corner'] for c in row['load_envelope'] if c['over_table']],['slow'])
+        self.assertEqual(a['modules']['top']['netnames']['$auto$jsonparse.cc:552:json_import$2']['bits'],[4])
+        # New nets are explicitly named: repeated JSON serialization must not
+        # reuse an auto-generated name already present in the repaired input.
+        named={b for n,v in a['modules']['top']['netnames'].items() if n.startswith('riscay_ordinary_data_net_') for b in v['bits']}
+        self.assertTrue(all(a['modules']['top']['cells'][r['buffer']]['connections']['Z'][0] in named for r in result['buffers']))
+        frozen=deepcopy(a)
+        again=buffer_ordinary_data_outputs(a,'top',{},combinational_libraries=[('fast',fast),('slow',slow)])
+        self.assertEqual(again['buffers'],[]);self.assertEqual(a,frozen)
+    def test_missing_capacitance_or_required_timing_table_fails(self):
+        for mutation in ('cap','transition','driver','axis'):
+            with self.subTest(mutation=mutation):
+                lib=data_criterion_library(.01,.1)
+                if mutation=='cap':lib[SC+'inv_1']=lib[SC+'inv_1'].replace('capacitance:0.01;','')
+                elif mutation=='transition':lib[SC+'nor3_4']=lib[SC+'nor3_4'].replace('fall_transition(table)','other_table(table)')
+                elif mutation=='driver':lib.pop(SC+'nor3_4')
+                else:lib[SC+'nor3_4']=lib[SC+'nor3_4'].replace('0.001, 0.1','0.1, 0.001')
+                with self.assertRaises(ValueError):buffer_ordinary_data_outputs(data_criterion_fixture(),'top',{},combinational_libraries=[('corner',lib)])
 
 
 if __name__=='__main__':unittest.main()

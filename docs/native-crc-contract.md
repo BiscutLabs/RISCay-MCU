@@ -1,113 +1,71 @@
-# Native CRC context and completion contract
+# Native CRC and loader completion
 
-The corrective A2 implementation replaces four full `ControlToken` CRC stores
-with one 32-bit result store in each native Control implementation. The separate
-`FourPhaseCrc32` and `ClickCrc32` factories instantiate their respective public
-library stage directly; they add no wrapper, periodic clock or payload owner.
-The shared `Crc32Command` is a wire schema containing the architectural CRC,
-loader word and pending flag. A2a/C2 is digitally verified; this document does
-not certify physical timing.
+Both independent implementations use reflected CRC32 polynomial `0xedb88320`,
+least-significant byte first, with no final complement until image validation.
+The fixed GF(2) XOR transform is constructed at elaboration. The architectural
+result and `received` advance only when an accepted `Stored` completes a pending
+word. Duplicate Stored commands are inert. Full-width host validation, image
+compatibility, lock, memory masks and watchdog retention are unchanged.
 
-## Arithmetic and architectural ownership
+## BD: committed CRC in the architectural bank
 
-At elaboration, each implementation builds the fixed reflected CRC32 linear
-transform for polynomial `0xedb88320`. A word is consumed least-significant byte
-first, without final complement. Runtime hardware consists of XOR reductions
-and the pending bypass. The result is `crc` when no loader word is pending.
+The BD area rewrite uses [one closed Control bank](native-control-bank.md).
+`loaderWord` and architectural `crc` remain there while programming is pending.
+Stored computes the next CRC from that pair and captures CRC, received count
+and cleared pending together. Other admitted commands cannot replace the pair.
+Neither the Stored command's incoming frame nor a later host selector supplies
+the operand. POR aborts the operation; ordered application reset preserves
+accepted programming effects and the lock/image.
 
-The existing update stage retains the full command result while its unbuffered
-fork sends the public reply and supplies the feedback context. Only the CRC
-candidate travels through the new arithmetic stage. Every candidate starts
-from the architectural CRC, including when other commands execute while a
-loader word is pending. Only an accepted `Stored` transition commits that
-candidate and advances `received`; duplicate completions remain inert.
-Host/MMIO validation, programming lock, image state and watchdog reset semantics
-are unchanged. Full-width host fields remain validated before use. A2b
-separately narrows retained length/received counts and entry offsets to configured
-program capacity. At 2 KiB, state/token/reply widths are 244/276/315 bits; the
-CRC input remains 65 bits and its candidate store remains 32 bits. The native
-state, join and update payloads shrink without changing their rendezvous. See
-[the loader contract](loader-status-and-lock.md#retained-loader-metadata-a2b).
+There is no BD speculative candidate register, CRC stage, feedback FIFO or CRC
+rendezvous. One native transaction controller captures the state/effects banks,
+then acknowledges the retained command and publishes the closed result. Full
+reply return precedes the next capture. At the reference 2 KiB capacity this is
+252 state bits, 68 effects and three kind bits. Counts/entry fields remain sized
+from capacity after full-width validation. The independent `FourPhaseCrc32.stage`
+is retained for arithmetic/protocol verification; production Control uses its
+pure `compute` transform directly.
 
-## Native rendezvous
+The bank's Stored setup path includes the complete CRC/decode cone. Same-event
+state/effects feedback hold, latest capture versus source ACK/publication, pulse
+width and full rearm are separate obligations. An identity-only timing check on
+the three kind bits cannot qualify the bank. See the Control contract for the
+current local evidence and routed/reset obligations.
 
-Two public two-input C-elements preserve context ownership. They are described
-in the export contract as `crc_context_request` and `crc_context_return`.
+## Click: retained candidate and native phase rendezvous
 
-| Boundary | Inputs | Meaning |
-| --- | --- | --- |
-| State request | Retained context request, CRC result request | The next state can capture the context and its corresponding candidate together. |
-| Context acknowledgment | State input acknowledgment, CRC input acknowledgment | Context can retire only after state capture and arithmetic ingress acceptance; BD return also waits for both inputs to return low. |
+Click retains its independent whole-word CRC stage. Its update result holds
+context while the unbuffered fork supplies the public reply and feedback.
+Each candidate starts from architectural CRC, including commands interleaved
+while a loader word is pending. Only Stored commits the candidate.
 
-The state input takes ordinary fields directly from the retained update output
-and `pendingCrc` from the CRC result store. State acceptance acknowledges the
-CRC output. The context acknowledgment feeds the fork's feedback branch; its
-other branch still waits for the public reply consumer. Thus a reply stall
-cannot allow the next update to overwrite the context.
+Two public two-input C-elements join retained context with CRC result request,
+and state input acknowledgment with CRC input acknowledgment. They wait for
+both inputs to match the new phase, including phase zero. The state captures
+ordinary fields from the held update result and `pendingCrc` from the CRC result
+store. A public reply stall cannot permit context overwrite. No four-phase
+adapter or periodic clock is introduced. Control, candidate and rendezvous are
+POR-owned; watchdog recovery remains an ordered command.
 
-For BD, a falling state acknowledgment alone is insufficient to release a
-context. The CRC ingress must finish return-to-zero before a new request can
-arrive. For Click, each C-element waits for both inputs to match the new phase,
-including phase zero. There is no four-phase conversion or iteration parity.
+## Verification
 
-Control, its result store and rendezvous are POR-owned. Watchdog recovery is an
-ordered Control command, not a local reset of an in-flight loader operation.
-POR discards the in-flight feedback and reinstalls cold state. Tests identify
-actual payload capture pins from exported metadata, rather than using a stage
-request as a proxy for storage.
+`AsyncCrcSpec` compares the production transform with an independent serial
+oracle over the complete linear basis and random full-width inputs, bypass,
+held results, earliest source reuse and POR. `AsyncControlSpec` uses independent
+Java CRC32 expectations for multiword images, every committed word, full-capacity
+accounting, discarded host bits, lock, interleaved commands, duplicate Stored
+and reset. Capacity cases include non-powers of two.
 
-## A2b metadata-width validation
+`AsyncCrcControlSpec` retains Click's original capture/rendezvous tests in both
+phases. BD monitors the actual state/effect/kind captures, overwrites the source
+frame only after input return, offers a next command during a held reply, and
+stalls the surviving request/publication/ACK-return boundaries. Five POR points
+span pre-capture, kind closure, bank capture, publication and return. The old
+BD CRC-rendezvous-specific observations are replaced by the corresponding
+retention and exactly-once bank obligations; those deleted gates are not
+recreated in production. Existing oracles, delays and deadlines are retained.
 
-A2b functional and strict export checks pass; physical timing remains unqualified. The new capacity cases cover both
-native implementations at 4, 12, 1024, 1028, 2048 and 3072 bytes. Independent
-literal field layouts and Java CRC32 expectations check full-capacity count,
-every discarded host bit, last/duplicate Stored, reset, lock and padded entry
-readback. The retained regression contains 536 Scala tests in 36 suites;
-the checker-only successor passes 751 Python controls. Its historical
-709-test Python run remains separately preserved. The rendezvous campaign has 27 passing originals
-and 27 exact first-fatal mutations with unchanged oracles. Successor strict,
-cost and bounded timing evidence is recorded in
-[the A2b report](reviews/loader-metadata-a2b-completion.md). The A2a figures
-below remain historical measurements of that earlier change.
-
-## Verification and physical limits
-
-`AsyncCrcSpec` exercises the exact production stage with an independent serial
-oracle: zero and every one-bit input basis, full-width random inputs, pending
-bypass, held results, earliest legal source reuse and POR. `AsyncControlSpec`
-retains its independent Java CRC32 image oracle, queued recovery, repeated
-Stored, loader/lock/MMIO checks and cold-state checks after POR. Its former
-four-stage POR trigger now targets the sole stage's actual capture before
-result publication. `AsyncCrcControlSpec` binds actual capture pins and separately
-holds result offer, state acceptance, CRC ingress return and public reply. It
-covers queued Stored, duplicate Stored, exact accounting and POR, including both
-Click phases and BD's independent falling return. All 15 fixtures and 45 seed
-runs pass. The actual rendezvous mutation campaign passes 27 original replays
-and rejects 27 C-element input faults at their exact intended fatal sites, with
-unchanged testbenches. The composed functional/physical runs cover 230 distinct
-ScalaTest cases; 500 Python tests and all four strict SoC exports pass.
-
-Candidate comparison against `7bb7b71` selected the narrow whole-word stage
-over both a wide whole-word stage and a narrow four-byte loop. It removes
-1,316 duplicated payload bits per variant (four 337-bit stores become one
-32-bit store). Mapped Control area changes from 0.332175 to 0.206011 mm² for BD
-and 0.398618 to 0.230634 mm² for Click. Fresh production maps match the selected
-candidate's complete cell connections exactly; source-location aliases are
-excluded from that comparison, not hardware. Total logic area excluding SRAM
-falls from 3.102377 to 2.975227 mm² BD and 3.915477 to 3.748168 mm² Click.
-Ordinary mapper variation outside Control remains separately accounted.
-Portable periodic storage remains 6,000/6,001 bits; enabled-policy physical
-exports remain 6,010/6,011 bits. All 27 matched wake windows per variant retain
-identical effects, edge counts and duration. Mapped leakage is a listed-state
-estimate, not measured reachable standby power. Exact source, export, cost,
-activity, controls and independent review are bound by
-`build/async-crc-reduction/final-evidence-r1.json`; see the detailed
-[measurement record](native-area-reduction.md#a2a-narrow-whole-word-crc-feedback).
-
-The candidate whole-transform paths measure 16.025 ns BD and 16.022 ns Click
-across the pinned corners, exceeding the unchanged 10 ns data budget. The old
-CRC path also exceeded that budget. Arithmetic and handshake simulation do not
-qualify either implementation physically. Complete request/data alignment,
-state-capture setup/hold, both rendezvous returns, reset distribution and routed
-load/slew still require qualification. No periodic staging or timing waiver is
-introduced by this reduction.
+The earlier A2/A2b stage reduction, historical widths, maps and mutation evidence
+remain in [the area study](native-area-reduction.md#a2a-narrow-whole-word-crc-feedback)
+and [A2b review](reviews/loader-metadata-a2b-completion.md). They do not qualify
+the current BD bank. Current measurements belong in the [area ledger](area-ledger.md).

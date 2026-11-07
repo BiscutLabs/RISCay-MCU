@@ -10,7 +10,10 @@ longer firmware wake. Batch 2 removes the Telemetry/Housekeeping reservation
 detours: [publication slots](publication-slot.md) bring the flat map to
 **1.591292 mm²**, below the 1.60 mm² stretch target. Its [review](reviews/bd-publication-slot.md)
 retains an open, pre-existing ordinary Housekeeping qualifier timing failure.
-Batches 3 and 4 remain next; their implementation is not part of these results.
+Batch 3 replaces Control transport and speculative CRC with a
+[closed bank](native-control-bank.md): **1.531099 mm²** flat mapped logic,
+323 Control payload bits, with [independent review and local timing](reviews/bd-control-bank.md).
+Batch 4, Telemetry then Housekeeping effects, remains next.
 This replaces the opportunity ranking in the
 [overhead investigation](native-overhead-investigation.md), not its measurements.
 The plan is based on the actual owners, their commit/return dependencies and the

@@ -6,9 +6,9 @@ libraries, mapper and accepted repair flow for matched production comparisons.
 Full routed physical requalification remains migration item 17.
 
 The **BD mapped-logic milestone below 2.3 mm² excluding SRAM is achieved**.
-The BD SRAM and publication-slot rewrites now map to **1.591292 mm² flat**,
-or **1.669761 mm²** with ordinary hierarchy retained; the latter repairs to
-**1.855785 mm²**. This reaches the current 1.60 mm² structural-batch target.
+The BD SRAM, publication-slot and Control rewrites now map to **1.531099 mm² flat**,
+or **1.611951 mm²** with ordinary hierarchy retained; the latter repairs to
+**1.787644 mm²**. This reaches the current 1.60 mm² structural-batch target.
 Matched parents, clock inventories, activity and open timing are recorded below.
 The earlier Housekeeping batch maps to **1.987975 / 2.800265 mm²**
 (BD / Click) and repairs to **2.209548 / 3.051047 mm²**, including the expanded
@@ -24,7 +24,7 @@ BD is the tape-out target; Click physical timing/sizing work is frozen, while
 architecture conversions cover both unless the user requests an exception;
 the current area rewrite is explicitly BD-first. Allocate
 **0.05 mm² of additional standard-cell area for routed hold repair** in the BD
-planning budget (about 3.1% of current mapped logic). This is an allowance, not
+planning budget (about 3.3% of current mapped logic). This is an allowance, not
 inserted area or a predicted requirement, and is separate from electrical/CTS
 repair and placement whitespace. Record actual cell use after routing. If repair
 exceeds it, revise the budget or architecture; do not waive a failing path. The
@@ -33,8 +33,8 @@ exceeds it, revise the budget or architecture; do not waive a failing path. The
 ## Clocked comparison implementation
 
 The independent synchronous chip, including its CPU, maps to **0.531833 mm²**
-of logic, excluding the same three GF180 SRAM macros. The current BD flat
-reference is **1.893700 mm²**: a difference of **−1.361867 mm² (−71.92%)**.
+of logic, excluding the same three GF180 SRAM macros. The original BD flat
+comparison reference is **1.893700 mm²**: a difference of **−1.361867 mm² (−71.92%)**.
 This is an architectural comparison, not a change to either native design.
 
 | Mapped implementation | Logic, mm² | Repaired logic, mm² | Guard / allowance / DLYD area, mm² | Periodic sinks: service / work / LF | Total periodic sinks |
@@ -985,3 +985,61 @@ review reproduced the area, activity and clock counts; see the
 `build/command-borrow/area-bd-r3.json`, `area-click-r3.json`, `cost-r3.json` and
 `activity-r3.json`. Full physical qualification remains at item 17.
 Keep isolated pilot deltas separate.
+
+## BD Control bank and committed CRC
+
+Batch 3 of the area action plan replaces the full-state FIFO, Join operands,
+update reply and speculative CRC handshake with a closed architectural bank,
+a closed effects bank and one three-bit native transaction stage. The Stored
+transition advances CRC from the retained loader word only when a store completes.
+Click RTL and the generic host ABI are unchanged.
+
+| Measurement | Parent publication slots | Control bank |
+| --- | ---: | ---: |
+| Flat mapped logic, mm² | 1.591292 | 1.531099 |
+| Hierarchical mapped logic, mm² | 1.669761 | 1.611951 |
+| Hierarchical repaired logic, mm² | 1.855785 | 1.787644 |
+| Control native recipe, mm² | 0.085314 | 0.038074 |
+| Control native payload bits | 1,302 | 323 |
+| All native payload bits | 7,242 | 6,263 |
+| Guards / allowances, mm² | 0.268732 / 0 | 0.270313 / 0 |
+| DLYD cells / area, mm² | 3,549 / 0.264886 | 3,573 / 0.266677 |
+| Hierarchical periodic sinks: service / work / LF | 1,253 / 1,688 / 78 | unchanged |
+| Services sinks: service / work | 64 / 912 | unchanged |
+
+Reference capacities and pinned Yosys 0.62/ABC are unchanged. DLYD purpose:
+2,424 custom ordering/reset cells (0.180920 mm²), 596 bundling (0.044484),
+90 seed/reset admission (0.006717), and 463 publication (0.034557). New Control
+paths retain conservative guards until their complete measured envelopes are
+accepted; no optimized count is copied from an obsolete owner.
+
+The identical 12 MHz digital workload retains all 27 measured windows. Maintenance
+remains 30 work edges / 3.147358 µs, ADC 221 / 18.772483 µs. The 43-instruction
+firmware wake changes from 4,138 / 345.191761 µs to 4,139 / 345.275095 µs.
+Telemetry commands remain zero. Click remains 27 / 216 / 3,199 edges.
+This is native-model activity, not extracted timing or an energy measurement.
+
+The initial repair measured 1.782713 mm². Source review then exposed retained
+frame-selector FF loads outside the Liberty tables in both parent and candidate.
+The default flow now adds bounded trees only to ordinary data consumers, preserving
+all original control branches directly. FF data trees add 65 buffers (0.001998 mm²); a residual post-resize pass adds
+96 buffers (0.002950 mm²) at six combinational drivers outside their same-corner
+load tables. Net repaired-area growth versus the first repair is 0.004930 mm²
+after resizing. All 176 selected driver/buffer outputs pass the five-corner zero-RC electrical check
+(worst slew 1.864 ns, limit 2 ns, source-clock slew 2 ns). This is a targeted
+repair; unrelated whole-chip electrical violations remain open.
+
+Matched evidence is under `build/bd-control-bank/`: `map-r1` (initial), `map-r3` (same unrepaired synthesis with the new default repair),
+`area-r3.json`, `clocks-r3.json`, `activity-r1.json`, `flat-r1` and
+`ordinary-data-production-r3/driver-audit.json`. The final `timing-final-r2/summary.json` covers all 320 bank inputs from 1,414
+actual launch roots at five corners and two input slews. Minimum derated
+source setup / capture-to-ACK / publication margins are +89.802 / +36.271 /
++66.234 ns; same-event feedback hold is +0.958 ns. All 514,880 sampled arc
+checks remain inside Liberty tables. Full routed qualification remains item 17.
+
+Full-capacity 2 KiB SPI boot passes for primary and golden fallback at the
+unchanged 10 MHz reference clock: 333.860569 / 953.315969 ms and
+3,338,586 / 9,533,140 work edges. The earlier word-loop batch measured
+364.827869 / 1042.319369 ms; publication-slot batch 2 did not independently
+repeat this long boot measurement, so that difference is not attributed solely
+to Control. These are native-model timings, not extracted latency.

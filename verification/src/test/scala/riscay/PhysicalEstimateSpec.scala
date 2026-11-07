@@ -44,22 +44,22 @@ class PhysicalEstimateSpec extends AnyFunSuite with SocImplementationSuite {
         integer ackSourceRises=0, ackSourceFalls=0;
         real ackRiseAt=0, ackFallAt=0, ackWaitNs=0;
         reg ackRisePending=0, ackFallPending=0;
-        always @(posedge dut.soc.ca_child_control.ca_primitive_acknowledge_guard.a[0]) if(measured>0) begin
+        always @(posedge dut.soc.ca_child_control.command_ack_ca_primitive_acknowledge_guard.a[0]) if(measured>0) begin
           if(!serviceClockEnable || ackRisePending) $$fatal(1,"ACK_ACTIVITY_UNACCOUNTED_SOURCE_RISE");
           ackSourceRises=ackSourceRises+1;
           ackRiseAt=$$realtime; ackRisePending=1;
         end
-        always @(negedge dut.soc.ca_child_control.ca_primitive_acknowledge_guard.a[0]) if(measured>0) begin
+        always @(negedge dut.soc.ca_child_control.command_ack_ca_primitive_acknowledge_guard.a[0]) if(measured>0) begin
           if(!serviceClockEnable || ackFallPending) $$fatal(1,"ACK_ACTIVITY_UNACCOUNTED_SOURCE_FALL");
           ackSourceFalls=ackSourceFalls+1;
           ackFallAt=$$realtime; ackFallPending=1;
         end
-        always @(posedge dut.soc.ca_child_control.ca_primitive_acknowledge_guard.q[0]) if(measured>0) begin
+        always @(posedge dut.soc.ca_child_control.command_ack_ca_primitive_acknowledge_guard.q[0]) if(measured>0) begin
           if(!ackRisePending || $$realtime-ackRiseAt < $ackGuardNs-0.0005 || $$realtime-ackRiseAt > $ackGuardNs+0.0005)
             $$fatal(1,"ACK_ACTIVITY_RISE_DELAY");
           ackRisePending=0; ackRiseEdges=ackRiseEdges+1; ackWaitNs=ackWaitNs+($$realtime-ackRiseAt);
         end
-        always @(negedge dut.soc.ca_child_control.ca_primitive_acknowledge_guard.q[0]) if(measured>0) begin
+        always @(negedge dut.soc.ca_child_control.command_ack_ca_primitive_acknowledge_guard.q[0]) if(measured>0) begin
           if(!ackFallPending || $$realtime-ackFallAt < $ackGuardNs-0.0005 || $$realtime-ackFallAt > $ackGuardNs+0.0005)
             $$fatal(1,"ACK_ACTIVITY_FALL_DELAY");
           ackFallPending=0; ackFallEdges=ackFallEdges+1; ackWaitNs=ackWaitNs+($$realtime-ackFallAt);

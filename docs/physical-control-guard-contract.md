@@ -1,5 +1,11 @@
 # Physical ControlGate binding
 
+This records the historical 17a1 binding repair. Its instance counts and active
+per-lane allowance graphs are not the current implementation. Current data
+allowances are [passive aliases](passive-allowance-contract.md); current guard
+counts and area are in the [ledger](area-ledger.md). The explicit role and graph
+checks described below remain required.
+
 Checklist substep 17a1 repairs physical intent binding. It changes neither the
 BD/Click controllers nor their digital delay budgets, ABI or reset ownership.
 It removes no additional clocked state. Complete controller feasibility and

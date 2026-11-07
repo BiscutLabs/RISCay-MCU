@@ -342,7 +342,10 @@
       "telemetry_ack_or": "matched-control-delay"
     },
     "FourPhaseControl": {
-      "acknowledge_guard": "matched-control-delay"
+      "acknowledge_guard": "matched-control-delay",
+      "output_guard": "matched-control-delay",
+      "state_data_delay": "whole-transform-allowance",
+      "effect_data_delay": "whole-transform-allowance"
     },
     "FourPhaseCore": {
       "register_arrival": "matched-control-delay",
