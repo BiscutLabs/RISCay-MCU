@@ -1230,3 +1230,52 @@ open; there is no new P&R or die-area claim. Evidence is under
 `build/area-loops/loop1/`: `map-r3`, `flat-r1`, `area-r3.json`, `clocks-r3.json`,
 `summary-r2.json`, `ci-r2`, `extended-r1.log`, `parent-scaling-sleep-r1.log` and
 retained failed mapping/timing attempts.
+
+## Adaptive area loop 2: bounded elapsed increment
+
+BD factors the radix arithmetic into a bounded increment and adds quotient
+history once. Fractions, modulo-32 behavior, storage and ownership are unchanged.
+The first area-saving map fails setup with the old 28-cell elapsed request guard;
+only that recipe is lengthened to 34 cells after same-corner measurement.
+
+| Measurement | Loop 1 | Accepted loop 2 |
+| --- | ---: | ---: |
+| Flat mapped logic, mm² | 1.477870 | 1.466714 |
+| Hierarchical mapped logic, mm² | 1.555462 | 1.542519 |
+| Hierarchical repaired logic, mm² | 1.713602 | 1.700345 |
+| Repair addition, mm² | 0.158140 | 0.157826 |
+| Native storage bits | 5,571 | unchanged |
+| Guards / allowances, mm² | 0.271946 / 0 | 0.272394 / 0 |
+| DLYD cells / area, mm² | 3,597 / 0.268469 | 3,603 / 0.268916 |
+| Flat periodic sinks, service / work / LF | 1,188 / 1,556 / 78 | unchanged |
+| Hierarchical periodic sinks, service / work / LF | 1,253 / 1,688 / 78 | unchanged |
+| Services sinks, service / work | 64 / 912 | unchanged |
+
+Flat logic falls **0.011156 mm² (0.75%)**, net of the six added guard cells
+(0.000448 mm²). Repaired hierarchical logic falls 0.013257 mm² (0.77%).
+DLYD purpose is 2,424 custom ordering/reset, 631 bundling, 90 seed/reset and 458
+publication cells. The same pinned mapper, profile and three unchanged SRAMs
+apply; logic excludes their 0.466241 mm² LEF footprint. BD remains **2.758×**
+the 0.531833 mm² clocked flat reference.
+
+All 27 native-model activity windows per variant match loop 1: BD maintenance,
+ADC and firmware use 30 / 220 / 4,139 work edges and 3.147358 / 18.689149 /
+345.275095 µs; Click remains 27 / 216 / 3,199 edges. Telemetry commands remain
+zero. These use the unchanged digital timing model; they are not a measurement
+of the new physical guard's wake energy or duration.
+
+[Independent review](reviews/bd-area-loops.md) accepts ten repaired local cases:
+setup +3.790 ns with the 20% two-sided/2 ns policy; latest conditional capture
+257.435 ns, below the existing 645 ns slow-step test envelope. Local hold
++0.621 ns and publication bounds are unchanged. The initial 28-cell candidate
+and the parent's sub-floor result remain recorded. All selected data/control
+pins meet their actual electrical limits and table ranges. Full FIFO/admission,
+routed RC, reset, noise and mismatch qualification remain open.
+
+Nineteen focused tests, CI 397 Python/227 Scala, both generation/RDC audits and
+unchanged activity pass. The two already-reproduced accelerated-maintenance
+sleep failures remain; no assertion or deadline is weakened. The final integrated
+loop-3 CI also passes with the corrected guard. Evidence:
+`build/area-loops/loop2/{map-r2,flat-r2,area-r2.json,clocks-r2.json,
+flat-clocks-r2.json,summary-r2.json,final-local-r2,final-ranges-r2,
+final-electrical-r2.json,independent-review-final.json,ci-r1}`.

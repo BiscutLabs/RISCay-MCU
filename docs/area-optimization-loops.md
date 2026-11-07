@@ -59,7 +59,7 @@ zero-quotient cases, held replies, reset, actual SPI/ADC, maximum-delay drainage
 sleep/activity, CI and generation/RDC. Preserve coincident completion across
 coefficient configurations. Record measured results before choosing loop 2.
 
-## Loop 2 - factor arithmetic without changing ownership (next)
+## Loop 2 — factor arithmetic without changing ownership (accepted after correction)
 
 I2C byte transport was rejected at preflight, before RTL changes. Its steady
 byte selection has a useful ring bound (18 edge events between byte ACK falls,
@@ -84,16 +84,39 @@ fold fractional carry into the narrow term. Keep state, fractions, loop count,
 handshake and reset ownership unchanged. Use the existing wide-integer elapsed
 oracle and slow-corner throughput test. Loop 1's matched reduction and unchanged ownership select this as loop 2.
 
-## Loop 3 - remove payload with no physical consumer (candidate)
+Loop 2's first map shrinks logic but worsens the actual remainder-selection
+critical path: the 28-cell request recipe gives −7.809 ns derated local setup,
+versus the parent's +1.078 ns (itself below the 2 ns reserve). All selected data
+pins pass their actual Liberty limits and tables, so this is not an extrapolation
+artifact. The accepted correction lengthens only that guard to 34 cells, using measured
+same-corner increments and a fresh repaired-map check. Minimum setup is +3.790 ns;
+latest conditional capture is 257.435 ns, within the unchanged 645 ns test envelope.
+Do not attribute the measured path to the final quotient adder merely from RTL.
 
-After loop 2, consider explicitly omitting CPU retirement trace storage from the
-BD pad-level physical build, retaining the full default verification/debug core.
-The execute stage currently stores 107 Retirement bits despite the pad wrapper
-having no consumer. Project before storage, keep architectural state and native
-protocol intact, and verify trace-on/off memory histories against the same
-reference model with register signatures, errors, response stalls and reset.
-Any physical-only option needs its own SoC integration check and measured capture/
-return timing. This is a modest, low-risk candidate, not a pre-credited saving.
+## Loop 3 — remove payload after its last consumer (in progress)
+
+The third loop applies explicit last-consumer projection. RF consumes a writeback
+before the unchanged 31 ns forwarding guard; execute unconditionally replaces it.
+Drop those 37 bits from the Join continuation and reconstruct zero only inside the
+shared ISA transform. A live field/width property prevents future schema fields
+being silently omitted. Keep state-FIFO and new execute writeback storage intact.
+
+The pad-level build also has no retirement-trace consumer, but native primitive
+protection prevents ordinary synthesis from trimming its 107 stored trace bits.
+Explicitly omit that field before the physical execute capture; preserve the full
+default debug/verification core. The physical policy records the option. Test both
+configurations against identical independent memory histories, including every
+register's signature, faults, stalls and a reset with an accepted load outstanding.
+The reset replay observes zero registers before reseeding. A trace-disabled SoC
+test checks GPIO, host readback, lock and POR. No existing expectation is relaxed.
+
+No forwarding/ACK guard is shortened. Recheck the smaller capture/Join trees on
+repaired maps: fewer storage bits do not prove hold or capture ordering. RF event
+launch/full return and routed closure remain explicit qualification boundaries.
+A competing exact Mersenne ADC formula passed a finite-domain SAT miter and cut
+its isolated mapped arithmetic by 0.003159 mm²; that small whole-chip opportunity
+was deferred in favor of removing proven-dead protected storage. Its isolated
+pilot is not counted as a whole-chip saving.
 
 ## Results and lessons
 
@@ -101,8 +124,8 @@ return timing. This is a modest, low-risk candidate, not a pre-credited saving.
 | --- | --- | --- | --- | --- | --- |
 | Baseline | a978eae | 1.506013 / 1.749243 mm² | 5,780 / 2,822 flat sinks | BD firmware 4,139 work edges, 345.275 µs | Remove architecture costs before shortening surviving guards |
 | 1 | Exact ADC stage fusion | 1.477870 / 1.713602 mm² | 5,571 / 2,822 | ADC 220 edges; other wakes unchanged | Exact range arithmetic and fewer stores beat a slightly larger guard; reject ambiguous payload lifetimes |
-| 2 | Not started | — | — | — | — |
-| 3 | Not started | — | — | — | — |
+| 2 | Bounded elapsed increment; measured guard correction | 1.466714 / 1.700345 mm² | 5,571 / 2,822 | Model wakes unchanged; local setup +3.790 ns | Smaller arithmetic can map slower; inspect the real critical path and include guard cost |
+| 3 | Last-consumer CPU projection; in verification | — | — | — | — |
 
 The [independent reviews](reviews/bd-area-loops.md) record findings, fixes and
 qualification scope. The [area ledger](area-ledger.md) remains the canonical measurement ledger.

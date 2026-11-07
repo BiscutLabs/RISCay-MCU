@@ -76,6 +76,15 @@ policy explicitly removes their records and retains their baseline inventory.
 | BD elapsed request | 86 | 28 | 1 |
 | Click standard ACK | 28 | 8 | 73 |
 
+The table records the original adoption. The current BD elapsed arithmetic
+uses **34 request cells**, remeasured in [area loop 2](reviews/bd-area-loops.md#loop-2--bounded-elapsed-arithmetic-accepted-after-a-timing-fix).
+After factoring the increment, the old 28-cell recipe fails local setup; 34 gives
++3.790 ns minimum with the same 20% two-sided/2 ns setup policy, and a 257.435 ns
+latest conditional capture. The historical 5.337 ns/28-cell provenance below and
+in the policy file describes the older cone, not the current one. The current
+active policy row is authoritative; the new ledger/review records its scope.
+No other request count changes in that loop.
+
 The other 89 active canonical BD request guards retain their original recipes.
 That is the historical adoption inventory. The generic MCU removes supervisor
 owners; regenerate the live count after the architecture work in

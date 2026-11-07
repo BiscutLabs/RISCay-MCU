@@ -60,3 +60,46 @@ stopped; independent byte fetching could mix snapshots. The review also found
 obsolete/X-prone occupied-ring probes and a first-byte snapshot test whose old
 and new expected bytes are both zero. These are code-review findings; no I2C
 RTL or oracle changed. See the [experiment record](../area-optimization-loops.md).
+
+## Loop 2 — bounded elapsed arithmetic (accepted after a timing fix)
+
+Fresh reviewer `bd_effect_banks_review` checked the arithmetic, original oracles,
+repaired parent/candidate graphs and every selected corner/slew case. Quotient
+history is added once; a bounded increment carries the four radix remainder
+steps. BigInt bounds include the final fractional carry. State widths, fraction,
+turn count, ownership, reset and handshake remain unchanged.
+
+The first candidate saved area but failed local setup in all ten cases, reaching
+−7.809 ns with 28 request-delay cells. The parent also missed the 2 ns reserve
+(+1.078 ns minimum). Actual path inspection locates the critical cone from old
+target[1] through admission/nibble selection to remainder[2][7]; attributing it
+to the final quotient adder from source alone would be wrong. Both graphs pass
+actual loaded Liberty/table limits, so the failure is not extrapolation.
+
+The fix lengthens only the elapsed request recipe from 28 to 34 DLYD cells.
+Measured same-corner increments indicated 33; one additional cell supplies a
+conservative reserve. The final fresh synthesis/repair and ten-case campaign
+passes: setup **+3.789599 ns**, publication rise/fall **+4.288913/+4.274889 ns**.
+These use the existing two-sided 20% engineering policy and 2 ns floor. The
+zero-source-credit local hold is **+0.621384 ns**, unchanged in every case; it
+is not a claim of a composed 2 ns hold reserve. Latest conditional capture is
+**257.434728 ns**, within the unchanged 645 ns slow-step throughput test.
+No digital deadline or oracle changed, and no guard was shortened.
+
+All ten final data audits cover 7,465 pins and 2,487 output loads per case, with
+no actual transition/capacitance, ordinary-policy or table-range failure.
+Selected request/capture/return paths also pass their electrical checks in all
+40 contexts. Blanket 2 ns whole-chip report rows are not substituted for the
+actual ordinary-cell limits or hidden as a chip-wide pass.
+
+Focused elapsed/scaling tests pass 19/19; CI passes 397 Python and 227 Scala
+cases before the physical-only count correction. Final integrated loop-3 CI
+also passes with that correction. Generation/RDC pass both variants. Activity
+and sleep checks are 6/8: the same two accelerated-maintenance failures reproduce
+on the starting revision and remain open. Activity windows are unchanged.
+
+Evidence: `build/area-loops/loop2/{map-r2,final-local-r2,final-ranges-r2,
+final-electrical-r2.json,independent-review-final.json}`. Parent and 28-cell
+failures, including all logs, remain beside them. Conditional input launch is
+explicit: full FIFO seed/admission composition, reset distribution, extracted
+RC, noise and statistical mismatch are not closed by this local campaign.

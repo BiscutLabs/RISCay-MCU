@@ -692,7 +692,7 @@
           "RESET_VALUE": 0,
           "WIDTH": 1
         },
-        "stages": 28,
+        "stages": 34,
         "purpose": "ordering-bundling",
         "classification": "ordering",
         "disposition": "measure-canonical-stage",

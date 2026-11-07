@@ -12,14 +12,25 @@ import chiselasync.protocol.FourPhase
 import riscay.soc._
 
 object ConstantScaling {
-  // One radix-2 step in mixed quotient/remainder form. Bounds permit at most
-  // two subtractions. All divisions here are Scala elaboration-time constants.
-  def step(q: UInt, r: UInt, bit: Bool, numerator: Int, denominator: Int): (UInt, UInt) = {
-    val total = (r << 1) +& Mux(bit, (numerator % denominator).U, 0.U)
-    val carry = Mux(total >= (2L * denominator).U, 2.U, Mux(total >= denominator.U, 1.U, 0.U))
-    val remainder = Mux(carry === 2.U, total - (2L * denominator).U,
-      Mux(carry === 1.U, total - denominator.U, total))
-    (((q << 1) + Mux(bit, (numerator / denominator).U, 0.U) + carry)(31,0), remainder)
+  // Four radix steps compute only a bounded increment. Quotient history is
+  // added once by the caller; modulo-32 arithmetic commutes with this factoring.
+  // After k bits: 1000*q + rem = 2^k*initialR + prefix* numerator.
+  def nibble(r: UInt, bits: UInt, numerator: Int): (UInt, UInt) = {
+    var q = 0.U(1.W)
+    var rem = r
+    for(bit <- 3 to 0 by -1) {
+      val total = (rem << 1) +& Mux(bits(bit), (numerator % 1000).U, 0.U)
+      val carry = Mux(total >= 2000.U, 2.U, Mux(total >= 1000.U, 1.U, 0.U))
+      val remainder = Mux(carry === 2.U, total - 2000.U,
+        Mux(carry === 1.U, total - 1000.U, total))
+      val scale = BigInt(1) << (4-bit)
+      val maximum = (scale*999 + (scale-1)*numerator)/1000
+      val width = maximum.bitLength.max(1)
+      val next = (q << 1) +& Mux(bits(bit), (numerator / 1000).U, 0.U) +& carry
+      q = next.pad(width)(width-1,0)
+      rem = remainder(9,0)
+    }
+    (q,rem)
   }
 }
 
@@ -65,16 +76,17 @@ class FourPhaseElapsed(micros: Seq[Int], domain: ResetDomain,
           r.commandPhase := x.commandPhase
         }
         for((us, lane) <- micros.zipWithIndex) {
-          var q = Mux(first, 0.U(32.W), x.state.quotient(lane))
-          var rem = Mux(first, 0.U(10.W), x.state.remainder(lane))
-          for(bit <- 3 to 0 by -1) {
-            val next = ConstantScaling.step(q, rem, nibble(bit), us, 1000)
-            q = next._1; rem = next._2(9,0)
-          }
+          val oldQ = Mux(first, 0.U(32.W), x.state.quotient(lane))
+          val oldR = Mux(first, 0.U(10.W), x.state.remainder(lane))
+          val (partial,rem) = ConstantScaling.nibble(oldR,nibble,us)
           val sum = rem +& x.state.fraction(lane)
           val carry = sum >= 1000.U
+          // Include the final fractional carry in the proven narrow bound.
+          val maximum = (BigInt(16)*999 + BigInt(15)*us)/1000 + 1
+          val width = maximum.bitLength.max(1)
+          val increment = (partial +& (last && carry)).pad(width)(width-1,0)
           r.remainder(lane) := rem
-          r.quotient(lane) := Mux(last, q + carry, q)
+          r.quotient(lane) := ((oldQ << 4) + increment)(31,0)
           when(last) { r.fraction(lane) := Mux(carry, sum - 1000.U, sum) }
         }
         r.mode := Mux(last, replyMode, runMode)
