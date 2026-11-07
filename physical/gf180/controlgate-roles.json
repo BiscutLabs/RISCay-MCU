@@ -497,7 +497,9 @@
       "request_data_delay": "whole-transform-allowance"
     },
     "FourPhaseTelemetry": {
-      "output_guard": "matched-control-delay"
+      "output_guard": "matched-control-delay",
+      "register_data_delay": "whole-transform-allowance",
+      "sample_data_delay": "whole-transform-allowance"
     },
     "I2cPublication": {
       "acknowledge_guard": "matched-control-delay",

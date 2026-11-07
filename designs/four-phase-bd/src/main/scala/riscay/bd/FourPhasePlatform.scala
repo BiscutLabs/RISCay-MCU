@@ -276,7 +276,7 @@ abstract class FourPhasePlatform(p: SocParameters, board: SocParameters => Board
   val telemetryCommandBridge = asyncChild("telemetry_command_bridge")(d =>
     new chiselasync.clocked.DecoupledToFourPhase(new TelemetryCommandHeader(p.softwareSampleChannels.size), 2, d))
   val telemetryReplyBridge = asyncChild("telemetry_reply_bridge")(d =>
-    new FourPhaseTelemetryReceipt(new TelemetryReply(p.softwareSampleChannels.size, fabric.telemetryWords.size), d))
+    new FourPhaseTelemetryReceipt(new TelemetryEffects, d))
   telemetry.command.req:=telemetryCommandBridge.out.req
   telemetryCommandBridge.out.ack:=telemetry.command.ack
   telemetryCommandBridge.out.bits.elements.foreach { case (name, field) =>

@@ -13,7 +13,9 @@ retains an open, pre-existing ordinary Housekeeping qualifier timing failure.
 Batch 3 replaces Control transport and speculative CRC with a
 [closed bank](native-control-bank.md): **1.531099 mm²** flat mapped logic,
 323 Control payload bits, with [independent review and local timing](reviews/bd-control-bank.md).
-Batch 4, Telemetry then Housekeeping effects, remains next.
+Batch 4a [Telemetry effects](native-telemetry-effects.md) is also implemented
+and [reviewed](reviews/bd-telemetry-effects.md): **1.519368 mm²** flat logic,
+259 Telemetry payload bits. Batch 4b, Housekeeping effects, remains next.
 This replaces the opportunity ranking in the
 [overhead investigation](native-overhead-investigation.md), not its measurements.
 The plan is based on the actual owners, their commit/return dependencies and the

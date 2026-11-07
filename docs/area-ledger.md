@@ -6,9 +6,9 @@ libraries, mapper and accepted repair flow for matched production comparisons.
 Full routed physical requalification remains migration item 17.
 
 The **BD mapped-logic milestone below 2.3 mm² excluding SRAM is achieved**.
-The BD SRAM, publication-slot and Control rewrites now map to **1.531099 mm² flat**,
-or **1.611951 mm²** with ordinary hierarchy retained; the latter repairs to
-**1.787644 mm²**. This reaches the current 1.60 mm² structural-batch target.
+The BD SRAM, publication-slot, Control and Telemetry rewrites map to **1.519368 mm² flat**,
+or **1.598560 mm²** with ordinary hierarchy retained; the latter repairs to
+**1.767953 mm²**. This reaches the current 1.60 mm² structural-batch target.
 Matched parents, clock inventories, activity and open timing are recorded below.
 The earlier Housekeeping batch maps to **1.987975 / 2.800265 mm²**
 (BD / Click) and repairs to **2.209548 / 3.051047 mm²**, including the expanded
@@ -1043,3 +1043,52 @@ unchanged 10 MHz reference clock: 333.860569 / 953.315969 ms and
 364.827869 / 1042.319369 ms; publication-slot batch 2 did not independently
 repeat this long boot measurement, so that difference is not attributed solely
 to Control. These are native-model timings, not extracted latency.
+
+## BD Telemetry compact effects
+
+Batch 4a replaces the copied candidate-state reply with a three-bit kind/recovery
+publication. Existing closed application/GPIO and optional software-sample banks
+remain the sole owners. The Join retains the command through actual bank capture
+and complete reply return. No periodic storage or new crossing is introduced;
+Click RTL is unchanged.
+
+| Measurement | Control bank parent | Compact Telemetry |
+| --- | ---: | ---: |
+| Flat mapped logic, mm² | 1.531099 | 1.519368 |
+| Hierarchical mapped logic, mm² | 1.611951 | 1.598560 |
+| Hierarchical repaired logic, mm² | 1.787644 | 1.767953 |
+| Telemetry native recipe, mm² | 0.045366 | 0.031975 |
+| Telemetry native payload bits | 515 | 259 |
+| All native payload bits | 6,263 | 6,007 |
+| Guards / allowances, mm² | 0.270313 / 0 | unchanged |
+| DLYD cells / area, mm² | 3,573 / 0.266677 | unchanged |
+| Hierarchical periodic sinks, service / work / LF | 1,253 / 1,688 / 78 | unchanged |
+| Services sinks, service / work | 64 / 912 | unchanged |
+
+Same profile, pinned Yosys 0.62/ABC, macros and accepted repair flow. DLYD purpose
+remains 2,424 custom ordering/reset, 596 bundling, 90 seed/reset admission and
+463 publication cells. Allowances remain passive. Native-model activity matches
+the immediate parent exactly across all 27 windows per variant: BD maintenance,
+ADC and firmware use 30 / 221 / 4,139 work edges and 3.147358 / 18.772483 /
+345.275095 µs. Flat periodic sinks also remain 2,822 (1,188 service / 1,556 work / 78 LF).
+Click remains 27 / 216 / 3,199. No Telemetry command occurs in this
+workload, so this is a no-regression result, not an exercised-command energy saving.
+
+Direct-bank composition and self-hold pass for production plus optional software
+samples at all five corners/two slews (20 cases). Production setup without receipt
+cycle credit is +32.515 ns; optional application/sample setup is +30.512 / +30.629 ns.
+Feedback hold is +1.085 ns production and at least +0.838 ns optional. Command
+reuse includes one guaranteed existing 50 ns receipt edge, with minimum +51.013 ns.
+Both periodic-reader campaigns also pass. Full margins and scopes are in the
+[independent review](reviews/bd-telemetry-effects.md).
+
+The production targeted data-tree audit passes (161 buffers, 0.004948 mm²).
+The optional sample map has one unrelated global rebase-Q slew failure,
+2.577701 ns against 2 ns at SS/hot, within Liberty characterization and outside
+all Telemetry cones. It remains a failed chipwide electrical gate. Existing
+Housekeeping periodic qualifier failures remain open. No routed RC, CTS, noise,
+full reset-distribution or statistical-mismatch qualification is claimed.
+
+Evidence: `build/bd-telemetry-effects/{map-r1,software-map-r1,flat-r1,area-r1.json,
+clocks-r1.json,summary-r1.json,activity-r1.json,timing-bind-r1,application-bank-r1,
+software-bank-r1}`, the focused logs and `build/bd-telemetry-effects-ci-r1/receipt.json`.

@@ -31,7 +31,7 @@ class FourPhaseServices(p: SocParameters, boardFactory: SocParameters => BoardPr
   val board = boardFactory(p)
   val telemetryWords = config.application.registers.map(_.word).toVector
   val telemetryCommand = IO(Decoupled(new TelemetryCommand(p.softwareSampleChannels.size)))
-  val telemetryReply = IO(Flipped(Decoupled(new TelemetryReply(p.softwareSampleChannels.size, telemetryWords.size))))
+  val telemetryReply = IO(Flipped(Decoupled(new TelemetryEffects)))
   val program = Module(new SramBank(config.programBytes,1))
   val ram = Module(new SramBank(config.workingRamBytes,1))
   program.io.request <> io.program.bytes; io.program.completions <> program.io.response
@@ -768,7 +768,8 @@ class FourPhaseServices(p: SocParameters, boardFactory: SocParameters => BoardPr
   val telemetryOwnedReply=telemetryReply.bits.kind === TelemetryKind.Commit.U || telemetryReply.bits.recovery
   telemetryReply.ready := telemetryOutstanding && (!telemetryOwnedReply || io.telemetrySource.publication.ready)
   io.telemetrySource.publication.valid:=telemetryOutstanding && telemetryReply.valid && telemetryOwnedReply
-  io.telemetrySource.publication.bits:=telemetryReply.bits.state.output(0)
+  // The publication slot arbitrates identity/acceptance; it carries no payload.
+  io.telemetrySource.publication.bits:=false.B
   io.telemetrySource.quiet:= !telemetryOutstanding && !telemetryCommitPending &&
     !io.telemetryDraining
   val telemetryApplyBank=IO(Output(Bool()))
