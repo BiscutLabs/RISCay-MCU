@@ -93,7 +93,7 @@ same-corner increments and a fresh repaired-map check. Minimum setup is +3.790 n
 latest conditional capture is 257.435 ns, within the unchanged 645 ns test envelope.
 Do not attribute the measured path to the final quotient adder merely from RTL.
 
-## Loop 3 — remove payload after its last consumer (in progress)
+## Loop 3 — remove payload after its last consumer (accepted)
 
 The third loop applies explicit last-consumer projection. RF consumes a writeback
 before the unchanged 31 ns forwarding guard; execute unconditionally replaces it.
@@ -125,10 +125,17 @@ pilot is not counted as a whole-chip saving.
 | Baseline | a978eae | 1.506013 / 1.749243 mm² | 5,780 / 2,822 flat sinks | BD firmware 4,139 work edges, 345.275 µs | Remove architecture costs before shortening surviving guards |
 | 1 | Exact ADC stage fusion | 1.477870 / 1.713602 mm² | 5,571 / 2,822 | ADC 220 edges; other wakes unchanged | Exact range arithmetic and fewer stores beat a slightly larger guard; reject ambiguous payload lifetimes |
 | 2 | Bounded elapsed increment; measured guard correction | 1.466714 / 1.700345 mm² | 5,571 / 2,822 | Model wakes unchanged; local setup +3.790 ns | Smaller arithmetic can map slower; inspect the real critical path and include guard cost |
-| 3 | Last-consumer CPU projection; in verification | — | — | — | — |
+| 3 | Last-consumer CPU projection | 1.455121 / 1.690651 mm² | 5,427 / 2,822 | Debug-model wakes unchanged; local hold/ACK improve | Project before protected storage, preserve architectural/retirement oracles, and remeasure changed loads |
 
 The [independent reviews](reviews/bd-area-loops.md) record findings, fixes and
 qualification scope. The [area ledger](area-ledger.md) remains the canonical measurement ledger.
 This page records experiment choices and transferable lessons, not a second
-custody/attestation framework. Stop after the third loop and report the remaining
-gap to the clocked reference and open physical qualification.
+custody/attestation framework. The three loops are complete: −3.38% flat logic,
+353 fewer native bits and no added periodic sinks. Whole-stage fusion saved the
+most; arithmetic factoring required a measured guard correction; last-consumer
+projection removed storage that mapping protection could not trim. Lifetime
+review rejected the I2C candidate before it could introduce mixed snapshots.
+BD remains 2.736× the clocked logic area, a 0.923288 mm² gap. No new P&R or power
+claim is made. Stop here; the remaining gap needs larger ownership changes and
+surviving-guard qualification, not an assumption that these three loops finish
+optimization.

@@ -6,9 +6,11 @@ libraries, mapper and accepted repair flow for matched production comparisons.
 Full routed physical requalification remains migration item 17.
 
 The **BD mapped-logic milestone below 2.3 mm² excluding SRAM is achieved**.
-The BD SRAM, publication-slot, Control, Telemetry and Housekeeping rewrites map to
-**1.506013 mm² flat**, or **1.587209 mm²** with ordinary hierarchy retained;
-the latter repairs to **1.749243 mm²**. This reaches the current 1.60 mm² structural-batch target.
+After the BD ownership rewrites and [three adaptive loops](area-optimization-loops.md),
+current logic maps to **1.455121 mm² flat**, or **1.532146 mm²** with ordinary
+hierarchy retained; the latter repairs to **1.690651 mm²**. The three loops reduce
+flat logic by 3.38% from 1.506013 mm². The 1.60 mm² structural-batch target is met;
+BD is still 2.736× the clocked logic reference, not an optimized or qualified die.
 Matched parents, clock inventories, activity and open timing are recorded below.
 The earlier Housekeeping batch maps to **1.987975 / 2.800265 mm²**
 (BD / Click) and repairs to **2.209548 / 3.051047 mm²**, including the expanded
@@ -24,7 +26,7 @@ BD is the tape-out target; Click physical timing/sizing work is frozen, while
 architecture conversions cover both unless the user requests an exception;
 the current area rewrite is explicitly BD-first. Allocate
 **0.05 mm² of additional standard-cell area for routed hold repair** in the BD
-planning budget (about 3.3% of current mapped logic). This is an allowance, not
+planning budget (about 3.4% of current mapped logic). This is an allowance, not
 inserted area or a predicted requirement, and is separate from electrical/CTS
 repair and placement whitespace. Record actual cell use after routing. If repair
 exceeds it, revise the budget or architecture; do not waive a failing path. The
@@ -1279,3 +1281,68 @@ loop-3 CI also passes with the corrected guard. Evidence:
 `build/area-loops/loop2/{map-r2,flat-r2,area-r2.json,clocks-r2.json,
 flat-clocks-r2.json,summary-r2.json,final-local-r2,final-ranges-r2,
 final-electrical-r2.json,independent-review-final.json,ci-r1}`.
+
+## Adaptive area loop 3: remove consumed and unobservable CPU payload
+
+BD's register file consumes writeback before the unchanged forwarding guard.
+The Join now stores the remaining named continuation fields; execute reconstructs
+zero writeback only inside the shared ISA transform. The physical exporter also
+omits the 107-bit retirement payload before protected capture because the pad
+wrapper has no consumer. Default core/SoC debug exports retain retirement.
+Click and clocked RTL are unchanged. No forwarding, request or ACK guard changes.
+
+| Measurement | Loop 2 | Loop 3 |
+| --- | ---: | ---: |
+| Flat mapped logic, mm² | 1.466714 | 1.455121 |
+| Hierarchical mapped logic, mm² | 1.542519 | 1.532146 |
+| Hierarchical repaired logic, mm² | 1.700345 | 1.690651 |
+| Repair addition, mm² | 0.157826 | 0.158504 |
+| Native storage bits | 5,571 | 5,427 |
+| CPU native storage bits | 1,203 | 1,059 |
+| Guards / allowances, mm² | 0.272394 / 0 | unchanged |
+| DLYD cells / area, mm² | 3,603 / 0.268916 | unchanged |
+| Flat periodic sinks, service / work / LF | 1,188 / 1,556 / 78 | unchanged |
+| Hierarchical periodic sinks, service / work / LF | 1,253 / 1,688 / 78 | unchanged |
+| Services sinks, service / work | 64 / 912 | unchanged |
+
+Flat logic falls **0.011593 mm² (0.79%)**. Hierarchical mapped logic falls
+0.010372 mm²; repair grows 0.000678 mm², leaving a net repaired reduction of
+0.009694 mm². The 144-bit saving is exactly 37 consumed Join writeback bits plus
+107 physical trace bits. RF480, state171, memory request70 and response33 bits
+remain; all 85 core primitive identities and every core guard recipe are intact.
+DLYD-by-purpose and the three fixed SRAMs are unchanged from loop 2.
+
+All 27 native-model activity windows per variant match loop 2. These activity
+runs retain debug trace for classification: BD maintenance/ADC/firmware remain
+30/220/4,139 work edges and 3.147358/18.689149/345.275095 µs. Trace-disabled
+functionality has separate core and SoC evidence; no physical wake-energy claim
+is inferred from the trace-enabled model.
+
+Fresh independent source/test and timing reviews pass. CI runs 397 Python and
+235 Scala cases; focused core/SoC and physical-export checks pass 25+4; extended
+activity/deep-sleep/compiled-firmware checks pass 15/15. Both generation and RDC
+audits pass. The original retirement tests remain, and new debug/physical memory
+histories include register signatures, stalled replies, access faults and reset
+with an accepted load outstanding. The fast CI gate now includes SocSpec's
+trace-disabled GPIO/readback/lock/POR case. The known accelerated-maintenance
+failures from loop 1 remain open; none of their expectations changed.
+
+Repaired conditional timing passes ten execute and ten Join cases. Local nominal
+setup allowance/zero-reuse hold/ACK-after-capture minima are +112.249/+1.339/
++1.533 ns; Join operand setup minima are +133.993/+126.805 ns. All 55,720 data
+arc/table checks and 45 actual per-pin electrical cases pass without waivers.
+These are nominal zero-wire conditional bounds, not RF launch/full-return,
+mismatch, reset, extracted-RC or global electrical qualification.
+
+Evidence: `build/area-loops/loop3/{map-r1,flat-r1,area-r1.json,clocks-r1.json,
+flat-clocks-r1.json,summary-r1.json,ci-r1,focused-export-r1.log,extended-r1.log}`
+and `build/area-loops/loop3-preflight/{parent-summary.json,candidate-summary.json,
+candidate-electrical-r1}`. The [review record](reviews/bd-area-loops.md) documents
+findings, fixes and qualification limits. No new P&R was run.
+
+Across all three loops: **−0.050891 mm² flat (−3.38%)**, **−0.058592 mm² repaired**,
+**353 fewer native bits**, unchanged 2,822 flat periodic sinks, and 30 additional
+DLYD cells whose area is included. The remaining flat-logic gap to the unchanged
+clocked reference is **0.923288 mm²**. The separate 0.05 mm² routed hold-repair
+reserve remains. Whole-stage removal gave the largest saving; arithmetic and
+last-consumer projection helped, but do not close the architectural area gap.

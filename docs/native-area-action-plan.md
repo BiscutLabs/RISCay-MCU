@@ -349,8 +349,10 @@ protecting needless payload is a cost that must be fixed before mapping.
 - Project fields **before** protected storage and regenerate typed endpoints,
   trees and exact graph checks. Do not globally remove `keep`/`dont_touch` or
   ask synchronous ABC to infer asynchronous retiming. The CPU's 107 physical
-  trace and 37 writeback candidates can be a small follow-up, preserving trace
-  in verification exports; they are not the first large-area fix.
+  trace and 37 consumed writeback bits are removed in
+  [adaptive loop 3](area-optimization-loops.md), preserving trace in default
+  verification exports. The measured flat saving is 0.011593 mm²; this is a
+  follow-up to the larger ownership rewrites, not a substitute for them.
 - Propose a public resettable native AND in chisel-async. Currently 32 BD
   logical-AND helpers each use four public ControlGates because the library AND
   is private. Replacing them with a public primitive has a gross current recipe

@@ -16,7 +16,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 FAST_SUITES = (
     'ClockedCoreSpec', 'ClockedSocSpec', 'ClockedFabricSpec', 'ClockedSleepSpec', 'ClockedBoundarySpec',
-    'TimestampMathSpec', 'AppRegistersSpec', 'AppSnapshotRecoverySpec', 'EventReferenceSpec', 'ClockedEventsSpec', 'CoreSpec', 'HostSchemaSpec', 'AsyncFabricSpec', 'AsyncControlSpec',
+    'TimestampMathSpec', 'AppRegistersSpec', 'AppSnapshotRecoverySpec', 'EventReferenceSpec', 'ClockedEventsSpec', 'CoreSpec', 'SocSpec', 'HostSchemaSpec', 'AsyncFabricSpec', 'AsyncControlSpec',
     'AsyncCrcSpec', 'AsyncHousekeepingSpec', 'AsyncFrameStoreSpec',
     'BootIngressSpec', 'QuiescingReceiptSpec', 'QuiescingBridgeSpec', 'SleepSpec',
 )

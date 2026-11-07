@@ -117,6 +117,65 @@ class CoreSpec extends AnyFunSuite {
     ${if(bypass) s"force $guard.q = $guard.a;" else ""}"""
   }
 
+
+  // Physical trace projection is checked against the same independent memory
+  // history as the debug core. Signature stores make every RV32E register visible.
+  private def busOnly(result: Reference.Result, fastest: Boolean, retainTrace: Boolean,
+      resetLoad: Boolean = false): String = {
+    val zeroTrace = if(retainTrace) "" else """
+      if({traceEvent,trace_valid,trace_pc,trace_instruction,trace_rd,trace_data,
+          trace_writeRegister,trace_trap,trace_cause} !== 0) $fatal(1,"PHYSICAL_TRACE_NOT_ZERO");
+    """
+    val pending = if(!resetLoad) "" else {
+      val index=result.accesses.indexWhere(_.op==1)
+      require(index>=0,"RESET_TEST_NEEDS_LOAD")
+      val a=result.accesses(index)
+      s"""
+        ${result.accesses.take(index).zipWithIndex.map { case(a,i) => bus(a,false,i,fastest) }.mkString("\n")}
+        wait(request_req); #2;
+        if(request_bits_operation!==2'd1 || request_bits_address!==${hex(a.address)} ||
+           request_bits_data!==${hex(a.data)} || request_bits_mask!==4'd${a.mask})
+          $$fatal(1,"RESET_LOAD_NOT_ACCEPTED");
+        request_ack=1; wait(!request_req); #100000000; request_ack=0;
+        #300000000;
+        reset=1; request_ack=0; response_req=0; response_bits_data=0; response_bits_error=0;
+        #1000000000; reset=0; #1000000000;
+      """
+    }
+    s"""begin
+      $pending
+      ${result.accesses.zipWithIndex.map { case(a,i) => bus(a,false,i,fastest)+zeroTrace }.mkString("\n")}
+      #2000000000;
+      if(request_req) $$fatal(1,"PROJECTED_CORE_HALT_NOT_QUIESCENT");
+      $zeroTrace
+      $$display("PROJECTED_CORE_MEMORY_PASS:${result.accesses.size}");
+    end"""
+  }
+
+  test("BD projected physical core matches debug memory histories with full register signatures") {
+    val signatures=(0 to 15).map(r => store(0,r,1024+4*r,2))
+    val programs=Seq(arithmetic.dropRight(1) ++ signatures ++ Seq(breakpoint),
+      memoryAndControl.dropRight(1) ++ signatures ++ Seq(breakpoint))
+    for((program,index) <- programs.zipWithIndex; retain <- Seq(true,false); fastest <- Seq(false,true)) {
+      val expected=Reference.run(program)
+      AsyncTest.run(new FourPhaseCore(retainTrace=retain),Seq(1,19),
+        fresh(s"bd-projected-$index-$retain-$fastest"))(_ => busOnly(expected,fastest,retain))
+    }
+  }
+  test("BD projected physical core retains fault and accepted-load reset behavior") {
+    val faults=Seq((Seq(breakpoint),Set(0L)),
+      (Seq(i(0x03,1,2,0,1024)),Set(1024L)),(Seq(store(0,1,1024,2)),Set(1024L)))
+    for(((program,denied),index) <- faults.zipWithIndex) {
+      AsyncTest.run(new FourPhaseCore(retainTrace=false),Seq(1,19),fresh(s"bd-projected-fault$index"))(
+        _ => busOnly(Reference.run(program,denied=denied),fastest=true,retainTrace=false))
+    }
+    val resetProgram=(0 to 15).map(r => store(0,r,1024+4*r,2)) ++ memoryAndControl
+    for(retain <- Seq(true,false)) {
+      AsyncTest.run(new FourPhaseCore(retainTrace=retain),Seq(1,19),fresh(s"bd-projected-reset-$retain"))(
+        _ => busOnly(Reference.run(resetProgram),fastest=false,retainTrace=retain,resetLoad=true))
+    }
+  }
+
   for(click <- Seq(false,true)) {
     val name = if(click) "click" else "four-phase"
     test(s"$name minimum-latency memory and writeback-before-forwarding hold across cell corners") {

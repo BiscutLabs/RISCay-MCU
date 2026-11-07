@@ -103,3 +103,48 @@ final-electrical-r2.json,independent-review-final.json}`. Parent and 28-cell
 failures, including all logs, remain beside them. Conditional input launch is
 explicit: full FIFO seed/admission composition, reset distribution, extracted
 RC, noise and statistical mismatch are not closed by this local campaign.
+
+## Loop 3 — last-consumer CPU projection (accepted)
+
+Fresh source/test reviewer `area_action_plan_review` and independent timing
+reviewer `bd_control_bank_review` found no unresolved blocker for this scoped
+change. Two test-review findings were fixed before acceptance: use the typed
+Join channel id `left_input`, and observe reset register signatures before the
+program reseeds them. Existing retirement assertions and all deadlines remain.
+
+Named continuation fields equal live CoreState fields minus writeback, including
+widths. Execute never reads the old writeback; RF still consumes it directly
+before the same 31 ns guard. Shared ISA, state/RF storage and all handshakes are
+unchanged. Physical-only trace removal has both debug/physical independent
+memory-history comparisons and a GPIO/host/lock/POR integration test; default
+debug exports retain full retirement. SocSpec is included in the fast CI gate.
+
+The mapped graph confirms exactly 144 fewer native bits and unchanged 85 core
+primitive identities/guard recipes. CI passes 397 Python/235 Scala; focused
+25+4 and extended 15/15 pass, as do both generation/RDC audits. Review inspected
+the receipts and matched area/sink reports, not only test exit codes.
+
+| Conditional nominal bound, ns | Parent | Loop 3 |
+| --- | ---: | ---: |
+| Execute allowed input lag | 112.046778 | 112.249256 |
+| Immediate-source-reuse hold | 1.187441 | 1.339435 |
+| ACK after latest capture | 1.381441 | 1.533435 |
+| Join-left to execute setup | 134.385037 | 133.993412 |
+| Join-right to execute setup | 126.592961 | 126.804689 |
+| Left ACK return after source close | 146.218791 | 146.236421 |
+| Right ACK return after source close | 146.297499 | 146.297499 |
+
+All ten stage and ten Join contexts pass. The candidate has the same 647 live
+sources; 37 dead Join inputs disappear and dynamic capture destinations fall
+278→171. There are no constant-lane exclusions. All 55,720 data-arc/table checks
+pass. The actual per-pin electrical audit covers 45 contexts, 78,225 data pin
+samples and 18,990 request/capture/ACK pin samples, with no missing limits or
+waivers. It uses the actual Liberty/ordinary 0.8× limit and native 2 ns policy;
+blanket 2 ns global-report failures remain in the logs and are not a chip pass.
+
+These margins are **nominal, conditional, zero-wire RC**. RF launch-event
+alignment, full source return/rearm, mismatch, routed RC/noise/reset and global
+electrical closure remain open. No guard was shortened on this evidence.
+Evidence: `build/area-loops/loop3-preflight/{parent-summary.json,
+candidate-summary.json,candidate-electrical-r1/results.json}` and the loop-3
+functional/area receipts listed in the [ledger](../area-ledger.md).

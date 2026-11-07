@@ -47,7 +47,7 @@ object PhysicalSocExport {
       // Keep verification bodies in their owning module. The mapper still
       // rejects arbitrary/extracted sources; SYNTHESIS removes assertions.
       ExportDesign.emit(chisel3.layer.elideBlocks {
-        if(variant == "bd") new FourPhaseSoc(p,board,preserveHierarchy=preserveHierarchy)
+        if(variant == "bd") new FourPhaseSoc(p,board,preserveHierarchy=preserveHierarchy,retainTrace=false)
         else new ClickSoc(p,board)
       },out)
       SramInventory.write(out,p.config,variant == "bd" && preserveHierarchy)
@@ -63,7 +63,7 @@ object PhysicalSocExport {
         "purpose" -> "generic MCU evaluation fixture; not qualified for tapeout",
         "architecture" -> "generic-mcu", "profile_behavior" -> false,
         "preserve_clocked_hierarchy" -> (variant == "bd" && preserveHierarchy),
-        "exact_adc_ratio" -> exactSample,
+        "exact_adc_ratio" -> exactSample, "retirement_trace_storage" -> (variant != "bd"),
         "spi_boot" -> true, "rom_bytes" -> p.bootWords.size*4,
         "gpio_count" -> p.config.gpioCount,
         "service_max_hz" -> ApplicationResetContract.maximumServiceHz, "lf_max_hz" -> 12,

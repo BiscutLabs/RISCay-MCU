@@ -142,6 +142,25 @@ end
       """)
     }
   }
+
+  if(!synchronous) test("BD physical trace projection preserves GPIO, host readback, lock and POR") {
+    val program=Seq(0x300000b7L,i(0x13,2,0,0,5),store(1,2,24,2),
+      i(0x13,2,0,0,7),store(1,2,28,2),i(0x13,2,0,0,0x123),store(1,2,52,2),breakpoint)
+    run(new FourPhaseSoc(p,retainTrace=false),"bd-physical-trace-off",s"""
+      ${upload(program)}
+      wait(mode==4); #1000;
+      if(!programmed || !locked || gpioOut!==5 || gpioOe!==7)
+        $$fatal(1,"PHYSICAL_CORE_GPIO_OR_LOCK");
+      read_words(128,0,0);
+      if(snapshot[0+:32]!==32'h123 || supported[0]!==1'b1)
+        $$fatal(1,"PHYSICAL_CORE_HOST_RESULT");
+      if({traceEvent,trace_valid,trace_pc,trace_instruction,trace_rd,trace_data,
+          trace_writeRegister,trace_trap,trace_cause}!==0) $$fatal(1,"PHYSICAL_SOC_TRACE_NOT_ZERO");
+      reset=1; #2000;
+      if(gpioOe!==0 || programmed || locked) $$fatal(1,"PHYSICAL_CORE_POR");
+    """)
+  }
+
   test("SoC harness rejects a deliberately wrong host ABI expectation") {
     val failure = intercept[IllegalArgumentException] {
       run(top(click=false), "negative-control", """

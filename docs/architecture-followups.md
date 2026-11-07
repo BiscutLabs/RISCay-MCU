@@ -25,7 +25,12 @@ also retains its architectural bank and publishes only 41 effect bits. Click
 retains the corresponding full-state replies. The follow-on
 [three adaptive area loops](area-optimization-loops.md) are also BD-only: the
 first replaces the ADC scaler with an exact single-stage constant transform;
-Click retains its radix pipeline. Both keep the same integer/scaling ABI.
+the second factors elapsed arithmetic with its own remeasured request guard;
+the third drops consumed CPU Join writeback and unobserved physical retirement
+storage. Default BD debug/verification exports still retain retirement, while
+PhysicalSocExport explicitly disables it. Click retains its original pipelines
+and transport. Both keep the same ISA and integer/scaling ABI. These loops now
+measure 1.455121 mm² flat BD logic; the ledger records the remaining gap.
 The external ABI and reset/retention behavior remain equal;
 Click remains an unchanged functional regression reference during this pass.
 

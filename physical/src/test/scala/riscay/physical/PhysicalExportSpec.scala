@@ -78,6 +78,18 @@ class PhysicalExportSpec extends AnyFunSuite {
       def delay(n: ujson.Value,id: String): String = n("primitives").arr.find(_("id").str==id).get("parameters")("DELAY_FS").str
       val execute=child(child(manifest("design"),"core"),"execute")
       assert(delay(execute,"request_delay")=="80000000")
+      assert(policy("retirement_trace_storage").bool == (variant!="bd"))
+      if(variant=="bd") {
+        def fields(n: ujson.Value,id: String)=n("channels").arr.find(_("id").str==id).get("layout").arr.map(_("field").str)
+        val core=child(manifest("design"),"core")
+        def layout(n: ujson.Value,id: String)=n("channels").arr.find(_("id").str==id).get("layout").arr
+          .map(f => f("field").str -> f("width").num.toInt).toMap
+        val full=layout(child(core,"state"),"out")
+        assert(layout(child(core,"join"),"left_input")==full.filterNot(_._1.startsWith("bits.writeback.")))
+        val stored=fields(execute,"out")
+        assert(stored.exists(_.startsWith("bits.state.writeback.")))
+        assert(stored.forall(!_.startsWith("bits.trace.")))
+      }
       val elapsed=tree.find(_("module").str==(if(variant=="bd") "FourPhaseElapsed" else "ClickElapsed")).get
       assert(delay(child(elapsed,"step"),"request_delay")=="100000000")
       if(variant=="bd") assert(delay(child(manifest("design"),"control"),"acknowledge_guard")=="32000000")
