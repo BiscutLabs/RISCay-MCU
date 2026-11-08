@@ -1346,3 +1346,19 @@ DLYD cells whose area is included. The remaining flat-logic gap to the unchanged
 clocked reference is **0.923288 mm²**. The separate 0.05 mm² routed hold-repair
 reserve remains. Whole-stage removal gave the largest saving; arithmetic and
 last-consumer projection helped, but do not close the architectural area gap.
+
+### Guard proposal correction after the three loops
+
+Tooling-only batch: production RTL and mapping recipes are unchanged. The last
+measured values remain **1.455121 mm² flat / 1.690651 mm² repaired**, 3,603 DLYD,
+5,427 native bits and 2,822 flat periodic sinks; no new area or activity saving
+is claimed. The live inventory identifies 330 DLYD under measured overrides
+and 3,273 under the simulation-derived fallback. Nine 200 ns Source/Return
+guards contain 1,539 cells (0.114866 mm²); fixed short-control recipes contain
+3,960 buffers (0.052158 mm²). These pools overlap the existing totals.
+
+The proposer no longer guesses eight or 28 cells. Retained failing elapsed
+measurements produce an unaccepted 33-cell estimate; production stays at the
+remeasured 34. Custom Source/Return reset, pulse and full-return characterization,
+smaller primitive recipes and selective payload protection remain open. See
+[guard sizing](gf180-guard-sizing.md) and the [review](reviews/bd-area-loops.md).

@@ -79,7 +79,12 @@ def inventory(mapping):
             rows.append(dict(instance=path, owner=owner['rtl_path'], owner_module=name,
                              owner_metadata_module=owner['module'],
                              primitive_id=ident, original_parameters=b['parameters'],
-                             stages=count, purpose=purpose, classification=classification, disposition=disposition))
+                             stages=count, lanes=int(b['parameters']['WIDTH']),
+                             stages_per_lane=count//int(b['parameters']['WIDTH']),
+                             sizing_basis=('measured-override' if b.get('guard_policy', {}).get(path, {}).get('requested') else
+                                           'shared-policy-unmeasured-member' if path in b.get('guard_policy', {}) else
+                                           'simulation-derived-fallback' if count else 'fixed-short-control-recipe'),
+                             purpose=purpose, classification=classification, disposition=disposition))
     return rows, manifest, record
 
 
@@ -209,18 +214,86 @@ def focus_guard_plan(plan):
     return result
 
 
-def candidate_counts(rows):
-    changes = []
-    for row in rows:
-        count = row['stages']
-        if row['disposition'] == 'measure-canonical-stage':
-            if row['primitive_id'] in ('output_delay', 'acknowledge_guard'):
-                count = min(count, 8)
-            elif row['owner'].endswith('.ca_child_elapsed_scaler.ca_child_native.ca_child_step'):
-                count = min(count, 28)
-        if count < row['stages']:
-            changes.append(dict(row, stages=count, previous_stages=row['stages']))
-    return changes
+def candidate_counts(rows, measurements, *, corners=relative.CORNERS, slews=(.02, 2.)):
+    """Propose counts from loaded same-corner paths, never from model delays.
+
+    An observation describes a path whose *later* event includes this chain.
+    Other competing paths must be independent of its length. For removal use
+    the largest measured per-cell delay; for addition use the smallest. This
+    is an initial estimate, not a linear-delay proof: remapping changes loads
+    and slews, so all affected paths must be measured again before adoption.
+    Absolute pulse/aperture floors remain separate from relative ordering.
+    """
+    require(measurements.get('schema') == 'riscay-guard-sizing-measurements-v1', 'GUARD_MEASUREMENT_SCHEMA')
+    live = {r['instance']: r for r in rows}
+    require(len(live) == len(rows), 'GUARD_DUPLICATE_INVENTORY')
+    guards = measurements.get('guards', [])
+    require(guards and len({g['instance'] for g in guards}) == len(guards), 'GUARD_MEASUREMENT_INVENTORY')
+    proposals = []
+    for guard in guards:
+        require(guard['instance'] in live, 'GUARD_UNKNOWN_MEASUREMENT')
+        row = live[guard['instance']]
+        params = row['original_parameters']
+        require(params['WIDTH'] == 1 and params['OP'] == 0 and params['RESET_VALUE'] == 0 and
+                row['stages'] > 0, 'GUARD_SCALAR_CHAIN_REQUIRED')
+        require(guard['previous_stages'] == row['stages'], 'GUARD_MEASUREMENT_COUNT_CHANGED')
+        obligations = guard.get('obligations', [])
+        require(obligations and len({o['id'] for o in obligations}) == len(obligations), 'GUARD_OBLIGATION_INVENTORY')
+        observations = []
+        count = 1
+        for obligation in obligations:
+            kind = obligation['kind']
+            require(kind in ('relative-ordering', 'absolute-minimum'), 'GUARD_OBLIGATION_KIND')
+            require(isinstance(obligation.get('basis'), str) and obligation['basis'].strip(), 'GUARD_OBLIGATION_BASIS')
+            edges = obligation['edges']
+            require(edges and len(set(edges)) == len(edges) and set(edges) <= {'rise', 'fall'}, 'GUARD_OBLIGATION_EDGES')
+            expected = {(c, s, e) for c in corners for s in slews for e in edges}
+            cases = obligation['cases']
+            observed = [(c['corner'], c['slew_ns'], c['edge']) for c in cases]
+            require(set(observed) == expected and len(observed) == len(expected), 'GUARD_MEASUREMENT_COVERAGE')
+            for case in cases:
+                keys = ('earliest_ns', 'cell_min_ns', 'cell_max_ns') + (
+                    ('latest_ns', 'aperture_ns') if kind == 'relative-ordering' else ('required_ns',))
+                require(all(type(case[k]) in (int, float) and math.isfinite(case[k]) and case[k] >= 0
+                            for k in keys), 'GUARD_MEASUREMENT_VALUE')
+                require(0 < case['cell_min_ns'] <= case['cell_max_ns'], 'GUARD_CELL_BOUNDS')
+                require(case.get('electrical_pass') is True, 'GUARD_MEASUREMENT_ELECTRICAL')
+                margin = (conservative_margin(case['earliest_ns'], case['latest_ns'], case['aperture_ns'])
+                          if kind == 'relative-ordering' else
+                          (1-DERATE)*case['earliest_ns']-case['required_ns'])
+                deficit = RESIDUAL_NS-margin
+                increment = (1-DERATE)*case['cell_min_ns' if deficit > 0 else 'cell_max_ns']
+                needed = max(1, row['stages']+math.ceil(deficit/increment))
+                count = max(count, needed)
+                observations.append(dict(obligation=obligation['id'], kind=kind,
+                    corner=case['corner'], slew_ns=case['slew_ns'], edge=case['edge'],
+                    baseline_margin_ns=margin, cell_min_ns=case['cell_min_ns'], cell_max_ns=case['cell_max_ns']))
+        def estimated_margin(case, count):
+            delta = count-row['stages']
+            return case['baseline_margin_ns']+(1-DERATE)*delta*case['cell_min_ns' if delta >= 0 else 'cell_max_ns']
+        # Do not round an estimated margin up to the acceptance floor.
+        if any(estimated_margin(c, count) < RESIDUAL_NS for c in observations):
+            count += 1
+        proposals.append(dict(row, stages=count, previous_stages=row['stages'],
+            sizing_status='estimate-requires-fresh-electrical-and-timing-checks',
+            sizing_obligations=[dict(id=o['id'], kind=o['kind'], edges=o['edges']) for o in obligations],
+            estimated_minimum_margin_ns=min(estimated_margin(c, count) for c in observations),
+            measurements=observations))
+    return proposals
+
+
+def require_candidate_binder(proposals, variant, focused=False):
+    """The standard-stage runner cannot validate arbitrary custom obligations."""
+    require(variant == 'bd', 'GUARD_CANDIDATE_BINDER_REQUIRED')
+    signatures = {'request_delay': [('setup', 'relative-ordering', ('rise',))],
+                  'output_delay': [('publication', 'relative-ordering', ('fall', 'rise'))]}
+    for proposal in proposals:
+        require(proposal['disposition'] == 'measure-canonical-stage' and
+                proposal['owner_module'] in ('FourPhaseStage', 'LongHoldBuffer'), 'GUARD_CUSTOM_BINDER_REQUIRED')
+        observed = sorted((o['id'], o['kind'], tuple(sorted(o['edges']))) for o in proposal['sizing_obligations'])
+        require(observed == signatures.get(proposal['primitive_id']), 'GUARD_UNSUPPORTED_CANDIDATE_OBLIGATION')
+        require(not focused or proposal['primitive_id'] != 'request_delay', 'GUARD_REQUEST_REQUIRES_DATA')
+        require(proposal['stages'] <= proposal['previous_stages'], 'GUARD_LENGTHEN_REMAP_REQUIRED')
 
 
 def rewrite_graph(live, audit, changes):
@@ -390,11 +463,36 @@ def measure_case(netlist, plan, index, directory, corner, slew, sta):
     return result
 
 
-def run(mapping, output, variant, *, candidate=False, paths=(), workers=2, focused=False):
+def run(mapping, output, variant, *, candidate=False, paths=(), workers=2, focused=False,
+        measurements=None, propose=False):
     require(not output.exists(), 'GUARD_OUTPUT_EXISTS')
+    require(not (candidate and propose) and bool(measurements) == (candidate or propose),
+            'GUARD_MEASUREMENTS_REQUIRED_FOR_CANDIDATE')
     mapping = mapping.resolve()
     receipt = validate_receipt(mapping)
     rows, manifest, record = inventory(mapping)
+    require(record['variant'] == variant, 'GUARD_VARIANT')
+    proposals = []
+    if measurements:
+        measured = json.loads(measurements.read_text(encoding='utf-8'))
+        require(measured.get('mapping_sha256') == sha(mapping/'mapping.json') and
+                measured.get('netlist_sha256') == sha(mapping/'netlist.v'), 'GUARD_MEASUREMENT_GRAPH_CHANGED')
+        proposals = candidate_counts(rows, measured)
+    if candidate:
+        require_candidate_binder(proposals, variant, focused)
+    if propose:
+        require(not paths and not focused, 'GUARD_PROPOSAL_SCOPE')
+        output.mkdir(parents=True)
+        run_receipt = RunReceipt(output/'receipt.json', inputs=[measurements, mapping/'mapping.json',
+            mapping/'netlist.v', mapping/'timing-intent.json', Path(__file__)], tools=[])
+        write_json(output/'inventory.json', dict(rows=rows))
+        write_json(output/'proposals.json', dict(status='ESTIMATES_NOT_ACCEPTED', guards=proposals,
+            missing_measurements=[r['instance'] for r in rows if r['stages'] and
+                                  r['instance'] not in {p['instance'] for p in proposals}],
+            scope='Only declared competing paths; fresh electrical, timing, reset, pulse and return checks required.'))
+        run_receipt.finish(outputs=[output/'inventory.json', output/'proposals.json'], status='pass',
+                           coverage=dict(scope='proposal arithmetic and declared measurement coverage; no timing acceptance'))
+        return
     audit = json.loads((mapping/'netlist-audit.json').read_text())
     original = stage.receipt_original(mapping, receipt)
     live = json.loads((mapping/'netlist.json').read_text())
@@ -402,10 +500,13 @@ def run(mapping, output, variant, *, candidate=False, paths=(), workers=2, focus
     source_index = leaf.LeafIndex(original, live, proof['added_buffers'], proof['added_ties'])
     cuts = leaf.keeper_cuts(source_index, audit)
     selected = sorted({r['owner'] for r in rows if r['disposition'] == 'measure-canonical-stage'})
+    if candidate:
+        require(all(p['owner'] in selected for p in proposals), 'GUARD_CUSTOM_BINDER_REQUIRED')
+        selected = sorted({p['owner'] for p in proposals})
     if paths:
-        require(set(paths) <= set(selected), 'GUARD_UNKNOWN_STAGE')
+        require(set(paths) <= set(selected) and (not candidate or set(paths) == set(selected)), 'GUARD_UNKNOWN_STAGE')
         selected = list(paths)
-    changes = candidate_counts(rows) if candidate else []
+    changes = [p for p in proposals if p['stages'] != p['previous_stages']]
     output.mkdir(parents=True)
     write_json(output/'inventory.json', dict(rows=rows, purpose_counts=dict(Counter(r['purpose'] for r in rows))))
     write_json(output/'changes.json', changes)
@@ -436,6 +537,7 @@ def run(mapping, output, variant, *, candidate=False, paths=(), workers=2, focus
               ROOT/'tools/timing_properties.py', ROOT/'tools/run_receipt.py', relative.PROBE, *sta.input_files(), *yosys.input_files()]
     files += [ROOT/'.tools/physical/pdk'/(SC+c+'.lib') for c in relative.CORNERS]
     files += [ROOT/'.tools/gf180-sram'/(leaf.SRAM+'__tt_025C_3v30.lib')]
+    if measurements: files.append(measurements)
     run_receipt=RunReceipt(output/'receipt.json',inputs=files,tools=[])
     tasks = []
     with ThreadPoolExecutor(max_workers=workers) as pool:
@@ -462,12 +564,14 @@ def run(mapping, output, variant, *, candidate=False, paths=(), workers=2, focus
         selected_owners={p['descriptor']['instance'] for p in plans}
         adopted=[selection['requested'] for binding in record['bindings']
                  for selection in binding.get('guard_policy',{}).values() if selection.get('requested')]
-        measured=[r for r in (changes if candidate else adopted) if r['owner'] in selected_owners]
+        measured=[r for r in (proposals if candidate else adopted) if r['owner'] in selected_owners]
         summary=validate_cases(measured,results,RESIDUAL_NS,relative.CORNERS,(.02,2.))
     finally:
         write_json(output/'results.json',dict(engineering_derate=DERATE,residual_ns=RESIDUAL_NS,
             statistical_qualification=False,routed_qualification=False,candidate=candidate,
-            status='LOCAL_GUARD_CHECKS_PASS' if summary else 'INCOMPLETE_FAILURES',focused=focused,
+            electrical_qualification=False,
+            remaining_acceptance='Selected-cone electrical checks, source launch, reset, pulse and full return composition; then routed qualification.',
+            status='LOCAL_TEMPLATE_TIMING_PASS' if summary else 'INCOMPLETE_FAILURES',focused=focused,
             cases=results,failures=failures,changes=changes,summary=summary))
         run_receipt.finish(outputs=[p for p in output.rglob('*') if p.is_file()],
             status='pass' if summary else 'fail',coverage=dict(scope='local guard checks',summary=summary))
@@ -479,8 +583,11 @@ if __name__ == '__main__':
     parser.add_argument('mapping', type=Path); parser.add_argument('output', type=Path)
     parser.add_argument('--variant', choices=('bd', 'click'), required=True)
     parser.add_argument('--candidate', action='store_true')
+    parser.add_argument('--measurements', type=Path, help='Loaded per-instance, per-corner competing paths and chain cell bounds')
+    parser.add_argument('--propose', action='store_true', help='Write unaccepted count estimates and missing coverage, without changing any graph')
     parser.add_argument('--stage', action='append', default=[])
     parser.add_argument('--workers', type=int, default=2)
     parser.add_argument('--focused',action='store_true')
     args = parser.parse_args()
-    run(args.mapping, args.output, args.variant, candidate=args.candidate, paths=args.stage, workers=args.workers,focused=args.focused)
+    run(args.mapping, args.output, args.variant, candidate=args.candidate, paths=args.stage, workers=args.workers,
+        focused=args.focused, measurements=args.measurements, propose=args.propose)

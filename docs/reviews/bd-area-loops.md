@@ -148,3 +148,28 @@ electrical closure remain open. No guard was shortened on this evidence.
 Evidence: `build/area-loops/loop3-preflight/{parent-summary.json,
 candidate-summary.json,candidate-electrical-r1/results.json}` and the loop-3
 functional/area receipts listed in the [ledger](../area-ledger.md).
+
+## Guard proposal correction — independent tooling review
+
+A fresh independent reviewer confirmed the fallback cost and found the old
+candidate generator could propose reverting elapsed from 34 to the known-failing
+28 cells. The corrected proposer uses each loaded corner's competing paths and
+cell bounds, keeps absolute minima separate and reports missing measurements.
+The review required two fixes: reject declarations outside the fresh timing
+template's actual coverage, and explicitly label its output electrically
+unqualified. Both are implemented; focused request checks and unsupported
+custom/absolute/Click candidate execution are rejected before launching.
+
+The reviewer accepted the arithmetic and unchanged graph-edit proof. Replaying
+the retained failed 28-cell elapsed measurements gives a 33-cell estimate with
+2.339 ns estimated residual; the accepted production count remains 34. This is
+not approval of the estimate or qualification of custom guards. Evidence is in
+`build/guard-sizer-correction/`: the proposal receipt, 404 passing Python tests,
+and the current elapsed local-template rerun. The first rerun's receipt rejects
+an inventory-label edit made while it ran; its logs are retained and a fresh
+run uses frozen inputs. `ci-python-r2/receipt.json` and
+`current-elapsed-r2/receipt.json` pass; all ten local timing cases reproduce
++3.790 ns setup, +0.621 ns local hold and +4.275 ns publication minima. These
+remain conditional zero-wire bounds, not fresh electrical acceptance.
+No RTL, policy count or library changed, so no new
+Scala, whole-chip map, power or routed qualification is claimed.

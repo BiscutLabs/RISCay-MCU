@@ -278,10 +278,12 @@ and unchanged sleep/deep-sleep deadlines. No pending events return to Telemetry.
 
 ## 5. Optimize surviving delay recipes, not deleted controllers
 
-After batches 1–4, regenerate the live inventory. The current 17 long guards
-are four grant, three decision, four reserve-ACK, two Return-armed, two
-Return-cleanup and two RecoveryReturn-cleanup guards. Batch 2 deletes eight;
-do not run a sizing campaign on those first or count their area twice.
+After batches 1–4 and the three adaptive loops, nine 200 ns guards survive:
+two grant, one ProgramSource decision, two reserve-ACK, two Return-armed and
+two Return-cleanup. They contain 1,539 DLYD cells, about 0.114866 mm². Eight of
+the original seventeen guards disappeared with their owners. The live map has
+126 long guard instances and 3,603 DLYD cells in total; do not reuse historical
+owner or guard counts when estimating further savings.
 
 For each survivor, bind source and destination to protected leaf pins:
 
@@ -301,11 +303,20 @@ chain, validate the selected count at every affected instance/corner; avoid a
 large blind sweep. Missing paths, extrapolated electrical failures or an
 uncomposed launch are not a pass. Keep absolute SRAM/pulse/reset timing distinct.
 
-Only then evaluate the nine-buffer primitive output recipes (0.082623 mm² in
-the current map). Keeper isolation and an exclusive repairable parent driver
+Only then evaluate the nine-buffer primitive output recipes (3,960 buffers /
+0.052158 mm² at `a5a68cd`, down from the historical 0.082623 mm² as owners were
+deleted). Keeper isolation and an exclusive repairable parent driver
 remain necessary; the nine-buffer depth is not automatically necessary. A
 smaller characterized recipe must reclose minimum pulse, ACK, reset and rearm
 obligations. Regenerate the declared graph rather than relaxing its proof.
+
+The FrameStore's four-lane return guard and the SRAM owners' four-lane output
+guards delay independent handshake histories. They are not per-bit payload
+allowances; sharing one chain requires an ownership change. The prior Return
+cleanup-deletion candidate remains a separate opportunity: causal completion
+could remove 342 DLYD cells, but historical nominal SPICE observations do not
+bound its keeper pulse and return apertures. Reuse the argument and chip tests;
+remeasure the current graph before adopting the deletion.
 
 ## 6. Resolve the large I2C storage cost through the host ABI decision
 
@@ -353,17 +364,24 @@ protecting needless payload is a cost that must be fixed before mapping.
   [adaptive loop 3](area-optimization-loops.md), preserving trace in default
   verification exports. The measured flat saving is 0.011593 mm²; this is a
   follow-up to the larger ownership rewrites, not a substitute for them.
-- Propose a public resettable native AND in chisel-async. Currently 32 BD
+- Propose a public resettable native AND in chisel-async. Currently 28 BD
   logical-AND helpers each use four public ControlGates because the library AND
   is private. Replacing them with a public primitive has a gross current recipe
-  opportunity of about 0.01475 mm² before any hold repair. Some helpers disappear
-  in batch 2, so recount first. Require reset/hold/ACK and both-variant tests;
+  opportunity of about 0.0129 mm² before any hold repair. The current four-gate
+  recipe uses 48 cells versus 12 for the existing internal AND binding. Require reset/hold/ACK and both-variant tests;
   the shorter logic path is not a timing-free substitution. This library change
   needs its own approval, tests and review; it is not prerequisite to batches 1–4.
 - Do not remove meaningful reset state, memory-return buffers, native eligibility,
   GPIO pin isolation, clocked event cutoff arbitration or physical pin controllers
   to meet an area target. Do not replace closed feedback banks with transparent
   latches without a new feedback/race-through contract.
+
+Resetless storage is a selective opportunity: 3,188 ClosingLatch bits and 2,239
+EventRegister bits remain at `a5a68cd`. Separate validity-qualified transient
+payload from initialized tokens and architectural state. Do not replace an
+edge-capture feedback bank or GPIO output register with a transparent latch.
+Payload optimization needs an explicit live-lane correspondence and regenerated
+capture/reset trees; dropping all protection is not an equivalent implementation.
 
 After the host change, evaluate one-work-bank implementations of ADC scaling
 and elapsed arithmetic, then CPU state transport. Preserve the independent LF

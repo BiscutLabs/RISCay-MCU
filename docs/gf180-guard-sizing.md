@@ -36,6 +36,41 @@ may require lengthening.
 
 ## Campaign and obligations
 
+The candidate proposer now consumes measured paths instead of the historical
+hard-coded eight-cell publication / 28-cell elapsed guesses. It does **not**
+replace every mapper fallback with measured counts: on `a5a68cd`, 38 overrides
+cover 330 of 3,603 DLYD cells; 3,273 cells still use the simulation-derived
+fallback. The fallback is unqualified, not an absolute silicon requirement.
+
+Run `size_ordering_guards.py <map> <output> --variant bd --propose
+--measurements <file>` to estimate counts without editing a graph or policy.
+The UTF-8 JSON uses schema `riscay-guard-sizing-measurements-v1`, the exact
+`mapping_sha256` and `netlist_sha256`, and a `guards` list. Each guard names its
+`instance`, `previous_stages` and nonempty `obligations`. Each obligation supplies
+an `id`, `basis`, `kind` (`relative-ordering` or `absolute-minimum`), `edges`,
+and `cases` covering every pinned corner × 0.02/2 ns source slew × declared edge.
+Cases contain `corner`, `slew_ns`, `edge`, `earliest_ns`, loaded `cell_min_ns` /
+`cell_max_ns`, and `electrical_pass`. Relative cases additionally contain
+`latest_ns` and `aperture_ns`; absolute cases contain `required_ns`.
+
+At the existing count N, removal of k cells estimates the later event as
+`earliest_ns - k * cell_max_ns`; addition uses `earliest_ns + k * cell_min_ns`.
+Apply the same 20% two-sided policy and 2 ns floor separately at each corner;
+absolute requirements are not scaled as competing logic. Take the largest
+required count across all declared cases. Only the later path may depend on
+this chain; a shared dependency needs a different composition. Loaded arcs
+must bound the cells being changed, not come from another owner's chain.
+These are **estimates**: changed loading/slew requires fresh measurements.
+Missing measurements are listed, never assigned eight, 28 or another guess.
+
+`--candidate --measurements <file>` can replay shortening through the existing
+BD stage templates: `setup` on request rise, or `publication` on both edges.
+It rejects custom/absolute declarations those templates cannot remeasure,
+independent vector lanes, focused request checks and lengthening (which needs
+a fresh map). A template timing pass is explicitly electrically unqualified;
+it does not adopt a count, close reset/full return, or change production policy.
+Supplied baseline electrical results do not qualify the candidate graph.
+
 `tools/size_ordering_guards.py` records every guard's purpose and disposition,
 and uses the existing leaf-bound stage templates on the complete repaired chip.
 No per-instance number is borrowed from a different owner. A shared mapper
