@@ -75,7 +75,11 @@ projection retain the command-to-reply gap. Early native return cannot authorize
 WRITE or VERIFY before that Control publication.
 
 BD retains input withdrawal and every branch's complete request/ACK return.
-Stored full return gates reservation ACK falling. Click retains independent POR
+Stored full return gates reservation ACK falling. The Source also retains
+decision ACK until both the raw and delayed decision request have returned; a
+new reservation cannot consume the previous decision. Grant uses the existing
+LongHold publication, and reservation ACK uses the complete retained return
+proof directly, without additional timers. Click retains independent POR
 word/publication and Stored histories, separate from application response phase.
 Every captured word has an unconditional issue event before cancellation can
 count as terminal proof. The next word cannot overwrite data during any old
@@ -85,12 +89,14 @@ selected return.
 
 Native return uses the working-RAM controller's reviewed digital assumptions:
 10 ns data paths, 1–10 ns control cells, 100 ps capture aperture/pulse/distribution
-limits and 200 ns cleanup guards. Tests bound stalled-receiver offers to 800 ns
+limits and a 200 ns BD arm/history model. BD completion clears pending
+directly and stays asserted until the guarded history tail returns; there is no
+separate cleanup timer. Click retains its independent existing guards. Tests bound stalled-receiver offers to 800 ns
 and cleanup after all external returns to 1 microsecond. These are simulation
 bounds, not characterized physical cells or routed paths. The new retained-role
 cone and composed source-to-return permission aperture require their own closure.
 
-The retained source role precedes its guarded grant, clocked atomic word commit,
+The retained source role precedes its LongHold-published grant, clocked atomic word commit,
 command crossing and all four SRAM byte stages. Source retirement requires the
 post-capture effects and presentation proof. This ordering keeps role/ownership
 stable through word capture without deriving permission from the live requester.
@@ -136,3 +142,21 @@ timeouts, missing activity and displayed text do not count. Finish ABI/state
 comparison, both independent core references, Python, firmware/sleep regressions,
 fresh independent review, fixes, documentation, commit and push before closure.
 Old P&R results do not qualify this implementation.
+
+## Retained decision producer
+
+The Source decision port is internal to the existing work-clock bridge. Its
+payload stays in the bridge's retained payload register until a new accepted decision;
+Services accepts that decision only with a new reservation grant. Generic
+four-phase stability through ACK return alone is not a sufficient substitute.
+After native decision ACK falls, the pinned bridge observes meta E0, sync E1,
+returns to idle at E2 and can load new data at E3. Application reset does not
+reset this POR-owned bridge or shorten that hold.
+
+The publication-ACK mask must become inhibited before a canceled decision bit
+can change. The composed physical check credits only one existing 50 ns work
+period from the 20 MHz maximum profile, discarding the other two periods and
+new-grant latency. Its worst inhibition path is 7.329 ns; the residual after
+20% two-sided derating and the 2 ns floor is +29.206 ns. This adds no clock or
+clocked stage. A future replacement of this producer must re-prove the hold or
+supply native completion; it cannot inherit this clock-period credit.

@@ -34,6 +34,38 @@ reversible implementation parameters: local and digital acceptance permits
 adoption before the full-chip item-17 qualification. Later extracted evidence
 may require lengthening.
 
+## Memory Source/Return owners
+
+The BD memory-owner batch treats the nine historical 200 ns model guards
+separately from standard stage templates. Six waits are replaced by existing
+completion signals: Source grant and reservation ACK in each owner, and Return
+cleanup in each owner. The three remaining chains have explicit owner/purpose
+entries in `physical/gf180/ordering-guards.json`; no other custom guard gains an
+override through that allowlist. The [review](reviews/bd-memory-guards.md)
+records the causal changes and the retained failure that exposed a missing
+delayed-decision return dependency.
+
+Use `check_memory_owner_timing.py` on the repaired map for these custom owners.
+Each role/eligibility publication, decision-to-use, capture-to-offer,
+request-inhibition/history, completion-proof and keeper obligation is checked at
+the same corner and actual load. A Source grant receives no credit from the
+clocked receiver's synchronization latency. The decision check charges sender
+CLK-to-Q without crediting its preceding clock cycle. Neither digital model
+parameters nor another owner's path delays size these chains.
+
+The Return tail covers both rising capture and falling history. Deleting its
+separate cleanup timer requires `released` to remain set through the tail;
+merely wiring cleanup directly while retaining the old pending-owned release
+would have a different pulse/keeper obligation. Selected native paths must stay
+inside the declared slew envelope and Liberty table ranges. Local acceptance
+still excludes routed RC, coupling, whole-chip reset distribution and statistical
+variation. Keep the 0.05 mm² routed hold-repair reserve.
+
+`check_fast_guard_soc.py --model-delay OWNER/ID=FEMTOSECONDS` supplies an explicit
+digital stress delay for each custom owner. It rejects custom guards without one.
+These stress values are not physical cell counts converted to nanoseconds; the
+original SoC fixture and every behavioral assertion stay unchanged.
+
 ## Campaign and obligations
 
 The candidate proposer now consumes measured paths instead of the historical

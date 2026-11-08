@@ -16,9 +16,25 @@ from gf180_physical import ROOT, nodes, key, sha, write_json
 from repair_gf180_control import require
 
 
-def run(source, policy_path, output, variant):
+def model_delay(row, overrides):
+    identity=row['owner_module']+'/'+row['primitive_id']
+    if identity in overrides:
+        delay=overrides[identity]
+        require(type(delay) is int and delay>0,'FAST_GUARD_SOC_MODEL_DELAY')
+        return delay
+    # Custom owners must supply an explicit digital stress envelope. Their
+    # physical cell counts are not nanoseconds and are not stage templates.
+    require(row['purpose'] in ('ordering-bundling','ordering-publication',
+            'ordering-and-pulse-acknowledge_guard'),'FAST_GUARD_SOC_EXPLICIT_MODEL_REQUIRED')
+    return 35_000_000 if row['primitive_id']=='request_delay' else 8_000_000
+
+
+def run(source, policy_path, output, variant, model_delays=None):
     require(not output.exists(), 'FAST_GUARD_SOC_OUTPUT_EXISTS')
     policy=json.loads(policy_path.read_text())
+    model_delays=model_delays or {}
+    require(set(model_delays)<= {r['owner_module']+'/'+r['primitive_id'] for r in policy['variants'][variant]},
+            'FAST_GUARD_SOC_UNUSED_MODEL_OVERRIDE')
     manifest=json.loads((source/'contract.json').read_text())['manifest']
     owners=list(nodes(manifest['design'])); actual={manifest['top']:manifest['top']}
     primitives={p['rtl_path']:(n,p) for n in owners for p in n['primitives']}
@@ -44,7 +60,7 @@ def run(source, policy_path, output, variant):
         require(owner['rtl_path']==row['owner'] and re.sub(r'_\d+$','',owner['module'])==row['owner_module'] and
                 primitive['id']==row['primitive_id'] and dict(key(primitive)[1])==row['original_parameters'],
                 'FAST_GUARD_SOC_POLICY_BINDING')
-        delay=35_000_000 if primitive['id']=='request_delay' else 8_000_000
+        delay=model_delay(row,model_delays)
         slot=(actual[owner['rtl_path']],row['instance'].split('.')[-1])
         require(slot not in slots or slots[slot]['delay_fs']==delay,'FAST_GUARD_SOC_DEDUP_CONFLICT')
         slots.setdefault(slot,dict(delay_fs=delay,original_fs=row['original_parameters']['DELAY_FS'],instances=[]))['instances'].append(row['instance'])
@@ -90,4 +106,12 @@ if __name__=='__main__':
     parser=argparse.ArgumentParser(description=__doc__)
     for name in ('source','policy','output'):parser.add_argument(name,type=Path)
     parser.add_argument('--variant',choices=('bd','click'),required=True)
-    args=parser.parse_args();run(args.source.resolve(),args.policy.resolve(),args.output.resolve(),args.variant)
+    parser.add_argument('--model-delay',action='append',default=[],metavar='OWNER/ID=FEMTOSECONDS',
+                        help='Explicit custom-owner digital stress delay; never inferred from physical cells')
+    args=parser.parse_args()
+    overrides={}
+    for value in args.model_delay:
+        identity,delay=value.rsplit('=',1)
+        require(identity not in overrides,'FAST_GUARD_SOC_DUPLICATE_MODEL_OVERRIDE')
+        overrides[identity]=int(delay)
+    run(args.source.resolve(),args.policy.resolve(),args.output.resolve(),args.variant,overrides)

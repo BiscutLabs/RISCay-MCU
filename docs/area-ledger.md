@@ -6,11 +6,12 @@ libraries, mapper and accepted repair flow for matched production comparisons.
 Full routed physical requalification remains migration item 17.
 
 The **BD mapped-logic milestone below 2.3 mm² excluding SRAM is achieved**.
-After the BD ownership rewrites and [three adaptive loops](area-optimization-loops.md),
-current logic maps to **1.455121 mm² flat**, or **1.532146 mm²** with ordinary
-hierarchy retained; the latter repairs to **1.690651 mm²**. The three loops reduce
-flat logic by 3.38% from 1.506013 mm². The 1.60 mm² structural-batch target is met;
-BD is still 2.736× the clocked logic reference, not an optimized or qualified die.
+After the ownership rewrites, [three adaptive loops](area-optimization-loops.md)
+and [memory-guard batch](reviews/bd-memory-guards.md), current BD logic maps to
+**1.345309 mm² flat**, or **1.419686 mm²** with ordinary hierarchy retained;
+the latter repairs to **1.578033 mm²**. The guard batch reduces flat logic by
+7.55% from 1.455121 mm². The 1.60 mm² structural-batch target is met; BD remains
+2.530× the clocked logic reference, not an optimized or qualified die.
 Matched parents, clock inventories, activity and open timing are recorded below.
 The earlier Housekeeping batch maps to **1.987975 / 2.800265 mm²**
 (BD / Click) and repairs to **2.209548 / 3.051047 mm²**, including the expanded
@@ -26,7 +27,7 @@ BD is the tape-out target; Click physical timing/sizing work is frozen, while
 architecture conversions cover both unless the user requests an exception;
 the current area rewrite is explicitly BD-first. Allocate
 **0.05 mm² of additional standard-cell area for routed hold repair** in the BD
-planning budget (about 3.4% of current mapped logic). This is an allowance, not
+planning budget (about 3.7% of current mapped logic). This is an allowance, not
 inserted area or a predicted requirement, and is separate from electrical/CTS
 repair and placement whitespace. Record actual cell use after routing. If repair
 exceeds it, revise the budget or architecture; do not waive a failing path. The
@@ -1362,3 +1363,72 @@ measurements produce an unaccepted 33-cell estimate; production stays at the
 remeasured 34. Custom Source/Return reset, pulse and full-return characterization,
 smaller primitive recipes and selective payload protection remain open. See
 [guard sizing](gf180-guard-sizing.md) and the [review](reviews/bd-area-loops.md).
+
+## BD memory Source/Return guards
+
+This batch removes six redundant model waits and measures the three remaining
+chains at their own loaded corners. Source grant uses its existing LongHold
+publication; reservation ACK uses complete retained return. Return cleanup
+holds release through the arm/history tail instead of a separate timer. Source
+decision ACK now waits for its delayed request to return, fixing a real early-
+reuse failure exposed by deleting the timers. Click and clocked RTL are unchanged.
+
+| Measurement | Before (`fcb0387`, loop-3 map) | After |
+| --- | ---: | ---: |
+| Flat mapped logic, mm² | 1.455121 | 1.345309 |
+| Hierarchical mapped logic, mm² | 1.532146 | 1.419686 |
+| Hierarchical repaired logic, mm² | 1.690651 | 1.578033 |
+| Repair addition, mm² | 0.158504 | 0.158346 |
+| Guards / allowances, mm² | 0.272394 / 0 | 0.159907 / 0 |
+| DLYD cells / area, mm² | 3,603 / 0.268916 | 2,098 / 0.156588 |
+| Nine targeted guards: DLYD cells | 1,539 | 34 (10 + 12 + 12) |
+| Native storage bits | 5,427 | unchanged |
+| Flat periodic sinks, service / work / LF | 1,188 / 1,556 / 78 | unchanged |
+| Hierarchical periodic sinks, service / work / LF | 1,253 / 1,688 / 78 | unchanged |
+| Services sinks, service / work | 64 / 912 | unchanged |
+
+Whole-chip flat logic falls **0.109813 mm² (7.55%)** and repaired logic falls
+**0.112618 mm² (6.66%)**. The targeted pool loses 1,505 DLYD cells (97.8%); this
+is included in the whole-chip totals, not added to them. Ordinary flattened
+mapping changes slightly, so its total saving is not exactly the DLYD saving.
+The same three SRAMs occupy 0.466241 mm² of LEF area, excluded above. The flat
+logic gap to the unchanged 0.531833 mm² clocked reference is now 0.813476 mm².
+No new routing or die-size result is claimed.
+
+DLYD by purpose: custom ordering/reset **919 / 0.068591 mm²** (previously 2,424 /
+0.180920); standard bundling **631 / 0.047096**; publication **458 / 0.034184**;
+seed/reset admission **90 / 0.006717**. The latter three are unchanged. Of the
+919 custom cells, 34 implement these three measured memory guards; the other
+custom guards are not qualified by this batch.
+
+The first repaired candidate exposed 2.124 ns SS/hot slew on each Return
+`pending` parent driver, above the unchanged native 2 ns limit. Two explicit
+`buf_4` parent drivers replace `buf_2`; native keeper/storage cells are untouched.
+The actual extra **0.0000263424 mm²** is included in the repaired total. R3 reuses
+the identical raw R2 synthesis and reruns repair with the whole-graph proof;
+flat R2 remains the matched synthesis result. The failed R2 electrical evidence
+is retained. The 0.05 mm² routed hold-repair reserve remains separate.
+
+Evidence: `build/bd-source-return-guards/{map-r3,flat-r2,area-r3.json,
+clocks-r3.json,flat-clocks-r2.json}`; the [review](reviews/bd-memory-guards.md)
+records functional and local physical acceptance and its remaining limits.
+
+Native-model activity still observes 27 wakes per variant with zero Telemetry
+commands. BD maintenance and ADC remain **30 / 220 work edges** and
+**3.147358 / 18.689149 µs**. The 43-instruction firmware wake falls from
+**4,139 to 3,967 edges** and **345.275095 to 330.941647 µs**. Click remains
+27 / 216 / 3,199 edges. These runs retain the three 200 ns digital model values;
+the physical chains are sized independently. An unchanged-oracle stress replay
+with 20 ns custom guards and the existing 8/35 ns standard-stage stress values
+passes at 27 / 215 / 3,766 edges. That mixed stress profile is a functional check,
+not a physical timing or energy forecast. Activity and exact changed sites are
+retained in `summary-r3.json` and `fast-model-final/results.json`.
+
+Final verification passes **113 focused Source/Return cases**, **207 affected
+extended cases** (including all 69 generic-boot cases), and the fast gate's
+**406 Python / 235 Scala cases**. All four export audits, both RDC proofs and
+the complete repair graph proof pass. The 360 local timing contexts and fresh
+independent review pass with the limits stated in the linked review. Receipts
+and logs are `ci-r3/receipt.json`, `focused-export-r2.log`, `extended-r2.log`
+and `extended-reports/` under the same evidence root. No test oracle or deadline
+was weakened.

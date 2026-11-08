@@ -83,5 +83,24 @@ class OrderingMappingSpec(unittest.TestCase):
         with self.assertRaisesRegex(ValueError,'INVALID_ORDERING_GUARD_OVERRIDE'):
             adapter(p,1.,role=CONTROL,guard_stages=8)
 
+    def test_memory_owner_purpose_is_exact_and_digital_stress_is_explicit(self):
+        from ordering_guard_mapping import MEMORY_GUARDS
+        from check_fast_guard_soc import model_delay
+        for (family,ident),purpose in MEMORY_GUARDS.items():
+            with self.subTest(owner=family), tempfile.TemporaryDirectory() as tmp:
+                path=Path(tmp);manifest,groups,policy=self.fixture(path)
+                for child in manifest['design']['children']:
+                    child['contract']['module']=family
+                    child['contract']['primitives'][0]['id']=ident
+                row=policy['variants']['bd'][0]
+                row.update(owner_module=family,primitive_id=ident,purpose=purpose)
+                specialize(path,manifest,groups,policy,'bd',1.)
+                with self.assertRaisesRegex(ValueError,'EXPLICIT_MODEL_REQUIRED'):
+                    model_delay(row,{})
+                self.assertEqual(model_delay(row,{family+'/'+ident:40_000_000}),40_000_000)
+                row['purpose']='ordering-publication'
+                with self.assertRaisesRegex(ValueError,'FIXED_TIME_OR_UNREVIEWED_PURPOSE'):
+                    specialize(path,manifest,groups,policy,'bd',1.)
+
 
 if __name__=='__main__':unittest.main()

@@ -23,7 +23,6 @@ class FourPhaseRamSource(domain: ResetDomain) extends AsyncModule(domain) {
   Seq(reserve,grant,decision,publication).foreach(dontTouch(_))
   private val timing=OwnerTiming.base
   private val cell=ModelTime.ps(1000)
-  private val guard=ModelTime.ps(200000)
   private val resetRef=contract.endpoint("reset",reset)
   private val eligibilityReset=WireDefault((reset.asBool || applicationReset.asBool).asAsyncReset)
   dontTouch(eligibilityReset)
@@ -58,21 +57,26 @@ class FourPhaseRamSource(domain: ResetDomain) extends AsyncModule(domain) {
   contract.primitive("eligibility",live,Map("WIDTH"->BigInt(1),"DELAY_FS"->BigInt(cell.fs),
     "RESET_VALUE"->BigInt(0)),eligibilityResetRef,
     "arm before grant; application reset cancels eligibility without resetting POR ownership")
-  grant.req:=gate("output_guard",GateOperation.Buffer,reservation.out.req,delay=guard)
+  // LongHoldBuffer already publishes only after role capture. Keep its full
+  // return handshake; an additional grant timer adds no ownership condition.
+  grant.req:=reservation.out.req
   grant.bits:=reservation.out.bits; reservation.out.ack:=grant.ack
   private val decisionReady=gate("request_guard",GateOperation.Buffer,decision.req,delay=timing.matchedDelay)
-  private val retirement=state("retirement",5,2)
+  private val retirement=state("retirement",5,3)
   retirement.common:=reserve.req.asUInt
   retirement.rising:=Cat(reservation.in.ack,decisionReady,!decision.bits || publication.req,
     wordDrained,!grant.req && !grant.ack)
-  retirement.falling:=Cat(decision.req,decision.bits && publication.req)
+  // Keep the qualified decision high until its own request has fully returned.
+  retirement.falling:=Cat(decisionReady,decision.req,decision.bits && publication.req)
   decision.ack:=retirement.q
   publication.ack:=and("publication_ack",retirement.q,decision.bits)
   private val returned=state("reservation_return",0,3)
   returned.common:=retirement.q.asUInt; returned.rising:=1.U
   returned.falling:=Cat(decision.ack,publication.ack,reservation.in.ack)
-  reserve.ack:=gate("acknowledge_guard",GateOperation.Buffer,returned.q,delay=guard)
-  idle:= !reserve.req && !reserve.ack && !decision.req && !decision.ack &&
+  // The retained return C-element acknowledges the actual branch histories.
+  // Include the delayed decision's return so reuse cannot consume a stale one.
+  reserve.ack:=returned.q
+  idle:= !reserve.req && !reserve.ack && !decision.req && !decisionReady && !decision.ack &&
     !publication.req && !publication.ack && !grant.req && !grant.ack && !reservation.in.ack
   contract.endpoint("application_reset",applicationReset)
   contract.endpoint("word_drained",wordDrained); contract.endpoint("eligible",eligible)

@@ -140,6 +140,24 @@ class AsyncProgramReturnSpec extends AnyFunSuite {
       disable fork;
     end"""
   }
+  test("bd cleanup holds release until the capture history returns, including immediate reuse") {
+    val dir=fresh("bd-history-return")
+    val words=(0 until 6).map(i => 0x19ac5701L+17*i)
+    AsyncTest.run(top(false),1L to 24L,dir) { _ => monitored(false,
+      NativeReturnHistory.monitor(dir,s"""
+        eligible=1;
+        fork
+          begin ${words.zipWithIndex.map { case(d,i) => send(false,i+1,d) }.mkString("\n")} end
+          begin ${words.zipWithIndex.map { case(d,i) => publication(false,i+1,d,2L) }.mkString("\n")} end
+          begin ${words.indices.map(i => receipt(false,i+1,if(i%2==0) 2L else 17000000L)).mkString("\n")} end
+          begin ${words.map(d => response(false,d,2L)).mkString("\n")} end
+        join
+        $settled #100000000;
+        if(delivered_word!=${words.size} || delivered_publication!=${words.size} ||
+          receipt_delivered!=${words.size} || app_delivered!=${words.size})
+          $$fatal(1,"RETURN_HISTORY_DELIVERIES");
+      """)) }
+  }
   for(click <- Seq(false,true)) {
     val name=if(click) "click" else "bd"
     test(s"$name native program word capture and independent publication/receipt/application stalls") {

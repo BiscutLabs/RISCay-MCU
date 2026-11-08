@@ -65,7 +65,9 @@ class FourPhaseProgramReturn(domain: ResetDomain) extends AsyncModule(domain) {
   }
   private val pending=state("pending",2,commonInvert=1)
   private val released=state("released",4)
-  private val cleanup=WireDefault(buffer("acknowledge_guard",released.q.asUInt,delay=guard).asBool)
+  // Completion clears pending immediately, but remains asserted until the
+  // existing armed/history tail acknowledges that clear. No separate timer.
+  private val cleanup=WireDefault(released.q)
   private val capacity=Wire(Bool())
   private val inputRequest=buffer("request_guard",word.req.asUInt,delay=timing.matchedDelay).asBool
   pending.common:=cleanup.asUInt;pending.rising:=Cat(inputRequest,capacity)
@@ -110,7 +112,7 @@ class FourPhaseProgramReturn(domain: ResetDomain) extends AsyncModule(domain) {
   private val (publicationSeen,publicationReturned)=branch("publication",publication.req,publication.ack)
   private val (receiptSeen,receiptReturned)=branch("receipt",captureRequest,captureAcknowledge)
   publication.bits:=payload.q(0)
-  released.common:=pending.q.asUInt
+  released.common:=historyCommon.asUInt
   released.rising:=Cat(terminal.q,inputReturned.q,publicationReturned,receiptReturned)
   capacity:= !pending.q && !released.q && !cleanup && !armed && !historyCommon && !issued.q && !terminal.q &&
     !inputSeen.q && !inputWithdrawn.q && !inputReturned.q && !word.ack && !inputOffer &&

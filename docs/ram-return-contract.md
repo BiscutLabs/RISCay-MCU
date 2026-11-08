@@ -74,8 +74,13 @@ predicate. Raw native ACK cannot enter its POR readiness decision.
 BD retains input withdrawal before dropping input ACK. A producer may offer the
 next REQ immediately after ACK falls without erasing the old return proof.
 Each branch remembers actual acceptance and full request/ACK return. ACK history
-outlives offer shutdown using a 200 ns guarded history interval. The next word
-cannot overwrite retained payload while any old branch is returning.
+outlives offer shutdown through the guarded `armed` tail. Completion clears
+`pending` directly, but `released` remains set until `historyCommon = pending |
+armed` returns low. Capacity also waits for every branch history to clear. This
+removes the separate cleanup timer without making a narrow completion pulse.
+The next word cannot overwrite retained payload during an old return. The
+[same-corner guard policy](gf180-guard-sizing.md) sizes the physical tail; its
+200 ns digital model is not the physical target.
 
 Click maintains separate POR received, issued and completed phases. Every
 captured word receives an unconditional issue event. Actual issue history and
@@ -84,7 +89,8 @@ cannot mean cancellation. Eligible presentation toggles an independent applicati
 phase; cancellation leaves it unchanged. There is no return-to-zero adapter.
 
 Component experiments use fixed 10 ns data paths, 1–10 ns control delays,
-100 ps setup/hold/pulse/distribution limits, and 200 ns cleanup guards. Directed
+100 ps setup/hold/pulse/distribution limits, and a 200 ns BD arm/history model
+(Click retains its independent existing guards). Directed
 opposing delays and actual capture-pin skew supplement randomized seeds. Offers
 must appear within 800 ns after accepted input when receivers are stalled; after
 all external returns, cleanup must finish within 1 microsecond. These are
@@ -118,3 +124,21 @@ of the control campaign, never successful mutation detection.
 The final item evidence must inventory removed and temporary clocked bits,
 include fresh independent review and preserve actual failed/interrupted attempts.
 Earlier physical runs apply to older RTL and do not qualify this migration.
+
+## Retained decision producer
+
+The Source decision port is internal to the existing work-clock bridge. Its
+payload stays in the bridge's retained payload register until a new accepted decision;
+Services accepts that decision only with a new reservation grant. Generic
+four-phase stability through ACK return alone is not a sufficient substitute.
+After native decision ACK falls, the pinned bridge observes meta E0, sync E1,
+returns to idle at E2 and can load new data at E3. Application reset does not
+reset this POR-owned bridge or shorten that hold.
+
+The publication-ACK mask must become inhibited before a canceled decision bit
+can change. The composed physical check credits only one existing 50 ns work
+period from the 20 MHz maximum profile, discarding the other two periods and
+new-grant latency. Its worst inhibition path is 7.329 ns; the residual after
+20% two-sided derating and the 2 ns floor is +29.206 ns. This adds no clock or
+clocked stage. A future replacement of this producer must re-prove the hold or
+supply native completion; it cannot inherit this clock-period credit.

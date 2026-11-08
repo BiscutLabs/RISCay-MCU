@@ -278,22 +278,20 @@ and unchanged sleep/deep-sleep deadlines. No pending events return to Telemetry.
 
 ## 5. Optimize surviving delay recipes, not deleted controllers
 
-After batches 1–4 and the three adaptive loops, nine 200 ns guards survive:
-two grant, one ProgramSource decision, two reserve-ACK, two Return-armed and
-two Return-cleanup. They contain 1,539 DLYD cells, about 0.114866 mm². Eight of
-the original seventeen guards disappeared with their owners. The live map has
-126 long guard instances and 3,603 DLYD cells in total; do not reuse historical
-owner or guard counts when estimating further savings.
+The nine 200 ns Source/Return guards are now addressed by the
+[BD memory-guard batch](reviews/bd-memory-guards.md): six waits are deleted,
+Program decision uses 10 DLYD cells, and each Return arm/history tail uses 12.
+The cohort falls from 1,539 to 34 cells; whole-chip DLYD falls from 3,603 to
+2,098. Flat logic is 1.345309 mm², repaired logic 1.578033 mm². These measured
+local counts do not qualify the remaining custom guards or routed timing.
 
-For each survivor, bind source and destination to protected leaf pins:
-
-| Family | Required ordered endpoints |
+| Family | Implemented ordering |
 | --- | --- |
-| Grant | Reservation/role capture and latest stable eligibility before the actual grant consumer |
-| Decision | Stable decision value and request before commit/cancel use and retirement |
-| Reserve ACK | Retained history before the sender may withdraw/reuse; complete low/return before a new reservation |
-| Return armed | Latest payload/permission capture before publication/receipt offer |
-| Return cleanup | Every branch returned and history captured before pending clear/rearm; preserve absolute pulse floors |
+| Grant | Existing LongHold publication covers role capture and eligibility; extra timers removed |
+| Decision | Own sender/decode/Stored selection measurement; both raw and delayed request must return before decision ACK falls |
+| Reserve ACK | Complete retained branch return, including selected Stored; extra timers removed |
+| Return armed | 12-cell capture/history tail, with keeper, pulse and inhibit bounds |
+| Return cleanup | Release clears pending but persists until history returns; separate timer removed |
 
 Use the existing reusable leaf timing tool and
 [same-corner policy](gf180-guard-sizing.md): 20% two-sided engineering derate,
@@ -312,11 +310,10 @@ obligations. Regenerate the declared graph rather than relaxing its proof.
 
 The FrameStore's four-lane return guard and the SRAM owners' four-lane output
 guards delay independent handshake histories. They are not per-bit payload
-allowances; sharing one chain requires an ownership change. The prior Return
-cleanup-deletion candidate remains a separate opportunity: causal completion
-could remove 342 DLYD cells, but historical nominal SPICE observations do not
-bound its keeper pulse and return apertures. Reuse the argument and chip tests;
-remeasure the current graph before adopting the deletion.
+allowances; sharing one chain requires an ownership change. The adopted Return
+cleanup deletion uses retained history and fresh loaded keeper bounds, not the
+historical nominal-only SPICE experiment. All future guard/primitive changes
+need their own composed measurements.
 
 ## 6. Resolve the large I2C storage cost through the host ABI decision
 

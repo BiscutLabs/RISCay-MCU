@@ -389,7 +389,7 @@ def buffer_sram_clocks(netlist,top):
     return evidence
 
 
-def buffer_parent_outputs(netlist,top,adapter_instances,*,selected=None,prefix='riscay_native_output'):
+def buffer_parent_outputs(netlist,top,adapter_instances,*,selected=None,prefix='riscay_native_output',strengths=None):
     """Isolate each live native output with an ordinary, repairable parent buffer.
 
     Preserve the native boundary/feedback partition exactly. Cell-free aliases
@@ -398,6 +398,7 @@ def buffer_parent_outputs(netlist,top,adapter_instances,*,selected=None,prefix='
     dead buffers in the other instances.
     """
     owners=set(adapter_instances.values());require(len(owners)==len(adapter_instances),'REPAIR_OUTPUT_OWNER_DUPLICATE')
+    strengths=strengths or {}
     graph=flat(netlist,top);drivers=defaultdict(list);sinks=defaultdict(list)
     for name,c in graph['cells'].items():
         for pin,ns in c['connections'].items():
@@ -456,16 +457,28 @@ def buffer_parent_outputs(netlist,top,adapter_instances,*,selected=None,prefix='
             destination=c['connections'][port][lane]
             require(isinstance(destination,int),'REPAIR_OUTPUT_CONSTANT')
             c['connections'][port][lane]=fresh
-            body['cells'][name]=dict(type=SC+'buf_2',parameters={},attributes={},
+            master=strengths.get((owner,port,lane),SC+'buf_2')
+            body['cells'][name]=dict(type=master,parameters={},attributes={},
                 port_directions=dict(I='input',Z='output'),connections=dict(I=[fresh],Z=[destination]))
             evidence.append(dict(owner=owner,port=port,lane=lane,driver=driver,pin=pin,
-                                 buffer=parent+name,master=SC+'buf_2'))
+                                 buffer=parent+name,master=master))
             fresh+=1
+    require(set(strengths)<={(r['owner'],r['port'],r['lane']) for r in evidence},'REPAIR_OUTPUT_STRENGTH_UNUSED')
     return dict(buffers=evidence,unused=excluded)
 
 
-def buffer_native_outputs(netlist,top,adapter_instances):
-    return buffer_parent_outputs(netlist,top,adapter_instances)
+def buffer_native_outputs(netlist,top,adapter_instances,targets=()):
+    # Measured parent drive changes are outside the protected primitive. They
+    # still require the complete graph proof and fresh loaded timing checks.
+    strengths={}
+    for row in targets:
+        require(row['instance'] in adapter_instances,'REPAIR_OUTPUT_STRENGTH_INSTANCE')
+        require(row['master'] in ('buf_2','buf_4','buf_8','buf_12','buf_16'),'REPAIR_OUTPUT_STRENGTH_MASTER')
+        require(type(row['lane']) is int and row['lane']>=0,'REPAIR_OUTPUT_STRENGTH_LANE')
+        identity=(adapter_instances[row['instance']],row['port'],row['lane'])
+        require(identity not in strengths,'REPAIR_OUTPUT_STRENGTH_DUPLICATE')
+        strengths[identity]=SC+row['master']
+    return buffer_parent_outputs(netlist,top,adapter_instances,strengths=strengths)
 
 
 def buffer_ordinary_outputs(netlist,top,protected,limit=16):
@@ -1096,9 +1109,11 @@ def repair(mapping,*,timeout=600):
         bindings=json.loads((mapping/'mapping.json').read_text())['bindings'],
         reset_free_aliases=reset_free_aliases)
     sram_preparation=buffer_sram_clocks(tied,'RiscayMcuDigital')
-    output_preparation=buffer_native_outputs(tied,'RiscayMcuDigital',
-        json.loads((reference/'netlist-audit.json').read_text())['adapter_instances'])
     policy=json.loads((ROOT/'physical/gf180/native-input-isolation.json').read_text())
+    output_targets=[] if json.loads((mapping/'mapping.json').read_text()).get('comparison_baseline') else \
+        policy.get('output_strengths',{}).get(json.loads((mapping/'mapping.json').read_text())['variant'],[])
+    output_preparation=buffer_native_outputs(tied,'RiscayMcuDigital',
+        json.loads((reference/'netlist-audit.json').read_text())['adapter_instances'],output_targets)
     targets=native_input_targets(json.loads((mapping/'mapping.json').read_text()),policy)
     input_preparation=buffer_native_inputs(tied,'RiscayMcuDigital',
         json.loads((reference/'netlist-audit.json').read_text())['adapter_instances'],targets)

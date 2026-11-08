@@ -698,6 +698,60 @@
         "disposition": "measure-canonical-stage",
         "previous_stages": 86,
         "baseline_owner_metadata_module": "FourPhaseStage_25"
+      },
+      {
+        "instance": "FourPhaseSoc.ca_child_program_return.armed_ca_primitive_output_guard",
+        "owner": "FourPhaseSoc.ca_child_program_return",
+        "owner_module": "FourPhaseProgramReturn",
+        "owner_metadata_module": "FourPhaseProgramReturn",
+        "primitive_id": "output_guard",
+        "original_parameters": {
+          "DELAY_FS": 200000000,
+          "OP": 0,
+          "RESET_VALUE": 0,
+          "WIDTH": 1
+        },
+        "stages": 12,
+        "purpose": "memory-return-capture-and-history",
+        "classification": "ordering",
+        "disposition": "measure-memory-owner",
+        "previous_stages": 171
+      },
+      {
+        "instance": "FourPhaseSoc.ca_child_ram_return.armed_ca_primitive_output_guard",
+        "owner": "FourPhaseSoc.ca_child_ram_return",
+        "owner_module": "FourPhaseRamReturn",
+        "owner_metadata_module": "FourPhaseRamReturn",
+        "primitive_id": "output_guard",
+        "original_parameters": {
+          "DELAY_FS": 200000000,
+          "OP": 0,
+          "RESET_VALUE": 0,
+          "WIDTH": 1
+        },
+        "stages": 12,
+        "purpose": "memory-return-capture-and-history",
+        "classification": "ordering",
+        "disposition": "measure-memory-owner",
+        "previous_stages": 171
+      },
+      {
+        "instance": "FourPhaseSoc.ca_child_program_source.decisionReady_ca_primitive_request_guard",
+        "owner": "FourPhaseSoc.ca_child_program_source",
+        "owner_module": "FourPhaseProgramSource",
+        "owner_metadata_module": "FourPhaseProgramSource",
+        "primitive_id": "request_guard",
+        "original_parameters": {
+          "DELAY_FS": 200000000,
+          "OP": 0,
+          "RESET_VALUE": 0,
+          "WIDTH": 1
+        },
+        "stages": 10,
+        "purpose": "memory-decision-bundling",
+        "classification": "ordering",
+        "disposition": "measure-memory-owner",
+        "previous_stages": 171
       }
     ],
     "click": [
@@ -3015,5 +3069,22 @@
       "The positive 0.584962 ns elapsed local hold has no invented source-release credit and is not the changed-guard 2 ns claim",
       "Complete electrical closure, reset distribution, statistical mismatch qualification and extracted min/max RC remain open"
     ]
+  },
+  "memory_source_return": {
+    "scope": "BD local zero-wire ordering, capture, keeper and retained-source hold; not routed/reset/noise signoff",
+    "derate": 0.2,
+    "residual_ns": 2.0,
+    "source_cases": 80,
+    "return_cases": 260,
+    "source_hold_cases": 20,
+    "removed_guards": 6,
+    "surviving_dlyd": 34,
+    "measured_mapping": "build/bd-source-return-guards/map-r3",
+    "receipts": [
+      "final-source-timing/receipt.json",
+      "final-return-timing-r3-frozen/receipt.json",
+      "final-source-publication-hold/receipt.json"
+    ],
+    "review": "docs/reviews/bd-memory-guards.md"
   }
 }

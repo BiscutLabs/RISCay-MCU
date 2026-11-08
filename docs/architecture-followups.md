@@ -29,8 +29,12 @@ the second factors elapsed arithmetic with its own remeasured request guard;
 the third drops consumed CPU Join writeback and unobserved physical retirement
 storage. Default BD debug/verification exports still retain retirement, while
 PhysicalSocExport explicitly disables it. Click retains its original pipelines
-and transport. Both keep the same ISA and integer/scaling ABI. These loops now
-measure 1.455121 mm² flat BD logic; the ledger records the remaining gap.
+and transport. Both keep the same ISA and integer/scaling ABI. Those loops reached
+1.455121 mm² flat BD logic. The follow-on
+[memory-guard batch](reviews/bd-memory-guards.md) removes redundant BD Source/Return
+waits, retains full decision/history return, and sizes three surviving chains
+from their own loaded paths. It maps to 1.345309 mm² flat; the ledger records the
+remaining gap. Click retains its existing memory transport and guard recipes.
 The external ABI and reset/retention behavior remain equal;
 Click remains an unchanged functional regression reference during this pass.
 

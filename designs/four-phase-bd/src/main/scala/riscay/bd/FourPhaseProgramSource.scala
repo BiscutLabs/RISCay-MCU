@@ -61,7 +61,9 @@ class FourPhaseProgramSource(domain: ResetDomain) extends AsyncModule(domain) {
   contract.primitive("eligibility",live,Map("WIDTH"->BigInt(1),"DELAY_FS"->BigInt(cell.fs),
     "RESET_VALUE"->BigInt(0)),eligibilityResetRef,
     "arm before grant; application reset cancels eligibility without resetting POR ownership")
-  grant.req:=gate("output_guard",GateOperation.Buffer,reservation.out.req,delay=guard)
+  // LongHoldBuffer already publishes only after role capture. Keep its full
+  // return handshake; an additional grant timer adds no ownership condition.
+  grant.req:=reservation.out.req
   grant.bits:=reservation.out.bits; reservation.out.ack:=grant.ack
   ownerLoader:=reservation.out.bits
   // The role belongs to this retained slot; loader words never present to CPU.
@@ -78,19 +80,24 @@ class FourPhaseProgramSource(domain: ResetDomain) extends AsyncModule(domain) {
   private val storedAccepted=state("stored_accepted",1,0)
   storedAccepted.common:=reserve.req.asUInt; storedAccepted.rising:=stored.ack.asUInt
   storedAccepted.falling:=0.U
-  private val retirement=state("retirement",6,2)
+  private val retirement=state("retirement",6,3)
   retirement.common:=reserve.req.asUInt
   retirement.rising:=Cat(reservation.in.ack,decisionReady,!decision.bits || publication.req,
     wordDrained,!grant.req && !grant.ack,
     !decision.bits || !reservation.out.bits || storedAccepted.q)
-  retirement.falling:=Cat(decision.req,decision.bits && publication.req)
+  // A decision's full return includes its delayed request. Otherwise a new
+  // reservation could consume the old qualified decision before a new offer.
+  retirement.falling:=Cat(decisionReady,decision.req,decision.bits && publication.req)
   decision.ack:=retirement.q
   publication.ack:=and("publication_ack",retirement.q,decision.bits)
   private val returned=state("reservation_return",0,7)
   returned.common:=retirement.q.asUInt; returned.rising:=1.U
   returned.falling:=Cat(decision.ack,publication.ack,reservation.in.ack,storedBuffer.in.ack,stored.req,stored.ack,storedAccepted.q)
-  reserve.ack:=gate("acknowledge_guard",GateOperation.Buffer,returned.q,delay=guard)
-  idle:= !reserve.req && !reserve.ack && !decision.req && !decision.ack &&
+  // The retained return C-element includes every Stored branch as well as the
+  // ordinary receipts and delayed decision. The latter must return before a
+  // new reservation can observe it as a stale commit/cancel indication.
+  reserve.ack:=returned.q
+  idle:= !reserve.req && !reserve.ack && !decision.req && !decisionReady && !decision.ack &&
     !publication.req && !publication.ack && !grant.req && !grant.ack && !reservation.in.ack &&
     !storedBuffer.in.ack && !stored.req && !stored.ack && !storedAccepted.q
   contract.endpoint("owner_loader",ownerLoader)

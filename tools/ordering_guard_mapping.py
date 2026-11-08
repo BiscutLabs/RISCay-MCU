@@ -6,6 +6,14 @@ import json
 import re
 from gf180_physical import nodes, key
 
+# Custom memory owners have separate capture/history/return measurements. These
+# identities permit their reviewed recipes; they do not reuse stage margins.
+MEMORY_GUARDS = {
+    ('FourPhaseProgramSource', 'request_guard'): 'memory-decision-bundling',
+    ('FourPhaseProgramReturn', 'output_guard'): 'memory-return-capture-and-history',
+    ('FourPhaseRamReturn', 'output_guard'): 'memory-return-capture-and-history',
+}
+
 
 def require(condition, message):
     if not condition:
@@ -40,6 +48,8 @@ def specialize(export, manifest, groups, policy, variant, floor, *, candidate=Fa
             ('click','ClickStage','acknowledge_guard'):'ordering-and-pulse-acknowledge_guard',
             ('click','ClickBuffer','acknowledge_guard'):'ordering-and-pulse-acknowledge_guard'}
         expected=canonical.get((variant,family,primitive['id']))
+        if expected is None and variant == 'bd':
+            expected=MEMORY_GUARDS.get((family,primitive['id']))
         require(expected is not None and row['owner_module']==family and row['purpose']==expected,
                 'FIXED_TIME_OR_UNREVIEWED_PURPOSE:' + instance)
         parameters = dict(key(primitive)[1])

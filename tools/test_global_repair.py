@@ -208,6 +208,21 @@ class GlobalRepairTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError,'REPAIR_OUTPUT_BUFFER_EXCLUSIVE'):
             validate_native_output_drivers(b,'top',rows)
 
+    def test_measured_output_strength_preserves_graph_and_requires_live_exact_target(self):
+        a=self.native();b=deepcopy(a)
+        target=dict(instance='native',port='Q',lane=0,master='buf_4')
+        rows=buffer_native_outputs(b,'top',{'native':'driver'},[target])['buffers']
+        self.assertEqual(rows[0]['master'],SC+'buf_4')
+        self.proof(a,b,{'driver/keeper':'driver'})
+        validate_native_output_drivers(b,'top',rows)
+        self.assertEqual(a['modules']['owner'],b['modules']['owner'])
+        for change,error in ((dict(instance='absent'),'INSTANCE'),(dict(port='absent'),'UNUSED'),
+                             (dict(lane=-1),'LANE'),(dict(master='inv_1'),'MASTER')):
+            with self.subTest(change=change), self.assertRaisesRegex(ValueError,'REPAIR_OUTPUT_STRENGTH_'+error):
+                buffer_native_outputs(deepcopy(a),'top',{'native':'driver'},[dict(target,**change)])
+        with self.assertRaisesRegex(ValueError,'REPAIR_OUTPUT_STRENGTH_DUPLICATE'):
+            buffer_native_outputs(deepcopy(a),'top',{'native':'driver'},[target,target])
+
     def test_shared_wrappers_specialize_unused_outputs_without_dead_buffers(self):
         a=self.native();owner=a['modules']['owner']
         wrapper=dict(ports={'I':dict(direction='input',bits=[1]),'Q':dict(direction='output',bits=[2])},

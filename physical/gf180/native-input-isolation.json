@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "scope": "Measured BD receiver isolation; full graph and fresh physical checks required",
+  "scope": "Measured native receiver isolation and parent-output drive; full graph and fresh physical checks required",
   "targets": {
     "bd": [
       {
@@ -27,6 +27,25 @@
         "instance": "FourPhaseSoc.ca_child_completion.memory_ack_nb_ca_primitive_memory_ack_nb",
         "port": "a",
         "lane": 0
+      }
+    ],
+    "click": []
+  },
+  "output_strengths": {
+    "bd": [
+      {
+        "instance": "FourPhaseSoc.ca_child_program_return.ca_primitive_pending",
+        "port": "q",
+        "lane": 0,
+        "master": "buf_4",
+        "basis": "SS/hot 0.0923 pF capture/keeper fanout: buf_2 exceeds native 2 ns slew"
+      },
+      {
+        "instance": "FourPhaseSoc.ca_child_ram_return.ca_primitive_pending",
+        "port": "q",
+        "lane": 0,
+        "master": "buf_4",
+        "basis": "SS/hot 0.0923 pF capture/keeper fanout: buf_2 exceeds native 2 ns slew"
       }
     ],
     "click": []
