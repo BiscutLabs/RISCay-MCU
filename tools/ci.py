@@ -11,6 +11,7 @@ import time
 import unittest
 import xml.etree.ElementTree as ET
 from run_receipt import RunReceipt
+from ordering_guard_mapping import validate_dependencies
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
@@ -71,6 +72,17 @@ def main():
     if os.environ.get('JAVA_HOME'):
         tools.append(Path(os.environ['JAVA_HOME'])/'bin'/('java.exe' if os.name == 'nt' else 'java'))
     run = RunReceipt(args.output/'receipt.json', inputs=inputs, tools=tools)
+    # Policy-only changes must not silently shorten a chain used by a different
+    # controller. Full physical STA remains a separate, PDK-dependent campaign.
+    dependency_log = args.output/'guard-dependencies.json'
+    try:
+        dependencies = validate_dependencies(json.loads(
+            (ROOT/'physical/gf180/ordering-guards.json').read_text(encoding='utf-8')))
+        dependency_log.write_text(json.dumps(dict(status='pass', dependencies=dependencies), indent=2)+'\n')
+    except (ValueError, KeyError, TypeError) as error:
+        dependency_log.write_text(json.dumps(dict(status='fail', diagnostic=str(error)), indent=2)+'\n')
+        run.finish(outputs=[dependency_log], status='fail')
+        return 1
     suite = unittest.defaultTestLoader.discover(str(ROOT/'tools'))
     if unittest.defaultTestLoader.errors or not suite.countTestCases():
         log=args.output/'python.log'
@@ -80,7 +92,7 @@ def main():
     with (args.output/'python.log').open('w', encoding='utf-8') as stream:
         result = unittest.TextTestRunner(stream=stream, verbosity=2).run(suite)
     status = 'pass' if result.wasSuccessful() and accepted_skips(result.skipped) else 'fail'
-    outputs = [args.output/'python.log']
+    outputs = [dependency_log, args.output/'python.log']
     fast_suites = ['riscay.'+s for s in FAST_SUITES]
     boot_suites = ['riscay.GenericBootSpec','riscay.ClockedGenericBootSpec']
     physical_suites = ['riscay.physical.PhysicalExportSpec','riscay.physical.PhysicalTimingSpec']

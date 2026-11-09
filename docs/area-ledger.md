@@ -33,6 +33,37 @@ repair and placement whitespace. Record actual cell use after routing. If repair
 exceeds it, revise the budget or architecture; do not waive a failing path. The
 [repair contract](architecture-followups.md#routed-hold-repair) specifies the gates.
 
+## Memory-guard dependency correction (parent `2640ec5`)
+
+This batch changes policy annotations, validation and documentation, not RTL or
+physical counts. Replaying specialization on both retained physical exports gives
+identical primitive groups, generated wrappers, rewrites and effective counts
+(`build/bd-guard-dependencies/recipe-equivalence/receipt.json`). The two BD
+reservation publication chains now retain their separately measured
+eligibility-before-grant obligation with eight-cell minimums, enforced in mapping,
+proposals and fast CI. Click's policy entries are unchanged.
+
+There is **no new area or activity measurement**: the parent remains 1.345309 mm²
+flat mapped, 1.419686 mm² hierarchical mapped and 1.578033 mm² repaired. Guards /
+allowances / DLYD remain 0.159907 / 0 / 0.156588 mm²; native storage is 5,427 bits.
+Periodic sinks remain 2,822 flat or 3,019 hierarchical. Services owns 64 service +
+912 work sinks in the hierarchical inventory, not all 2,822 flat chip sinks.
+Firmware wake activity remains the parent's 3,967 work edges; it is not remeasured
+by this policy correction.
+
+Reinventory of the retained map confirms **1,734 fallback-sized DLYD cells**:
+885 custom, 597 bundling, 162 publication and 90 seed/reset cells, totaling
+0.129420 mm². This is their existing area, not achievable savings. The resetless
+payload and receiving-edge hub transport opportunities remain structural work;
+the clocked reference still lacks matched repair/CTS/routing. Named keeper
+retentions now appear in item 17, separately from the 0.05 mm² data-hold reserve.
+
+The correction's independent review accepted the enforcement and documentation;
+its two test recommendations were implemented. The fast gate passes **410 Python
+properties and 235 Scala cases across 26 suites**, with no failures, skips,
+changed inputs or missing outputs (`build/bd-guard-dependencies/ci-r1/receipt.json`).
+No original physical receipt is relabeled as a new qualification.
+
 ## Clocked comparison implementation
 
 The independent synchronous chip, including its CPU, maps to **0.531833 mm²**

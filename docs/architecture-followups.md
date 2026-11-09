@@ -51,6 +51,12 @@ remaining area work. No application policy moves into silicon.
 
 1. Decide B's replacement host ABI before resuming 11a2b credit/admission work,
    then continue A/B with producers and consumers moved together.
+   Before replacing a memory decision bridge, re-prove publication-ACK inhibition
+   before decision-payload reuse. The current +29.206 ns residual credits one
+   50 ns period from that retained work-clock bridge at the 20 MHz maximum.
+   Removing it, bypassing its retained payload/return states or raising the clock
+   limit invalidates that credit. Supply native completion or newly measured
+   source retention; do not carry the old margin into the new architecture.
 2. Regenerate the BD request-guard inventory and size surviving guards at each
    corner. Historical counts are not the new architecture's inventory.
 3. Run item 16 once on the integrated architecture and supported configurations,

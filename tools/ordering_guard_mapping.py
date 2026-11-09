@@ -20,12 +20,51 @@ def require(condition, message):
         raise ValueError('ORDERING_GUARD_' + message)
 
 
+def dependency_floor(row):
+    """Retain separately measured obligations omitted by a local stage template.
+
+    This is a minimum recipe count, not a new timing pass. Changing its bound
+    requires remeasuring the named composed obligation, not just publication.
+    """
+    obligations = row.get('retained_obligations', [])
+    require(isinstance(obligations, list), 'DEPENDENCY_SCHEMA')
+    seen = set()
+    for obligation in obligations:
+        ident = obligation.get('id')
+        require(isinstance(ident, str) and ident and ident not in seen, 'DEPENDENCY_ID')
+        seen.add(ident)
+        require(type(obligation.get('minimum_stages')) is int and obligation['minimum_stages'] > 0,
+                'DEPENDENCY_COUNT:' + ident)
+        require(all(isinstance(obligation.get(k), str) and obligation[k].strip()
+                    for k in ('basis', 'validator', 'contract')), 'DEPENDENCY_DESCRIPTION:' + ident)
+    return max((o['minimum_stages'] for o in obligations), default=1)
+
+
+def validate_dependencies(policy):
+    """Cheap CI and mapper gate; required IDs are declared by composed consumers."""
+    required = policy.get('required_dependencies', {})
+    require(isinstance(required, dict), 'DEPENDENCY_INVENTORY')
+    found = {}
+    for variant, rows in policy['variants'].items():
+        for row in rows:
+            floor = dependency_floor(row)
+            require(type(row['stages']) is int and row['stages'] >= floor,
+                    'DEPENDENCY_MINIMUM:' + row['instance'])
+            for obligation in row.get('retained_obligations', []):
+                ident = obligation['id']
+                require(ident not in found, 'DEPENDENCY_DUPLICATE:' + ident)
+                found[ident] = dict(variant=variant, instance=row['instance'])
+    require(found == required, 'DEPENDENCY_COVERAGE')
+    return found
+
+
 def specialize(export, manifest, groups, policy, variant, floor, *, candidate=False):
     require(policy['schema'] == 'riscay-gf180-ordering-guards-v1', 'SCHEMA')
     require(policy['status'] == 'locally-measured' or
             candidate and policy['status'] == 'candidate-not-yet-accepted', 'NOT_ACCEPTED')
     require(policy['engineering_derate'] == .2 and math.isfinite(policy['residual_ns']) and policy['residual_ns'] >= 2 and
             policy['statistical_qualification'] is False, 'MISMATCH_POLICY')
+    validate_dependencies(policy)
     owners = list(nodes(manifest['design']))
     primitives = {p['rtl_path']: (n,p) for n in owners for p in n['primitives']}
     # The caller validates this generation audit before any physical rewrite.

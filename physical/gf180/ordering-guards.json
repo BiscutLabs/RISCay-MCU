@@ -170,6 +170,15 @@
       },
       {
         "instance": "FourPhaseSoc.ca_child_ram_source.ca_child_reservation.ca_primitive_output_delay",
+        "retained_obligations": [
+          {
+            "id": "ram-source-eligibility-before-grant",
+            "minimum_stages": 8,
+            "basis": "Reservation publication must follow both role capture and the Source eligibility register. The measured eight-cell chain leaves 3.167288 ns after the two-sided derate and 2 ns floor.",
+            "validator": "tools/check_memory_owner_timing.py --group source",
+            "contract": "docs/reviews/bd-memory-guards.md"
+          }
+        ],
         "owner": "FourPhaseSoc.ca_child_ram_source.ca_child_reservation",
         "owner_module": "LongHoldBuffer",
         "owner_metadata_module": "LongHoldBuffer_9",
@@ -188,6 +197,15 @@
       },
       {
         "instance": "FourPhaseSoc.ca_child_program_source.ca_child_reservation.ca_primitive_output_delay",
+        "retained_obligations": [
+          {
+            "id": "program-source-eligibility-before-grant",
+            "minimum_stages": 8,
+            "basis": "Reservation publication must follow both role capture and the Source eligibility register. The measured eight-cell chain leaves 3.113773 ns after the two-sided derate and 2 ns floor.",
+            "validator": "tools/check_memory_owner_timing.py --group source",
+            "contract": "docs/reviews/bd-memory-guards.md"
+          }
+        ],
         "owner": "FourPhaseSoc.ca_child_program_source.ca_child_reservation",
         "owner_module": "LongHoldBuffer",
         "owner_metadata_module": "LongHoldBuffer_10",
@@ -3069,6 +3087,16 @@
       "The positive 0.584962 ns elapsed local hold has no invented source-release credit and is not the changed-guard 2 ns claim",
       "Complete electrical closure, reset distribution, statistical mismatch qualification and extracted min/max RC remain open"
     ]
+  },
+  "required_dependencies": {
+    "ram-source-eligibility-before-grant": {
+      "variant": "bd",
+      "instance": "FourPhaseSoc.ca_child_ram_source.ca_child_reservation.ca_primitive_output_delay"
+    },
+    "program-source-eligibility-before-grant": {
+      "variant": "bd",
+      "instance": "FourPhaseSoc.ca_child_program_source.ca_child_reservation.ca_primitive_output_delay"
+    }
   },
   "memory_source_return": {
     "scope": "BD local zero-wire ordering, capture, keeper and retained-source hold; not routed/reset/noise signoff",

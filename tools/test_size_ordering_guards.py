@@ -1,13 +1,42 @@
 # SPDX-License-Identifier: Apache-2.0
 """Controls for the engineering policy and selective physical recipe changes."""
 import math
+import json
+from pathlib import Path
+from tempfile import TemporaryDirectory
 import unittest
 from copy import deepcopy
+from unittest.mock import patch
 
 import size_ordering_guards as g
 
 
 class PolicyTests(unittest.TestCase):
+    def test_inventory_retains_stricter_current_or_archived_dependencies(self):
+        obligation=dict(id='consumer',minimum_stages=8,basis='eligibility before grant',
+                        validator='composed timing',contract='source contract')
+        row=dict(instance='Soc.guard',stages=8,retained_obligations=[obligation])
+        policy=dict(variants={'bd':[row]},required_dependencies={
+            'consumer':dict(variant='bd',instance='Soc.guard')})
+        params=dict(WIDTH=1,OP=0,RESET_VALUE=0,DELAY_FS=31000000)
+        binding=dict(requirements=dict(role='matched-control-delay'),parameters=params,
+                     instances=['Soc.guard'],cells=[dict(cell=g.SC+'dlyd_1')]*10)
+        manifest=dict(design=dict(module='LongHoldBuffer',rtl_path='Soc',children=[],
+            primitives=[dict(id='output_delay',rtl_path='Soc.guard')]))
+        with TemporaryDirectory() as tmp:
+            root=Path(tmp);mapping=root/'map';mapping.mkdir()
+            (root/'physical/gf180').mkdir(parents=True)
+            (root/'physical/gf180/ordering-guards.json').write_text(json.dumps(policy))
+            (mapping/'timing-intent.json').write_text(json.dumps(dict(manifest=manifest)))
+            for archived in (None,6,10):
+                with self.subTest(archived_minimum=archived):
+                    prior={} if archived is None else dict(retained_obligations=[dict(obligation,minimum_stages=archived)])
+                    binding['guard_policy']={'Soc.guard':dict(requested=prior)}
+                    (mapping/'mapping.json').write_text(json.dumps(dict(variant='bd',bindings=[binding])))
+                    with patch.object(g,'ROOT',root):
+                        rows,_,_=g.inventory(mapping)
+                    self.assertEqual(g.dependency_floor(rows[0]),max(8,archived or 0))
+
     def test_rearm_uses_complete_measured_phase_slew_bounds(self):
         text='\n'.join(f'GUARD_PHASE_Q_SLEW\t{mode}\t{edge}\t{value}'
                        for mode,value in (('min',.15),('max',.3)) for edge in ('rise','fall'))
@@ -57,6 +86,20 @@ class PolicyTests(unittest.TestCase):
         self.assertEqual([(r['instance'],r['stages']) for r in result],[('Soc.guard',4)])
         # The next smaller count fails the declared floor.
         self.assertLess(g.conservative_margin(100-(10-3)*10,20),g.RESIDUAL_NS)
+
+    def test_proposal_and_candidate_cannot_shorten_an_unmeasured_consumer_dependency(self):
+        row,evidence=self.measured(earliest_ns=100.,latest_ns=20.,cell_min_ns=2.,cell_max_ns=10.)
+        row['stages']=10;evidence['guards'][0]['previous_stages']=10
+        proposal=g.candidate_counts([row],evidence)[0]
+        self.assertLess(proposal['stages'],8)
+        obligation=dict(id='eligibility',minimum_stages=8,basis='native grant follows eligibility',
+                        validator='composed source timing',contract='source contract')
+        row['retained_obligations']=[obligation]
+        with self.assertRaisesRegex(ValueError,'GUARD_DEPENDENT_MINIMUM'):
+            g.candidate_counts([row],evidence)
+        proposal['retained_obligations']=[obligation]
+        with self.assertRaisesRegex(ValueError,'GUARD_DEPENDENT_MINIMUM'):
+            g.require_candidate_binder([proposal],'bd')
 
     def test_same_corner_ratio_not_global_fastest_cell(self):
         row,evidence=self.measured(earliest_ns=40.,latest_ns=20.,cell_min_ns=1.,cell_max_ns=1.)

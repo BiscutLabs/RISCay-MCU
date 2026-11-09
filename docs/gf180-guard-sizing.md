@@ -53,6 +53,21 @@ clocked receiver's synchronization latency. The decision check charges sender
 CLK-to-Q without crediting its preceding clock cycle. Neither digital model
 parameters nor another owner's path delays size these chains.
 
+The two Source reservation `output_delay` policy rows also own
+**eligibility-before-grant**, beyond LongHold's own publication constraint.
+Their `retained_obligations` each impose an eight-cell minimum. A required-ID
+inventory prevents dropping or moving these obligations silently; the mapper
+and fast CI enforce it. The proposer carries the stricter archived/current
+obligations even when its input map predates these annotations, and rejects a
+proposal below the minimum. Updating the minimum requires a new composed Source
+measurement and review. A standard-stage publication pass cannot discharge it.
+This cheap gate preserves a measured recipe; it does not rerun STA in fast CI
+or prove timing after unrelated changes to loading, logic, clocks or placement.
+
+RamSource's short decision guard remains fallback-sized, but its decision setup
+was measured in the same Source campaign: the minimum residual is **+10.720 ns**.
+Measured adequacy at its current count is distinct from measured count selection.
+
 The Return tail covers both rising capture and falling history. Deleting its
 separate cleanup timer requires `released` to remain set through the tail;
 merely wiring cleanup directly while retaining the old pending-owned release
@@ -60,6 +75,8 @@ would have a different pulse/keeper obligation. Selected native paths must stay
 inside the declared slew envelope and Liberty table ranges. Local acceptance
 still excludes routed RC, coupling, whole-chip reset distribution and statistical
 variation. Keep the 0.05 mm² routed hold-repair reserve.
+Item 17 explicitly retains the released and completion keeper pulse obligations;
+the payload hold reserve cannot repair an inadequate keeper set pulse.
 
 `check_fast_guard_soc.py --model-delay OWNER/ID=FEMTOSECONDS` supplies an explicit
 digital stress delay for each custom owner. It rejects custom guards without one.
@@ -94,6 +111,19 @@ this chain; a shared dependency needs a different composition. Loaded arcs
 must bound the cells being changed, not come from another owner's chain.
 These are **estimates**: changed loading/slew requires fresh measurements.
 Missing measurements are listed, never assigned eight, 28 or another guess.
+
+The v1 proposer does **not** prove its later-path-only dependency assumption from
+the graph. Do not use it for a chain on both sides of an ordering, including the
+Return arm/history chain. The custom memory adapter remains required for that
+already measured cohort; its allowlist is an adoption boundary, not a dependency
+proof. Before expanding custom sizing, replace per-owner arithmetic with one
+declaration-driven composed-path evaluator: bind launch/capture/ACK/keeper leaves
+and phase cofactors, enumerate actual chain traversal on **both** compared paths,
+and evaluate shared-chain changes with separate min/max bounds on each side.
+Reject missing, overlapping or unresolved path coverage and report all affected
+obligations for any changed chain. Require exact reproduction of the retained
+Source/Return results and existing reusable negative controls before adoption.
+This is open tooling work, not a feature of the current proposer.
 
 `--candidate --measurements <file>` can replay shortening through the existing
 BD stage templates: `setup` on request rise, or `publication` on both edges.

@@ -127,3 +127,31 @@ complete mapped/repair graph proofs pass. Evidence includes `check-debug-*-r2/`,
 and `fast-model-final/results.json`. The failed first Source candidate and the
 failed R2 electrical results remain retained. Independent review findings are
 resolved; no functional expectation or simulation deadline was relaxed.
+
+## Follow-up: protect composed dependencies
+
+The two eight-cell LongHold publication chains also order Source eligibility
+before grant. They now declare this extra obligation on their policy rows, with
+required-ID coverage and minimum counts checked by the mapper and fast CI. The
+proposer inherits archived/current bounds and rejects shortening below them;
+publication-only evidence cannot remove them. Negative controls cover missing
+obligations, below-floor counts and both mapper/candidate paths. This prevents
+a recipe regression; it is not continuous physical requalification.
+
+Item 17 names released-keeper and completion-keeper retention separately from
+data hold. Their +2.060/+1.606 ns local residuals need routed feedback/pulse
+qualification. The 0.05 mm² payload hold reserve is not a keeper-pulse solution.
+The architecture work order also flags the existing work-clock decision bridge
+as a prerequisite for the +29.206 ns source-hold credit. Replacing that bridge
+requires a new source-retention/completion argument.
+
+RamSource decision setup was included in the 80 Source contexts and has a
+minimum +10.720 ns residual; its unchanged count is still fallback-sized.
+The generic composed-path evaluator is open work: the current proposer does
+not prove its later-path-only assumption, and cannot size shared arm/history
+chains. No additional custom-owner campaign is implied by this correction.
+
+This follow-up changes tooling, annotations and documentation only. All guard
+counts, mapped recipes, RTL and Click policy remain unchanged. Original physical
+receipts remain evidence for the original measured inputs; they are not rewritten
+to claim a new run. Verification of the correction is recorded in the ledger.

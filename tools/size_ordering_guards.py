@@ -29,6 +29,7 @@ from gf180_estimate import direct_groups
 from physical_tools import tool
 from repair_gf180_control import require
 from repair_gf180_design import validate_receipt, flat
+from ordering_guard_mapping import dependency_floor, validate_dependencies
 
 DERATE = .20
 RESIDUAL_NS = 2.0
@@ -49,6 +50,11 @@ def inventory(mapping):
     record = json.loads((mapping/'mapping.json').read_text())
     manifest = json.loads((mapping/'timing-intent.json').read_text())['manifest']
     owners = {p['rtl_path']:(n, p) for n in nodes(manifest['design']) for p in n['primitives']}
+    # Include current consumer obligations even when measuring an older map
+    # whose archived policy predates them. Never silently size only publication.
+    policy = json.loads((ROOT/'physical/gf180/ordering-guards.json').read_text())
+    validate_dependencies(policy)
+    current = {r['instance']: r for r in policy['variants'][record['variant']]}
     rows = []
     for b in record['bindings']:
         if b['requirements'].get('role') != 'matched-control-delay':
@@ -57,6 +63,13 @@ def inventory(mapping):
             owner, p = owners[path]
             name, ident = family(owner['module']), p['id']
             count = sum(c['cell'] == SC+'dlyd_1' for c in b['cells'])
+            retained = {}
+            for declaration in (b.get('guard_policy', {}).get(path, {}).get('requested') or {}, current.get(path, {})):
+                dependency_floor(declaration)
+                for obligation in declaration.get('retained_obligations', []):
+                    prior = retained.get(obligation['id'])
+                    if prior is None or obligation['minimum_stages'] > prior['minimum_stages']:
+                        retained[obligation['id']] = obligation
             if b['parameters']['DELAY_FS'] <= 1000000:
                 purpose, disposition = 'functional-feedback', 'retain-functional-primitive'
                 classification='functional-not-a-removable-wait'
@@ -79,6 +92,7 @@ def inventory(mapping):
             rows.append(dict(instance=path, owner=owner['rtl_path'], owner_module=name,
                              owner_metadata_module=owner['module'],
                              primitive_id=ident, original_parameters=b['parameters'],
+                             retained_obligations=list(retained.values()),
                              stages=count, lanes=int(b['parameters']['WIDTH']),
                              stages_per_lane=count//int(b['parameters']['WIDTH']),
                              sizing_basis=('measured-override' if b.get('guard_policy', {}).get(path, {}).get('requested') else
@@ -274,6 +288,7 @@ def candidate_counts(rows, measurements, *, corners=relative.CORNERS, slews=(.02
         # Do not round an estimated margin up to the acceptance floor.
         if any(estimated_margin(c, count) < RESIDUAL_NS for c in observations):
             count += 1
+        require(count >= dependency_floor(row), 'GUARD_DEPENDENT_MINIMUM:' + row['instance'])
         proposals.append(dict(row, stages=count, previous_stages=row['stages'],
             sizing_status='estimate-requires-fresh-electrical-and-timing-checks',
             sizing_obligations=[dict(id=o['id'], kind=o['kind'], edges=o['edges']) for o in obligations],
@@ -294,6 +309,7 @@ def require_candidate_binder(proposals, variant, focused=False):
         require(observed == signatures.get(proposal['primitive_id']), 'GUARD_UNSUPPORTED_CANDIDATE_OBLIGATION')
         require(not focused or proposal['primitive_id'] != 'request_delay', 'GUARD_REQUEST_REQUIRES_DATA')
         require(proposal['stages'] <= proposal['previous_stages'], 'GUARD_LENGTHEN_REMAP_REQUIRED')
+        require(proposal['stages'] >= dependency_floor(proposal), 'GUARD_DEPENDENT_MINIMUM:' + proposal['instance'])
 
 
 def rewrite_graph(live, audit, changes):
@@ -484,7 +500,8 @@ def run(mapping, output, variant, *, candidate=False, paths=(), workers=2, focus
         require(not paths and not focused, 'GUARD_PROPOSAL_SCOPE')
         output.mkdir(parents=True)
         run_receipt = RunReceipt(output/'receipt.json', inputs=[measurements, mapping/'mapping.json',
-            mapping/'netlist.v', mapping/'timing-intent.json', Path(__file__)], tools=[])
+            mapping/'netlist.v', mapping/'timing-intent.json', Path(__file__),
+            ROOT/'tools/ordering_guard_mapping.py', ROOT/'physical/gf180/ordering-guards.json'], tools=[])
         write_json(output/'inventory.json', dict(rows=rows))
         write_json(output/'proposals.json', dict(status='ESTIMATES_NOT_ACCEPTED', guards=proposals,
             missing_measurements=[r['instance'] for r in rows if r['stages'] and
@@ -533,6 +550,7 @@ def run(mapping, output, variant, *, candidate=False, paths=(), workers=2, focus
     files += [mapping/'electrical-repair/receipt.json', mapping/'electrical-repair/proof.json',
               mapping/'electrical-repair/reference/netlist.json']
     files += [Path(__file__), ROOT/'tools/native_stage_timing.py', ROOT/'tools/native_leaf_timing.py',
+              ROOT/'tools/ordering_guard_mapping.py', ROOT/'physical/gf180/ordering-guards.json',
               ROOT/'tools/control_relative_timing.py', ROOT/'tools/physical_graph_edits.py',
               ROOT/'tools/timing_properties.py', ROOT/'tools/run_receipt.py', relative.PROBE, *sta.input_files(), *yosys.input_files()]
     files += [ROOT/'.tools/physical/pdk'/(SC+c+'.lib') for c in relative.CORNERS]

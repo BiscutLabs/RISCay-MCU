@@ -83,6 +83,13 @@ transport and payload copies; the documented receiving-edge arbitration remains.
   actual supply and workload models. [Routing investigation](gf180-routability.md)
   separates NDR assignment, representative noise experiments and static IR screens
   from qualification.
+- [ ] **Memory Return keeper retention:** remeasure `released` set-to-feedback
+  retention (+2.060 ns locally) and every branch-completion keeper's set-to-feedback
+  retention (minimum +1.606 ns), in both BD ProgramReturn and RamReturn, with
+  extracted min/max RC and coupling. These are residuals after the engineering
+  derate and 2 ns floor, at zero wire RC. A pulse/keeper failure needs feedback
+  compaction or a remeasured arm/history tail, not payload hold buffers. Recheck
+  offer inhibition, proof withdrawal, pulses, reset and throughput if it lengthens.
 - [ ] **R2b:** qualify complete reset assertion/release distribution, recovery/removal,
   hold intervals and startup, including generated reset trees, wake and clock gating.
 - [ ] Apply routed hold repair **only to failing composed paths**; reserve **0.05 mm²**

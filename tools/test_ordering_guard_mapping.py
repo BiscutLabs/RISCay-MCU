@@ -4,11 +4,44 @@ import tempfile
 import unittest
 from copy import deepcopy
 from pathlib import Path
-from ordering_guard_mapping import specialize, rewrite_owner
+from ordering_guard_mapping import specialize, rewrite_owner, validate_dependencies
 from gf180_physical import adapter, CONTROL
 
 
 class OrderingMappingSpec(unittest.TestCase):
+    def test_production_dependency_inventory_cannot_be_dropped_or_shortened(self):
+        policy=json.loads((Path(__file__).resolve().parents[1]/'physical/gf180/ordering-guards.json').read_text())
+        dependencies=validate_dependencies(policy)
+        self.assertTrue(dependencies)
+        for ident, target in dependencies.items():
+            with self.subTest(obligation=ident):
+                changed=deepcopy(policy)
+                rows=changed['variants'][target['variant']]
+                row=next(r for r in rows if r['instance']==target['instance'])
+                obligation=next(o for o in row['retained_obligations'] if o['id']==ident)
+                row['stages']=obligation['minimum_stages']-1
+                with self.assertRaisesRegex(ValueError,'DEPENDENCY_MINIMUM'):
+                    validate_dependencies(changed)
+                row['stages']=obligation['minimum_stages']
+                row['retained_obligations'].remove(obligation)
+                with self.assertRaisesRegex(ValueError,'DEPENDENCY_COVERAGE'):
+                    validate_dependencies(changed)
+
+    def test_mapper_enforces_dependencies_even_for_candidates_and_shared_recipes(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path=Path(tmp);manifest,groups,policy=self.fixture(path)
+            row=policy['variants']['bd'][0]
+            row['retained_obligations']=[dict(id='consumer',minimum_stages=8,
+                basis='eligibility before grant',validator='composed timing',contract='consumer contract')]
+            policy['required_dependencies']={'consumer':dict(variant='bd',instance=row['instance'])}
+            specialize(path,manifest,groups,policy,'bd',1.)
+            # Even if an unselected shared member would inflate the effective
+            # count, an invalid requested recipe cannot become accepted policy.
+            row['stages']=7
+            for candidate in (False,True):
+                with self.assertRaisesRegex(ValueError,'DEPENDENCY_MINIMUM'):
+                    specialize(path,manifest,groups,policy,'bd',1.,candidate=candidate)
+
     def fixture(self, directory):
         params=dict(WIDTH='1',OP='0',RESET_VALUE='0',DELAY_FS='31000000')
         primitive=dict(model='ChiselAsyncControlGate_v1',parameters=params,id='output_delay',

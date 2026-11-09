@@ -84,7 +84,8 @@
 - Obtain a fresh independent agent review for each batch, fix findings, rerun
   affected tests and update the relevant contracts and area ledger. The current
   user workflow is commit and push directly to `main`; do not open a PR unless
-  requested. Do not mark incomplete checks as passed or simulate approval.
+  requested. Include the reason, material assumptions and validation in the
+  commit body. Do not mark incomplete checks as passed or simulate approval.
 
 ## Physical work
 

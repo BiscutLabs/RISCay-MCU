@@ -285,6 +285,12 @@ The cohort falls from 1,539 to 34 cells; whole-chip DLYD falls from 3,603 to
 2,098. Flat logic is 1.345309 mm², repaired logic 1.578033 mm². These measured
 local counts do not qualify the remaining custom guards or routed timing.
 
+Do not build another bespoke checker for each remaining custom owner. The next
+sizing-tool change is the [declared composed-path evaluator](gf180-guard-sizing.md)
+with graph-checked dependencies on both sides; the present v1 proposer cannot
+handle shared-chain sensitivity. Its current eight-cell reservation floors are
+enforced in CI/mapping until that consumer obligation is remeasured.
+
 | Family | Implemented ordering |
 | --- | --- |
 | Grant | Existing LongHold publication covers role capture and eligibility; extra timers removed |
@@ -379,6 +385,14 @@ payload from initialized tokens and architectural state. Do not replace an
 edge-capture feedback bank or GPIO output register with a transparent latch.
 Payload optimization needs an explicit live-lane correspondence and regenerated
 capture/reset trees; dropping all protection is not an equivalent implementation.
+
+The remaining **0.813476 mm² flat mapped gap** will not disappear through guard
+sizing alone. DLYD, payload reset circuitry and duplicate work-clock transport
+are separate opportunities. The chip-wide flat periodic total is 2,822; it is
+not Services' count. The matched hierarchical inventory attributes 64 service
+and 912 work sinks to Services (976 total). Use the same hierarchy convention
+before/after an ownership batch. Clocked-reference repair/CTS/routing remains
+unmeasured, so 2.530× is a mapped-logic ratio, not a qualified die-area ratio.
 
 After the host change, evaluate one-work-bank implementations of ADC scaling
 and elapsed arithmetic, then CPU state transport. Preserve the independent LF
