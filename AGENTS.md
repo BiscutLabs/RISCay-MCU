@@ -46,6 +46,11 @@
   Raw reset is not a synchronous data qualifier. Retain the RDC audit in
   `tools/check_reset_crossings.py` and its proof helpers until typed library
   metadata can express that integration-specific containment proof.
+- Resetless payload storage is opt-in and uses a distinct library/model identity.
+  Audit every consumer for valid qualification and reset lifetime before adoption;
+  keep architectural state, seeded tokens and control state resettable. BD's four
+  POR-owned frame-bank payloads are the first audited use; application-lifetime
+  adoption requires a separate containment proof. See `docs/resetless-payload-plan.md`.
 - Use the source-pinned library in `project/chisel-async-source.json`. Library
   source is an exact-commit sbt dependency; no `publishLocal` is required. Library
   changes need their own tests and review. Public native primitives and their

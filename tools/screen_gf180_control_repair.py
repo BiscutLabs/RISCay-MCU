@@ -41,7 +41,8 @@ def stage_plan(netlist, variant, descriptor=None):
             require(p["direction"] == "input", "CONTROL_SOURCE_DIRECTION")
             sources += [name] if len(p["bits"]) == 1 else [f"{name}[{i}]" for i in range(len(p["bits"]))]
     require(len(sources) == input_width, "CONTROL_SOURCE_WIDTH")
-    kind = SC+("latrnq_1" if variant == "bd" else "dffrnq_1")
+    kind = SC+(descriptor['payload_cell'] if descriptor and 'payload_cell' in descriptor else
+               "latrnq_1" if variant == "bd" else "dffrnq_1")
     payload = [(p,c) for p,c in leaves(netlist["modules"],module)
                if p.startswith("ca_primitive_payload/") and c["type"] == kind]
     require(len(payload) == width, "CONTROL_PAYLOAD_WIDTH")

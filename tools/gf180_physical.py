@@ -276,6 +276,19 @@ def adapter(p, guard_min_ns, *, role=None, guard_stages=None):
             c.chain(value,guard_stages if guard_stages is not None else stages(k["DELAY_FS"]/1e6) if long_guard else 1 if data else 9,
                 f'q[{i}]',kind="dlyd_1" if long_guard else "buf_1")
         if not data and k["DELAY_FS"]<=1000000: requirement["control_max_ns"]=10
+    elif model == "ResetlessClosingLatch":
+        if set(k)!={'WIDTH','DELAY_FS'} or k['WIDTH']<1 or not 0<=k['DELAY_FS']<2**63:
+            raise ValueError('RESETLESS_PAYLOAD_PARAMETERS')
+        width=k['WIDTH']
+        root=c.gate('buf_8',dict(I=c.inv('closed')))
+        parents,levels=distribution_parents(c,(root,),math.ceil(width/16))
+        clocks={group:c.gate('buf_4',dict(I=parent[0])) for group,parent in enumerate(parents)}
+        for i in range(width):
+            c.cell('latq_1',D=f'd[{i}]',E=clocks[i//16],Q=f'q[{i}]')
+        requirement.update(storage_bits=width,clock_distribution_max_ns=4,
+            distribution_fanout_limit=16,capture_branch_levels=levels,
+            payload_reset=False,
+            capture_leaf_spread='must-measure-both-edges-per-corner; not-qualified-by-fanout')
     elif model in ("EventRegister","ClosingLatch","PhaseRegister"):
         width=k.get("WIDTH",1); nr=c.inv("reset")
         enable=c.inv("closed") if model=="ClosingLatch" else "trigger"
@@ -305,7 +318,7 @@ def adapter(p, guard_min_ns, *, role=None, guard_stages=None):
     else: raise ValueError("UNSUPPORTED_ACTIVE_MODEL_"+model)
     if 'distribution_fanout_limit' in requirement:
         requirement['distribution_structure']=distribution_profile(c.cells,
-            capture_root='closed' if model=='ClosingLatch' else 'trigger',data_reset=model=='ControlGate')
+            capture_root='closed' if model in ('ClosingLatch','ResetlessClosingLatch') else 'trigger',data_reset=model=='ControlGate')
     return c,requirement
 
 def pdk_verify(pdk):

@@ -84,10 +84,15 @@ class Gf180EstimateTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp:
             path=Path(temp)/"activity.log"; path.write_text(text)
             self.assertEqual(read_activity(path)["firmware"]["latch_bits"],37944)
+            self.assertEqual(read_activity(path)['firmware']['resetless_latch_bits'],0)
+            path.write_text(text.replace('ASYNC,1184,37944,0','ASYNC,1184,37944,0,1348'))
+            self.assertEqual(read_activity(path)['firmware']['resetless_latch_bits'],1348)
             for bad,error in ((text.replace('RISCAY_SOC_PASS',''),'MISSING_ACTIVITY_COMPLETION'),
                               (text.replace('20,8','0,0'),'EMPTY_WAKE'),
                               (text.replace('468,43','468,42'),'WORKLOAD_RETIREMENT_CHANGED'),
-                              (text.replace('ASYNC,1184,37944,0',''),'MISSING_ASYNC_ACTIVITY')):
+                              (text.replace('ASYNC,1184,37944,0',''),'MISSING_ASYNC_ACTIVITY'),
+                              (text.replace('ASYNC,1184,37944,0','ASYNC,1184,37944,0,-1'),'INVALID_ASYNC_ACTIVITY'),
+                              (text.replace('ASYNC,1184,37944,0','ASYNC,1184,37944,0,1,2'),'INVALID_ASYNC_ACTIVITY')):
                 path.write_text(bad)
                 with self.assertRaisesRegex(ValueError,error): read_activity(path)
 

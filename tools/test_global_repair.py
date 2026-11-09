@@ -497,6 +497,27 @@ class GlobalRepairTest(unittest.TestCase):
             reason='proved-cell-free-data-alias-with-no-reset-load')])
         self.assertEqual(len(self.proof(a,b,{'driver/keeper':'driver'})['added_buffers']),1)
 
+    def test_resetless_payload_omits_reset_tree_only_with_its_typed_binding(self):
+        directions={'closed':'input','d':'input','q':'output'}
+        ports={p:dict(direction=directions[p],bits=[i+1]) for i,p in enumerate(directions)}
+        a=dict(modules=dict(top=dict(cells={'payload':dict(type='latch',port_directions=directions,
+            connections={p:v['bits'] for p,v in ports.items()})}),
+            latch=dict(ports=ports,cells={'invert':cell('inv_1',I=1,ZN=4),'data':cell('latq_1',D=2,E=4,Q=3)})))
+        binding=dict(model='ChiselAsyncResetlessClosingLatch_v1',module='latch',parameters=dict(WIDTH=1,DELAY_FS=1000),
+            instances=['payload'],cells=[dict(name='invert',cell=SC+'inv_1',pins=dict(I='closed',ZN='n0')),
+                dict(name='data',cell=SC+'latq_1',pins=dict(D='d[0]',E='n0',Q='q[0]'))])
+        b=deepcopy(a)
+        self.assertEqual(buffer_native_resets(b,'top',{'payload':'payload'},bindings=[binding]),[])
+        self.assertEqual(a,b)
+        for changed,error in ((dict(model='ChiselAsyncClosingLatch_v1'),'REPAIR_RESET_BOUNDARY_SHAPE'),
+                              (dict(module='other'),'REPAIR_RESETLESS_STORAGE_IDENTITY')):
+            bad=deepcopy(binding);bad.update(changed)
+            with self.assertRaisesRegex(ValueError,error):
+                buffer_native_resets(deepcopy(a),'top',{'payload':'payload'},bindings=[bad])
+        b=deepcopy(a);b['modules']['latch']['cells']['data']['type']=SC+'latrnq_1'
+        with self.assertRaisesRegex(ValueError,'REPAIR_RESETLESS_STORAGE_RECIPE'):
+            buffer_native_resets(b,'top',{'payload':'payload'},bindings=[binding])
+
     def test_resetless_alias_requires_exact_model_and_instance_binding(self):
         for mutation,error in (
             (lambda bs:bs[1].update(model='ChiselAsyncBuffer_v1'),'REPAIR_RESET_BOUNDARY_SHAPE'),

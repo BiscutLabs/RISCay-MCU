@@ -6,16 +6,16 @@ import chiselasync.clocked.ClockedBridge
 import chiselasync.core.ResetDomain
 import chiselasync.protocol.Channel
 
-/** Narrow crossing for the ProgramSource's already-buffered Stored token.
+/** Narrow crossing for an already-retained native payload.
   * The native producer must establish its bundled payload before REQ and hold
   * it through complete RTZ. Two request synchronizers plus the acceptance edge
   * provide >=2 service periods of additional settling (>=100 ns at 20 MHz).
   * ACK denotes only downstream fire. No second payload copy or capture FSM.
   * Physical bundled-data, synchronizer and reset timing remain to be qualified.
   */
-class FourPhaseStoredReceipt(domain: ResetDomain) extends ClockedBridge(domain,2) {
+class FourPhaseRetainedReceipt[T <: Data](gen: T, domain: ResetDomain) extends ClockedBridge(domain,2) {
   dontTouch(localReset) // Preserve the independently checked reset endpoint source.
-  val channel=new Channel(Bool(),resetDomain)
+  val channel=new Channel(gen,resetDomain)
   val in=IO(Flipped(channel.bundled)); val out=IO(channel.decoupled)
   dontTouch(in); dontTouch(out)
   withClockAndReset(clock,localReset) {
@@ -37,3 +37,7 @@ class FourPhaseStoredReceipt(domain: ResetDomain) extends ClockedBridge(domain,2
   contract.endpoint("local_reset",localReset)
   contract.endpoint("reset",reset)
 }
+
+/** ProgramSource's one-bit Stored token uses the same retained-source contract. */
+class FourPhaseStoredReceipt(domain: ResetDomain)
+    extends FourPhaseRetainedReceipt(Bool(),domain)

@@ -176,9 +176,9 @@ def primitives(export):
 def activity(export, output):
     """Add observers to an already passing, exported estimate harness. No DUT edits."""
     output.mkdir(parents=True, exist_ok=True)
-    monitors = ["integer eventBits=0,latchBits=0,phaseBits=0;"]
-    monitors.append("always @(posedge serviceClockEnable) begin eventBits=0; latchBits=0; phaseBits=0; end")
-    monitors.append('always @(negedge serviceClockEnable) if(measured>0) $display("ASYNC,%0d,%0d,%0d",eventBits,latchBits,phaseBits);')
+    monitors = ["integer eventBits=0,latchBits=0,phaseBits=0,resetlessBits=0;"]
+    monitors.append("always @(posedge serviceClockEnable) begin eventBits=0; latchBits=0; phaseBits=0; resetlessBits=0; end")
+    monitors.append('always @(negedge serviceClockEnable) if(measured>0) $display("ASYNC,%0d,%0d,%0d,%0d",eventBits,latchBits,phaseBits,resetlessBits);')
     for primitive in primitives(export):
         model = primitive["model"]
         path = "dut.soc." + primitive["rtl_path"].split(".",1)[1]
@@ -187,6 +187,9 @@ def activity(export, output):
             monitors.append(f"always @(posedge {path}.trigger) if(!{path}.reset) eventBits=eventBits+{width};")
         elif model == "ChiselAsyncClosingLatch_v1":
             monitors.append(f"always @(negedge {path}.closed) if(!{path}.reset) latchBits=latchBits+{width};")
+        elif model == "ChiselAsyncResetlessClosingLatch_v1":
+            owner=path.rsplit('.',1)[0]
+            monitors.append(f"always @(negedge {path}.closed) if(!{owner}.reset) resetlessBits=resetlessBits+{width};")
         elif model == "ChiselAsyncPhaseRegister_v1":
             monitors.append(f"always @(posedge {path}.trigger) if(!{path}.reset) phaseBits=phaseBits+1;")
     tb = (export/"testbench.sv").read_text()
@@ -287,6 +290,8 @@ def equivalent_primitives(items, buffers_per_guard=0, c_nands=6):
         inventory[model]+=1
         if model=="ChiselAsyncClosingLatch_v1":
             cells["latrnq_1"]+=w; cells["inv_1"]+=2
+        elif model=="ChiselAsyncResetlessClosingLatch_v1":
+            cells["latq_1"]+=w; cells["inv_1"]+=1
         elif model=="ChiselAsyncEventRegister_v1":
             if not 0<=p["RESET_VALUE"]<2**w: raise ValueError("INVALID_STORAGE_RESET_VALUE")
             ones=p["RESET_VALUE"].bit_count()
@@ -377,7 +382,8 @@ def read_activity(path):
     # their order, but their separate lists retain the same chronological index.
     for w,a in zip(wakes,asynchronous):
         if not 0<w["work"]<=w["fast"] or not w["ns"]>0: raise ValueError("EMPTY_WAKE")
-        w.update(event_bits=a[0],latch_bits=a[1],phase_bits=a[2])
+        if len(a) not in (3,4) or any(v<0 for v in a):raise ValueError('INVALID_ASYNC_ACTIVITY')
+        w.update(event_bits=a[0],latch_bits=a[1],phase_bits=a[2],resetless_latch_bits=a[3] if len(a)==4 else 0)
     result={}
     for kind,predicate in (("maintenance",lambda w:not w["adc"] and not w["retired"]),
                            ("sample",lambda w:w["adc"] and not w["retired"]),
@@ -447,7 +453,8 @@ def report(base,libdir):
         for wake in observed.values():
             clock=(wake["fast"]*clock_per_cycle["fast"]+wake["work"]*clock_per_cycle["work"])
             async_clock=0
-            for key,cell in (("event_bits","dffrnq_1"),("latch_bits","latrnq_1"),("phase_bits","dffrnq_1")):
+            for key,cell in (("event_bits","dffrnq_1"),("latch_bits","latrnq_1"),("phase_bits","dffrnq_1"),
+                             ('resetless_latch_bits','latq_1')):
                 m=nominal[PREFIX+cell]
                 async_clock+=wake[key]*(m["clock_internal_pj"]+m["clock_cap_pf"]*3.3**2)
             source_pj=active_current*3.3*wake["ns"]*1000

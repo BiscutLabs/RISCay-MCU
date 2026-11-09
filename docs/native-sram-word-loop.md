@@ -57,7 +57,27 @@ First-byte request additionally covers request/lane Q and the byte mux; word
 publication covers the final assembly capture. Full return precedes reuse.
 No periodic clock enters this loop and no per-bit allowance maps to physical cells.
 The byte bus itself is ordinary combinational selection from closed storage,
-accepted only through the existing receipt/fire-qualified macro boundary. An
+accepted only through the receipt/fire-qualified macro boundary. BD's byte
+receipt now reuses the minimal retained-payload receiver also used by Stored:
+two request synchronizers, an ACK register, and no additional settling FSM.
+`valid = requestSync && !ack`; ACK rises only on the macro controller's actual
+capture edge and falls only after synchronized request return. The source holds
+the byte through full RTZ. At the maximum supported 20 MHz work clock, the
+two synchronizers plus acceptance edge give a minimum two-period (100 ns)
+settling window from request assertion. Physical checks must charge the real
+source capture tree, CLK-to-Q, byte mux, saved-register mux and aperture; this
+window is not a substitute for those checks. All reset remains POR-owned.
+Macro falling-edge launch, rising-edge access and full-cycle Q capture are
+unchanged, including writes and disabled lanes.
+
+The old receipt added two control edges on every byte after the synchronizers.
+The single-channel rewrite could no longer overlap those waits, causing the
+existing earliest 3.2 MHz loader WRITE status test to fail on parent `2c1e3d2`.
+Removing them restores that deadline without deferring the host snapshot or
+hiding BUSY. I2cSpec now runs in the fast gate. The original failure and exact
+parent reproduction remain in `build/bd-payload-transport/`.
+
+An
 experimental passive byte marker was removed because that audit deliberately
 admits only native capture sinks. Removing its 10 ns digital model delay removes
 no physical cells and is not evidence of a physical latency improvement.

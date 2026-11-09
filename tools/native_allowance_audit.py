@@ -19,7 +19,7 @@ from gf180_physical import SC, nodes, sha, write_json
 from repair_gf180_design import flat
 from passive_allowance_policy import PASSIVE
 
-STORAGE = {'ChiselAsyncEventRegister_v1', 'ChiselAsyncClosingLatch_v1'}
+STORAGE = {'ChiselAsyncEventRegister_v1', 'ChiselAsyncClosingLatch_v1', 'ChiselAsyncResetlessClosingLatch_v1'}
 DATA = 'whole-transform-allowance'
 
 
@@ -188,6 +188,9 @@ def audit_elaborated(database, manifest):
     modules = database['modules']; body = modules[top]; cells = body['cells']
     primitive_specs = {p['rtl_path'].removeprefix(top + '.'): p
                        for node in nodes(manifest['design']) for p in node['primitives']}
+    owner_resets={p['rtl_path'].removeprefix(top+'.'):next(e['rtl_path'] for e in node['endpoints'] if e['id']==p['reset'])
+                  for node in nodes(manifest['design']) for p in node['primitives']
+                  if p['model']=='ChiselAsyncResetlessClosingLatch_v1'}
     def model(cell):
         kind = cell['type']
         return modules.get(kind, {}).get('attributes', {}).get('hdlname', kind).split()[0]
@@ -223,7 +226,11 @@ def audit_elaborated(database, manifest):
                     require(target in primitive_specs and primitive_specs[target]['model'] == kind,
                             'ELABORATED_UNDECLARED_CAPTURE')
                     event = 'closed' if kind.endswith('ClosingLatch_v1') else 'trigger'
-                    require(event in cell['connections'] and 'reset' in cell['connections'], 'ELABORATED_CAPTURE_RESET')
+                    if kind=='ChiselAsyncResetlessClosingLatch_v1':
+                        require(cell['port_directions']=={'closed':'input','d':'input','q':'output'} and
+                            set(cell['connections'])=={'closed','d','q'},'ELABORATED_RESETLESS_CAPTURE_PORTS')
+                    else:
+                        require(event in cell['connections'] and 'reset' in cell['connections'], 'ELABORATED_CAPTURE_RESET')
                     targets[(target, lane, kind, event)].add(source_lane)
                 elif kind == PASSIVE and pin == 'a':
                     require(target in primitive_specs, 'ELABORATED_UNDECLARED_ALLOWANCE')
@@ -256,7 +263,9 @@ def audit_elaborated(database, manifest):
         rows.append(dict(instance=top + '.' + name, width=int(spec['parameters']['WIDTH']),
             disposition='native-capture-only', maximum_direct_fanout=max((len(loads[b]) for b in source['connections']['q']), default=0),
             capture_sinks=[dict(instance=top + '.' + n, lane=i, model=k, data_pin=top + '.' + n + '.d',
-                                event_pin=top + '.' + n + '.' + e, reset_pin=top + '.' + n + '.reset',
+                                event_pin=top + '.' + n + '.' + e,
+                                reset_pin=None if k=='ChiselAsyncResetlessClosingLatch_v1' else top + '.' + n + '.reset',
+                                **({'owner_reset':owner_resets[n]} if k=='ChiselAsyncResetlessClosingLatch_v1' else {}),
                                 source_lanes=sorted(targets[(n, i, k, e)]),
                                 constant_value=constants.bit(cells[n]['connections']['d'][i]))
                            for n, i, k, e in sorted(targets)], combinational_cells=sorted(glue),

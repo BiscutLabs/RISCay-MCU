@@ -1,6 +1,6 @@
 {
   "repository": "https://github.com/BiscutLabs/chisel-async",
-  "commit": "83d646825da854f93d59f6b2055ecde369e62242",
+  "commit": "856fc757517e0ff0c1c8fea9f6d7e61ec32d1172",
   "dependency": "sbt RootProject at the exact Git commit; no publishLocal dependency",
   "historical_d690e8f_jar_sha256": "938abe3a5670c3dcc9b2fc13878d7f36a8e809d8c6e20184ffc7f828f2733f68",
   "artifact_scope": "The historical hash identifies the prior local publication only. Current source builds record their actual JAR in the single CI run receipt."

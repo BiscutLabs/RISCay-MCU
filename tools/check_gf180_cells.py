@@ -17,6 +17,17 @@ def vectors(b):
     inputs={p["name"]:0 for p in b["ports"] if p["direction"]=="input"}
     def put(values, expected):
         inputs.update(values); result.append((dict(inputs),expected))
+    if model=='ChiselAsyncResetlessClosingLatch_v1':
+        # Establish payload by a real transparent phase, never by reset.
+        for _ in range(64):
+            data=rng.getrandbits(width)
+            put({'closed':0,'d':data},data);put({'closed':1},data)
+            put({'d':data^((1<<width)-1)},data)
+        return result
+    if model=='ChiselAsyncPassiveDataAllowance_v1':
+        for _ in range(128):
+            data=rng.getrandbits(width);put({'a':data},data)
+        return result
     reset_value=k.get("RESET_VALUE",0)
     q=reset_value
     put({"reset":1},reset_value)
@@ -70,13 +81,14 @@ def vectors(b):
 def run(mapping,pdk):
     pdk_verify(pdk)
     record=json.loads((mapping/"mapping.json").read_text())
-    tests=[]; blocks=[]; count=0
+    tests=[]; blocks=[]; count=0; longest=0
     for b in record["bindings"]:
         # Deduplicate modules shared between variants outside this test runner.
         declarations=[f'{"reg" if p["direction"]=="input" else "wire"} [{p["width"]-1}:0] {p["name"]};' for p in b["ports"]]
         body=["module test_"+b["module"]+"(output reg done=0);",*declarations,
             b["module"]+" dut ("+", ".join(f'.{p["name"]}({p["name"]})' for p in b["ports"])+");", "initial begin"]
-        for index,(values,expected) in enumerate(vectors(b)):
+        cases=vectors(b);longest=max(longest,len(cases))
+        for index,(values,expected) in enumerate(cases):
             count+=1
             body+= ["; ".join(f'{name}={next(p["width"] for p in b["ports"] if p["name"]==name)}\'h{value:x}' for name,value in values.items())+"; #20;",
                 f'if(q !== {next(p["width"] for p in b["ports"] if p["name"]=="q")}\'h{expected:x}) $fatal(1,"{b["module"]} vector {index} got %h",q);']
@@ -84,7 +96,10 @@ def run(mapping,pdk):
         blocks.append("\n".join(body)); tests.append(b["module"])
     tb="`timescale 1ns/1ps\n"+"\n".join(blocks)+"\nmodule tb;\n"
     tb+=f'wire [{len(tests)-1}:0] done;\n'+"\n".join(f'test_{n} t{i}(done[{i}]);' for i,n in enumerate(tests))
-    tb+='\ninitial begin wait(&done); $display("GF180_FUNCTIONAL_PASS"); $finish; end\ninitial begin #100000; $fatal(1,"TIMEOUT"); end\nendmodule\n'
+    # All adapters run concurrently. The finite truth-table inventory determines
+    # duration; every vector still has the same 20 ns settling/assertion point.
+    tb+='\ninitial begin wait(&done); $display("GF180_FUNCTIONAL_PASS"); $finish; end\n'
+    tb+=f'initial begin #{20*(longest+1)}; $fatal(1,"TIMEOUT"); end\nendmodule\n'
     (mapping/"cells-test.sv").write_text(tb)
     files=[pdk/"primitives.v",pdk/"gf180mcu_fd_sc_mcu7t5v0.v",mapping/"riscay_gf180_cells.v",mapping/"cells-test.sv"]
     subprocess.run(["iverilog","-g2012","-DFUNCTIONAL","-s","tb","-o",str(mapping/"cells-test.vvp"),*map(str,files)],check=True,timeout=60)

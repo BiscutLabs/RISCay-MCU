@@ -90,6 +90,16 @@ transport and payload copies; the documented receiving-edge arbitration remains.
   derate and 2 ns floor, at zero wire RC. A pulse/keeper failure needs feedback
   compaction or a remeasured arm/history tail, not payload hold buffers. Recheck
   offer inhibition, proof withdrawal, pulses, reset and throughput if it lengthens.
+- [ ] **Resetless frame-bank hold:** qualify all four BD `frame_store/storage0–3`
+  capture-to-source-reuse paths with mismatch and extracted min/max RC. The
+  local plain-latch campaign grants no source-release credit; its positive
+  zero-wire margin is not a routed hold result. Preserve both publisher-copy and
+  receipt/Control full-return joins. [Contract](resetless-payload-plan.md).
+- [ ] **SRAM byte receipts:** qualify retained-byte setup/hold and CDC with routed
+  clock skew/jitter and min/max RC. Preserve the measured two-period setup wait
+  and four-period source-hold floor, or re-prove them if the clocked boundary
+  changes. Check 400 kHz earliest-status throughput with slow-corner native
+  delays; the digital deadline pass is not physical throughput closure.
 - [ ] **R2b:** qualify complete reset assertion/release distribution, recovery/removal,
   hold intervals and startup, including generated reset trees, wake and clock gating.
 - [ ] Apply routed hold repair **only to failing composed paths**; reserve **0.05 mm²**

@@ -150,7 +150,7 @@ def inventory(root, top):
                     tags.append('same-event-net')
                 if kind == 'ChiselAsyncPhaseRegister_v1':
                     tags.append('native-phase-as-data')
-                elif kind in NATIVE_STATE and kind not in ('ChiselAsyncEventRegister_v1', 'ChiselAsyncClosingLatch_v1'):
+                elif kind in NATIVE_STATE and kind not in ('ChiselAsyncEventRegister_v1', 'ChiselAsyncClosingLatch_v1', 'ChiselAsyncResetlessClosingLatch_v1'):
                     tags.append('native-control-state-as-data')
                 if not tags:
                     tags.append('different-event-retained-source' if kind in NATIVE_STATE else

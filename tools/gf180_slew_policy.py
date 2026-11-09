@@ -77,11 +77,11 @@ def native_recipe_pins(binding):
         strict = nets
     elif model == 'ControlGate' and binding['requirements'].get('role') == CONTROL:
         strict = nets
-    elif model in ('EventRegister', 'ClosingLatch') or (
+    elif model in ('EventRegister', 'ClosingLatch', 'ResetlessClosingLatch') or (
             model == 'ControlGate' and binding['requirements'].get('role') == DATA):
-        strict = {'reset'}
+        strict = set() if model=='ResetlessClosingLatch' else {'reset'}
         if model != 'ControlGate':
-            strict.add('closed' if model == 'ClosingLatch' else 'trigger')
+            strict.add('closed' if model.endswith('ClosingLatch') else 'trigger')
         # Recipe buffers/inverters carry control to reset and capture pins.
         changed = True
         while changed:

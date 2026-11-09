@@ -51,7 +51,25 @@ class FourPhaseServices(p: SocParameters, boardFactory: SocParameters => BoardPr
   val haltPending = applicationReg(false.B)
   val mmioCurrent = applicationReg(false.B)
   val mmioCommitPending = RegInit(false.B)
-  val mmioCommit = Reg(new ControlCommand)
+  // Only successful aligned full-word MMIO stores enter this retained slot.
+  // Keep the variable payload once; address region, operation, mask and kind
+  // are consequences of admission rather than clocked copies of request bits.
+  private class AcceptedMmioWrite extends Bundle {
+    val word = UInt(5.W)
+    val data = UInt(32.W)
+    val appIndex = UInt(6.W)
+    val applicationWritable = Bool()
+  }
+  require(MemoryMap.mmioBytes == 128 && (MemoryMap.mmio & 127) == 0)
+  private val mmioWrite = Reg(new AcceptedMmioWrite)
+  val mmioCommit = WireDefault(0.U.asTypeOf(new ControlCommand))
+  mmioCommit.kind := ControlKind.MmioCommit.U
+  mmioCommit.memory.address := MemoryMap.mmio.U(32.W) | (mmioWrite.word.pad(32) << 2)
+  mmioCommit.memory.operation := Operation.Write.U
+  mmioCommit.memory.mask := 15.U
+  mmioCommit.memory.data := mmioWrite.data
+  mmioCommit.applicationWritable := mmioWrite.applicationWritable
+  mmioCommit.peripheralData := mmioWrite.appIndex
   val resetObserved = RegNext(io.cpuResetActive, true.B)
   val resetEdge = io.cpuResetActive && !resetObserved
   val resetNeeded = RegInit(true.B)
@@ -577,11 +595,11 @@ class FourPhaseServices(p: SocParameters, boardFactory: SocParameters => BoardPr
     // Native preparation is reversible. The clocked endpoint accepts the write
     // here; its private commit token survives watchdog reset and precedes reset.
     mmioCommitPending := true.B
-    mmioCommit := 0.U.asTypeOf(new ControlCommand)
-    mmioCommit.kind := ControlKind.MmioCommit.U; mmioCommit.memory := req
-    mmioCommit.applicationWritable := io.controlCommand.bits.applicationWritable
+    assert(req.mask === 15.U && req.address(1,0) === 0.U,"MMIO_COMMIT_UNVALIDATED_STORE")
+    mmioWrite.word := req.address(6,2); mmioWrite.data := req.data
+    mmioWrite.applicationWritable := io.controlCommand.bits.applicationWritable
     // Only offset52 borrows this otherwise-zero field; offset88 has its own semantics.
-    when(req.address(6,0) === 52.U) {mmioCommit.peripheralData:=appIndex}
+    mmioWrite.appIndex := Mux(req.address(6,0) === 52.U,appIndex,0.U)
   }
   hostFrames.io.deq.ready := io.controlCommand.fire && io.controlCommand.bits.kind === ControlKind.Host.U
   when(io.controlCommand.fire) {

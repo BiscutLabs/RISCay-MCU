@@ -7,11 +7,12 @@ Full routed physical requalification remains migration item 17.
 
 The **BD mapped-logic milestone below 2.3 mm² excluding SRAM is achieved**.
 After the ownership rewrites, [three adaptive loops](area-optimization-loops.md)
-and [memory-guard batch](reviews/bd-memory-guards.md), current BD logic maps to
-**1.345309 mm² flat**, or **1.419686 mm²** with ordinary hierarchy retained;
-the latter repairs to **1.578033 mm²**. The guard batch reduces flat logic by
-7.55% from 1.455121 mm². The 1.60 mm² structural-batch target is met; BD remains
-2.530× the clocked logic reference, not an optimized or qualified die.
+and [memory-guard batch](reviews/bd-memory-guards.md), the
+[resetless payload/compact transport batch](resetless-payload-plan.md) maps BD to
+**1.324808 mm² flat**, or **1.399168 mm²** with ordinary hierarchy retained;
+the latter repairs to **1.558614 mm²**. This batch reduces flat logic by
+1.52% from 1.345309 mm². The 1.60 mm² structural-batch target is met; BD remains
+2.491× the clocked logic reference, not an optimized or qualified die.
 Matched parents, clock inventories, activity and open timing are recorded below.
 The earlier Housekeeping batch maps to **1.987975 / 2.800265 mm²**
 (BD / Click) and repairs to **2.209548 / 3.051047 mm²**, including the expanded
@@ -27,11 +28,75 @@ BD is the tape-out target; Click physical timing/sizing work is frozen, while
 architecture conversions cover both unless the user requests an exception;
 the current area rewrite is explicitly BD-first. Allocate
 **0.05 mm² of additional standard-cell area for routed hold repair** in the BD
-planning budget (about 3.7% of current mapped logic). This is an allowance, not
+planning budget (about 3.8% of current mapped logic). This is an allowance, not
 inserted area or a predicted requirement, and is separate from electrical/CTS
 repair and placement whitespace. Record actual cell use after routing. If repair
 exceeds it, revise the budget or architecture; do not waive a failing path. The
 [repair contract](architecture-followups.md#routed-hold-repair) specifies the gates.
+
+## Resetless frame payload and compact command transport (parent `2c1e3d2`)
+
+BD-only, ABI-preserving adoption of source-pinned chisel-async `856fc75`.
+Four transient frame-bank payloads use plain latches; their control/reset state
+and qualified consumption remain intact. Services retains only the accepted
+MMIO write fields, and the Control sender stores seven variable address bits.
+Click and the synchronous chip retain their RTL. [Contract](resetless-payload-plan.md)
+and [independent review/evidence](reviews/bd-payload-transport.md).
+
+| Measurement | Parent | This batch | Change |
+| --- | ---: | ---: | ---: |
+| Flat mapped logic, mm² | 1.345309 | 1.324808 | −0.020501 (−1.52%) |
+| Hierarchical mapped logic, mm² | 1.419686 | 1.399168 | −0.020519 |
+| Hierarchical repaired logic, mm² | 1.578033 | 1.558614 | −0.019419 (−1.23%) |
+| Guard / allowance / DLYD area, mm² | 0.159907 / 0 / 0.156588 | same | 0 |
+| DLYD cells | 2,098 | 2,098 | 0 |
+| Flat periodic sinks: service / work / LF | 1,188 / 1,556 / 78 | 1,188 / 1,494 / 78 | −62 |
+| Hierarchical periodic sinks: service / work / LF | 1,253 / 1,688 / 78 | 1,203 / 1,624 / 78 | −114 |
+| Services hierarchical sinks: service / work / LF | 64 / 912 / 0 | 14 / 878 / 0 | −84 |
+| Native storage bits, total | 5,427 | 5,427 | 0 |
+| Native storage bits with / without reset | 5,427 / 0 | 4,079 / 1,348 | 1,348 converted |
+
+Use the flat sink difference for storage attribution. The accepted descriptor
+shrinks 77 → 44 stored bits (−33); the sender loses 25 fixed address bits (115 →
+90 total sinks). The two byte receipts each remove two FSM bits, keeping both
+synchronizers, ACK and POR-release registers. In the hierarchical run, compiler
+inlining of Services also
+removes 50 tied-off GPIO sampler bits and merges two other bits across the old
+boundary. Those 52 extra reductions are compiler optimization, not additional
+state-ownership conversions. Native recipes stay protected in both maps.
+
+The four payload primitive recipes shrink 0.071950 → 0.062607 mm² (−0.009343),
+including their reset distribution. The per-bit latch saving is only 48.2944 →
+43.904 µm²: BD already used latches. Parent-side native reset buffers fall
+640 → 636 (−0.0000527 mm²). Native storage capture-pin capacitance falls
+30.5450 → 25.7178 pF; this is a load inventory, not measured energy. Other parent
+driver, logic and repair changes are included in the whole-chip figures above.
+Repair addition is 0.159446 mm² versus 0.158346 mm² before, so it offsets part of
+the mapped saving. Fixed SRAM footprint remains 0.466241 mm², excluded above.
+
+DLYD by purpose remains: custom ordering/reset 919 / 0.068591 mm²; bundling
+631 / 0.047096; publication 458 / 0.034184; seed/reset 90 / 0.006717. No guard
+counts or model timing values change. The 0.05 mm² routed hold-repair reserve
+is unchanged. The clocked 0.531833 mm² reference still lacks matched repair/CTS;
+the remaining flat gap is 0.792975 mm², not a measured die-area penalty.
+
+Fresh evidence: `build/bd-payload-transport/map-r2`, `flat-r2`, `area-r3.json`,
+`clocks-r2.json`, `clocks-flat-r2.json`, and the verification/timing receipts
+listed in the review record. These are pre-placement maps. The README's layout
+remains the older routed evidence; it is not relabeled as this RTL.
+
+The unchanged 43-instruction native-model workload now uses **3,615 work edges
+and 301.608 µs**, versus 3,967 and 330.942 µs at the parent (−352 edges, −8.87%).
+The improvement comes from removing the redundant SRAM byte-receipt waits,
+not from changing the macro cycle or a native guard. Maintenance remains 30
+edges / 3.147 µs and ADC 220 / 18.689 µs. Click remains 27 / 216 / 3,199 work
+edges for maintenance / ADC / firmware. Each variant supplies 22 / 3 / 2 observed
+windows respectively, and all have zero Telemetry commands. The resetless frame
+banks are inactive during these measured windows; no frame-capture energy saving
+is inferred from them. Evidence: `build/bd-payload-transport/activity-final/`.
+These are digital native-model activity/duration figures, not mapped power or
+slow-corner throughput. Full-capacity flash boot duration was not remeasured;
+generic boot and reset/write-through recovery are covered by the batch's tests.
 
 ## Memory-guard dependency correction (parent `2640ec5`)
 

@@ -108,8 +108,8 @@ class SlewPolicy(unittest.TestCase):
             with self.assertRaises(ValueError):report_rows(bad)
 
     def test_storage_payload_is_ordinary_but_capture_reset_are_native(self):
-        for model in ('EventRegister','ClosingLatch'):
-            b = binding(model, {'WIDTH':33,'RESET_VALUE':0})
+        for model in ('EventRegister','ClosingLatch','ResetlessClosingLatch'):
+            b = binding(model, {'WIDTH':33,'DELAY_FS':1000} if model=='ResetlessClosingLatch' else {'WIDTH':33,'RESET_VALUE':0})
             selected = set(native_recipe_pins(b))
             for c in b['cells']:
                 for pin in c['pins']:

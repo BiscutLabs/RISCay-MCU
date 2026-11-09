@@ -7,6 +7,21 @@ import chisel3.util.experimental.InlineInstance
 import riscay._
 import riscay.soc._
 
+/** The dispatcher admits CPU commands only inside the 128-byte MMIO window.
+  * Keep malformed offset/op/mask bits for native validation; reconstruct only
+  * the region bits. Other command kinds do not consume the memory operand.
+  */
+class FourPhaseControlHeader extends Bundle {
+  val kind = UInt(3.W)
+  val cpuResetActive = Bool(); val programBusy = Bool()
+  val memory = new Bundle {
+    val operation = UInt(2.W); val address = UInt(7.W)
+    val data = UInt(32.W); val mask = UInt(4.W)
+  }
+  val peripheralData = UInt(32.W)
+  val applicationWritable = Bool()
+}
+
 /** This variant owns clock, reset, wake and endpoint integration. */
 abstract class FourPhasePlatform(p: SocParameters, board: SocParameters => BoardProfile,
     clockedCpuResponse: Boolean = true, owners: OwnerTiming = OwnerTiming(),
@@ -214,7 +229,7 @@ abstract class FourPhasePlatform(p: SocParameters, board: SocParameters => Board
   // reset is synchronized service data, never a reset of image/lock state.
   val control = asyncChild("control")(d => new FourPhaseControl(p, d, owners))
   val controlCommandBridge = asyncChild("control_command_bridge")(d =>
-    new chiselasync.clocked.DecoupledToFourPhase(new ControlCommandHeader, 2, d))
+    new chiselasync.clocked.DecoupledToFourPhase(new FourPhaseControlHeader, 2, d))
   val controlReplyBridge = asyncChild("control_reply_bridge")(d =>
     new FourPhaseServiceReplyReceipt(new ControlReply(p.config.programBytes), d))
   controlCommandBridge.clock := workClock; controlReplyBridge.clock := workClock
@@ -223,9 +238,15 @@ abstract class FourPhasePlatform(p: SocParameters, board: SocParameters => Board
   // completion (including the complete BD return-to-zero).
   control.command.req := controlCommandBridge.out.req
   controlCommandBridge.out.ack := control.command.ack
-  controlCommandBridge.out.bits.elements.foreach { case (name, field) =>
+  controlCommandBridge.out.bits.elements.filterNot(_._1 == "memory").foreach { case (name, field) =>
     control.command.bits.elements(name) := field
   }
+  require(MemoryMap.mmioBytes == 128 && (MemoryMap.mmio & 127) == 0)
+  control.command.bits.memory.operation := controlCommandBridge.out.bits.memory.operation
+  control.command.bits.memory.data := controlCommandBridge.out.bits.memory.data
+  control.command.bits.memory.mask := controlCommandBridge.out.bits.memory.mask
+  control.command.bits.memory.address := MemoryMap.mmio.U(32.W) |
+    controlCommandBridge.out.bits.memory.address.pad(32)
   control.command.bits.frame := Mux(controlCommandBridge.out.bits.kind === ControlKind.Host.U,
     fabric.io.controlFrame, 0.U.asTypeOf(new HostFrame))
   host.frameCommandBank.get:=fabric.io.controlFrameBank
@@ -234,8 +255,20 @@ abstract class FourPhasePlatform(p: SocParameters, board: SocParameters => Board
   chiselasync.protocol.FourPhase.connect(controlReplyBridge.in, control.reply)
   controlCommandBridge.in.valid := fabric.io.controlCommand.valid
   fabric.io.controlCommand.ready := controlCommandBridge.in.ready
-  controlCommandBridge.in.bits.elements.foreach { case (name, field) =>
+  controlCommandBridge.in.bits.elements.filterNot(_._1 == "memory").foreach { case (name, field) =>
     field := fabric.io.controlCommand.bits.elements(name)
+  }
+  controlCommandBridge.in.bits.memory.operation := fabric.io.controlCommand.bits.memory.operation
+  controlCommandBridge.in.bits.memory.address := fabric.io.controlCommand.bits.memory.address(6,0)
+  controlCommandBridge.in.bits.memory.data := fabric.io.controlCommand.bits.memory.data
+  controlCommandBridge.in.bits.memory.mask := fabric.io.controlCommand.bits.memory.mask
+  withClockAndReset(workClock, reset) {
+    when(controlCommandBridge.in.fire &&
+      (controlCommandBridge.in.bits.kind === ControlKind.Mmio.U ||
+        controlCommandBridge.in.bits.kind === ControlKind.MmioCommit.U)) {
+      assert(fabric.io.controlCommand.bits.memory.address(31,7) === (MemoryMap.mmio >> 7).U,
+        "CONTROL_HEADER_OUTSIDE_MMIO")
+    }
   }
   fabric.io.controlCommandIdle := controlCommandBridge.in.ready
   fabric.io.controlReply <> controlReplyBridge.out

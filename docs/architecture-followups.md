@@ -35,6 +35,11 @@ and transport. Both keep the same ISA and integer/scaling ABI. Those loops reach
 waits, retains full decision/history return, and sizes three surviving chains
 from their own loaded paths. It maps to 1.345309 mm² flat; the ledger records the
 remaining gap. Click retains its existing memory transport and guard recipes.
+The [resetless-payload/compact-transport batch](resetless-payload-plan.md) uses
+plain latches only for BD's four transient I²C frame banks and narrows the BD
+accepted-MMIO descriptor and Control sender address. Click retains resettable
+frame payloads and its full command transport; neither ABI nor reset ownership
+changes. Architectural banks and all native control state remain resettable.
 The external ABI and reset/retention behavior remain equal;
 Click remains an unchanged functional regression reference during this pass.
 

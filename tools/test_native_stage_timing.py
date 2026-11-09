@@ -55,6 +55,15 @@ def fixture(variant):
 
 
 class MetadataTests(unittest.TestCase):
+    def test_resetless_payload_selects_its_own_cell_and_rejects_binding_substitution(self):
+        args=fixture('bd');manifest,_,record,_,_=args
+        payload=next(p for p in manifest['design']['primitives'] if p['id']=='payload')
+        binding=next(b for b in record['bindings'] if b['instances']==[payload['rtl_path']])
+        payload['model']=binding['model']='ChiselAsyncResetlessClosingLatch_v1'
+        self.assertEqual(n.descriptor(*args)['payload_cell'],'latq_1')
+        binding['model']='ChiselAsyncClosingLatch_v1'
+        with self.assertRaisesRegex(ValueError,'STAGE_MAPPING_METADATA'):n.descriptor(*args)
+
     def test_wire_envelope_retains_unresolved_obligations(self):
         cases=[dict(instance='stage',key=key,wire_corner=rc) for key in ('fast','slow') for rc in ('min','max')]
         envelopes=[dict(instance='stage',key=key,status=status) for key,status in

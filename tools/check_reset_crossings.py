@@ -22,6 +22,7 @@ from quiescing_request_hold_proof import prove_request_hold
 
 NATIVE_STATE = frozenset({
     "ChiselAsyncAsymmetricC_v1", "ChiselAsyncClosingLatch_v1",
+    "ChiselAsyncResetlessClosingLatch_v1",
     "ChiselAsyncEventRegister_v1", "ChiselAsyncPhaseRegister_v1",
     "ChiselAsyncCElement_v1", "ChiselAsyncLatch_v1",
 })
@@ -36,6 +37,7 @@ NATIVE_KEEP = 'setattr -set keep 1 ' + ' '.join('t:' + n for n in sorted(NATIVE_
 NATIVE_PINS = {
     'ChiselAsyncAsymmetricC_v1': ('reset','common','rising','falling'),
     'ChiselAsyncClosingLatch_v1': ('reset','closed','d'),
+    'ChiselAsyncResetlessClosingLatch_v1': ('closed','d'),
     'ChiselAsyncEventRegister_v1': ('reset','trigger','d'),
     'ChiselAsyncPhaseRegister_v1': ('reset','trigger'),
     'ChiselAsyncCElement_v1': ('reset','a','b'),
@@ -390,6 +392,8 @@ def audit_graph(database: dict, top: str, capacities: dict | None = None) -> dic
                               for owner in ('telemetry','housekeeping')}:
                     expected='debt'
             if expected is None: continue
+            if model(cell)=='ChiselAsyncResetlessClosingLatch_v1':
+                raise ValueError('RDC_RESETLESS_APPLICATION_OWNER_REQUIRES_LIFETIME_PROOF_'+name)
             key=(tuple(cell['connections']['reset']),expected)
             if key in reset_checks: continue
             native_hold=bits('resetBoundary_nativeHeld')
@@ -479,7 +483,8 @@ def audit_graph(database: dict, top: str, capacities: dict | None = None) -> dic
         quiescing=['ca_child_request_bridge','ca_child_admission_grant_bridge']
         receivers += quiescing
         for prefix in receivers:
-            proof=prove_receiver(module,prefix,top in CLICK_TOPS,prefix in quiescing,por_reset,fanout)
+            proof=prove_receiver(module,prefix,top in CLICK_TOPS,prefix in quiescing,por_reset,fanout,
+                retained=top not in CLICK_TOPS and '.ca_child_byte_request_' in prefix)
             if prefix == 'ca_child_request_bridge':
                 receiver_proofs.append(prove_request_hold(database,top,capacities))
                 masked=prove_masked_request(database,top,proof)

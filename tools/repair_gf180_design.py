@@ -332,6 +332,22 @@ def buffer_native_resets(netlist,top,adapter_instances,*,bindings=None,reset_fre
         kind,key=locations[owner];body=netlist['modules'][kind];c=body['cells'][key]
         module=netlist['modules'][c['type']];ports=module['ports']
         binding=by_instance.get(instance)
+        if binding is not None and binding['model']=='ChiselAsyncResetlessClosingLatch_v1':
+            # The full adapter graph is checked by the mapper and repair proof.
+            # Only this explicit storage identity may omit a payload reset tree.
+            width=binding['parameters']['WIDTH']
+            directions={'closed':'input','d':'input','q':'output'}
+            require(c['type']==binding['module'] and set(ports)==set(directions) and
+                c['port_directions']==directions and set(c['connections'])==set(directions) and
+                all(ports[p]['direction']==direction and
+                    len(ports[p]['bits'])==len(c['connections'][p])==(1 if p=='closed' else width)
+                    for p,direction in directions.items()),'REPAIR_RESETLESS_STORAGE_IDENTITY')
+            require({n:v['type'] for n,v in module['cells'].items()}==
+                {v['name']:v['cell'] for v in binding['cells']} and
+                sum(v['cell']==SC+'latq_1' for v in binding['cells'])==width and
+                not any(p in v['pins'] for v in binding['cells'] for p in ('RN','SETN','reset')),
+                'REPAIR_RESETLESS_STORAGE_RECIPE')
+            continue
         if binding is not None and binding['model']=='ChiselAsyncPassiveDataAllowance_v1':
             require(c['type']==binding['module'],'REPAIR_RESET_ALIAS_IDENTITY')
             audit_alias_binding(binding,module)

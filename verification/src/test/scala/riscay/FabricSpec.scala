@@ -123,6 +123,27 @@ reg [31:0] timeValue;
     def resetFixture(p: SocParameters): RawModule = if(synchronous) new ClockedResetCrossingFixture(p) else if(click) new ClickResetCrossingFixture(p) else new ResetCrossingFixture(p)
     def kickFixture(p: SocParameters): RawModule = if(synchronous) new ClockedKickFixture(p) else if(click) new ClickKickFixture(p) else new KickFixture(p)
     val variant = if(synchronous) "clocked" else if(click) "click" else "bd"
+    test(s"$variant: malformed MMIO stores cannot alias an accepted commit descriptor") {
+      run(fixture(SocParameters(config,watchdogCycles=1000000)),
+        variant+"-mmio-commit-alias", """
+        #10000;
+        write_bus(32'h30000028,32'h1234abcd);
+        for(badMask=0;badMask<15;badMask=badMask+1) begin
+          issue(2,32'h30000028,32'hdeadbeef,badMask); answer(0,1,2);
+          issue(1,32'h30000028,0,15); answer(32'h1234abcd,0,0);
+        end
+        for(badOffset=1;badOffset<4;badOffset=badOffset+1) begin
+          issue(2,32'h30000028+badOffset,32'hdeadbeef,15); answer(0,1,1);
+          issue(1,32'h30000028,0,15); answer(32'h1234abcd,0,0);
+        end
+        issue(2,32'h300000a8,32'hdeadbeef,15); answer(0,1,0);
+        issue(2,32'h30010028,32'hdeadbeef,15); answer(0,1,0);
+        issue(2,32'h2fffffa8,32'hdeadbeef,15); answer(0,1,0);
+        issue(1,32'h30000028,0,15); answer(32'h1234abcd,0,0);
+        write_bus(32'h30000028,32'hfedc9876);
+        issue(1,32'h30000028,0,15); answer(32'hfedc9876,0,3);
+      """,tasks+"integer badMask,badOffset;\n")
+    }
   test(s"$variant: invalid boot/WAIT read masks fault promptly without parking or consuming events and leases") {
     val params = SocParameters(config, watchdogCycles=1000000, lowPower=Some(LowPowerParameters()))
     run(waitFixture(params), "wait-validation", """

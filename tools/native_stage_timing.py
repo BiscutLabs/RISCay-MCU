@@ -115,6 +115,8 @@ def descriptor(manifest, netlist, record, path, variant, *, storage=False):
         else:
             model,shape=expected_binding(variant,name)
             if name=="payload":shape["WIDTH"]=ow
+            if name=='payload' and variant=='bd' and p['model']=='ChiselAsyncResetlessClosingLatch_v1':
+                model=p['model']
         require(p["model"]==model and set(params)==set(shape) and params["DELAY_FS"]>0 and
                 {k:v for k,v in params.items() if k!="DELAY_FS"}=={k:v for k,v in shape.items() if k!="DELAY_FS"},"STAGE_PRIMITIVE_SPECIALIZATION")
         bindings=[b for b in record["bindings"] if p["rtl_path"] in b["instances"]]
@@ -149,6 +151,8 @@ def descriptor(manifest, netlist, record, path, variant, *, storage=False):
                 all(int(t["times"][field])==actual(name) for field,name in (("REQUEST_FS","request_delay"),("ACKNOWLEDGE_FS","acknowledge_guard"),("OUTPUT_FS","output_guard"))) and
                 all(int(t["cells"][name]["model_fs"])==actual(name) for name in ("data_delay","fire","input_compare","input_phase","output_compare","payload")),"STAGE_TIMING_BINDING")
     return dict(instance=path,logical_module=node["module"],module=kind,input_width=iw,payload_width=ow,
+                payload_cell=("latq_1" if selected['payload']['model']=='ChiselAsyncResetlessClosingLatch_v1'
+                              else "latrnq_1" if variant=='bd' else "dffrnq_1"),
                 expected_bindings=expected,controller_template="bd-empty-capture-v1" if variant=="bd" else "click-standard-capture-v1")
 
 
@@ -219,7 +223,7 @@ def roundtrip(mapping, output, netlist, yosys, pdk):
 
 def inventory(manifest):
     return [dict(instance=n["rtl_path"],module=n["module"],
-                 supported=bool(re.fullmatch(r"(?:FourPhaseStage|ClickStage)(?:_\d+)?",n["module"])))
+                 supported=bool(re.fullmatch(r"(?:FourPhaseStage|LongHoldBuffer|ClickStage|ClickBuffer)(?:_\d+)?",n["module"])))
             for n in nodes(manifest["design"]) if n["primitives"]]
 
 
@@ -244,7 +248,9 @@ def run(mapping, output, variant, paths, campaign=False, *, routed=None, wire_co
     require(paths and len(paths)<=16 and len(set(paths))==len(paths),"STAGE_SELECTION_BOUND")
     # Original hierarchy supplies logical identity, never timing. Every query
     # runs on the complete repaired graph with its parent buffers and loads.
-    descriptors=[descriptor(manifest,original,record,p,variant) for p in paths]
+    families={n['rtl_path']:n['module'] for n in nodes(manifest['design'])}
+    descriptors=[descriptor(manifest,original,record,p,variant,
+        storage=bool(re.fullmatch(r'(?:LongHoldBuffer|ClickBuffer)(?:_\d+)?',families.get(p,'')))) for p in paths]
     plans=[leaf.bind_plan(relative.make_plan(original,record,variant,d),leaf_index,d,original,cuts)
            for d in descriptors]
     sta=tool("sta");yosys=tool("yosys");pdk=ROOT/".tools/physical/pdk";pdk_verify(pdk)
@@ -305,7 +311,8 @@ def run(mapping, output, variant, paths, campaign=False, *, routed=None, wire_co
         for (index,plan), (wire_corner,(odb,spef)) in product(enumerate(plans),rc_views.items()):
             sub=output/(str(index)+('-rc-'+wire_corner if wire_corner else ''));sub.mkdir();write_json(sub/"plan.json",plan)
             for corner in (relative.CORNERS if campaign else relative.CORNERS[:1]):
-                cell=relative.aperture(relative.library(pdk/(relative.SC+corner+".lib")),variant)
+                cell=relative.aperture(relative.library(pdk/(relative.SC+corner+".lib")),variant,
+                    master=descriptors[index]['payload_cell'])
                 for slew in ([0.02,2.0] if campaign else [0.2]):
                     key=f"{corner}-s{slew}";results={};failure=None
                     for ctx in plan["contexts"]:

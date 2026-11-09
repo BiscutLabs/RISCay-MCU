@@ -7,8 +7,9 @@ library source is pinned in
 [`project/chisel-async-source.json`](../project/chisel-async-source.json).
 `build.sbt` reads that pin and uses an exact-commit Git source dependency. sbt
 fetches and compiles it automatically; no sibling checkout or `publishLocal`
-artifact is required. The selected revision is `83d6468`, which retains the
-passive primitives from `06b1216` and adds the generation-time structural audit.
+artifact is required. The selected revision is `856fc75`, which retains the
+passive primitives from `06b1216`, the generation-time structural audit and
+opt-in resetless BD payload storage. Only explicitly audited transient owners select it.
 The first build needs Git/network access and the normal Maven dependencies.
 Use JDK 21, firtool 1.160.0 and Icarus 13. The library provides checksum-verified
 bootstrap scripts for those tools. Set `JAVA_HOME`, `CHISEL_FIRTOOL_PATH`,
@@ -20,7 +21,8 @@ python tools/ci.py --output build/ci-local
 
 The output directory must be new. This runs Python discovery, then one sbt process
 for timestamp arithmetic and the selected core, fabric, Control, CRC, housekeeping, frame, reset bridge,
-retained register-view, event-oracle, sleep and boot-ingress suites, the generic SPI boot cases and physical export/core
+retained register-view, event-oracle, sleep, I2C wire/earliest-loader-status and
+boot-ingress suites, the generic SPI boot cases and physical export/core
 policy suites. It checks fresh, nonempty JUnit results for every requested suite.
 Missing suites, failed cases and unexpected skips fail the run. Linux may skip
 only the Windows mounted-drive translation test. CI runs the same entry point on

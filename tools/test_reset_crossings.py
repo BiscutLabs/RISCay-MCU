@@ -1,11 +1,41 @@
 # SPDX-License-Identifier: Apache-2.0
 import copy
+from collections import defaultdict
 import unittest
 from check_reset_crossings import audit_graph, NATIVE_PINS, SRAM
-from reset_bridge_proof import Cone
+from reset_bridge_proof import Cone, prove_receiver
 
 
 class ResetCrossingTest(unittest.TestCase):
+    def test_retained_receipt_proof_rejects_early_ack_and_unsynchronized_capture(self):
+        _, flop = self.fixture()
+        nets = dict(clock=4, localReset_release_1=2, in_req=5, out_ready=6,
+                    requestMeta=10, requestSync=11, acknowledge=12, out_valid=16, in_ack=12)
+        cells = dict(first=flop(5,10), second=flop(10,11), ack=flop(19,12))
+        def gate(name, kind, out, **pins):
+            cells[name] = dict(type=kind, parameters={}, connections={**pins,'Y':[out]},
+                               port_directions={**{p:'input' for p in pins},'Y':'output'})
+        gate('notack','$not',13,A=[12])
+        gate('offered','$and',14,A=[11],B=[13])
+        gate('notreset','$not',15,A=[2])
+        gate('valid','$and',16,A=[14],B=[15])
+        gate('fire','$and',17,A=[16],B=[6])
+        gate('return','$mux',18,A=['0'],B=[12],S=[11])
+        gate('accepted','$mux',19,A=[18],B=['1'],S=[17])
+        original=dict(cells=cells,netnames={'r.'+n:dict(bits=[b]) for n,b in nets.items()})
+        def check(module):
+            fanout=defaultdict(set)
+            for name,cell in module['cells'].items():
+                for pin,bits in cell['connections'].items():
+                    if cell['port_directions'][pin]=='input':
+                        for bit in bits: fanout[bit].add((name,pin))
+            return prove_receiver(module,'r',False,False,lambda r,c:r==[2] and c==[4],fanout,retained=True)
+        self.assertFalse(check(original)['payload'])
+        for cell,pin,bit in [('ack','D',11),('second','D',5),('offered','A',10)]:
+            mutant=copy.deepcopy(original);mutant['cells'][cell]['connections'][pin]=[bit]
+            with self.subTest(cell=cell), self.assertRaisesRegex(ValueError,'RDC_BRIDGE_'):
+                check(mutant)
+
     def fixture(self):
         def flop(d, q, rst=2, clk=4):
             return dict(type="$adff", parameters=dict(ARST_VALUE="0", ARST_POLARITY="1", CLK_POLARITY="1", WIDTH="1"),

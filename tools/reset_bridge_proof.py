@@ -284,11 +284,14 @@ def prove_completion_idle(module, click, por_reset, fanout):
     return dict(prefix='completionIdle',rows=32,first=first[0],second=second[0])
 
 
-def prove_receiver(module, prefix, click, quiescing, por_reset, fanout):
+def prove_receiver(module, prefix, click, quiescing, por_reset, fanout, retained=False):
     cone=Cone(module)
     names = dict(state='state', ack='ack' if click and not quiescing else 'acknowledge',
         first='request_first' if quiescing else 'request_stages_0',
         second='request' if quiescing else 'request_stages_1')
+    if retained:
+        if click or quiescing: raise ValueError('RDC_RETAINED_RECEIPT_PROTOCOL')
+        names = dict(ack='acknowledge', first='requestMeta', second='requestSync')
     regs={k:cone.flop(prefix+'.'+v) for k,v in names.items()}
     clock=cone.bits(prefix+'.clock'); reset=cone.bits(prefix+'.localReset_release_1')
     if not por_reset(reset,clock): raise ValueError('RDC_BRIDGE_NOT_POR')
@@ -311,11 +314,12 @@ def prove_receiver(module, prefix, click, quiescing, por_reset, fanout):
     controls=dict(req=cone.bits(prefix+'.in_req'),ready=cone.bits(prefix+'.out_ready'),reset=reset)
     if quiescing: controls.update(close=cone.bits(prefix+'.close'),rebase=cone.bits(prefix+'.rebase'))
     rows=0
+    if retained and payload: raise ValueError('RDC_RETAINED_RECEIPT_PAYLOAD_COPY')
     for state, ack, first, second, req, ready, rst, close, rebase in product(
-            range(4),*[range(2)]*6, range(2) if quiescing else [0],range(2) if quiescing else [0]):
+            [0] if retained else range(4),*[range(2)]*6, range(2) if quiescing else [0],range(2) if quiescing else [0]):
         env={}
         for key,value in dict(state=state,ack=ack,first=first,second=second).items():
-            cone.bind(env,regs[key][1]['connections']['Q'],value)
+            if key in regs: cone.bind(env,regs[key][1]['connections']['Q'],value)
         for key,value in dict(req=req,ready=ready,reset=rst,close=close,rebase=rebase).items():
             if key in controls: cone.bind(env,controls[key],value)
         valid=state==2 and not close and not rst
@@ -330,6 +334,10 @@ def prove_receiver(module, prefix, click, quiescing, por_reset, fanout):
         expected=dict(state=next_state,ack=next_ack,
             first=0 if rebase else first if close else req,
             second=0 if rebase else second if close else first)
+        if retained:
+            valid=bool(second and not ack and not rst)
+            expected=dict(ack=1 if valid and ready else ack if second else 0,
+                          first=req,second=first)
         for key,value in expected.items():
             if cone.evaluate(regs[key][1]['connections']['D'],env) != value:
                 raise ValueError('RDC_BRIDGE_TRANSITION_'+prefix+'_'+key)
@@ -347,4 +355,5 @@ def prove_receiver(module, prefix, click, quiescing, por_reset, fanout):
         payload_fields=[next(n.removeprefix(prefix+'.data') for n,v in module['netnames'].items()
             if n.startswith(prefix+'.data') and v['bits']==cell['connections']['Q']) for _,cell,_ in payload],
         first=regs['first'][0],second=regs['second'][0],
-        contract='held native bus, two-stage request, complete settle/capture/return FSM')
+        contract=('held native bus, two-stage request, ACK on capture, full RTZ' if retained else
+                  'held native bus, two-stage request, complete settle/capture/return FSM'))

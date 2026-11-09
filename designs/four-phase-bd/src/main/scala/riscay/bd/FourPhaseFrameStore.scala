@@ -3,7 +3,7 @@ package riscay.bd
 
 import chisel3._
 import chisel3.util._
-import chiselasync.bundled.LongHoldBuffer
+import chiselasync.bundled.{LongHoldBuffer, PayloadStorage}
 import chiselasync.core.{AsyncModule, ResetDomain}
 import chiselasync.metadata.{BundledTiming, ModelTime}
 import chiselasync.primitives.{PassiveDataAllowance,ControlGate, EventRegister, GateOperation}
@@ -57,7 +57,7 @@ class FourPhaseFrameStore(domain: ResetDomain) extends AsyncModule(domain) {
   private val selection=gate("route_decode",UIntToOH(tag.q,4),4,cell)
   private val offered=gate("request_guard",in.req.asUInt,1,ModelTime.ps(32000)).asBool
   private val storage=Seq.tabulate(4)(i => asyncChild(s"storage$i")(d =>
-    new LongHoldBuffer(new I2cFrame,OwnerTiming.base,d)))
+    new LongHoldBuffer(new I2cFrame,OwnerTiming.base,d,payloadStorage=PayloadStorage.Resetless)))
   private val idleBanks=Wire(Vec(4,Bool()))
   private val settledBanks=gate("return_guard",idleBanks.asUInt,4,ModelTime.ps(32000))
   for(i <- 0 until 4) {

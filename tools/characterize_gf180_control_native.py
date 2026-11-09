@@ -156,6 +156,10 @@ def extract(netlist, variant, descriptor=None):
         return [constants.get(b,b) for b in stage["cells"]["ca_primitive_"+owner]["connections"][pin]]
     def port(pin): return [constants.get(b,b) for b in stage["ports"][pin]["bits"]]
     for owner in OWNERS[variant]:
+        if owner=='payload' and descriptor and descriptor.get('payload_cell')=='latq_1':
+            require(variant=='bd' and set(stage['cells']['ca_primitive_payload']['connections'])==
+                    {'closed','d','q'},'NATIVE_RESETLESS_PAYLOAD_PORTS')
+            continue
         require(conn(owner,"reset")==port("reset"),"NATIVE_RESET_WIRING")
     expected={ ("request_delay","a"):port("in_req"), ("request_delay","b"):["0"] }
     if variant=="bd":
@@ -239,7 +243,8 @@ def extract(netlist, variant, descriptor=None):
                 if net in selected and net not in ("0","vdd"):
                     require(net in boundary, "NATIVE_UNEXPLAINED_CUT")
                     cut.append(dict(path=name, pin=pin, node=net, direction=cell["port_directions"][pin]))
-    kind = SC+("latrnq_1" if variant=="bd" else "dffrnq_1")
+    kind = SC+(descriptor['payload_cell'] if descriptor and 'payload_cell' in descriptor else
+               "latrnq_1" if variant=="bd" else "dffrnq_1")
     cap = "E" if variant=="bd" else "CLK"
     storage = [c for c in cells if c["path"].startswith("ca_primitive_payload/") and c["cell"]==kind]
     require(len(storage)==width, "NATIVE_STORAGE_INVENTORY")

@@ -33,7 +33,9 @@ def script(mapping,pdk,corner,bindings):
         for slew in (0.02,2.0):
             for load in (0.003,0.05):
                 text+=f'read_verilog {linux(mapping/"riscay_gf180_cells.v")}\nlink_design {b["module"]}\n'
-                text+=f'set_input_transition {slew} [all_inputs]\nset_load {load} [all_outputs]\nset_case_analysis 0 [get_ports reset*]\n'
+                text+=f'set_input_transition {slew} [all_inputs]\nset_load {load} [all_outputs]\n'
+                if any(p['name']=='reset' for p in b['ports']):
+                    text+='set_case_analysis 0 [get_ports reset*]\n'
                 storage=any(x in b["model"] for x in ("EventRegister","PhaseRegister"))
                 if storage:
                     text+='create_clock -name capture -period 1000 [get_ports trigger*]\nset_propagated_clock [all_clocks]\n'
@@ -47,7 +49,7 @@ def script(mapping,pdk,corner,bindings):
                 if "ClosingLatch" in b["model"]:
                     text+='set lows {}; set highs {}\n'
                     for c in b["cells"]:
-                        if c["cell"]!=SC+"latrnq_1": continue
+                        if c["cell"] not in (SC+"latrnq_1",SC+"latq_1"): continue
                         text+=f'foreach edge [get_timing_edges -from [get_pins {c["name"]}/D] -to [get_pins {c["name"]}/Q]] {{\n'
                         text+='foreach transition {rise fall} {lappend lows [get_property $edge delay_min_$transition]; lappend highs [get_property $edge delay_max_$transition]}\n}\n'
                     text+=f'puts "BOUND {b["module"]} s{slew}_c{load} min [tcl::mathfunc::min {{*}}$lows]"\n'
@@ -60,7 +62,7 @@ def script(mapping,pdk,corner,bindings):
                     text+='foreach path $held {if {[get_property $path slack]<0} {error {PHASE_FEEDBACK_HOLD_VIOLATION}}}\n'
                     text+=f'puts {{PHASE_FEEDBACK_HOLD_PASS {b["module"]} s{slew}_c{load}}}\n'
                 if storage or "ClosingLatch" in b["model"]:
-                    clocks=[c["name"]+("/E" if "latrnq" in c["cell"] else "/CLK") for c in b["cells"] if any(x in c["cell"] for x in ("latrnq","dffrnq","dffsnq"))]
+                    clocks=[c["name"]+("/E" if c["cell"] in (SC+"latrnq_1",SC+"latq_1") else "/CLK") for c in b["cells"] if c["cell"] in (SC+"latrnq_1",SC+"latq_1",SC+"dffrnq_1",SC+"dffsnq_1")]
                     source="closed*" if "ClosingLatch" in b["model"] else "trigger*"
                     text+=f'set distribution [get_pins {{{" ".join(clocks)}}}]\n'
                     if "ClosingLatch" in b["model"]: text+='unset_case_analysis [get_ports closed*]\n'
@@ -93,8 +95,13 @@ def run(mapping,pdk,out):
         if hi>req.get("control_max_ns",float('inf')): failures.append("maximum")
         clocks=[r["ns"] for r in measurements if r["module"]==b["module"] and r["conditions"].startswith("clock_")]
         if clocks and max(clocks)>req["clock_distribution_max_ns"]: failures.append("clock_distribution")
-        if "ClosingLatch" in b["model"] and clocks and hi+max(clocks)>req["control_max_ns"]:
-            failures.append("latch_closure_plus_propagation")
+        # A resetless binding may leave the closure budget to the per-instance
+        # setup/hold campaign. Honor any explicit maximum, and keep the legacy
+        # resettable binding's mandatory absolute bound.
+        if "ClosingLatch" in b["model"] and clocks:
+            maximum=(req.get('control_max_ns',float('inf')) if b['model']=='ChiselAsyncResetlessClosingLatch_v1'
+                     else req['control_max_ns'])
+            if hi+max(clocks)>maximum:failures.append("latch_closure_plus_propagation")
         summaries.append(dict(module=b["module"],model=b["model"],minimum_ns=lo,maximum_ns=hi,
             clock_distribution_max_ns=max(clocks) if clocks else None,violations=failures))
     write_json(out/"results.json",dict(status="bounds-pass" if not any(r["violations"] for r in summaries) else "bounds-fail",

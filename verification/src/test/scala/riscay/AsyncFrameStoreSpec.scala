@@ -122,16 +122,16 @@ class AsyncFrameStoreSpec extends AnyFunSuite {
         reg [336:0] captured;
         fork
           forever begin @(posedge reset);last_reset=$$time;closed=0;seen=0;end
-          forever begin @(posedge $p.closed);if(!$p.reset) begin
+          forever begin @(posedge $p.closed);if(!reset) begin
             if(seen && $$time-change<=100000) $$fatal(1,"FRAME_STORE_LATCH_SETUP_$i");
             close_time=$$time;closed=1;
           end end
-          forever begin @(posedge $p.closed);if(!$p.reset) begin
+          forever begin @(posedge $p.closed);if(!reset) begin
             check_at=$$time;captured=$p.d;#10000001;
-            if(!$p.reset && last_reset<check_at && $p.closed && $p.q!==captured)
+            if(!reset && last_reset<check_at && $p.closed && $p.q!==captured)
               $$fatal(1,"FRAME_STORE_LATCH_CAPTURE_$i");
           end end
-          forever begin @($p.d);if(!$p.reset) begin
+          forever begin @($p.d);if(!reset) begin
             if(closed && $$time-close_time<=100000) $$fatal(1,"FRAME_STORE_LATCH_HOLD_$i");
             change=$$time;seen=1;
           end end
@@ -193,7 +193,7 @@ class AsyncFrameStoreSpec extends AnyFunSuite {
           for(n=0;n<4;n=n+1) copy_count[n]=0;
           ${captureMonitors(directory,click)}
           fork $copyCounters join_none
-          #100000000;
+          ${ports.packed("in")}={337{1'bx}};#100000000;
           for(n=0;n<$frames;n=n+1) begin
             bank=n%4;previous=(n+3)%4;
             if(nextBank!==bank) $$fatal(1,"FRAME_STORE_NATIVE_ROUTE_ORDINAL");
@@ -300,7 +300,7 @@ class AsyncFrameStoreSpec extends AnyFunSuite {
               begin in_req=1;#211000000;
                 ${if(click) "" else "in_req=0;"}
               end
-              begin $point reset=1;in_req=0;$resetInputs end
+              begin $point reset=1;in_req=0;$resetInputs ${ports.packed("in")}={337{1'bx}}; end
             join
             #1000000000;reset=0;#1000000000;
             if(in_ack || busy) $$fatal(1,"FRAME_STORE_POR_STALE_OWNER");

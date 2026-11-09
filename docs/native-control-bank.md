@@ -21,6 +21,13 @@ remains an ordered command: it does not abort accepted programming work, lose th
 image or clear the programming lock. Services retains its existing Control view
 and receiving-edge commit. No host ABI, command admission or event cutoff changes.
 
+The [compact transport](resetless-payload-plan.md) retains only accepted-write
+fields in Services and variable MMIO address bits in the sender. It preserves
+the source lifetime and receiving-edge commit; it does not borrow independently
+reset CPU data. Frame payloads use explicitly resetless latches, while their
+POR-owned controls and qualified-consumer lifetime remain unchanged. The measured
+source composition must use the actual `latq_1` arcs for those frame roots.
+
 Only Stored with loaderPending advances received, CRC and pending together. The
 CRC transform uses the old architectural CRC and retained loaderWord, never the
 incoming Stored payload. Permitted interleaved commands cannot change that pair;

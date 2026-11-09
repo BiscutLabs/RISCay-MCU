@@ -133,13 +133,15 @@ def make_plan(netlist, record, variant, descriptor=None):
                 constant_lanes=constants,lane_map=lane_map,descriptor=descriptor)
 
 
-def aperture(lib, variant):
+def aperture(lib, variant, *, master=None):
     """Conservative maxima over all tabulated D setup/hold values, per corner.
 
     This avoids assuming a simulation allowance is a cell requirement. Values
     remain diagnostic if actual transitions/caps exceed characterized limits.
     """
-    cell = SC+("latrnq_1" if variant=="bd" else "dffrnq_1")
+    allowed=('latq_1','latrnq_1') if variant=='bd' else ('dffrnq_1',)
+    require(master is None or master in allowed,'RELATIVE_STORAGE_APERTURE_KIND')
+    cell = SC+(master or ("latrnq_1" if variant=="bd" else "dffrnq_1"))
     pin = dict(direct_groups(lib[cell],"pin"))["D"]
     result = {}
     for kind in ("setup","hold"):

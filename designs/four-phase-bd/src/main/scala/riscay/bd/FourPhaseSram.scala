@@ -132,7 +132,7 @@ class SramAccess(domain: ResetDomain) extends ClockedBridge(domain, 2) {
   val reply = asyncChild("reply_bridge")(d => new FourPhaseServiceReplyReceipt(UInt(32.W), d))
   command.clock := clock; reply.clock := clock
   FourPhase.connect(native.request, command.out); FourPhase.connect(reply.in, native.response)
-  val requests = (0 until 1).map(i => asyncChild(s"byte_request_$i")(d => new FourPhaseServiceReplyReceipt(new SramByteRequest, d)))
+  val requests = (0 until 1).map(i => asyncChild(s"byte_request_$i")(d => new FourPhaseRetainedReceipt(new SramByteRequest, d)))
   val replies = (0 until 1).map(i => asyncChild(s"byte_reply_$i")(d => new DecoupledToFourPhase(UInt(8.W), 2, d)))
   for(i <- 0 until 1) {
     requests(i).clock := clock; replies(i).clock := clock

@@ -120,7 +120,7 @@ def prepare(mapping):
         'FourPhaseQuiescingToDecoupled':'request_first','ClickQuiescingToDecoupled':'request_first',
         'FourPhaseQuiescingReceipt':'request_first','ClickQuiescingReceipt':'request_first'}
     for prefix in ('FourPhase','Click'):
-        for suffix in ('FrameReceipt','ProgramCaptureReceipt','RamCaptureReceipt','StoredReceipt','ReturnReceipt'):
+        for suffix in ('FrameReceipt','ProgramCaptureReceipt','RamCaptureReceipt','StoredReceipt','RetainedReceipt','ReturnReceipt'):
             bridge_aliases[prefix+suffix]='requestMeta'
     for node in nodes(manifest['design']):
         family=re.sub(r'_\d+$','',node['module'])
@@ -226,13 +226,15 @@ def prepare(mapping):
             rule(instance,sources,leaf(instance,"q",True),req.get("control_min_ns"),req.get("control_max_ns",req.get('data_max_ns')))
         if any(x in b["model"] for x in ("EventRegister","PhaseRegister","ClosingLatch")):
             for c in b["cells"]:
-                if not any(x in c["cell"] for x in ("dffrnq","dffsnq","latrnq")): continue
-                latch="latrnq" in c["cell"]
+                if not any(x in c["cell"] for x in ("dffrnq","dffsnq","latrnq","latq")): continue
+                latch=c['cell'].startswith((SC+'latrnq_',SC+'latq_'))
+                resetless=b['model']=='ChiselAsyncResetlessClosingLatch_v1'
                 clock=root+"/"+c["name"]+("/E" if latch else "/CLK")
                 rule(instance+".distribution."+c["name"],leaf(instance,"closed" if latch else "trigger"),
                     [clock],maximum=req["clock_distribution_max_ns"])
                 monitor.append(dict(instance=instance,clock=clock,data=root+"/"+c["name"]+"/D",
-                    reset_n=root+"/"+c["name"]+("/SETN" if "dffsnq" in c["cell"] else "/RN"),
+                    reset_n=None if resetless else root+"/"+c["name"]+("/SETN" if "dffsnq" in c["cell"] else "/RN"),
+                    owner_reset='soc/'+'/'.join(instance.split('.')[1:-1])+'/reset' if resetless else None,
                     edge="fall" if latch else "rise",setup_ns=8 if latch else 5,hold_ns=1,
                     high_ns=1.8,low_ns=2,phase="PhaseRegister" in b["model"]))
     # Expose every source bit in every transform, including all RF read inputs.
@@ -359,7 +361,7 @@ def monitors(mapping,records):
         return '`RISCAY_DUT.'+'.'.join('\\'+part+' ' for part in path.split('/'))
     text='''// Generated SDF event monitors; compile with -g2012 and `RISCAY_DUT defined.
 module riscay_capture_check #(parameter real SETUP=5, HOLD=1, HIGH=1.8, LOW=2,
-    parameter integer LATCH=0, PHASE=0)(input wire clk,d,rn);
+    parameter integer LATCH=0, PHASE=0, RECOVERY=1)(input wire clk,d,rn);
   timeunit 1ns; timeprecision 1ps;
   realtime last_data=0, last_rise=0, last_fall=0, last_capture=0;
   realtime last_release=0;
@@ -377,7 +379,7 @@ module riscay_capture_check #(parameter real SETUP=5, HOLD=1, HIGH=1.8, LOW=2,
   always @(posedge clk) if(rn) begin
     if(have_fall && $realtime-last_fall < LOW) $fatal(1,"ASYNC_LOW_PULSE %m");
     if(!LATCH) begin
-      if($realtime-last_release < 8) $fatal(1,"ASYNC_RECOVERY %m");
+      if(RECOVERY && $realtime-last_release < 8) $fatal(1,"ASYNC_RECOVERY %m");
       if(have_data && !PHASE && $realtime-last_data < SETUP) $fatal(1,"ASYNC_SETUP %m");
       last_capture=$realtime; have_capture=1; captures=captures+1;
     end
@@ -386,7 +388,7 @@ module riscay_capture_check #(parameter real SETUP=5, HOLD=1, HIGH=1.8, LOW=2,
   always @(negedge clk) if(rn) begin
     if(have_rise && $realtime-last_rise < HIGH) $fatal(1,"ASYNC_HIGH_PULSE %m");
     if(LATCH) begin
-      if($realtime-last_release < 8) $fatal(1,"ASYNC_RECOVERY %m");
+      if(RECOVERY && $realtime-last_release < 8) $fatal(1,"ASYNC_RECOVERY %m");
       if(have_data && $realtime-last_data < SETUP) $fatal(1,"ASYNC_LATCH_SETUP %m");
       last_capture=$realtime; have_capture=1; captures=captures+1;
     end
@@ -397,8 +399,9 @@ endmodule
 module riscay_physical_monitors;
 '''
     for i,r in enumerate(records):
-        text+=f'riscay_capture_check #(.SETUP({r["setup_ns"]}),.HOLD({r["hold_ns"]}),.HIGH({r["high_ns"]}),.LOW({r["low_ns"]}),.LATCH({int(r["edge"]=="fall")}),.PHASE({int(r["phase"])})) m{i} ('
-        text+=','.join(verilog(r[k]) for k in ("clock","data","reset_n"))+');\n'
+        text+=f'riscay_capture_check #(.SETUP({r["setup_ns"]}),.HOLD({r["hold_ns"]}),.HIGH({r["high_ns"]}),.LOW({r["low_ns"]}),.LATCH({int(r["edge"]=="fall")}),.PHASE({int(r["phase"])}),.RECOVERY({int(r["reset_n"] is not None)})) m{i} ('
+        reset=verilog(r['reset_n']) if r['reset_n'] is not None else '~'+verilog(r['owner_reset'])
+        text+=','.join([verilog(r['clock']),verilog(r['data']),reset])+');\n'
     text+='endmodule\n'
     (mapping/"event-monitors.sv").write_text(text)
 

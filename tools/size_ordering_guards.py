@@ -375,7 +375,7 @@ def margins(results, plan, aperture, liberty):
             rows.append(dict(kind='setup', lane=lane, phase=phase,
                 slack_ns=conservative_margin(early, late, aperture['setup_ns'])))
     if plan['variant'] == 'bd':
-        storage = liberty[SC+'latrnq_1']
+        storage = liberty[SC+(plan.get('descriptor') or {}).get('payload_cell','latrnq_1')]
         # Maximum complete cell-rise/fall table is conservative even when
         # latch D was already stable before closure.
         dq = scalar_table_max(storage, None, ('cell_rise', 'cell_fall'))

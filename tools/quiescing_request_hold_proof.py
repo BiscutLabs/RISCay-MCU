@@ -14,7 +14,7 @@ from reset_bridge_proof import Cone
 
 
 FIELDS = {'mask': (0, 4), 'data': (4, 32), 'address': (36, 32), 'operation': (68, 2)}
-NATIVE = frozenset(('ChiselAsyncAsymmetricC_v1', 'ChiselAsyncClosingLatch_v1',
+NATIVE = frozenset(('ChiselAsyncAsymmetricC_v1', 'ChiselAsyncClosingLatch_v1', 'ChiselAsyncResetlessClosingLatch_v1',
     'ChiselAsyncEventRegister_v1', 'ChiselAsyncPhaseRegister_v1',
     'ChiselAsyncCElement_v1', 'ChiselAsyncLatch_v1', 'ChiselAsyncControlGate_v1',
     'ChiselAsyncAnd_v1', 'ChiselAsyncXor_v1', 'ChiselAsyncPassiveDataAllowance_v1'))

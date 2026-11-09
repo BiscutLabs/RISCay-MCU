@@ -15,6 +15,30 @@ def primitive(model,**parameters):
     return dict(model="ChiselAsync"+model+"_v1",parameters={k:str(v) for k,v in parameters.items()})
 
 class PhysicalControls(unittest.TestCase):
+    def test_resetless_payload_has_only_plain_latches_and_a_bounded_capture_tree(self):
+        for width in (1,16,17,256,337,992):
+            c,r=adapter(primitive('ResetlessClosingLatch',WIDTH=width,DELAY_FS=1000000),.1)
+            latches=[x for x in c.cells if x['cell']==SC+'latq_1']
+            self.assertEqual({x['pins']['D'] for x in latches},{f'd[{i}]' for i in range(width)})
+            self.assertEqual({x['pins']['Q'] for x in latches},{f'q[{i}]' for i in range(width)})
+            self.assertFalse(any(p in x['pins'] for x in c.cells for p in ('RN','SETN','CLK')))
+            self.assertFalse(any('reset' in n for x in c.cells for n in x['pins'].values()))
+            self.assertFalse(r['payload_reset'])
+            self.assertEqual(r['storage_bits'],width)
+            profile=distribution_profile(c.cells,capture_root='closed')
+            self.assertLessEqual(profile['maximum_input_fanout'],16)
+            self.assertNotIn('reset_depth',profile)
+            # The standalone characterization must measure the actual plain
+            # latch pins and must never invent a payload reset input.
+            from characterize_gf180_liberty import script
+            binding=dict(model='ChiselAsyncResetlessClosingLatch_v1',module='payload',
+                cells=c.cells,ports=[dict(name=n) for n in ('closed','d','q')])
+            text=script(Path('mapping'),Path('pdk'),'tt_025C_3v30',[binding])
+            self.assertNotIn('get_ports reset',text)
+            for cell in latches:
+                self.assertIn(cell['name']+'/D',text)
+                self.assertIn(cell['name']+'/E',text)
+
     def test_passive_allowance_maps_only_to_exact_aliases(self):
         for width in (1,101,337):
             p=primitive('PassiveDataAllowance',WIDTH=width,DELAY_FS=10000000)

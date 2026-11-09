@@ -19,7 +19,7 @@ FAST_SUITES = (
     'ClockedCoreSpec', 'ClockedSocSpec', 'ClockedFabricSpec', 'ClockedSleepSpec', 'ClockedBoundarySpec',
     'TimestampMathSpec', 'AppRegistersSpec', 'AppSnapshotRecoverySpec', 'EventReferenceSpec', 'ClockedEventsSpec', 'CoreSpec', 'SocSpec', 'HostSchemaSpec', 'AsyncFabricSpec', 'AsyncControlSpec',
     'AsyncCrcSpec', 'AsyncHousekeepingSpec', 'AsyncFrameStoreSpec',
-    'BootIngressSpec', 'QuiescingReceiptSpec', 'QuiescingBridgeSpec', 'SleepSpec',
+    'BootIngressSpec', 'I2cSpec', 'QuiescingReceiptSpec', 'QuiescingBridgeSpec', 'SleepSpec',
 )
 
 

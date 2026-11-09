@@ -103,6 +103,19 @@ class ElaboratedAllowanceSpec(unittest.TestCase):
         self.assertEqual(r['instances'][0]['capture_sinks'][0]['source_lanes'],[0])
         self.assertIsNone(r['instances'][0]['capture_sinks'][0]['constant_value'])
 
+    def test_resetless_payload_reports_owner_reset_without_inventing_a_cell_pin(self):
+        db,m=self.fixture();cell=db['modules']['Top']['cells']['store']
+        cell['type']=m['design']['primitives'][1]['model']='ChiselAsyncResetlessClosingLatch_v1'
+        cell['connections']={'d':[2],'closed':[3],'q':[5]}
+        cell['port_directions']={'d':'input','closed':'input','q':'output'}
+        m['design']['primitives'][1]['reset']='reset'
+        m['design']['endpoints']=[dict(id='reset',rtl_path='Top.owner_reset')]
+        sink=audit_elaborated(db,m)['instances'][0]['capture_sinks'][0]
+        self.assertIsNone(sink['reset_pin']);self.assertEqual(sink['owner_reset'],'Top.owner_reset')
+        self.assertEqual(sink['event_pin'],'Top.store.closed')
+        cell['connections']['reset']=[4];cell['port_directions']['reset']='input'
+        with self.assertRaisesRegex(ValueError,'ELABORATED_RESETLESS_CAPTURE_PORTS'):audit_elaborated(db,m)
+
     def test_constant_and_dynamic_lanes_have_separate_provenance(self):
         db,m=self.fixture();cells=db['modules']['Top']['cells']
         cells['data']['connections'].update(a=['1',1],q=[2,6])
