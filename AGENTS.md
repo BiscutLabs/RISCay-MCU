@@ -22,6 +22,8 @@
   Registry recipes live only in `tools/primitives.py`; missing physical recipes
   and STA-sized delay entries fail. Custom GF180 mutex development is authorized,
   with a 0.001 mm² exploration allowance; do not pass estimates as qualification.
+  Its stop/wake reliability target is at most 1 FIT per MCU, as selected by the
+  user. Finite SPICE campaigns alone cannot establish that target.
   Ratios against the matched clocked reference govern adoption: mapped 1.15x,
   repaired plus trees 1.20x, architectural bits exactly 1.00x, storage area 1.25x,
   control share 5%. No budget loosening without approval. Explore with area maps

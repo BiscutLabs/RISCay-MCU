@@ -2,7 +2,7 @@
 """Single catalogue for desynchronization primitives (not the frozen BD flow).
 
 An unavailable physical recipe is an error, never an ordinary-logic substitute.
-The GF180 mutex currently has schematic evidence but no LEF/Liberty/layout.
+The GF180 mutex has experimental layout/views; no accepted physical binding.
 """
 from dataclasses import dataclass
 

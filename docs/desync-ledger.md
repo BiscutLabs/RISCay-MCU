@@ -282,3 +282,48 @@ plus the Phase 0 reference-equivalence harness. Its receipt has no changed input
 missing outputs or skips. This remains reference verification, not generated-chip
 flow equivalence. The shared circuit/ABI, resets, deadlines,
 clocked reference and old BD/Click oracles are unchanged; RTL diff is zero.
+
+## Mutex integration views
+
+| Batch | Whole-chip mapped/repaired ratio | Architectural bits / storage area ratio | Mutex outline | Result |
+|---|---|---|---|---|
+| Top-metal port access and scenario timing tables | Unavailable → unavailable | Reference 2,977 unchanged / calculated floor 1.230263x unchanged | 0.00098784 → 0.00098784 mm² | Experimental views; mapper binding remains unavailable |
+
+OpenROAD could not access the original 0.4 µm Metal4 ports behind conservative
+internal obstructions. Seven Via4 connections and 0.8 µm Metal5 landing pads fix
+access within the same outline. The transistor circuit and Metal2–4 routes stay
+unchanged. New foundry checks report zero violations across 649 categories; both
+LVS engines match. The new nominal extraction contains 46 MOS, 304 resistors and
+452 capacitors. Earlier RC results describe the earlier geometry, not these pins.
+
+The macro LEF blocks Metal1–4 and exposes only verified Metal5 ports. The access
+fixture connects five signals and explicit VDD/VSS straps with zero final router
+violations. Its coarse global-route congestion is retained, not reported as a
+full-chip routing pass. All 462 loaded-RC samples pass. The separate timing grid
+passes 180 cases plus four half-step repeats; OpenSTA reproduces all 180 lookups.
+Isolated 50%-threshold request propagation is 0.299–1.194 ns; input capacitance is
+10.16–13.86 fF. Refinement changes are below 0.04 ps. These are scenario samples,
+not guaranteed bounds. Tables have no synthesis function or contention bound;
+Boolean `when` conditions do not prove prior quiescence.
+
+Independent review fixed waveform recrossing checks, slew/load restrictions,
+layout/timing hash binding and missing-inventory rejection. A glitch and a
+shortened table entry fail their checks. The first timing run was stopped after
+the checker finding and replaced, not counted as a pass. Evidence is under
+`build/desync-mutex-layout/`: `layout-m5-r1`, `views-m5-final-r1`,
+`rc-m5-base-r1`, `rc-m5-supplement-r1`, `timing-m5-r2` and
+`liberty-shortened-control`. The library Python properties and digital Mutex
+contract remain green; source and commands are in its optional GF180 integration.
+The implementation is chisel-async
+[`aef1f09`](https://github.com/BiscutLabs/chisel-async/commit/aef1f09): 36 Python
+properties, 11 digital contract cases and 44 diagnostic controls pass. The MCU
+gate in `ci-m5-r1` passes 451 Python tests, 268 Scala tests across 29 suites and
+all 6,976 reference-equivalence points, with no changed inputs or missing outputs.
+This remains reference verification, not generated-desync flow equivalence.
+
+The user set the stop/wake mutex target to **at most 1 FIT per MCU**. It remains
+unmet: unresolved-reset recovery, min/max RC, variation/noise, a justified failure
+model and the worst admitted arbitration rate are still needed. No chip-level
+area, enable-tree, controller-share or slow-cycle result is claimed. Ten banks,
+the CPU storage exception, architectural RTL and behavioral oracles are unchanged;
+RTL diff remains zero.
