@@ -23,6 +23,30 @@ def fixture():
 
 
 class PartitionTests(unittest.TestCase):
+    def test_falling_gate_uses_the_existing_previous_register(self):
+        n, p = fixture(); c = n['modules']['chip']['cells']
+        previous = deepcopy(c['power'])
+        previous['parameters']['CLK_POLARITY'] = '1'
+        previous['connections'] = dict(CLK=[1], D=[7], Q=[8])
+        c['powerPrevious'] = previous
+        n['modules']['chip']['netnames']['previous'] = dict(bits=[8])
+        p['falling_gate_conditions'] = {'work': 'previous'}
+        c['fabric']['parameters']['CLK_POLARITY'] = '0'
+        result = partition(n, p)
+        self.assertEqual(result['gate_bindings']['work']['previous'], 'powerPrevious')
+        self.assertTrue(any(e['role'] == 'falling_gate' and e['source_phase'] == 'rise' and
+                            e['target_phase'] == 'fall' for e in result['phase_edges']))
+        # Choosing current enabled instead of its history looks plausible in a
+        # graph but inserts/drops a falling capture when the work gate changes.
+        for mutate, diagnostic in [
+            (lambda n, p: p['falling_gate_conditions'].update(work='enable'), 'HISTORY_RELATION'),
+            (lambda n, p: n['modules']['chip']['cells']['powerPrevious']['connections'].update(D=[3]), 'HISTORY_RELATION'),
+            (lambda n, p: p['gated_domains'].update(work='missing'), 'GATE_CONDITION'),
+        ]:
+            bad, policy = deepcopy(n), deepcopy(p); mutate(bad, policy)
+            with self.subTest(diagnostic=diagnostic), self.assertRaisesRegex(ValueError, diagnostic):
+                partition(bad, policy)
+
     def test_unregistered_stateful_generic_cell_is_not_combinational(self):
         for kind in ('$sr', '$fsm', '$anyseq', '$future_state'):
             netlist, policy = fixture()

@@ -1,6 +1,11 @@
 {
   "schema": 1,
   "tools": {
+    "ngspice": {
+      "executable": "/usr/bin/ngspice",
+      "distribution": "Ubuntu",
+      "timeout_executable": "/usr/bin/timeout"
+    },
     "yosys": {
       "executable": "/mnt/p/Personal/RISCay-MCU/.tools/physical/root/usr/bin/yosys",
       "distribution": "Ubuntu",

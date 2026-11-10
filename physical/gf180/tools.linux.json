@@ -1,6 +1,7 @@
 {
   "schema": 1,
   "tools": {
+    "ngspice": {"executable": "ngspice"},
     "yosys": {
       "executable": "yosys"
     },

@@ -238,12 +238,19 @@ before techmap. `desync_graph.py` screens candidate bank topology:
 
 ```text
 python tools/desync_partition.py build/generic/netlist.json physical/desync/bank-map.json build/partition.json
-python tools/desync_graph.py build/partition.json build/graph-screen.json --flop-bank cpu
+python tools/desync_graph.py build/partition.json build/graph-screen.json --flop-bank cpu --phase-aware --reachable-stop
+python tools/characterize_desync_primitives.py build/desync-primitives
+python tools/characterize_desync_primitives.py build/desync-primitives-broken --negative-control
 ```
 
-The screen deliberately exits nonzero with `status: incomplete`. Its positive-edge
-projection can reject a deadlocked candidate, but cannot accept the mixed-edge,
-gated MCU or claim handshake rest. The output names unresolved obligations.
+The screen deliberately exits nonzero with `status: incomplete`. It checks the
+mixed-edge abstract graph and drains every reachable marking from the selected
+stop point; it cannot prove physical controller correspondence or handshake-wire
+rest. The output names unresolved obligations. The schematic campaign samples
+registry candidates at five PVT corners, two slews and two loads using the pinned
+GF180 models and configured `ngspice`. Its negative control must exit nonzero with
+`DESYNC_PRIMITIVE_STATE`. These samples do not accept a physical binding or a
+minimum pulse width. Generated artifacts and failed experiments stay in `build/`.
 There is no desync sbt project or generated-chip export command yet. Clocked RTL
 is the sole source; the new transform and physical primitive characterization
 must be implemented before chip-level desync tests are meaningful.

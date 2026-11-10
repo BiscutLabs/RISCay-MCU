@@ -87,9 +87,11 @@ def partition(netlist, policy):
         if bit in clocks and clocks[bit] != (domain, False):
             raise ValueError('DESYNC_CONFLICTING_CLOCK_ROOTS:' + name)
         clocks[bit] = (domain, False)
-    for domain, name in policy['gated_domains'].items():
+    for domain, name in [*policy['gated_domains'].items(), *policy.get('falling_gate_conditions', {}).items()]:
         if domain in policy['retained_domains'] or name not in aliases or len(aliases[name]) != 1:
             raise ValueError('DESYNC_GATE_CONDITION:' + name)
+    if not set(policy.get('falling_gate_conditions', {})) <= set(policy['gated_domains']):
+        raise ValueError('DESYNC_UNKNOWN_GATED_DOMAIN')
     # A pin-derived event can have an inverter before the FF clock. Never
     # traverse ordinary data gates or turn a data level into an inferred clock.
     changed = True
@@ -104,7 +106,7 @@ def partition(netlist, policy):
     for name, bits in aliases.items():
         for bit in bits:
             reverse[bit].add(name)
-    records, sources, drivers, macro_inputs = [], {}, {}, []
+    records, sources, drivers, macro_inputs, macros = [], {}, {}, [], []
     top = netlist['modules'][policy['top']]
     external_inputs = {bit for name, port in top['ports'].items() if port['direction'] == 'input'
                        for bit in aliases[name]}
@@ -119,6 +121,9 @@ def partition(netlist, policy):
             bank = assign(path, names, policy)
             active = domain not in policy['retained_domains']
             falling = not (bool(int(cell['parameters']['CLK_POLARITY'], 2)) ^ inversion)
+            declared_phase = policy.get('bank_phases', {}).get(bank)
+            if active and declared_phase is not None and declared_phase != ('fall' if falling else 'rise'):
+                raise ValueError('DESYNC_BANK_PHASE_MISMATCH:' + path)
             source = (bank if active else '@' + domain, 'fall' if falling else 'rise')
             for bit in ports['Q']:
                 if bit in sources:
@@ -129,9 +134,17 @@ def partition(netlist, policy):
             inputs = [b for p, bs in ports.items() if p not in ('Q', 'CLK', 'ARST') for b in bs]
             records.append(dict(path=path, bank=bank, aliases=sorted(names), bits=len(ports['Q']),
                 domain=domain, transformed=active, cell=cell['type'], reset=reset,
+                reset_value=params.get('ARST_VALUE', params.get('SRST_VALUE')),
+                reset_polarity=params.get('ARST_POLARITY', params.get('SRST_POLARITY')),
                 falling=falling, inputs=inputs))
         elif cell['type'].startswith('gf180mcu_ocd_ip_sram__'):
             bank = assign(path, [], policy)
+            if len(ports['CLK']) != 1 or ports['CLK'][0] not in clocks:
+                raise ValueError('DESYNC_MACRO_CLOCK:' + path)
+            domain, inversion = clocks[ports['CLK'][0]]
+            if inversion or domain in policy['retained_domains']:
+                raise ValueError('DESYNC_MACRO_CLOCK_PHASE:' + path)
+            macros.append(dict(path=path, bank=bank, domain=domain, phase='rise'))
             for pin, bits in ports.items():
                 if cell['port_directions'][pin] == 'output':
                     for bit in bits:
@@ -152,6 +165,30 @@ def partition(netlist, policy):
                         drivers[bit] = inputs
     if sources.keys() & drivers.keys():
         raise ValueError('DESYNC_MULTIPLE_MIXED_DRIVERS')
+    # A falling work edge uses the enable sampled on the preceding rising
+    # service edge, not the new enable published on the same falling edge.
+    # Bind the existing FF by connectivity, not just a reassuring alias name.
+    by_q = {tuple(c['connections']['Q']): (path, c) for path, c in cells.items() if FF.fullmatch(c['type'])}
+    gate_bindings = {}
+    for domain, previous in policy.get('falling_gate_conditions', {}).items():
+        enabled = policy['gated_domains'][domain]
+        current = by_q.get(tuple(aliases[enabled]))
+        old = by_q.get(tuple(aliases[previous]))
+        if current is None or old is None:
+            raise ValueError('DESYNC_GATE_HISTORY_STORAGE')
+        cp, cc = current; pp, pc = old
+        rows = {r['path']: r for r in records}
+        if (cc['type'] not in ('$dff', '$adff') or pc['type'] != cc['type'] or
+                pc['connections']['D'] != aliases[enabled] or rows[cp]['bits'] != 1 or rows[pp]['bits'] != 1 or
+                not rows[cp]['falling'] or rows[pp]['falling'] or
+                rows[cp]['domain'] != rows[pp]['domain'] or not rows[cp]['transformed'] or
+                rows[cp]['domain'] in policy['gated_domains'] or
+                cc['connections']['CLK'] != pc['connections']['CLK'] or
+                cc['connections'].get('ARST') != pc['connections'].get('ARST') or
+                rows[cp]['reset_value'] != rows[pp]['reset_value'] or
+                rows[cp]['reset_polarity'] != rows[pp]['reset_polarity']):
+            raise ValueError('DESYNC_GATE_HISTORY_RELATION:' + domain)
+        gate_bindings[domain] = dict(current=cp, previous=pp, current_alias=enabled, previous_alias=previous)
     def origins(bits):
         seen, pending, result = set(), list(bits), set()
         while pending:
@@ -180,8 +217,16 @@ def partition(netlist, policy):
             add(inputs, row['bank'], phase, row['path'], 'data')
             if row['domain'] in policy['gated_domains']:
                 add(aliases[policy['gated_domains'][row['domain']]], row['bank'], phase, row['path'], 'gate')
+                if row['falling']:
+                    name = policy.get('falling_gate_conditions', {}).get(row['domain'])
+                    if name is None:
+                        raise ValueError('DESYNC_FALLING_GATE_CONDITION:' + row['path'])
+                    add(aliases[name], row['bank'], phase, row['path'], 'falling_gate')
     for bank, path, bits in macro_inputs:
         add(bits, bank, 'macro', path, 'macro_input')
+    for macro in macros:
+        if macro['domain'] in policy['gated_domains']:
+            add(aliases[policy['gated_domains'][macro['domain']]], macro['bank'], 'macro', macro['path'], 'gate')
     summaries = {}
     for bank in policy['banks']:
         members = [r for r in records if r['bank'] == bank and r['transformed']]
@@ -194,7 +239,9 @@ def partition(netlist, policy):
         phase_edges=[dict(source=a, source_phase=ap, target=b, target_phase=bp, role=role, witnesses=sorted(w))
                      for (a, ap, b, bp, role), w in sorted(phase_edges.items())],
         external=[dict(source=a, target=b, witnesses=sorted(w)) for (a, b), w in sorted(external.items())],
-        gated_domains=policy['gated_domains'], stop_bank=policy['stop_bank'])
+        gated_domains=policy['gated_domains'],
+        falling_gate_conditions=policy.get('falling_gate_conditions', {}),
+        gate_bindings=gate_bindings, macros=macros, bank_phases=policy.get('bank_phases', {}), stop_bank=policy['stop_bank'])
 
 
 if __name__ == '__main__':

@@ -8,8 +8,10 @@ oracle changes are authorized.
 
 ## Banks and storage
 
-The candidate map in `physical/desync/bank-map.json` has nine banks: CPU, Fabric,
-Control, program port, RAM port, I2C, ADC, time and power/reset/wake. Assignment is
+The candidate map in `physical/desync/bank-map.json` has ten banks: CPU, Fabric,
+Control, program port, RAM port, I2C, ADC, time, power/reset/wake and falling-edge
+storage. The last bank contains the 42 opposite-edge bits; it has S as its master
+phase and therefore its own S-input matched delay. Assignment is
 explicit; actual combinational fan-in supplies the graph edges. The inventory
 separates positive, negative and event edges and adds gate-condition dependencies
 to each affected register. Generic pre-optimization bits are not mapped state bits.
@@ -36,34 +38,57 @@ masters supply bubbles. Fig. 11 of
 is the positive-edge marked-graph template. Every data and gating dependency
 needs an implemented handshake relation; timing delays do not replace causality.
 
-`desync_graph.py` currently screens this template, checking for tokenless cycles
-and a one-token cycle through every place. Its CPU-only contraction combines
+`desync_graph.py --phase-aware --reachable-stop` screens data, gate and SRAM
+dependencies, checking tokenless cycles, one-token safety cycles and reachable
+markings. Its CPU-only contraction combines
 M-close/S-open into the FF rising event and S-close/M-open into the falling event.
 Only those two zero-mark local relations may contract; they become explicit FF
 setup/hold/pulse obligations. Two adjacent FF banks (CPU plus Fabric) are rejected
-because they create a tokenless cycle. The screen always reports incomplete and
-exits nonzero: it does not certify the implemented MCU.
+because they create a tokenless cycle. The ten-bank abstract graph has 25,293
+reachable markings; disabling `power.m-` drains every marking to one terminal
+within 51 firings. All latch enables are low except power.M. This proves neither
+handshake-wire rest nor correspondence with physical controllers. The screen
+still reports incomplete and exits nonzero.
+
+The standard-cell controller candidate restores the original causal condition
+noted beside Fig. 12: with A=Ai, B=Ro and R=delayed Ri,
+`A_next = (R & !B) | (A & (R | !B | !Ao))`. A rising request cannot advance A
+until the previous B returns. The simplified `A_next = R | ...` failed under
+loaded composition; an extra guessed wait is not the remedy. A and B are the
+two keeper bits. M resets to (A,B)=(0,0), S to (1,0); their master/slave roles swap
+in the falling bank. The CPU's two added joins reset to zero with both inputs
+zero; other joins follow their graph marking. Primitive samples retain every feedback path;
+listed local keeper arcs are **not** a complete STA cut set.
+
+The CPU candidate uses that controller pair plus two ordinary C-element joins:
+its master request joins upstream requests with consumer closure; its slave
+acknowledge joins consumer closure with master.A. CPU FFs capture on master.A
+rising. Self-dependencies become the FF aperture, not inputs to external joins.
+The independent gate-return edge `cpu.fall -> falling.M+` must still be connected.
+This candidate has no payload copies; gate-level correspondence is not yet proved.
 
 The review identified obligations still outside that template:
 
-- Forty-two generic falling-edge bits occur in program (21), RAM (20) and power
-  (1). Their masters follow S and slaves follow M. Same-phase transparent cones
-  must settle before that phase closes. A delay before M alone proves nothing
-  about the S interval. Measure both phase intervals before accepting this mapping.
+- The falling bank's 42 bits originate in program (21), RAM (20) and power (1).
+  Its local storage relation is S-to-M. SRAM capture is S, after the ordinary
+  master's closure; macro access time belongs in each receiving bank's delay.
+  Same-phase transparent cones and actual macro apertures remain timing checks.
 - Negative slaves can be open at reset release. Resettable CEN/GWEN and `enabled`
   need defined masters or another proved release order; do not overwrite their
   reset values with undefined data. Additional master reset needs are permitted
   by the reset analysis and must be included in area.
 - Work gating applies per register, including work-owned `coreReset` in the
   otherwise service-owned power bank. Controllers continue handshaking; only
-  eligible latch enables are suppressed. The condition must remain stable across
-  the complete receiving phase. Whole-bank gating would be wrong here.
+  architectural slave enables are suppressed; masters keep tracking. The condition
+  must remain stable across every receiving leaf's complete open phase.
   On a gate transition, falling-edge consumers use the previous enable: using
   its new value inserts a falling capture on start and drops one on stop.
-  The existing `previous` register is a candidate qualifier, requiring phase
-  ordering before use; no new copy register has been authorized.
-- A bounded drain from one initial graph marking is not proof that an arbitrary
-  sleep request ends with all handshakes at rest. That proof remains open.
+  The existing `previous` register supplies that qualifier. Partitioning checks
+  its actual D=enabled.Q connection, source clock, reset and opposite phases.
+  Graph edges close the qualifier before use and the receiver before reuse;
+  leaf-level gate timing remains open. No new copy register is authorized.
+- CPU capture distribution, source-release hold, high/low pulse widths, gate
+  return and output clock-to-Q bundling need checks on the real controller circuit.
 
 ## Stop, reset and external boundaries
 

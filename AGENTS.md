@@ -15,6 +15,9 @@
   payload copies or bridges. The user selected investigation of a CPU flop-bank
   exception to preserve the 1.25x storage-area cap; this is not yet qualified.
   Preserve falling-edge, per-register work gating and reset semantics explicitly.
+  The current ten-bank candidate isolates the 42 falling-edge bits. Controller
+  candidates restore request-return causality; do not replace that dependency
+  with an unmeasured wait or treat sampled schematic pulses as qualification.
   A positive-edge projected graph is not a whole-chip liveness or timing proof.
   Registry recipes live only in `tools/primitives.py`; missing physical recipes
   and STA-sized delay entries fail. Custom GF180 mutex development is authorized,

@@ -194,3 +194,40 @@ Both receipts have no changed inputs or skips. Independent review's phase/gate
 inventory, protection-permission, unsupported-state and descriptor-bypass
 findings are addressed. The checker still cannot qualify the unfinished MCU.
 No clocked/BD/Click production RTL changed in this batch.
+
+## Phase-aware graph and causal controller candidates
+
+| Batch | Whole-chip mapped/repaired ratio | Architectural bits / storage area ratio | Control share | Banks / cycle time | Result |
+|---|---|---|---|---|---|
+| Opposite-edge bank; causal controller and CPU pair candidates | Unavailable → unavailable | No payload change; reference 2,977 / calculated floor stays 1.230263x | Whole-chip share unmeasured; ordinary pair 0.0002261056 mm², CPU pair including its two joins and output driver 0.0003314752 mm² | 9 → 10 / unmeasured | Abstract graph and schematic samples pass; physical bindings remain unavailable |
+
+The 42 falling-edge bits now have their own S-master bank. The ten-bank graph
+has 25,293 reachable markings and one-safe/live topology. With `power.m-` held,
+every abstract marking drains to one terminal within 51 firings. Physical
+handshake-wire rest, gate-leaf ordering and controller correspondence are open.
+The partition checks the existing previous-enable register's actual connection,
+clock, reset and phase; no new qualifier copy or payload storage was added.
+
+The causal controller restores `Ri & !Ro` on acknowledgement rise. No extra
+keeper or guessed wait repairs the original recipe's request-return race.
+The CPU pair's sampled **slave** return-to-capture propagation is at least
+0.383594 ns and its sampled slave-enable high pulse is at least 0.601142 ns.
+These are not the CPU FF capture/hold margin or a minimum-pulse guarantee.
+All whole-chip joins, matched delays, trees, any required master resets and the
+mutex still need area/timing accounting. The 0.5788478976 mm² substitution floor
+and 0.001 mm² mutex estimate remain estimates, not a desync map.
+
+Evidence: `build/desync-multibank/{partition-ten,graph-ten-r2}.json`,
+`primitives-final-r1` (120 five-corner loaded schematic cases),
+`primitives-final-negative` (expected `DESYNC_PRIMITIVE_STATE`), `ci-phase-r1`
+(450 Python, 268 Scala across 29 suites, 6,976 reference equivalence points)
+and `ci-phase-reviewed` (451 Python plus both pinned reference area comparisons
+after the Python-only recipe update). Receipts have no changed inputs or missing
+outputs. Independent review's phase, qualifier, constant-emission and reset-wording
+findings are fixed. No production RTL, assertion, deadline or ABI changed.
+
+Failed experiments retained:
+
+- Nine mixed-phase banks: sampled S aperture 1.64–5.97 ns at SS/hot versus the reference's 12.63 ns half-cycle requirement; isolate opposite-edge state in bank ten.
+- Simplified CPU controller: 50 fF publication loading stalls; output isolation restores sampled behavior but leaves about 15 ps at 50% crossings and −159 ps at conservative thresholds; restore the causal condition.
+- Stronger keeper alone: `_2` remains marginal and `_4` worsens it; rejected. A buffered-delay experiment also remains unadopted.
