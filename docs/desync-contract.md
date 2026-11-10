@@ -140,8 +140,11 @@ Budgets are mapped 1.15x, repaired plus trees 1.20x, architectural bits exactly
 1.00x, storage area 1.25x and control/join/delay/mutex share 5%. Only the storage
 metric replacement was approved; other ceilings have not changed.
 
-The mutex allowance is at most 0.001 mm², explicitly estimated. Custom-cell
-SPICE, layout, LEF and Liberty work is now authorized; qualification is absent.
+The mutex allowance is at most 0.001 mm². The experimental 28 × 35.28 µm
+layout occupies 0.00098784 mm² and passes two LVS tools plus foundry geometry
+checks. This is cell evidence, not a whole-chip map or accepted binding.
+Distributed-RC samples, LEF/conditional Liberty, variation, noise and the
+system reliability target remain part of qualification; see the ledger.
 Registry recipes and delay policy remain unavailable until measured. Reference
 CI and graph unit tests are distinct from desync acceptance. Transformation,
 flow equivalence, folded next-state equivalence, full-chip area, all-corner

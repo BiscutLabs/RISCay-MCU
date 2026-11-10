@@ -231,3 +231,54 @@ Failed experiments retained:
 - Nine mixed-phase banks: sampled S aperture 1.64–5.97 ns at SS/hot versus the reference's 12.63 ns half-cycle requirement; isolate opposite-edge state in bank ten.
 - Simplified CPU controller: 50 fF publication loading stalls; output isolation restores sampled behavior but leaves about 15 ps at 50% crossings and −159 ps at conservative thresholds; restore the causal condition.
 - Stronger keeper alone: `_2` remains marginal and `_4` worsens it; rejected. A buffered-delay experiment also remains unadopted.
+
+
+## Experimental mutex layout
+
+| Batch | Whole-chip mapped/repaired ratio | Architectural bits / storage area ratio | Cell area | Result |
+|---|---|---|---|---|
+| GF180D mutex layout and distributed extraction | Unavailable → unavailable | Reference 2,977 unchanged / calculated floor stays 1.230263x | 0.00098784 mm² outline, below the 0.001 allowance | Experimental; no mapper binding or chip RTL change |
+
+The unchanged 46-transistor schematic now has a generated 28 × 35.28 µm layout.
+Magic and Netgen agree; independent foundry KLayout checks report zero violations
+across 649 categories and matching LVS. A thin Metal1 wire and a wrong transistor
+gate fail the corresponding checks. The geometry is within the declared outline.
+Extraction keeps all 46 MOS, 303 resistors and 451 capacitors, including the
+1.93 Mohm substrate branch. Collapsing resistance recovers the schematic nets;
+the audit includes device terminals, W/L and diffusion area/perimeter.
+
+Mirrored devices do not imply matched routes. N0/N1 external extracted capacitance
+is 20.59/21.95 fF before MOS capacitance. Simulations therefore load and observe
+the actual G pins through distributed RC; no capacitance-only replacement is
+used. Nominal parasitics are not min/max RC. Density/fill, antenna, latch-up,
+variation, coupled noise, LEF and conditional Liberty remain open. Contention
+still has no maximum resolution-time promise, and the reliability target is unset.
+
+Failed experiments retained: initial tap edges passed Magic but produced 20
+foundry implant-width errors; expanding the well within the same outline fixes
+them. A routing-priority name mismatch is fixed. Review also added diffusion
+geometry checks, reverse handover and active-reset samples. Operational stopping
+must still drain grants; these samples characterize destructive POR behavior
+and do not authorize operational reset.
+
+The implementation is committed in chisel-async
+[`24c1216`](https://github.com/BiscutLabs/chisel-async/commit/24c1216), with portable
+Magic startup fixed in [`3a712ec`](https://github.com/BiscutLabs/chisel-async/commit/3a712ec).
+Both reviewed extracted-RC runs pass: 361 base cases and 101 reverse/reset cases,
+including two half-timestep repeats. Sampled uncontended propagation is
+0.334–1.325 ns, quiet handover is at least 0.891 ns and active-reset clearance
+is at most 2.094 ns. Half-step changes are below 0.041 ps. None of the 20
+simultaneous-request reset cases remained unresolved before reset; that coverage
+is still open. These are observations at five transistor corners with nominal RC.
+
+Evidence is under `build/desync-mutex-layout/`: `layout-verified-final`,
+`rc-samples-r8`, `rc-supplement-r1`, the two `rc-*-reviewed-final` replays,
+`replay-controls-r1` and `ci-r1`. The final checker independently verifies saved
+stimuli, PVT, output files and recomputed convergence. Library validation passes
+27 Python tests, 11 digital contract cases, 44 diagnostic controls and docs.
+Independent review's routing, geometry, reset-window and replay findings are fixed.
+The MCU fast gate passes 451 Python tests and 268 Scala tests across 29 suites,
+plus the Phase 0 reference-equivalence harness. Its receipt has no changed inputs,
+missing outputs or skips. This remains reference verification, not generated-chip
+flow equivalence. The shared circuit/ABI, resets, deadlines,
+clocked reference and old BD/Click oracles are unchanged; RTL diff is zero.
