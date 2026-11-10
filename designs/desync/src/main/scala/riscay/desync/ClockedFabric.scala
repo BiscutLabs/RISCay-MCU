@@ -117,7 +117,9 @@ class ClockedFabric(p: SocParameters) extends Module {
   val application=config.application.registers.map(r => r.word -> applicationReg(0.U(32.W))).toMap
   def applicationWord(word: UInt): UInt=MuxLookup(word,"hffffffff".U(32.W))(
     application.toSeq.map {case(i,q) => i.U -> q})
-  def applicationExists(word: UInt): Bool=application.keys.map(i => word===i.U).foldLeft(false.B)(_ || _)
+  // Sort integer addresses before creating hardware: mapping a key set to Bool
+  // makes identity hashes choose the OR-tree order and changes mapped results.
+  def applicationExists(word: UInt): Bool=application.keys.toVector.sorted.map(i => word===i.U).foldLeft(false.B)(_ || _)
 
   val spiClaimRequested=if(p.spiBoot) RegInit(true.B) else WireDefault(false.B)
   val spiClaimed=if(p.spiBoot) RegInit(true.B) else WireDefault(false.B)

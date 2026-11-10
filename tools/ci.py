@@ -17,6 +17,7 @@ from area_ratio import check_budget_history
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 FAST_SUITES = (
+    'ExportStabilitySpec',
     'DesyncClockSpec', 'DesyncChipSpec', 'DesyncCoreSpec', 'DesyncSocSpec', 'DesyncFabricSpec', 'DesyncSleepSpec', 'DesyncDeepSleepSpec', 'DesyncBoundarySpec',
     'ClockedCoreSpec', 'ClockedSocSpec', 'ClockedFabricSpec', 'ClockedSleepSpec', 'ClockedBoundarySpec',
     'TimestampMathSpec', 'AppRegistersSpec', 'AppSnapshotRecoverySpec', 'EventReferenceSpec', 'ClockedEventsSpec', 'CoreSpec', 'SocSpec', 'HostSchemaSpec', 'AsyncFabricSpec', 'AsyncControlSpec',

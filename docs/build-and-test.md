@@ -30,7 +30,9 @@ clock settings. Desync also runs the same core, fabric, SoC, sleep, reset and
 boot bodies using its digital generator model, plus source and exported-shell
 tests. The gate exports both chips and proves their ideal-clock regions
 equivalent; analog arbitration and physical generator timing remain unqualified. Solver tests also reject changed next-state
-logic and changed fixed-memory inputs. Yosys and sv2v are required even for the
+logic and changed fixed-memory inputs. Repeated exports must preserve every RTL
+and interface file; address sets are ordered before constructing hardware.
+Yosys and sv2v are required even for the
 Python gate; CI installs Yosys 0.33 and checksum-pinned sv2v 0.0.13.
 Missing suites, failed cases and unexpected skips fail the run. Linux may skip
 only the Windows mounted-drive translation test. CI runs the same entry point on

@@ -4,6 +4,8 @@ The implementation target is a copy of `designs/clocked`, using the same
 flip-flops, SRAMs, ABI, reset semantics and state machines. Old BD and Click are
 frozen behavioral oracles. Phase 0 is complete. The user limited the resumed
 batch to a digital prototype; no physical mutex development is authorized.
+Generator IP is separate: missing physical views do not block independent MCU
+work, but complete-chip area/timing acceptance still includes that IP.
 
 ## Regions and state
 
@@ -97,9 +99,11 @@ before reuse. A C-element finishes the active pulse before stopping. Tests cover
 racing wake/stop, reset during a pulse, and the actual exported shell's POR hold,
 park, wake and power-loss recovery. They do not qualify a transistor circuit.
 
-The clocked reference is 0.5318332992 mm² mapped and 0.5915383488 mm² after
+The pinned Phase 0 clocked reference is 0.5318332992 mm² mapped and 0.5915383488 mm² after
 repair, placement and CTS, with 2,977 storage bits. All 2,980 clock pins are
 reached and all five PVT electrical reports are clean. The measured fast-region
 zero-wire period requirement ranges from 30.995 to 112.803 ns before the 1.2
 factor. This is an input to future sizing, not a physical generator or routed
 timing result. The ledger records evidence and limits.
+The later deterministic address-decode change requires refreshed physical
+measurements before those repaired/timing numbers can qualify the new netlist.

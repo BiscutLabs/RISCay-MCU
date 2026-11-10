@@ -20,6 +20,8 @@
   mutex development is out of scope. Do not turn an ideal-clock region map into a complete desync
   area claim. I2C remains 400 kHz SCL; the 3.2 MHz test point
   is the service clock, not an increased bus-rate requirement.
+  Keep generator IP separate from MCU implementation. Missing physical generator
+  views do not block independent MCU work; complete-chip area/timing gates stay open.
 - RISCay is a generic MCU. Neither RTL nor mask ROM contains application policy.
   ROM implements generic external SPI image boot and I2C-loader fallback.
   Profiles supply pin names, measurement metadata and capacities, never behavior.

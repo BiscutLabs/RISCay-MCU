@@ -122,3 +122,31 @@ Failed experiments retained:
 - Fixed `clocked.json` descriptor name rejected desync; the shared writer now accepts an optional filename without changing its default or macro models.
 - Pre-time-zero testbench power-good initialization left the existing reset-hold model unknown; matching the supply monitor's time-zero assertion fixes the fixture (`digital-r3`, `shell-debug-r1`).
 - Minimum-reset assumption rejected the existing 1 ns brownout test; cancel pending simulator events on POR instead (`ci-final`, stopped after the failure).
+
+## Deterministic region exports
+
+| Batch | Flat mapped logic / clocked | Storage bits | Delay/controller/mutex | Repaired + CTS | RTL diff vs clocked |
+|---|---|---|---|---|---|
+| Sort application-address decode before constructing hardware | Both 0.5318332992 → 0.5315501184 mm²; 1.000× → 1.000× (region only) | 2,977 → 2,977 | Generator excluded, not measured | Not rerun; Phase 0 remains a pinned pre-change baseline | Unchanged: +159 / −27 Scala lines |
+
+Mapping a key set to Chisel `Bool` let identity hashes choose the OR-tree order.
+Both implementations now sort integer addresses first. No state, ABI, reset or
+clock changes; all nine functional files still match after package normalization.
+The small common mapping change (−0.053%) is not a desync area saving.
+Periodic sinks remain 539 service + 2,362 work + 78 LF, with one separate SDA
+event pin and zero protected ordinary cells.
+
+Evidence is in `build/desync-reproducibility`: `before.log` fails the new
+repeat-export property in both variants, `after.log` passes it, and both paired
+production exports are byte-identical. `map-clocked`, `map-desync` and
+`region-comparison.json` retain the matched maps; whole-chip acceptance still
+rejects the excluded generator. Parent-to-current proofs pass all 6,976 points
+per variant after bijectively matching five renamed equality wires by their
+complete expression; no point or logic was removed. The failed name-based runs
+are retained. Independent review accepted the implementation and correspondence.
+
+Final CI passes **428 Python tests and 308 Scala tests across 38 suites**, with
+no skips, changed inputs or missing outputs. Its fresh clocked/desync exports
+prove all 6,976 equivalence points and exactly match the measured exports across
+a separate sbt JVM (31 clocked files, 33 desync files). The repeat-export test is
+now in the fast gate; existing functional assertions and deadlines are unchanged.
