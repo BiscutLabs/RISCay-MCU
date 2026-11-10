@@ -1,0 +1,25 @@
+{
+  "schema": 1,
+  "top": "RiscayMcuDigital",
+  "status": "candidate; flop exception requires graph and timing qualification",
+  "clock_roots": {"serviceClock": "service", "soc/workClock": "work", "watchdogClock": "lf", "sda": "host_event"},
+  "retained_domains": ["lf", "host_event"],
+  "gated_domains": {"work": "soc/gate/enabled"},
+  "stop_bank": "power",
+  "banks": ["cpu", "fabric", "control", "program", "ram", "i2c", "adc", "time", "power"],
+  "rules": [
+    {"alias": "soc/fabric/upperTime", "bank": "time"},
+    {"alias": "soc/fabric/divider", "bank": "time"},
+    {"prefix": "soc/core/", "bank": "cpu"},
+    {"prefix": "soc/fabric/control/", "bank": "control"},
+    {"prefix": "soc/fabric/programSram/", "bank": "program"},
+    {"prefix": "soc/fabric/ram/", "bank": "ram"},
+    {"prefix": "soc/fabric/host/", "bank": "i2c"},
+    {"prefix": "soc/fabric/adc/", "bank": "adc"},
+    {"prefix": "soc/fabric/housekeeping/", "bank": "time"},
+    {"prefix": "soc/fabric/scaler/", "bank": "time"},
+    {"prefix": "soc/fabric/", "bank": "fabric"},
+    {"prefix": "soc/", "bank": "power"},
+    {"prefix": "resetHold/", "bank": "power"}
+  ]
+}

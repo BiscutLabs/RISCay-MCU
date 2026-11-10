@@ -24,7 +24,8 @@ binary has SHA-256
 the run receipt pins all other tool/library inputs. Reuse the same flow for the
 eventual desync denominator comparison.
 The current budgets therefore permit at most 0.6116082941 mm² mapped,
-0.7098460186 mm² repaired plus trees, and 3,125 storage bits. These are limits,
+0.7098460186 mm² repaired plus trees. Revised storage limits are exactly
+2,977 architectural bits and 0.2552221840 mm² storage cell area. These are limits,
 not achieved desync measurements.
 
 | PVT | Fast-region period requirement, ns, before 1.2 factor |
@@ -71,7 +72,7 @@ and an explicit combinational generated-clock path. None qualifies the reference
 Phase 0 ended at the requested boundary. The GF180 mutex still lacks layout,
 LEF and Liberty; its registry recipe is unavailable.
 
-## Digital prototype verified — physical Phase 1 acceptance remains open
+## Retired single-oscillator prototype (historical)
 
 | Batch | Mapped logic | Ratio to clocked | Storage bits | Controller/delay/mutex area | Status |
 |---|---:|---:|---:|---:|---|
@@ -123,7 +124,7 @@ Failed experiments retained:
 - Pre-time-zero testbench power-good initialization left the existing reset-hold model unknown; matching the supply monitor's time-zero assertion fixes the fixture (`digital-r3`, `shell-debug-r1`).
 - Minimum-reset assumption rejected the existing 1 ns brownout test; cancel pending simulator events on POR instead (`ci-final`, stopped after the failure).
 
-## Deterministic region exports
+## Deterministic region exports (clocked fix retained; copied region retired)
 
 | Batch | Flat mapped logic / clocked | Storage bits | Delay/controller/mutex | Repaired + CTS | RTL diff vs clocked |
 |---|---|---|---|---|---|
@@ -150,3 +151,46 @@ no skips, changed inputs or missing outputs. Its fresh clocked/desync exports
 prove all 6,976 equivalence points and exactly match the measured exports across
 a separate sbt JVM (31 clocked files, 33 desync files). The repeat-export test is
 now in the fast gate; existing functional assertions and deadlines are unchanged.
+
+## Multi-bank rebuild: storage-cap investigation
+
+The user rejected raising the storage-area cap and selected the flop-plus-bubble
+investigation. No whole-chip desync map exists in this batch.
+
+| Batch | Whole-chip mapped/repaired ratio | Architectural bits / storage area ratio | Control share | Banks / cycle time | Result |
+|---|---|---|---|---|---|
+| Retire oscillator copy; partition and CPU-FF preflight | Unavailable → unavailable | Reference 2,977; candidate unchanged by substitution / calculated 1.300158x → 1.230263x | Unmeasured; mutex allowance 0.001 mm² | 9 candidate / unmeasured | CPU-only candidate retained for qualification; no RTL conversion adopted |
+
+Literal master/slave replacement costs 0.2654633408 mm² of storage against
+0.2041777472 mm² clocked, exceeding the cap by 0.0102411568 mm². The CPU's 591
+mapped plain FFs would save 0.0142709952 mm², giving 0.2511923456 mm² storage and
+a 0.5788478976 mm² logic **substitution floor** (1.088401x). After the estimated
+mutex allowance, 0.0317603965 mm² remains below the mapped cap for all other
+controllers, joins and delay/hold cells. These are library-area calculations,
+not synthesis of a controller-connected chip; reset-master changes are excluded.
+
+Independent review caught missing opposite-edge and gate dependencies. The
+partition now emits their exact receiving-register witnesses and phase types;
+it adds the previously missing power-to-ADC gate edge. The positive-edge graph
+projection remains live with CPU FFs but is explicitly incomplete for the MCU.
+Negative-edge reset release, both transparent-phase timing cones, FF apertures,
+per-register enable gating and arbitrary-stop handshake rest remain open.
+The gate-transition counterexample also rejects using the new enable for a
+falling capture: start would insert one and stop would lose one. The existing
+previous-enable state may supply the qualifier; its phase stability is unproved.
+
+Failed experiment: contracting both CPU and Fabric creates a tokenless cycle;
+rejected with `DESYNC_TOKENLESS_CYCLE`. No reset, oracle or deadline was relaxed.
+Evidence: `build/desync-multibank-preflight/storage-floor.json` and
+`build/desync-multibank/{partition,cpu-screen,cpu-storage-candidate}.json`.
+
+Validation: `ci-r1` passes 439 Python tests, 268 Scala tests across 29 suites,
+and all 6,976 Phase 0 reference-equivalence points. This includes unchanged
+400 kHz earliest I2C status at both service rates, full-capacity SRAM, sleep,
+reset, generic SPI boot and repeat-export coverage. After Python-only review
+fixes, `ci-reviewed` passes all 441 Python tests and both pinned reference
+area comparisons (mapped 0.5318332992 mm²; repaired/CTS 0.5915383488 mm²).
+Both receipts have no changed inputs or skips. Independent review's phase/gate
+inventory, protection-permission, unsupported-state and descriptor-bypass
+findings are addressed. The checker still cannot qualify the unfinished MCU.
+No clocked/BD/Click production RTL changed in this batch.

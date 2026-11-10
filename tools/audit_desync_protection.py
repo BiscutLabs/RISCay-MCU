@@ -4,7 +4,7 @@ import argparse
 import json
 from pathlib import Path
 from gf180_netgraph import graph
-from primitives import classified_cells
+from primitives import classified_cells, primitive
 
 
 def enabled(attributes):
@@ -14,6 +14,10 @@ def enabled(attributes):
 def audit(netlist, bindings=(), clock_aliases=()):
     cells, _ = graph(netlist['modules'])
     registered = classified_cells(bindings)
+    permitted = {b['instance']: primitive(b['primitive']).protect for b in bindings}
+    cell_owners = {b['instance'] + '/' + c['name']: b['instance'] for b in bindings for c in b['cells']}
+    allowed_cells = {p for p, owner in cell_owners.items() if 'cells' in permitted[owner]}
+    allowed_modules = {p for p, flags in permitted.items() if 'cells' in flags}
     for path, (_, expected) in registered.items():
         actual = cells.get(path)
         if actual is None or actual['type'] != expected['cell']:
@@ -23,23 +27,23 @@ def audit(netlist, bindings=(), clock_aliases=()):
     # Verilog writer removes them; ordinary FFs must remain optimizable.
     def walk(kind, prefix=''):
         module = netlist['modules'][kind]
-        if enabled(module.get('attributes', {})) and prefix.rstrip('/') not in {b['instance'] for b in bindings}:
+        if enabled(module.get('attributes', {})) and prefix.rstrip('/') not in allowed_modules:
             raise ValueError('DESYNC_PROTECTED_ORDINARY_MODULE:' + kind)
         for name, net in module.get('netnames', {}).items():
             path = prefix + name
-            inside = any(path.startswith(b['instance'] + '/') for b in bindings)
+            inside = any(path.startswith(owner + '/') and 'internal_nets' in flags for owner, flags in permitted.items())
             if enabled(net.get('attributes', {})) and not inside and path not in clock_aliases:
                 raise ValueError('DESYNC_PROTECTED_DATA_NET:' + path)
         for name, cell in module.get('cells', {}).items():
             path = prefix + name
             if enabled(cell.get('attributes', {})):
-                if path not in registered and path not in {b['instance'] for b in bindings}:
+                if path not in allowed_cells and path not in allowed_modules:
                     raise ValueError('DESYNC_PROTECTED_ORDINARY_CELL:' + path)
                 protected.append(path)
             if cell['type'] in netlist['modules'] and not netlist['modules'][cell['type']].get('attributes', {}).get('blackbox'):
                 walk(cell['type'], path + '/')
     walk('RiscayMcuDigital')
-    for path in registered:
+    for path in allowed_cells:
         if path not in protected and not any(b['instance'] in protected and path.startswith(b['instance']+'/') for b in bindings):
             raise ValueError('DESYNC_PRIMITIVE_UNPROTECTED:' + path)
     # Exact graph equality inside each primitive: no omitted, added, or rewired

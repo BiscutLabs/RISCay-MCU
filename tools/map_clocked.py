@@ -20,11 +20,9 @@ from run_receipt import RunReceipt
 from sram_assets import validate_export, verify
 
 
-def run(export, output, *, ideal_region=False):
-    descriptor=export/('desync.json' if ideal_region else 'clocked.json')
-    metadata = json.loads(descriptor.read_text())
-    expected=('riscay-desync-v1','ideal-clock-region') if ideal_region else ('riscay-clocked-v1','synchronous')
-    if (metadata['schema'],metadata['clocking']) != expected:
+def run(export, output):
+    metadata = json.loads((export/'clocked.json').read_text())
+    if metadata['schema'] != 'riscay-clocked-v1' or metadata['clocking'] != 'synchronous':
         raise ValueError('NOT_A_CLOCKED_EXPORT')
     validate_export(export,'1.160.0')
     macro_lock=ROOT/'soc/sram-lock.json'
@@ -40,14 +38,14 @@ def run(export, output, *, ideal_region=False):
         raise ValueError('CLOCKED_EXPORT_SOURCES')
     if any('ChiselAsync' in p.read_text() for p in sources):
         raise ValueError('ASYNC_PRIMITIVE_IN_CLOCKED_CHIP')
-    physical_top(export, output, metadata, metadata,chip_shell=not ideal_region)
+    physical_top(export, output, metadata, metadata)
     # The common shell copies the async SDC; it is not valid for this design.
-    if not ideal_region:(output/'base.sdc').unlink()
+    (output/'base.sdc').unlink()
     sources += [output/'RiscayMcuDigital.sv',output/'riscay_reset_hold.sv']
     yosys = tool('yosys')
     abc = yosys.executable.rsplit('/',1)[0]+'/yosys-abc'
     selected=tool('sv2v')
-    receipt = RunReceipt(output/'receipt.json', inputs=[descriptor,export/'filelist.f',export/'ports.json',macro_lock,macro_library,*sources,liberty],
+    receipt = RunReceipt(output/'receipt.json', inputs=[export/'clocked.json',export/'filelist.f',export/'ports.json',macro_lock,macro_library,*sources,liberty],
                          tools=[Path(__file__),ROOT/'tools/gf180_physical.py',ROOT/'tools/gf180_estimate.py',
                                 ROOT/'tools/gf180_implement.py',ROOT/'tools/gf180_netgraph.py',
                                 ROOT/'tools/report_clock_owners.py',ROOT/'tools/sram_assets.py',
@@ -96,9 +94,7 @@ def run(export, output, *, ideal_region=False):
                   sram_macros=counts[SRAM],cells=sum(counts.values()),masters=dict(counts),
                   periodic_sinks=clocks['periodic_sinks'],clock_domains=clocks['clock_domains'],
                   rom_bytes=metadata['rom_bytes'],scope='Flat mapped logic; before repair, CTS or routing',
-                  timing_qualified=False,complete_chip=not ideal_region)
-    if ideal_region:
-        result['scope']='Ideal-clock region ONLY: generator excluded; not a desync area-budget result'
+                  timing_qualified=False)
     write_json(output/'area.json',result)
     receipt.finish(outputs=[converted,script,output/'synth.log',output/'netlist.json',output/'netlist.v',output/'area.json',output/'clocks.json'])
     print(json.dumps({k:v for k,v in result.items() if k!='masters'},indent=2))
@@ -107,5 +103,4 @@ def run(export, output, *, ideal_region=False):
 if __name__=='__main__':
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('export',type=Path);parser.add_argument('output',type=Path)
-    parser.add_argument('--ideal-region',action='store_true',help='Desync region lower bound; excludes generator and cannot pass the desync acceptance gate')
-    args=parser.parse_args();run(args.export.resolve(),args.output.resolve(),ideal_region=args.ideal_region)
+    args=parser.parse_args();run(args.export.resolve(),args.output.resolve())

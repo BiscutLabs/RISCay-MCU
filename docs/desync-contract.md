@@ -1,109 +1,124 @@
-# Desynchronized MCU
+# Multi-bank desynchronized MCU
 
-The implementation target is a copy of `designs/clocked`, using the same
-flip-flops, SRAMs, ABI, reset semantics and state machines. Old BD and Click are
-frozen behavioral oracles. Phase 0 is complete. The user limited the resumed
-batch to a digital prototype; no physical mutex development is authorized.
-Generator IP is separate: missing physical views do not block independent MCU
-work, but complete-chip area/timing acceptance still includes that IP.
+The clocked RTL is the single source of truth. Generate a four-phase bundled-data
+netlist from its `proc; opt` hierarchy; do not copy its implementation or use a
+shared generated clock. The single-oscillator prototype is retired. Old BD and
+Click remain frozen behavioral oracles. No ABI, reset rule, deadline or test
+oracle changes are authorized.
 
-## Regions and state
+## Banks and storage
 
-Phase 1 has one self-timed fast region. A matched-delay loop supplies the service
-clock and the existing falling-edge work gate. The independent LF watchdog and
-timebase remain periodic. The generator must arbitrate asynchronous wake against
-stopping with a metastability-filtered mutex. A stop completes the active pulse;
-resetting a mutex during a grant is not a valid operational stop.
+The candidate map in `physical/desync/bank-map.json` has nine banks: CPU, Fabric,
+Control, program port, RAM port, I2C, ADC, time and power/reset/wake. Assignment is
+explicit; actual combinational fan-in supplies the graph edges. The inventory
+separates positive, negative and event edges and adds gate-condition dependencies
+to each affected register. Generic pre-optimization bits are not mapped state bits.
 
-No payload copy, receipt, bridge, reset change, latch-pair conversion or new
-architectural storage is authorized. Controller/mutex state is counted in the
-storage and overhead ratios. Partitions beyond this first region require a
-measured benefit and at most 0.01 mm² overhead each; four regions is the limit.
+Default storage is a plain master latch plus a slave with the original reset
+semantics. Synchronous resets remain synchronous next-state logic; they must not
+silently become asynchronous latch resets. Architectural bits count pairs once.
+The existing combinational logic stays untouched and optimizable. No new payload,
+bridge, retained copy, per-bit delay or native transaction owner is permitted.
 
-| Remaining clock/input boundary | Obligation |
+Literal substitution on the pinned reference costs 1.300158x storage, above the
+1.25x cap. The user chose investigation of a flop-plus-bubble exception instead
+of raising the cap. Retaining the CPU's 591 mapped FFs gives a **calculated**
+1.230263x storage ratio and a 1.088401x logic floor, before controllers/joins,
+loaded delays, enable trees and hold fixes. It is a candidate, not an adopted
+conversion or mapped desync result. No extra architectural state is proposed.
+
+## Controller graph and initial marking
+
+Each bank normally has semi-decoupled master/slave controllers, predecessor
+C-element joins and one matched delay. Slaves initially contain valid state;
+masters supply bubbles. Fig. 11 of
+[Cortadella et al., TCAD 2006](https://iris.polito.it/retrieve/handle/11583/1643397/48109/paper.pdf)
+is the positive-edge marked-graph template. Every data and gating dependency
+needs an implemented handshake relation; timing delays do not replace causality.
+
+`desync_graph.py` currently screens this template, checking for tokenless cycles
+and a one-token cycle through every place. Its CPU-only contraction combines
+M-close/S-open into the FF rising event and S-close/M-open into the falling event.
+Only those two zero-mark local relations may contract; they become explicit FF
+setup/hold/pulse obligations. Two adjacent FF banks (CPU plus Fabric) are rejected
+because they create a tokenless cycle. The screen always reports incomplete and
+exits nonzero: it does not certify the implemented MCU.
+
+The review identified obligations still outside that template:
+
+- Forty-two generic falling-edge bits occur in program (21), RAM (20) and power
+  (1). Their masters follow S and slaves follow M. Same-phase transparent cones
+  must settle before that phase closes. A delay before M alone proves nothing
+  about the S interval. Measure both phase intervals before accepting this mapping.
+- Negative slaves can be open at reset release. Resettable CEN/GWEN and `enabled`
+  need defined masters or another proved release order; do not overwrite their
+  reset values with undefined data. Additional master reset needs are permitted
+  by the reset analysis and must be included in area.
+- Work gating applies per register, including work-owned `coreReset` in the
+  otherwise service-owned power bank. Controllers continue handshaking; only
+  eligible latch enables are suppressed. The condition must remain stable across
+  the complete receiving phase. Whole-bank gating would be wrong here.
+  On a gate transition, falling-edge consumers use the previous enable: using
+  its new value inserts a falling capture on start and drops one on stop.
+  The existing `previous` register is a candidate qualifier, requiring phase
+  ordering before use; no new copy register has been authorized.
+- A bounded drain from one initial graph marking is not proof that an arbitrary
+  sleep request ends with all handshakes at rest. That proof remains open.
+
+## Stop, reset and external boundaries
+
+One stop point in the power bank withholds requests during deep sleep. A persistent
+stop competes with asynchronous wake through one metastability-filtered mutex.
+The mutex must not be reset to terminate an active operational grant. POR, LF,
+GPIO and SDA wake, including wake during stop, require explicit recovery tests.
+
+| Remaining clock/input | Obligation |
 |---|---|
-| LF watchdog/timebase | Independent elapsed time and recovery when fast logic stops |
-| Generated service/work clock | Ordinary synchronous timing within the region; existing gated-work semantics |
-| SDA event frontier | Existing START-event capture must wake a stopped generator |
-| GPIO, LF and I²C synchronizers | Existing first/second stages sample on generated edges; bus activity must keep edges running |
-| SPI MISO | The clocked reference samples directly in its SPI player; constrain the external source-synchronous input rather than invent a synchronizer |
-| SRAM CLK | Generated tree; falling-edge pin launch, rising-edge access/capture, absolute pin apertures and pulse widths |
+| LF watchdog/timebase | Independent time and recovery while the controller graph stops; existing Gray crossing and skew bound |
+| SDA event FF | Retain the pin-clocked START frontier and its SCL aperture; synchronize its result through the existing stages |
+| SRAM CLK | Local port controller only; preserve falling launch/rising access order and datasheet apertures/access/pulse widths |
+| GPIO and I2C synchronizers | Original stages become latch pairs; report slow-corner sampling interval and MTBF assumptions; active bus keeps sampling live |
+| SPI MISO | Existing source-synchronous sampling; constrain the external ADC's data aperture |
 
-## Delays and timing
+There is no periodic service/work clock. Architectural resets and asynchronous
+wake-set state still require their existing lifetimes and recovery/removal
+analysis. The physical POR qualifier currently counts service cycles for 5 ms;
+the generated implementation must preserve that absolute minimum.
 
-The one region delay is **relative**: its measured minimum period at each PVT
-must exceed 1.2 times the same-corner critical requirement, including clock-tree
-skew and setup. Include full- and half-cycle paths. The 1.2 factor is the user's
-engineering allowance, not measured process mismatch. Use a measured mixed-cell
-chain; no physical count comes from an RTL simulation delay.
+## Timing and throughput
 
-**Absolute** obligations are SRAM setup/hold and high/low pulse widths,
-controller pulse width, and POR hold. The current physical shell holds POR for
-100,000 service cycles and relies on a period of at least 50 ns to guarantee
-5 ms. Faster operation cannot silently invalidate that guarantee.
+Relative delays: one loaded, mixed-cell matched delay per bank, sized using
+`max_c(1.2 * requirement_c / cell_delay_c)` at the same corner and actual slew/load.
+The 20% factor is a user allowance, not measured mismatch. Include join/controller
+cost, latch setup, enable-tree spread and both phase obligations. Missing or stale
+STA entries fail; simulation constants cannot determine physical counts.
 
-**Simulation-only prototype:** tests explicitly assume each existing suite's
-half-period through 1.1 times that value, and 0.01–0.1 ns mutex resolution.
-These stress points are not PVT measurements. A behavioral mutex with bounded
-resolution cannot establish analog filtering, metastability MTBF or liveness.
-The models are excluded under `SYNTHESIS`; physical `desync-delays.json` stays
-empty, and missing physical recipes/counts fail. Future qualified simulations
-must use actual measured-chain bounds instead of these prototype assumptions.
+Absolute checks: SRAM setup/hold/access and high/low pulses, latch/controller
+minimum pulses, POR hold, mutex filter and reset recovery. Hold repair is limited
+to paths STA flags. Simulation-only delays come from each bank's measured
+[fastest, slowest * 1.2] envelope. No such bank envelope is published yet.
 
-POR cancels pending digital delay/mutex events, including the existing 1 ns
-brownout stimulus. Cancellation bookkeeping and known initial values are digital
-abstractions, not a physical power-up proof. A physical implementation must
-qualify reset pulse capture, delay-chain discharge and ordered release; no
-physical recipe is supplied for that behavior.
-The MCU POR-hold counter still runs on generated edges. Application/watchdog
-reset does not reset the generator or remove its independent LF clock.
+For boot, I2C, ADC and LF service require
+`events/window * worst firings/event * slow-corner cycle < window`.
+I2C is **400 kHz SCL**, with unchanged earliest-status tests at 3.2 and 20 MHz
+reference service clocks. Cycle time is a graph property after characterization;
+none is claimed from the topology screen. Zero-wire margins below 100 ps are
+flagged; electrical repair precedes accepted timing and routed min/max RC follows.
 
-Within the fast region use ordinary STA/CTS. No native-owner path checkers,
-per-bit delays, ordinary protected data, or broad path waivers. Repair precedes
-accepted timing. Routed min/max RC, reset, SRAM, pulse and mutex qualification
-remain required. Flag zero-wire margins below 100 ps.
+## Acceptance and current boundary
 
-## Throughput and equivalence
+The pinned clocked reference is 0.5318332992 mm² mapped, 0.5915383488 mm² after
+repair/placement/CTS, 2,977 architectural bits and 0.2041777472 mm² storage.
+The deterministic export fix produces 0.5315501184 mm²; refresh its physical
+reference before claiming a comparison against that newer netlist.
+Budgets are mapped 1.15x, repaired plus trees 1.20x, architectural bits exactly
+1.00x, storage area 1.25x and control/join/delay/mutex share 5%. Only the storage
+metric replacement was approved; other ceilings have not changed.
 
-For every stream require `events/window × worst cycles/event × slowest period
-< window`. Existing I²C earliest-status tests use 400 kHz SCL at 3.2 MHz and
-20 MHz service clocks. The user confirmed **400 kHz SCL**; 3.2 MHz is a service
-clock test point, not the bus requirement. I2C/ADC/LF tests run unchanged with randomized prototype timing; actual
-corner bounds and physical throughput margins remain unmeasured.
-
-With the generator replaced by an external ideal clock, all existing state and
-outputs must be sequentially equivalent. Generator/wake modules are the only
-intended differences; their pulse/start/stop/POR tests are additional obligations.
-`clk2fflogic` preserves asynchronous reset and edge detection in the formal
-timestep model. Fixed SRAMs remain the identical blackboxes; this does not prove
-their analog behavior. No test oracle or functional deadline may change.
-
-## Acceptance and open physical dependency
-
-`desync-budget.json` limits flat mapped ratio to 1.15, repaired-plus-tree ratio
-to 1.20, storage ratio to 1.05, and delay/controller/mutex share to 5%. Budgets
-may only tighten without approval. Compare identical configurations and flows;
-retain one receipt per run. Phase 1 stops above 1.30 rather than trimming blindly.
-
-The GF180 mutex is a schematic candidate without layout, LEF or Liberty.
-Generator registry recipes remain unavailable. No zero-area blackbox or
-standard-cell substitute may satisfy area or timing gates. The copied region's
-map excludes all generator overhead and cannot pass whole-chip acceptance.
-The exported `filelist-simulation.f` opts into the digital models separately.
-
-The shell follows the C-element/mutex topology of
-[Keller et al., ASYNC 2015, figure 2](https://research.nvidia.com/sites/default/files/pubs/2015-05_A-Pausible-Bisynchronous/pausible.fifo_.async_.15.final_.pdf).
-Pause requests persist until granted; wake releases a granted pause. Existing
-wake logic holds run through subsequent generated edges so the grant can return
-before reuse. A C-element finishes the active pulse before stopping. Tests cover
-racing wake/stop, reset during a pulse, and the actual exported shell's POR hold,
-park, wake and power-loss recovery. They do not qualify a transistor circuit.
-
-The pinned Phase 0 clocked reference is 0.5318332992 mm² mapped and 0.5915383488 mm² after
-repair, placement and CTS, with 2,977 storage bits. All 2,980 clock pins are
-reached and all five PVT electrical reports are clean. The measured fast-region
-zero-wire period requirement ranges from 30.995 to 112.803 ns before the 1.2
-factor. This is an input to future sizing, not a physical generator or routed
-timing result. The ledger records evidence and limits.
-The later deterministic address-decode change requires refreshed physical
-measurements before those repaired/timing numbers can qualify the new netlist.
+The mutex allowance is at most 0.001 mm², explicitly estimated. Custom-cell
+SPICE, layout, LEF and Liberty work is now authorized; qualification is absent.
+Registry recipes and delay policy remain unavailable until measured. Reference
+CI and graph unit tests are distinct from desync acceptance. Transformation,
+flow equivalence, folded next-state equivalence, full-chip area, all-corner
+phase/reset timing and routed checks remain open. Do not turn a reference
+self-comparison or the CPU substitution estimate into an implementation pass.

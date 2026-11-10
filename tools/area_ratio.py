@@ -19,6 +19,13 @@ from primitives import classified_cells, primitive
 from audit_desync_protection import audit
 
 
+def mutex_allowance():
+    """Exploration allowance only; never substitutes for a measured cell."""
+    entry = primitive('RiscayDesyncMutex')
+    return dict(area_bound_mm2=entry.estimated_area_bound_mm2,
+                status='estimate; layout and loaded Liberty not qualified')
+
+
 def context(netlist, physical=False):
     """Bind CLI comparisons to successful runs and their actual mapped inputs."""
     folder=netlist.parent
@@ -42,8 +49,12 @@ def context(netlist, physical=False):
     descriptors=[Path(p) for p in receipt['inputs'] if Path(p).name in ('clocked.json','desync.json')]
     if len(descriptors)!=1:raise ValueError('DESYNC_CONFIGURATION_MISSING')
     metadata=json.loads(descriptors[0].read_text())
-    if descriptors[0].name=='desync.json' and metadata.get('clocking')!='self-timed':
+    if descriptors[0].name=='desync.json' and metadata.get('clocking')!='multi-bank-bundled-data':
         raise ValueError('DESYNC_INCOMPLETE_GENERATOR')
+    if descriptors[0].name=='desync.json':
+        # Descriptor identity, not an optional CLI switch, selects acceptance.
+        # The transform/state-map and implemented graph do not exist yet.
+        raise ValueError('DESYNC_BANK_IMPLEMENTATION_REQUIRED')
     if sha(descriptors[0])!=receipt['sha256'][str(descriptors[0])]:raise ValueError('DESYNC_CONFIGURATION_CHANGED')
     script=(folder/'synth.ys').read_text().replace(str(folder.resolve()).replace('\\','/'),'@mapping')
     from physical_tools import tool
@@ -88,22 +99,21 @@ def measure(netlist, liberties, bindings=(), *, self_timed=False):
         if len(matches)!=1:raise ValueError('DESYNC_PHYSICAL_WORK_ROOT')
         aliases['soc.workClock']=cells[matches[0]]['connections'][pin]
     if self_timed:
-        # The registry has no qualified generator/mutex yet. Do not let a flag
-        # turn externally clocked flops into a claimed clockless result.
-        from primitives import require_recipe
-        require_recipe('RiscayDesyncController')
-        require_recipe('RiscayDesyncMutex')
-        if {b['primitive'] for b in bindings} != {'RiscayDesyncController','RiscayDesyncDelay','RiscayDesyncMutex'}:
-            raise ValueError('DESYNC_GENERATOR_INVENTORY')
-        roots['soc.generatedClock'] = roots.pop('serviceClock')
+        # No shared generated-clock alias can certify a bank implementation.
+        # Transform-emitted architectural-state/enable membership is required.
+        raise ValueError('DESYNC_BANK_IMPLEMENTATION_REQUIRED')
     clocks = inventory(cells, aliases, pins, roots=roots)
     if clocks['native_or_unclassified_clock_sinks']:
         raise ValueError('DESYNC_UNCLASSIFIED_CLOCK_SINK')
-    protection = audit(dict(modules=modules), bindings, ['soc.workClock', 'soc.generatedClock'])
+    protection = audit(dict(modules=modules), bindings, ['soc.workClock'])
     logic = sum(n * scalar(library[k], 'area') for k, n in counts.items()) / 1e6
+    if any(any(direct_groups(library[k], kind)) for k in storage for kind in ('latch', 'latch_bank')):
+        raise ValueError('DESYNC_ARCHITECTURAL_MAP_REQUIRED')
     return dict(logic_mm2=logic, storage_by_cell=storage,
+        architectural_bits=sum(storage.values()),
+        storage_area_mm2=sum(counts[k] * scalar(library[k], 'area') for k in storage) / 1e6,
         storage_bits=sum(storage.values()) + keeper_bits, keeper_bits=keeper_bits,
-        special_area_mm2={k: roles[k] for k in ('delay_line', 'controller', 'mutex')},
+        special_area_mm2={k: roles[k] for k in ('delay_line', 'controller', 'join', 'mutex')},
         protected_cells=protection['protected_cells'], clock_sinks=clocks['clock_domains'],
         periodic_sinks=clocks['clock_domains']['lf'] if self_timed else clocks['periodic_sinks'],
         sram_macros=sum(c['type'] == SRAM for c in cells.values()), netlist_sha256=sha(netlist),
@@ -112,28 +122,53 @@ def measure(netlist, liberties, bindings=(), *, self_timed=False):
 
 def compare(candidate, reference, budget, *, physical=False):
     for record in (candidate, reference):
-        if not math.isfinite(record['logic_mm2']) or record['logic_mm2'] <= 0 or record['storage_bits'] <= 0:
+        if (any(not math.isfinite(record[k]) or record[k] <= 0
+                for k in ('logic_mm2', 'storage_area_mm2', 'architectural_bits')) or
+                any(not math.isfinite(x) or x < 0 for x in record['special_area_mm2'].values())):
             raise ValueError('DESYNC_INVALID_AREA_OR_STORAGE')
     if candidate['liberty_sha256'] != reference['liberty_sha256'] or candidate['sram_macros'] != reference['sram_macros']:
         raise ValueError('DESYNC_UNMATCHED_REFERENCE')
     ratios = dict(area=candidate['logic_mm2'] / reference['logic_mm2'],
-                  storage=candidate['storage_bits'] / reference['storage_bits'],
+                  architectural_bits=candidate['architectural_bits'] / reference['architectural_bits'],
+                  storage_area=candidate['storage_area_mm2'] / reference['storage_area_mm2'],
                   control=sum(candidate['special_area_mm2'].values()) / candidate['logic_mm2'])
     failures = [k for k, limit in (('area', budget['repaired_tree_ratio' if physical else 'mapped_ratio']),
-                ('storage', budget['storage_ratio']), ('control', budget['control_area_fraction'])) if ratios[k] > limit]
+                ('storage_area', budget['storage_area_ratio']), ('control', budget['control_area_fraction'])) if ratios[k] > limit]
+    # Missing state is not a saving. The architectural metric is equality.
+    if ratios['architectural_bits'] != budget['architectural_bits_ratio']:
+        failures.append('architectural_bits')
     return dict(status='fail' if failures else 'pass', ratios=ratios, exceeded=failures,
                 variant=candidate, reference=reference, scope='repaired+trees' if physical else 'flat-mapped')
 
 
+CEILING = dict(mapped_ratio=1.15, repaired_tree_ratio=1.20,
+               architectural_bits_ratio=1.00, storage_area_ratio=1.25, control_area_fraction=.05)
+
+
+def approved_schema(budget):
+    """The user's section 2 replaces the legacy bit budget, not other limits."""
+    if budget.get('schema', 1) == 1 and 'storage_ratio' in budget:
+        budget = dict(budget)
+        if budget.pop('storage_ratio') != 1.05:
+            raise ValueError('DESYNC_UNRECOGNIZED_LEGACY_BUDGET')
+        budget.update(architectural_bits_ratio=1.00, storage_area_ratio=1.25)
+    return budget
+
+
 def check_budget(current, previous):
-    for key in ('mapped_ratio', 'repaired_tree_ratio', 'storage_ratio', 'control_area_fraction'):
+    current, previous = approved_schema(current), approved_schema(previous)
+    if current['architectural_bits_ratio'] != 1.00 or previous['architectural_bits_ratio'] != 1.00:
+        raise ValueError('DESYNC_ARCHITECTURAL_BITS_MUST_MATCH')
+    for key in ('mapped_ratio', 'repaired_tree_ratio', 'storage_area_ratio', 'control_area_fraction'):
         if not math.isfinite(current[key]) or not 0 < current[key] <= previous[key]:
             raise ValueError('DESYNC_BUDGET_LOOSENED:' + key)
 
 
 def check_budget_history(path, root=ROOT):
     current=json.loads(path.read_text())
-    ceiling=dict(mapped_ratio=1.15,repaired_tree_ratio=1.20,storage_ratio=1.05,control_area_fraction=.05)
+    if current.get('schema') != 2 or 'storage_ratio' in current:
+        raise ValueError('DESYNC_CURRENT_BUDGET_SCHEMA')
+    ceiling=CEILING
     check_budget(current,ceiling)
     revisions=[]
     for ref in ('HEAD','HEAD^'):

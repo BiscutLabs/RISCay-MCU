@@ -55,7 +55,7 @@ class FirmwareSpec extends AnyFunSuite with SocImplementationSuite {
       val config=production.copy(application=profile,measurements=Vector.empty)
       val p=SocParameters(config,staleMs=3000,watchdogCycles=32,watchdogHoldCycles=2,
         lowPower=Some(LowPowerParameters.gf180Slow))
-      val top=if(synchronous) () => synchronousSoc(p) else if(click) () => new ClickSoc(p) else () => new FourPhaseSoc(p)
+      val top=if(synchronous) () => new riscay.clocked.ClockedSoc(p) else if(click) () => new ClickSoc(p) else () => new FourPhaseSoc(p)
       val check=if(app=="event_loop") """
         if(snapshot[32+:32] !== 4 || !snapshot[65] || snapshot[96+:32] !== 4 ||
            snapshot[128+:32] !== 1 || snapshot[192+:32] !== 32'h600d600d) $fatal(1,"COMPILED_EVENT_RESULT");

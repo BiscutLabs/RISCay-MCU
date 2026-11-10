@@ -7,9 +7,9 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from types import SimpleNamespace
 from unittest.mock import patch
-from area_ratio import storage_width, compare, check_budget, check_budget_history, context
+from area_ratio import storage_width, compare, check_budget, check_budget_history, context, CEILING, mutex_allowance
 from audit_desync_protection import audit
-from primitives import require_recipe, classified_cells
+from primitives import require_recipe, classified_cells, REGISTRY, Primitive
 from size_desync_delays import select_count, load_recipe, publish_policy
 from gf180_estimate import sha
 from characterize_gf180_liberty import CORNERS
@@ -18,6 +18,12 @@ from clocked_physical import check_clock_coverage, electrical_gate
 
 
 class DesyncToolsTest(unittest.TestCase):
+    def test_mutex_estimate_is_explicit_and_does_not_enable_mapping(self):
+        self.assertGreater(mutex_allowance()['area_bound_mm2'], 0)
+        self.assertLessEqual(mutex_allowance()['area_bound_mm2'], .001)
+        self.assertIn('estimate', mutex_allowance()['status'])
+        with self.assertRaisesRegex(ValueError,'PHYSICAL_RECIPE_UNAVAILABLE'):
+            require_recipe('RiscayDesyncMutex')
     def test_ideal_region_cannot_satisfy_whole_chip_area_gate(self):
         with TemporaryDirectory() as temporary:
             root=Path(temporary);netlist=root/'netlist.json';metadata=root/'desync.json'
@@ -27,6 +33,12 @@ class DesyncToolsTest(unittest.TestCase):
                 inputs=[str(metadata.resolve())],
                 sha256={str(p.resolve()):sha(p) for p in (netlist,metadata)})))
             with self.assertRaisesRegex(ValueError,'DESYNC_INCOMPLETE_GENERATOR'):
+                context(netlist)
+            metadata.write_text(json.dumps(dict(clocking='multi-bank-bundled-data')))
+            (root/'receipt.json').write_text(json.dumps(dict(status='pass',
+                inputs=[str(metadata.resolve())],
+                sha256={str(p.resolve()):sha(p) for p in (netlist,metadata)})))
+            with self.assertRaisesRegex(ValueError,'DESYNC_BANK_IMPLEMENTATION_REQUIRED'):
                 context(netlist)
 
     def test_real_report_violation_prevents_accepting_physical_reference(self):
@@ -42,7 +54,7 @@ class DesyncToolsTest(unittest.TestCase):
         with TemporaryDirectory() as temporary:
             path=Path(temporary)/'budget.json'
             parent=dict(mapped_ratio=1.10,repaired_tree_ratio=1.2,storage_ratio=1.05,control_area_fraction=.05)
-            current=dict(parent,mapped_ratio=1.12);path.write_text(json.dumps(current))
+            current=dict(CEILING,schema=2,mapped_ratio=1.12);path.write_text(json.dumps(current))
             with patch('area_ratio.subprocess.run',side_effect=[SimpleNamespace(returncode=0,stdout=json.dumps(current)),SimpleNamespace(returncode=0,stdout=json.dumps(parent))]):
                 with self.assertRaisesRegex(ValueError,'BUDGET_LOOSENED'):check_budget_history(path)
 
@@ -94,7 +106,7 @@ class DesyncToolsTest(unittest.TestCase):
         self.assertEqual(storage_width('pin(Q){function:"D";}'),0)
 
     def test_unqualified_generator_cannot_be_replaced_with_logic(self):
-        for name in ('RiscayDesyncMutex','RiscayDesyncController','RiscayDesyncDelay'):
+        for name in REGISTRY:
             with self.subTest(primitive=name):
                 with self.assertRaisesRegex(ValueError,'PHYSICAL_RECIPE_UNAVAILABLE'):
                     require_recipe(name)
@@ -111,20 +123,45 @@ class DesyncToolsTest(unittest.TestCase):
             if target=='net': m['netnames']['D']={'bits':[1],'attributes':{'keep':'1'}}
             with self.assertRaisesRegex(ValueError,'DESYNC_PROTECTED'):audit(a)
 
+    def test_registry_can_forbid_primitive_protection(self):
+        gate=cell('and2_1',A1=1,A2=2,Z=3)
+        child=dict(ports={p:dict(bits=[i],direction='output' if p=='z' else 'input') for p,i in [('a',1),('b',2),('z',3)]},
+                   netnames={p:dict(bits=[i]) for p,i in [('a',1),('b',2),('z',3)]},cells={'gate':gate})
+        top=dict(ports={},netnames={},cells={'native':dict(type='Fixture',connections=dict(a=[1],b=[2],z=[3]))})
+        fixture=dict(modules={'RiscayMcuDigital':top,'Fixture':child})
+        binding=dict(instance='native',primitive='Fixture',ports=dict(a='a',b='b',z='z'),
+                     cells=[dict(name='gate',cell=gate['type'],pins=dict(A1='a',A2='b',Z='z'))])
+        entry=Primitive('controller',('a','b','z'),('relative',),'none','unit fixture',protect=())
+        with patch.dict(REGISTRY,{'Fixture':entry}):
+            self.assertEqual(audit(fixture,[binding])['protected_cells'],0)
+            for target in ('cell','net','module'):
+                bad=deepcopy(fixture);m=bad['modules']['Fixture']
+                obj=m['cells']['gate'] if target=='cell' else m['netnames']['a'] if target=='net' else m
+                obj['attributes']={'keep':'1'}
+                with self.subTest(target=target), self.assertRaisesRegex(ValueError,'DESYNC_PROTECTED'):
+                    audit(bad,[binding])
+
     def test_budget_may_only_tighten_and_must_be_finite(self):
-        original=dict(mapped_ratio=1.15,repaired_tree_ratio=1.2,storage_ratio=1.05,control_area_fraction=.05)
+        original=dict(CEILING)
         check_budget(original,original)
         for value in (1.16,math.inf,math.nan,0):
             candidate=dict(original,mapped_ratio=value)
             with self.assertRaisesRegex(ValueError,'BUDGET_LOOSENED'):check_budget(candidate,original)
         check_budget(dict(original,mapped_ratio=1.05),original)
+        check_budget(original,dict(mapped_ratio=1.15,repaired_tree_ratio=1.2,storage_ratio=1.05,control_area_fraction=.05))
+        for value in (.99,1.01):
+            with self.assertRaisesRegex(ValueError,'BITS_MUST_MATCH'):
+                check_budget(dict(original,architectural_bits_ratio=value),original)
 
     def test_ratio_is_same_library_and_macro_count_and_no_nan(self):
-        reference=dict(logic_mm2=.5,storage_bits=100,liberty_sha256={'lib':'x'},sram_macros=3,special_area_mm2={})
-        budget=dict(mapped_ratio=1.15,repaired_tree_ratio=1.2,storage_ratio=1.05,control_area_fraction=.05)
+        reference=dict(logic_mm2=.5,storage_bits=100,architectural_bits=100,storage_area_mm2=.2,
+                       liberty_sha256={'lib':'x'},sram_macros=3,special_area_mm2={})
+        budget=dict(CEILING)
         self.assertEqual(compare(reference,reference,budget)['status'],'pass')
         self.assertEqual(compare(dict(reference,logic_mm2=.6),reference,budget)['exceeded'],['area'])
-        self.assertEqual(compare(dict(reference,storage_bits=106),reference,budget)['exceeded'],['storage'])
+        self.assertEqual(compare(dict(reference,storage_area_mm2=.251),reference,budget)['exceeded'],['storage_area'])
+        for count in (99,101):
+            self.assertEqual(compare(dict(reference,architectural_bits=count),reference,budget)['exceeded'],['architectural_bits'])
         for candidate in (dict(reference,liberty_sha256={'lib':'y'}),dict(reference,sram_macros=2),dict(reference,logic_mm2=math.nan)):
             with self.assertRaises(ValueError):compare(candidate,reference,budget)
 

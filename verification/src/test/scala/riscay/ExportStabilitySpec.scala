@@ -18,20 +18,16 @@ class ExportStabilitySpec extends AnyFunSuite {
     }.toMap
   }
 
-  for(desync <- Seq(false,true)) {
-    val variant=if(desync) "desync" else "clocked"
-    test(s"$variant repeated elaboration preserves every exported RTL and interface file") {
-      val root=Paths.get("build/export-stability");Files.createDirectories(root)
-      val exports=(0 until 3).map { _ =>
-        val directory=Files.createTempDirectory(root,variant)
-        if(desync) riscay.desync.DesyncExport.emit(new riscay.desync.ClockedFabric(p),directory)
-        else riscay.clocked.ClockedExport.emit(new riscay.clocked.ClockedFabric(p),directory)
-        contents(directory,s"$variant.json")
-      }
-      for(candidate <- exports.tail) {
-        val changed=(exports.head.keySet ++ candidate.keySet).filter(k => exports.head.get(k)!=candidate.get(k))
-        assert(changed.isEmpty,s"NONDETERMINISTIC_EXPORT: ${changed.toVector.sorted.mkString(",")}")
-      }
+  test("clocked repeated elaboration preserves every exported RTL and interface file") {
+    val root=Paths.get("build/export-stability");Files.createDirectories(root)
+    val exports=(0 until 3).map { _ =>
+      val directory=Files.createTempDirectory(root,"clocked")
+      riscay.clocked.ClockedExport.emit(new riscay.clocked.ClockedFabric(p),directory)
+      contents(directory,"clocked.json")
+    }
+    for(candidate <- exports.tail) {
+      val changed=(exports.head.keySet ++ candidate.keySet).filter(k => exports.head.get(k)!=candidate.get(k))
+      assert(changed.isEmpty,s"NONDETERMINISTIC_EXPORT: ${changed.toVector.sorted.mkString(",")}")
     }
   }
 }

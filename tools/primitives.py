@@ -16,17 +16,26 @@ class Primitive:
     recipe: str | None
     keeper_bits: int = 0
     protect: tuple = ('cells', 'internal_nets')
+    estimated_area_bound_mm2: float | None = None
 
 
 REGISTRY = {
     'RiscayDesyncController': Primitive('controller',
-        ('reset', 'run', 'delayed', 'cycleGrant', 'pauseGrant', 'clockOut', 'cycleRequest', 'pauseRequest'), ('relative', 'absolute'),
-        'POR clears clock/pause state and both requests; release enables cycling; stop completes the pulse and pending pause waits for grant', None, 2),
+        ('reset', 'requestIn', 'acknowledgeIn', 'requestOut', 'acknowledgeOut', 'enable'), ('relative', 'absolute'),
+        'Semi-decoupled latch controller; master open/slave closed initial marking requires per-instance reset binding', None, 1),
+    'RiscayDesyncJoin': Primitive('join', ('reset', 'inputs', 'out'), ('relative',),
+        'C-element join initial marking follows its controller-graph place', None, 1),
+    'RiscayDesyncEnableGate': Primitive('controller', ('enable', 'condition', 'out'), ('relative', 'absolute'),
+        'Combinational AND; gate condition stable throughout the enabled phase', None, protect=()),
+    'RiscayDesyncStop': Primitive('controller',
+        ('reset', 'run', 'wake', 'requestIn', 'requestOut', 'pauseRequest', 'pauseGrant'), ('relative', 'absolute'),
+        'Persistent stop request; one external filtered mutex arbitrates wake; operational stop does not reset grants', None, 1),
     'RiscayDesyncDelay': Primitive('delay_line', ('reset', 'in', 'out'), ('relative', 'absolute'),
         'POR clears feedback; physical discharge/release implementation unqualified', None),
     'RiscayDesyncMutex': Primitive('mutex',
         ('reset', 'request0', 'request1', 'grant0', 'grant1'), ('absolute',),
-        'POR aborts grants; operational stop must not reset an active grant', None, 1),
+        'POR aborts grants; operational stop must not reset an active grant', None, 1,
+        estimated_area_bound_mm2=.001),
 }
 
 

@@ -4,24 +4,26 @@
   Use `.agents/skills/async-circuit-design/SKILL.md` for native architecture,
   timing, area and physical-flow work. Its examples are guidance, not measured
   margins for this design.
-- The active rebuild is `designs/desync`: copy the clocked MCU's state and
-  flip-flops, then replace its fast source with one self-timed region. Follow
-  `docs/desync-contract.md` and the user's phased acceptance gates. Phase 0
-  tooling/reference comes before RTL. Old BD and Click are frozen behavioral
-  oracles; do not continue their area or physical-flow campaigns. The new user
-  architecture overrides the historical BD migration rules below.
-  No new payload storage, bridges or native transaction owners. All generator
-  primitives are catalogued in `tools/primitives.py`; missing physical recipes
-  or STA-derived delay entries fail closed. Ratios against the same clocked
-  reference govern every measured batch; never loosen a budget without approval.
-  Phase 1 exploration uses area maps only, without per-change proof/review docs.
-  Phase 0 is complete and the user authorized proceeding with desync, limited to a digital
-  prototype: simulation models and functional checks are authorized; physical
-  mutex development is out of scope. Do not turn an ideal-clock region map into a complete desync
-  area claim. I2C remains 400 kHz SCL; the 3.2 MHz test point
-  is the service clock, not an increased bus-rate requirement.
-  Keep generator IP separate from MCU implementation. Missing physical generator
-  views do not block independent MCU work; complete-chip area/timing gates stay open.
+- The active rebuild generates multi-bank, four-phase bundled-data logic from
+  `designs/clocked`; do not copy that RTL or restore the single-oscillator
+  prototype. Follow `docs/desync-contract.md`. Phase 0 tools/reference and the
+  deterministic clocked export fix stay. Old BD and Click are frozen behavioral
+  oracles, with no new physical campaigns. These rules override historical
+  migration instructions below.
+  Start with at most ten banks, each with semi-decoupled master/slave controllers,
+  joins and a measured matched delay. No shared fast clock, transaction owners,
+  payload copies or bridges. The user selected investigation of a CPU flop-bank
+  exception to preserve the 1.25x storage-area cap; this is not yet qualified.
+  Preserve falling-edge, per-register work gating and reset semantics explicitly.
+  A positive-edge projected graph is not a whole-chip liveness or timing proof.
+  Registry recipes live only in `tools/primitives.py`; missing physical recipes
+  and STA-sized delay entries fail. Custom GF180 mutex development is authorized,
+  with a 0.001 mm² exploration allowance; do not pass estimates as qualification.
+  Ratios against the matched clocked reference govern adoption: mapped 1.15x,
+  repaired plus trees 1.20x, architectural bits exactly 1.00x, storage area 1.25x,
+  control share 5%. No budget loosening without approval. Explore with area maps
+  first; qualify only surviving choices. I2C remains 400 kHz SCL; 3.2 MHz is the
+  existing service-clock test point, not a bus-rate increase.
 - RISCay is a generic MCU. Neither RTL nor mask ROM contains application policy.
   ROM implements generic external SPI image boot and I2C-loader fallback.
   Profiles supply pin names, measurement metadata and capacities, never behavior.

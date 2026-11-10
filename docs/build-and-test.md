@@ -25,11 +25,12 @@ retained register-view, event-oracle, sleep, I2C wire/earliest-loader-status and
 boot-ingress suites, the generic SPI boot cases and physical export/core
 policy suites. It checks fresh, nonempty JUnit results for every requested suite.
 SRAM is part of this gate, and the unchanged earliest-status test body also runs
-on clocked and desync implementations at 400 kHz SCL with 3.2/20 MHz test
-clock settings. Desync also runs the same core, fabric, SoC, sleep, reset and
-boot bodies using its digital generator model, plus source and exported-shell
-tests. The gate exports both chips and proves their ideal-clock regions
-equivalent; analog arbitration and physical generator timing remain unqualified. Solver tests also reject changed next-state
+on the clocked implementation at 400 kHz SCL with 3.2/20 MHz test clocks.
+The retired shared-oscillator prototype and its fixtures have been removed.
+Reference CI exports the clocked chip and runs the Phase 0 equivalence harness
+against itself; this is explicitly not generated multi-bank acceptance.
+The rebuild additionally needs flow comparison, folded combinational equivalence,
+whole-chip graph and area gates before it can pass. Solver tests reject changed next-state
 logic and changed fixed-memory inputs. Repeated exports must preserve every RTL
 and interface file; address sets are ordered before constructing hardware.
 Yosys and sv2v are required even for the
@@ -76,8 +77,8 @@ distinct from a simulated deadline and must be reported if changed.
 ## Clocked comparison design
 
 The fast gate also runs the clocked core, SoC, fabric, reset-boundary and sleep
-cases, plus the same generic SPI-boot cases. Event history is compared across all
-four implementations. The extended clocked suites reuse the existing test bodies:
+cases, plus the same generic SPI-boot cases. Event history is compared across the three
+existing implementations (BD, Click and clocked). The extended clocked suites reuse the existing test bodies:
 
 ```text
 python tools/sbt.py "verification/testOnly riscay.ClockedDeepSleepSpec riscay.ClockedGenericBootSpec riscay.ClockedFirmwareSpec riscay.ClockedPhysicalEstimateSpec"
@@ -95,8 +96,8 @@ run the native export checker on a synchronous design. See the
 
 Phase 0 established the tooling and fair clocked reference.
 The [design contract](desync-contract.md) and [ledger](desync-ledger.md) state
-the boundary. The subsequent digital prototype supplies generator interfaces
-and simulation models; physical generator recipes remain unavailable.
+the boundary. The rebuild now generates banks from the clocked netlist; the
+single-oscillator prototype is retired. Physical primitive recipes remain unavailable.
 
 ```text
 python tools/clocked_physical.py build/map-clocked build/clocked-physical
@@ -113,7 +114,7 @@ loader rejects missing, stale, nonphysical or under-sized measurements. A future
 loaded mixed-cell chain must pass at every corner before publishing a policy.
 
 `tools/primitives.py` is the single registry for the new controller, delay and
-mutex identities. Unavailable recipes fail closed. The area reporter reads
+join, enable gate, stop point and mutex identities. Unavailable recipes fail closed. The area reporter reads
 storage from Liberty and rejects protected ordinary state/data. It emits one
 JSON line per comparison and checks matched configuration/tool inputs.
 
@@ -123,8 +124,8 @@ Run the fast gate with both measured comparisons for each physical batch:
 python tools/ci.py --output build/ci-measured --area-mapping build/map-clocked/netlist.json --area-reference build/map-clocked/netlist.json --physical-mapping build/clocked-physical/cts.json --physical-reference build/clocked-physical/cts.json
 ```
 
-These are reference self-comparisons in Phase 0; Phase 1 supplies desync as the
-candidate. Default portable CI has no PDK, so it runs the budget/protection/sizing
+These are reference self-comparisons. The generated multi-bank design must later
+supply the candidate, including its controllers and mutex. Default portable CI has no PDK, so it runs the budget/protection/sizing
 properties, solver controls and simulation gate; measured area comparisons need
 the explicit arguments above. Budget increases fail both against the specified
 ceilings and the prior commit. Keep two Git revisions available for that check.
@@ -230,18 +231,19 @@ encloses their combinational arc costs before searching all paths, preserving
 NLDM nonmonotonicity without an endpoint tolerance. Exact cone/profile coverage
 is mandatory. This bounds the sampled mode graphs, not continuous slew or routing.
 
-## Desync digital prototype
+## Multi-bank preflight
+
+`desync_partition.py` reads hierarchy-preserving Yosys JSON after `proc; opt`,
+before techmap. `desync_graph.py` screens candidate bank topology:
 
 ```text
-python tools/sbt.py "desync/runMain riscay.desync.EmitDesyncSoc build/export/desync"
-python tools/sbt.py "verification/testOnly riscay.DesyncClockSpec riscay.DesyncChipSpec riscay.DesyncDeepSleepSpec riscay.DesyncGenericBootSpec riscay.DesyncFirmwareSpec"
+python tools/desync_partition.py build/generic/netlist.json physical/desync/bank-map.json build/partition.json
+python tools/desync_graph.py build/partition.json build/graph-screen.json --flop-bank cpu
 ```
 
-The export's `filelist-simulation.f` explicitly selects the digital source models.
-Set positive `MIN_NS`/`MAX_NS` on `fastRegion.delay` and `fastRegion.mutex`.
-POR cancels pending digital events; physical reset limits remain unqualified.
-Models are excluded under `SYNTHESIS`. Shared tests use their original half-period as
-the minimum, randomize to 1.1×, and assume 0.01–0.1 ns arbitration resolution.
-These are **digital stress assumptions**, not measured fast/slow PVT bounds or
-physical sizing inputs. The existing chip oracles and deadlines are unchanged.
-See [desync contract](desync-contract.md) for the unfinished physical gates.
+The screen deliberately exits nonzero with `status: incomplete`. Its positive-edge
+projection can reject a deadlocked candidate, but cannot accept the mixed-edge,
+gated MCU or claim handshake rest. The output names unresolved obligations.
+There is no desync sbt project or generated-chip export command yet. Clocked RTL
+is the sole source; the new transform and physical primitive characterization
+must be implemented before chip-level desync tests are meaningful.

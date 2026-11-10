@@ -1,9 +1,10 @@
 {
-  "schema": 1,
+  "schema": 2,
   "mapped_ratio": 1.15,
   "repaired_tree_ratio": 1.20,
-  "storage_ratio": 1.05,
+  "architectural_bits_ratio": 1.00,
+  "storage_area_ratio": 1.25,
   "control_area_fraction": 0.05,
-  "source": "User desynchronization acceptance criteria, 2026-11-09",
+  "source": "User multi-bank desynchronization specification, section 2; storage metric replacement explicitly approved. Option 2 preserves the 1.25 storage-area cap.",
   "policy": "May only tighten without explicit user approval"
 }

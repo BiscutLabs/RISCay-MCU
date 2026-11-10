@@ -5,9 +5,10 @@ RISCay-MCU is an asynchronous RV32E microcontroller built in Chisel with
 process. It combines a small RISC-V CPU, on-chip SRAM, firmware loading, GPIO,
 measurement interfaces and event-driven sleep.
 
-The active rebuild is a [desynchronized MCU](designs/desync/README.md): the
-[clocked MCU](designs/clocked/README.md) with a stoppable, self-timed fast clock.
-It is currently a digital prototype; its physical clock generator is unqualified.
+The active rebuild is a [multi-bank desynchronized MCU](docs/desync-contract.md),
+generated from the [clocked MCU](designs/clocked/README.md). Its register banks
+will exchange data through four-phase handshakes, without a shared fast clock.
+The bank transformation and physical controllers are under development.
 The earlier **four-phase bundled-data (BD)** and **native two-phase Click** designs
 are frozen behavioral references. All variants use the same ISA and software interfaces.
 
@@ -44,10 +45,10 @@ Choose a fresh output directory for each run. This runs the Python tests and fas
 RTL simulation suites; CI uses the same command on pushes to `main` and pull
 requests. The build fetches chisel-async at a pinned Git revision automatically.
 
-To export the desync digital prototype:
+To export the clocked source for the rebuild:
 
 ```sh
-python tools/sbt.py --bootstrap "desync/runMain riscay.desync.EmitDesyncSoc build/export/desync"
+python tools/sbt.py --bootstrap "clocked/runMain riscay.clocked.EmitClockedSoc build/export/clocked"
 ```
 
 The [build guide](docs/build-and-test.md) also covers reference exports, extended
@@ -77,7 +78,7 @@ retention available as a generic build option.
 
 | Directory | Contents |
 | --- | --- |
-| [`designs/desync/`](designs/desync/README.md) | Desynchronized digital prototype |
+| [`physical/desync/`](physical/desync/) | Generated desync bank-map inputs |
 | [`designs/clocked/`](designs/clocked/README.md) | Independent synchronous reference |
 | [`designs/four-phase-bd/`](designs/four-phase-bd/README.md) | BD CPU and SoC implementation |
 | [`designs/two-phase-click/`](designs/two-phase-click/README.md) | Native Click CPU and SoC implementation |

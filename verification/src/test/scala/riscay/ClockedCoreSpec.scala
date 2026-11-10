@@ -5,10 +5,6 @@ import org.scalatest.funsuite.AnyFunSuite
 import riscay.clocked.ClockedCore
 
 class ClockedCoreSpec extends AnyFunSuite {
-  protected def desynchronized: Boolean = false
-  private def runCore(name: String, body: String): java.nio.file.Path =
-    SynchronousSimulation.run(if(desynchronized) new riscay.desync.ClockedCore else new ClockedCore,
-      (if(desynchronized) "desync-" else "")+name,body,prototypeClock=desynchronized)
   import Assembly._
   import CorePrograms._
   private def hex(x: Long)=s"32'h${java.lang.Long.toHexString(x & 0xffffffffL)}"
@@ -48,9 +44,8 @@ class ClockedCoreSpec extends AnyFunSuite {
     }.mkString("\n")
     s"""module Testbench;
 timeunit 1ns; timeprecision 1ps;
-reg reset=1;
-${if(desynchronized) "wire clock;"+DesyncSimulation.directClock(5,"clock","1'b1")
-  else "reg clock=0; always #5 clock=~clock;"}
+reg clock=0, reset=1;
+always #5 clock=~clock;
 reg request_ready=0,response_valid=0,response_bits_error=0;
 reg [31:0] response_bits_data=0;
 wire request_valid,response_ready;
@@ -111,29 +106,27 @@ endmodule
 
   test("clocked arithmetic, memory, branches and stalls match the shared independent oracle") {
     for((program,name) <- Seq(arithmetic->"arithmetic",memoryAndControl->"memory",predicates->"branches"); seed <- Seq(1,19)) {
-      runCore("core-"+name,stimulus(Reference.run(program),seed))
+      SynchronousSimulation.run(new ClockedCore,"core-"+name,stimulus(Reference.run(program),seed))
     }
   }
   test("clocked reset cancels an outstanding fetch") {
-    runCore("core-reset",stimulus(Reference.run(known),31,resetPending=true))
+    SynchronousSimulation.run(new ClockedCore,"core-reset",stimulus(Reference.run(known),31,resetPending=true))
   }
   test("clocked reset during a pending load clears progressed PC and all fifteen written registers") {
     val program=(1 to 15).map(n => store(0,n,1024+4*(n-1),2)) ++ Seq(breakpoint)
-    runCore("core-dirty-reset",stimulus(Reference.run(program),7,dirtyReset=true))
+    SynchronousSimulation.run(new ClockedCore,"core-dirty-reset",stimulus(Reference.run(program),7,dirtyReset=true))
   }
   test("clocked illegal encodings, alignment and access faults preserve architectural causes") {
     val cases=Seq(Seq(0L),Seq(i(0x13,16,0,0,1)),Seq(i(0x13,1,0,16,1)),Seq(r(1,0,0,16)),
       Seq(r(1,0,0,0,1)),Seq(0x100fL),Seq(0x73L),Seq(jal(1,2)),
       Seq(i(0x03,1,2,0,1)),Seq(store(0,1,1,1)),Seq(i(0x03,1,2,0,1024)),Seq(store(0,1,1024,2)))
-    for(program <- cases) runCore("core-fault",stimulus(Reference.run(program,denied=Set(1024L)),19))
-    runCore("core-fetch-fault",stimulus(Reference.run(Seq(breakpoint),denied=Set(0L)),1))
+    for(program <- cases) SynchronousSimulation.run(new ClockedCore,"core-fault",stimulus(Reference.run(program,denied=Set(1024L)),19))
+    SynchronousSimulation.run(new ClockedCore,"core-fetch-fault",stimulus(Reference.run(Seq(breakpoint),denied=Set(0L)),1))
   }
   test("clocked retirement oracle rejects an incorrect architectural result") {
     val e=intercept[IllegalArgumentException] {
-      runCore("core-negative",stimulus(Reference.run(known),1,corrupt=true))
+      SynchronousSimulation.run(new ClockedCore,"core-negative",stimulus(Reference.run(known),1,corrupt=true))
     }
     assert(e.getMessage.contains("RETIRE_MISMATCH_0"),e.getMessage)
   }
 }
-
-class DesyncCoreSpec extends ClockedCoreSpec {override protected def desynchronized = true}

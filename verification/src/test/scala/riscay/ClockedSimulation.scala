@@ -20,9 +20,7 @@ object ClockedSimulation {
       serviceModelHz: Double = 10000000, processTimeoutSeconds: Int = 90,
       serviceHalfPeriodNs: Double = 50, maximumDelaySubtree: Option[String] = None,
       primitiveDelayOverrides: Map[(String,String),Long] = Map.empty,
-      powerOnResetNs: Long = 2000, synchronous: Boolean = false,
-      desynchronized: Boolean = false): Path = {
-    require(!desynchronized || synchronous)
+      powerOnResetNs: Long = 2000, synchronous: Boolean = false): Path = {
     require(!synchronous || (maximumDelaySubtree.isEmpty && primitiveDelayOverrides.isEmpty))
     require(serviceHalfPeriodNs > 0)
     require(powerOnResetNs > 0)
@@ -32,16 +30,14 @@ object ClockedSimulation {
     var design: chisel3.RawModule = null
     // Icarus does not bind extracted Chisel verification layers automatically.
     // Keep their bodies inline so every hardware assertion actually executes.
-    if(desynchronized) riscay.desync.DesyncExport.emit({design=gen;design},base)
-    else if(synchronous) riscay.clocked.ClockedExport.emit({design=gen;design},base)
+    if(synchronous) riscay.clocked.ClockedExport.emit({design=gen;design},base)
     else ExportDesign.emit(chisel3.layer.elideBlocks { design=gen; design.asInstanceOf[AsyncModule] }, base)
     design match {
       case soc: riscay.soc.SocTop => riscay.soc.SramInventory.write(base, soc.p.config)
       case soc: riscay.clocked.ClockedSoc => riscay.soc.SramInventory.write(base,soc.p.config,synchronous=true)
-      case soc: riscay.desync.DesyncSoc => riscay.soc.SramInventory.write(base,soc.p.config,synchronous=true,metadataFile="desync.json")
       case _ =>
     }
-    val manifest = if(synchronous) ujson.Obj("top" -> ujson.read(Files.readString(base.resolve(if(desynchronized) "desync.json" else "clocked.json")))("top"))
+    val manifest = if(synchronous) ujson.Obj("top" -> ujson.read(Files.readString(base.resolve("clocked.json")))("top"))
       else ujson.read(Files.readString(base.resolve("contract.json")))("manifest")
     def nodes(n: ujson.Value): Seq[ujson.Value] = Seq(n) ++ n("children").arr.flatMap(c => nodes(c("contract")))
     val resources = (if(synchronous) Seq.empty else nodes(manifest("design"))).flatMap(_("primitives").arr).map(_("resource").str).distinct
@@ -85,30 +81,16 @@ object ClockedSimulation {
       s"defparam $root.${path.split('.').drop(1).mkString(".")}.DELAY_FS=$delay;"
     }.mkString("\n")
     val ports = ujson.read(Files.readString(base.resolve("ports.json")))("nodes")(0)("ports").arr.toSeq
-    val prototypeSources=if(desynchronized) DesyncSimulation.sources(base) else Seq.empty
     val chipSources = if(onChipOscillator) {
-      val wrapper=riscay.soc.ChipWrapper.write(base,chipParameters)
-      val serviceModel=if(desynchronized) {
-        val adapter=base.resolve("prototype/service_model.sv")
-        Files.writeString(adapter,"""// Test-only replacement of the legacy fast-source model.
-module riscay_service_osc(input wire rst_n, enable, output wire clk);
-  DesyncClock fastRegion(.reset(!rst_n),.run(enable),.clockOut(clk));
-endmodule
-""");adapter.toString
-      } else base.resolve("chip/riscay_service_osc_model.sv").toString
-      Seq(wrapper.toString,
+      Seq(riscay.soc.ChipWrapper.write(base,chipParameters).toString,
         base.resolve("chip/riscay_lf_osc_model.sv").toString,
-        serviceModel,
+        base.resolve("chip/riscay_service_osc_model.sv").toString,
         base.resolve("chip/riscay_supply_monitor_model.sv").toString,
         base.resolve("chip/riscay_reset_hold.sv").toString)
     } else Seq.empty
     def flat(p: ujson.Value) = p("source").str.split('>').last.replace('.', '_').replace('[', '_').replace("]", "")
     val internal = Set("serviceClock", "watchdogClock", "serviceClockEnable")
-    val declarations = ports.map(p => s"${if(p("direction").str == "input" && !(onChipOscillator && internal(flat(p))) && !(desynchronized && flat(p)=="serviceClock")) "reg" else "wire"} [${p("width").num.toInt-1}:0] ${flat(p)};").mkString("\n")
-    val sourceConfiguration=if(desynchronized) DesyncSimulation.bounds("dut.serviceOscillator.fastRegion",5.0e8/serviceModelHz)
-      else s"defparam dut.serviceOscillator.STARTUP_NS = $serviceStartupNs;\ndefparam dut.serviceOscillator.NOMINAL_HZ = $serviceModelHz;"
-    val directSource=if(desynchronized) DesyncSimulation.directClock(serviceHalfPeriodNs)
-      else s"initial begin serviceClock=0; forever begin #$serviceHalfPeriodNs; if(clockEnabled) serviceClock=~serviceClock; end end"
+    val declarations = ports.map(p => s"${if(p("direction").str == "input" && !(onChipOscillator && internal(flat(p)))) "reg" else "wire"} [${p("width").num.toInt-1}:0] ${flat(p)};").mkString("\n")
     val tb = s"""module Testbench;
 timeunit 1ns; timeprecision 1ps;
 $declarations
@@ -116,11 +98,11 @@ reg hostLow=0;
 wire busSda = !(hostLow || sdaLow);
 always @* sda=busSda;
 ${manifest("top").str}${if(onChipOscillator) "Chip" else ""} dut (${ports.filter(p => !onChipOscillator || !internal(flat(p))).map(p => s".${flat(p)}(${flat(p)})").mkString(",")});
-${if(onChipOscillator) s"defparam dut.RESET_HOLD_CYCLES = 2;\ndefparam dut.supplyMonitor.SETTLE_NS = 0;\ndefparam dut.oscillator.NOMINAL_HZ = ${1.0e9/(2.0*referenceHalfPeriodNs)};\ndefparam dut.oscillator.STARTUP_NS = 500;\n$sourceConfiguration\nassign serviceClock=dut.serviceClock;\nassign watchdogClock=dut.lfClock;\nassign serviceClockEnable=dut.serviceClockEnable;" else ""}
+${if(onChipOscillator) s"defparam dut.RESET_HOLD_CYCLES = 2;\ndefparam dut.supplyMonitor.SETTLE_NS = 0;\ndefparam dut.oscillator.NOMINAL_HZ = ${1.0e9/(2.0*referenceHalfPeriodNs)};\ndefparam dut.oscillator.STARTUP_NS = 500;\ndefparam dut.serviceOscillator.STARTUP_NS = $serviceStartupNs;\ndefparam dut.serviceOscillator.NOMINAL_HZ = $serviceModelHz;\nassign serviceClock=dut.serviceClock;\nassign watchdogClock=dut.lfClock;\nassign serviceClockEnable=dut.serviceClockEnable;" else ""}
 $delayOverrides
 reg clockEnabled=1;
 reg referenceEnabled=1;
-${if(onChipOscillator) "" else s"$directSource\ninitial begin watchdogClock=0; forever begin #$referenceHalfPeriodNs; if(referenceEnabled) watchdogClock=~watchdogClock; end end"}
+${if(onChipOscillator) "" else s"initial begin serviceClock=0; forever begin #$serviceHalfPeriodNs; if(clockEnabled) serviceClock=~serviceClock; end end\ninitial begin watchdogClock=0; forever begin #$referenceHalfPeriodNs; if(referenceEnabled) watchdogClock=~watchdogClock; end end"}
 initial begin #$deadlineNs; $$fatal(1,"SOC_DEADLINE"); end
 $extra
 ${if(onChipOscillator && chipParameters.stopServiceClock) wakeProbe + hostTasks.replace("task start_bus; begin", "reg transactionActive=0;\ntask start_bus; begin\n  if(!transactionActive) wake_probe(); transactionActive=1;").replace("scl=0; hostLow=1; #1200; scl=1; #1200; hostLow=0; #1200;", "scl=0; hostLow=1; #1200; scl=1; #1200; hostLow=0; #1200; transactionActive=0;") else hostTasks}
@@ -141,7 +123,7 @@ endmodule
       require(process.exitValue() == 0, s"Simulation failure: $base/$log\n${Files.readString(file.toPath).takeRight(5000)}")
     }
     val sources = Files.readAllLines(base.resolve("filelist.f")).asScala.filter(_.trim.nonEmpty).map(s => base.resolve(s.trim).normalize().toString)
-    command(Seq("iverilog", "-g2012", "-s", "Testbench", "-o", "sim.vvp") ++ (sources ++ models ++ chipSources ++ prototypeSources).distinct ++ Seq("testbench.sv"), "compile.log")
+    command(Seq("iverilog", "-g2012", "-s", "Testbench", "-o", "sim.vvp") ++ (sources ++ models ++ chipSources).distinct ++ Seq("testbench.sv"), "compile.log")
     command(Seq("vvp", "sim.vvp"), "simulation.log")
     require(Files.readString(base.resolve("simulation.log")).linesIterator.count(_ == "RISCAY_SOC_PASS") == 1, "MISSING_SOC_COMPLETION")
     base

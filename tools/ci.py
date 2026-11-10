@@ -18,7 +18,6 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 FAST_SUITES = (
     'ExportStabilitySpec',
-    'DesyncClockSpec', 'DesyncChipSpec', 'DesyncCoreSpec', 'DesyncSocSpec', 'DesyncFabricSpec', 'DesyncSleepSpec', 'DesyncDeepSleepSpec', 'DesyncBoundarySpec',
     'ClockedCoreSpec', 'ClockedSocSpec', 'ClockedFabricSpec', 'ClockedSleepSpec', 'ClockedBoundarySpec',
     'TimestampMathSpec', 'AppRegistersSpec', 'AppSnapshotRecoverySpec', 'EventReferenceSpec', 'ClockedEventsSpec', 'CoreSpec', 'SocSpec', 'HostSchemaSpec', 'AsyncFabricSpec', 'AsyncControlSpec',
     'AsyncCrcSpec', 'AsyncHousekeepingSpec', 'AsyncFrameStoreSpec',
@@ -118,17 +117,15 @@ def main():
         if run.command(command,cwd=ROOT,log=log):status='fail'
         outputs.append(log)
     fast_suites = ['riscay.'+s for s in FAST_SUITES]
-    boot_suites = ['riscay.GenericBootSpec','riscay.ClockedGenericBootSpec','riscay.DesyncGenericBootSpec']
+    boot_suites = ['riscay.GenericBootSpec','riscay.ClockedGenericBootSpec']
     physical_suites = ['riscay.physical.PhysicalExportSpec','riscay.physical.PhysicalTimingSpec']
     requested = [] if args.python_only else fast_suites + boot_suites + physical_suites
     executed = {}; diagnostic = None
     if status == 'pass' and not args.python_only:
         reference_export=args.output.resolve()/'clocked-export'
-        candidate_export=args.output.resolve()/'desync-export'
         commands = ['libraryRuntime', 'verification/testOnly '+ ' '.join('riscay.'+s for s in FAST_SUITES),
                     'verification/testOnly '+ ' '.join(boot_suites)+' -- -z "generic SPI boot"', 'physical/test']
         commands.append('clocked/runMain riscay.clocked.EmitClockedSoc '+reference_export.as_posix())
-        commands.append('desync/runMain riscay.desync.EmitDesyncSoc '+candidate_export.as_posix())
         started = time.time()
         code = run.command([sys.executable, str(ROOT/'tools/sbt.py'), '--bootstrap', *commands],
                            cwd=ROOT, log=args.output/'scala.log')
@@ -136,11 +133,11 @@ def main():
         if code:
             status = 'fail'
         if status=='pass':
-            # The clock source is explicitly abstracted. This proves copied
-            # region behavior, not analog mutex or matched-delay timing.
+            # Phase 0 reference-harness check only. The removed oscillator
+            # prototype must never stand in for generated bank-flow evidence.
             formal_log=args.output/'equivalence.log'
             code=run.command([sys.executable,str(ROOT/'tools/equiv_desync.py'),
-                str(reference_export),str(candidate_export),str(args.output.resolve()/'equivalence')],
+                str(reference_export),str(reference_export),str(args.output.resolve()/'equivalence')],
                 cwd=ROOT,log=formal_log)
             outputs += [formal_log,args.output/'equivalence/receipt.json']
             if code:status='fail'
@@ -162,7 +159,8 @@ def main():
             diagnostic = str(error); status = 'fail'
     coverage = dict(python_tests=result.testsRun, failures=len(result.failures),
                     errors=len(result.errors), skipped=[dict(test=t.id(), reason=r) for t,r in result.skipped],
-                    requested_scala_suites=requested, executed_scala_tests=executed, diagnostic=diagnostic)
+                    requested_scala_suites=requested, executed_scala_tests=executed, diagnostic=diagnostic,
+                    desync_acceptance='unavailable: generated multi-bank implementation required')
     run.finish(outputs=outputs, status=status, coverage=coverage)
     print(f'{status.upper()}: {result.testsRun} Python tests; receipt: {args.output / "receipt.json"}')
     return 0 if status == 'pass' else 1

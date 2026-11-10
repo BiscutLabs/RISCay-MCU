@@ -110,12 +110,12 @@ class ClockedEventsSpec extends AnyFunSuite {
       """
     }.mkString
     val expected=checkpoints.result()
-    val histories=Seq("bd","click","clocked","desync").map { variant =>
+    val histories=Seq("bd","click","clocked").map { variant =>
       val click=variant=="click"
-      val synchronous=variant=="clocked" || variant=="desync"
-      val base=ClockedSimulation.run(if(variant=="desync") new DesyncEventFixture(p) else if(synchronous) new SynchronousEventFixture(p) else if(click) new ClickEventFixture(p) else new BdEventFixture(p),
+      val synchronous=variant=="clocked"
+      val base=ClockedSimulation.run(if(synchronous) new SynchronousEventFixture(p) else if(click) new ClickEventFixture(p) else new BdEventFixture(p),
         variant+"-event-oracle",
-        "#100000;clear_all();traceEnabled=1;"+stimulus+"traceEnabled=0;",tasks,deadlineNs=10000000,synchronous=synchronous,desynchronized=variant=="desync")
+        "#100000;clear_all();traceEnabled=1;"+stimulus+"traceEnabled=0;",tasks,deadlineNs=10000000,synchronous=synchronous)
       val log=Files.readString(base.resolve("simulation.log"))
       val oracle=new EventReferenceModel
       var cut=Option.empty[EventReferenceModel.Clear]

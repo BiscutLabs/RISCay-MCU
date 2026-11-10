@@ -490,7 +490,7 @@ def gpio_pad_binding(count, spi_boot):
     return indices,'\n'.join(lines)
 
 
-def physical_top(export,out,manifest,policy,*,chip_shell=True):
+def physical_top(export,out,manifest,policy):
     ports=json.loads((export/"ports.json").read_text())["nodes"][0]["ports"]
     names=[p["source"].split('>')[-1].replace('.','_').replace('[','_').replace(']','') for p in ports]
     # I2C and GPIO use separate sense/drive ports at the digital boundary; the
@@ -517,8 +517,6 @@ def physical_top(export,out,manifest,policy,*,chip_shell=True):
     text+=manifest["top"]+" soc ("+",\n".join(connections)+");\nendmodule\n"
     (out/"RiscayMcuDigital.sv").write_text(text)
     shutil.copyfile(export/"chip/riscay_reset_hold.sv",out/"riscay_reset_hold.sv")
-    if not chip_shell:
-        return
     indices,pad_binding=gpio_pad_binding(n,policy.get('spi_boot',False))
     shell=(ROOT/"physical/gf180/RiscayMcuChip.sv").read_text().replace("@GPIO_COUNT@",str(n))
     shell=shell.replace('@GPIO_PAD_COUNT@',str(len(indices))).replace('@GPIO_PAD_BINDINGS@',pad_binding)

@@ -60,7 +60,7 @@ class GenericBootSpec extends AnyFunSuite with SocImplementationSuite {
   private val p=SocParameters(config,watchdogCycles=1000000,spiBoot=true)
   private val program=Seq(0x300000b7L,i(0x13,2,0,0,0x123),store(1,2,52,2),breakpoint)
   private def fixture(click: Boolean, params: SocParameters=p): chisel3.RawModule =
-    if(desynchronized) new DesyncGenericBootFixture(params) else if(synchronous) new ClockedGenericBootFixture(params) else if(click) new ClickGenericBootFixture(params) else new BdGenericBootFixture(params,preserveHierarchy)
+    if(synchronous) new ClockedGenericBootFixture(params) else if(click) new ClickGenericBootFixture(params) else new BdGenericBootFixture(params,preserveHierarchy)
   private def upload(words: Seq[Long], start: Boolean = true): String = {
     val crc=new CRC32; words.foreach(w => (0 until 4).foreach(b => crc.update(((w >>> (8*b))&255).toInt)))
     s"begin_image(${words.size*4},0,32'h${crc.getValue.toHexString},32'h00010000);\n" +
@@ -289,7 +289,7 @@ end
       val bytes=if(scenario=="blank") Vector.empty
         else if(scenario=="incompatible") image(false).updated(20,1) else image(scenario=="corrupt")
       val valid=scenario=="valid"
-      run(if(synchronous) synchronousSoc(p) else if(click) new riscay.click.ClickSoc(p) else new riscay.bd.FourPhaseSoc(p),
+      run(if(synchronous) new riscay.clocked.ClockedSoc(p) else if(click) new riscay.click.ClickSoc(p) else new riscay.bd.FourPhaseSoc(p),
         "generic-boot-"+scenario, s"""
         wait(readReturns>0);
         ${if(valid) "wait(mode==4);" else "#100000;"}
@@ -347,7 +347,7 @@ end
         """,model(Vector.empty,click)+"\ninteger savedInstructions;\n",deadlineNs=150000000L,processTimeoutSeconds=240)
     }
     test(s"${if(synchronous) "Clocked" else if(click) "Click" else "BD"} explicit write-through, POR boot and lock") {
-      run(if(synchronous) synchronousSoc(p) else if(click) new riscay.click.ClickSoc(p) else new riscay.bd.FourPhaseSoc(p),
+      run(if(synchronous) new riscay.clocked.ClockedSoc(p) else if(click) new riscay.click.ClickSoc(p) else new riscay.bd.FourPhaseSoc(p),
         "generic-persist",s"""
         wait(readReturns>0);#100000;
         ${upload(program,start=false)}

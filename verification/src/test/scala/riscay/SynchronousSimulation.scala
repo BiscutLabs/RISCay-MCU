@@ -10,13 +10,11 @@ import scala.jdk.CollectionConverters._
 /** Ordinary clocked RTL, using the same Icarus backend as the SoC regressions. */
 object SynchronousSimulation {
   def run(gen: => RawModule, name: String, testbench: String,
-      timeoutSeconds: Int = 90, prototypeClock: Boolean = false,
-      exportDesync: Boolean = false, prepare: Path => Seq[String] = _ => Seq.empty): Path = {
+      timeoutSeconds: Int = 90): Path = {
     val root=Paths.get("build/clocked-tests").toAbsolutePath
     Files.createDirectories(root)
     val base=Files.createTempDirectory(root,name)
-    if(exportDesync) riscay.desync.DesyncExport.emit(gen,base) else ClockedExport.emit(gen,base)
-    val prepared=prepare(base)
+    ClockedExport.emit(gen,base)
     Files.writeString(base.resolve("testbench.sv"),testbench)
     val files=Files.list(base)
     val sources=try files.iterator.asScala.filter(p =>
@@ -31,8 +29,7 @@ object SynchronousSimulation {
       }
       require(process.exitValue()==0,s"Simulation failure: $path\n${Files.readString(path).takeRight(5000)}")
     }
-    val prototype=if(prototypeClock) DesyncSimulation.sources(base) else Seq.empty
-    command(Seq(sys.env.getOrElse("CA_IVERILOG","iverilog"),"-g2012","-s","Testbench","-o","sim.vvp") ++ sources ++ prototype ++ prepared ++ Seq("testbench.sv"),"compile.log")
+    command(Seq(sys.env.getOrElse("CA_IVERILOG","iverilog"),"-g2012","-s","Testbench","-o","sim.vvp") ++ sources ++ Seq("testbench.sv"),"compile.log")
     command(Seq(sys.env.getOrElse("CA_VVP","vvp"),"sim.vvp"),"simulation.log")
     require(Files.readString(base.resolve("simulation.log")).linesIterator.count(_ == "RISCAY_CLOCKED_PASS")==1,
       "MISSING_CLOCKED_COMPLETION")

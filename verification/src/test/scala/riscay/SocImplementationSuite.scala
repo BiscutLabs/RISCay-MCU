@@ -7,9 +7,6 @@ import java.nio.file.Path
 /** The exact same wire-level programs and assertions run on all chips. */
 trait SocImplementationSuite {
   protected def synchronous: Boolean = false
-  protected def desynchronized: Boolean = false
-  protected def synchronousSoc(p: riscay.soc.SocParameters): RawModule =
-    if(desynchronized) new riscay.desync.DesyncSoc(p) else new riscay.clocked.ClockedSoc(p)
   protected def variants: Seq[Boolean] = if(synchronous) Seq(false) else Seq(false,true)
   protected def run(gen: => chisel3.RawModule, name: String, body: String, extra: String = "",
       referenceHalfPeriodNs: Int = 163, onChipOscillator: Boolean = false,
@@ -19,6 +16,6 @@ trait SocImplementationSuite {
       serviceHalfPeriodNs: Double = 50, maximumDelaySubtree: Option[String] = None,
       primitiveDelayOverrides: Map[(String,String),Long] = Map.empty,
       powerOnResetNs: Long = 2000): Path = {
-    ClockedSimulation.run(gen,if(desynchronized) "desync-"+name else name,body,extra,referenceHalfPeriodNs,onChipOscillator,chipParameters,serviceStartupNs,deadlineNs,serviceModelHz,processTimeoutSeconds,serviceHalfPeriodNs,maximumDelaySubtree,primitiveDelayOverrides,powerOnResetNs,synchronous,desynchronized)
+    ClockedSimulation.run(gen,name,body,extra,referenceHalfPeriodNs,onChipOscillator,chipParameters,serviceStartupNs,deadlineNs,serviceModelHz,processTimeoutSeconds,serviceHalfPeriodNs,maximumDelaySubtree,primitiveDelayOverrides,powerOnResetNs,synchronous)
   }
 }
