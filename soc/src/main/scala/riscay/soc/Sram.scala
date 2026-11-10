@@ -10,8 +10,9 @@ import riscay.McuConfiguration
 /** Fixed-macro inventory accompanies the explicitly selected export format. */
 object SramInventory {
   val macroName = "gf180mcu_ocd_ip_sram__sram1024x8m8wm1"
-  def write(base: Path, config: McuConfiguration, preserveHierarchy: Boolean = false, synchronous: Boolean = false): Unit = {
-    val top = if(synchronous) ujson.read(Files.readString(base.resolve("clocked.json")))("top").str
+  def write(base: Path, config: McuConfiguration, preserveHierarchy: Boolean = false,
+      synchronous: Boolean = false, metadataFile: String = "clocked.json"): Unit = {
+    val top = if(synchronous) ujson.read(Files.readString(base.resolve(metadataFile)))("top").str
       else ujson.read(Files.readString(base.resolve("contract.json")))("manifest")("top").str
     val services = if(preserveHierarchy) "fabric." else "fabric_"
     val instances = Seq("program" -> config.programBytes, "ram" -> config.workingRamBytes).flatMap {

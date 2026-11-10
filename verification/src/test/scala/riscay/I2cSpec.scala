@@ -104,10 +104,10 @@ integer i,saved; reg [7:0] value; reg [31:0] expected;
         fast_stop(); #5000; if(frames != 3 || !lastOverflow) $fatal(1,"I2C_PARTIAL");
       """,tasks,serviceHalfPeriodNs=5.0e8/hz,maximumDelaySubtree=Some("i2c"))
     }
-    for((variant,synchronous) <- (if(click) Seq((name,false)) else Seq((name,false),("clocked",true)));
+    for((variant,synchronous) <- (if(click) Seq((name,false)) else Seq((name,false),("clocked",true),("desync",true)));
         hz <- Seq(3200000,20000000)) test(s"$variant I2C loader: earliest 400kHz status reads after VERIFY, BEGIN, WRITE and LOCK at $hz Hz") {
       val p=SocParameters(config,serviceHz=hz,watchdogCycles=100000)
-      def fixture: RawModule=if(synchronous) new ClockedFabricFixture(p)
+      def fixture: RawModule=if(variant=="desync") new DesyncFabricFixture(p) else if(synchronous) new ClockedFabricFixture(p)
         else if(click) new ClickFabricFixture(p) else new FabricFixture(p)
       val crc=new java.util.zip.CRC32; Seq(0x73,0,0,0).foreach(x => crc.update(x))
       val wireTasks=tasks.substring(tasks.indexOf("// 400 kHz"))
@@ -167,7 +167,7 @@ integer i,saved; reg [7:0] value; reg [31:0] expected;
            snapshot[160+:32] !== 2 || snapshot[192+:32] !== 32'h12345678 || snapshot[224+:32] !== 4)
           $$fatal(1,"I2C_EARLIEST_LOCK_REJECTION");
       """,wireTasks,serviceHalfPeriodNs=5.0e8/hz,
-        maximumDelaySubtree=if(synchronous) None else Some("i2c"),synchronous=synchronous)
+        maximumDelaySubtree=if(synchronous) None else Some("i2c"),synchronous=synchronous,desynchronized=variant=="desync")
     }
     test(s"$name I2C occupied edge ring retains slots through publication backpressure and recovers in order") {
       val fields=Seq("rise","fall","start","stop","timeout","sda","readWord","resetActive","programBusy","resetEpoch")

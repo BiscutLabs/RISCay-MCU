@@ -7,7 +7,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from types import SimpleNamespace
 from unittest.mock import patch
-from area_ratio import storage_width, compare, check_budget, check_budget_history
+from area_ratio import storage_width, compare, check_budget, check_budget_history, context
 from audit_desync_protection import audit
 from primitives import require_recipe, classified_cells
 from size_desync_delays import select_count, load_recipe, publish_policy
@@ -18,6 +18,17 @@ from clocked_physical import check_clock_coverage, electrical_gate
 
 
 class DesyncToolsTest(unittest.TestCase):
+    def test_ideal_region_cannot_satisfy_whole_chip_area_gate(self):
+        with TemporaryDirectory() as temporary:
+            root=Path(temporary);netlist=root/'netlist.json';metadata=root/'desync.json'
+            netlist.write_text('{}')
+            metadata.write_text(json.dumps(dict(clocking='ideal-clock-region')))
+            (root/'receipt.json').write_text(json.dumps(dict(status='pass',
+                inputs=[str(metadata.resolve())],
+                sha256={str(p.resolve()):sha(p) for p in (netlist,metadata)})))
+            with self.assertRaisesRegex(ValueError,'DESYNC_INCOMPLETE_GENERATOR'):
+                context(netlist)
+
     def test_real_report_violation_prevents_accepting_physical_reference(self):
         with TemporaryDirectory() as temporary:
             root=Path(temporary)
@@ -82,11 +93,13 @@ class DesyncToolsTest(unittest.TestCase):
         self.assertEqual(storage_width('ff_bank(IQ,IQN,8){clocked_on:"CLK";}'),8)
         self.assertEqual(storage_width('pin(Q){function:"D";}'),0)
 
-    def test_unavailable_mutex_cannot_be_replaced_with_logic(self):
-        with self.assertRaisesRegex(ValueError,'PHYSICAL_RECIPE_UNAVAILABLE'):
-            require_recipe('RiscayDesyncMutex')
-        with self.assertRaisesRegex(ValueError,'PHYSICAL_RECIPE_UNAVAILABLE'):
-            classified_cells([dict(primitive='RiscayDesyncMutex',ports=[],cells=[])])
+    def test_unqualified_generator_cannot_be_replaced_with_logic(self):
+        for name in ('RiscayDesyncMutex','RiscayDesyncController','RiscayDesyncDelay'):
+            with self.subTest(primitive=name):
+                with self.assertRaisesRegex(ValueError,'PHYSICAL_RECIPE_UNAVAILABLE'):
+                    require_recipe(name)
+                with self.assertRaisesRegex(ValueError,'PHYSICAL_RECIPE_UNAVAILABLE'):
+                    classified_cells([dict(primitive=name,ports=[],cells=[])])
 
     def test_ordinary_cell_net_and_module_protection_rejected(self):
         fixture=dict(modules={'RiscayMcuDigital':dict(ports={},netnames={},cells={'q':cell('dffq_1',D=1,CLK=2,Q=3)})})

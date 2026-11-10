@@ -15,7 +15,7 @@ class SocSpec extends AnyFunSuite with SocImplementationSuite {
     ApplicationProfile(0x54455354L, 1, "test", Vector(HostRegister(0,"RESULT"), HostRegister(1,"SECOND")), Vector.empty))
   private val p = SocParameters(config, watchdogCycles = 100000, staleMs = 2)
   private def top(click: Boolean, params: SocParameters = p, board: SocParameters => BoardProfile = x => new GenericBoard(x)): chisel3.RawModule =
-    if(synchronous) new riscay.clocked.ClockedSoc(params) else if(click) new ClickSoc(params, board) else new FourPhaseSoc(params, board)
+    if(synchronous) synchronousSoc(params) else if(click) new ClickSoc(params, board) else new FourPhaseSoc(params, board)
   private def hex(word: Long): String = "32'h" + java.lang.Long.toHexString(word & 0xffffffffL)
   private def checksum(program: Seq[Long]): Long = {
     val crc = new CRC32

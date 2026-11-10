@@ -42,6 +42,8 @@ def context(netlist, physical=False):
     descriptors=[Path(p) for p in receipt['inputs'] if Path(p).name in ('clocked.json','desync.json')]
     if len(descriptors)!=1:raise ValueError('DESYNC_CONFIGURATION_MISSING')
     metadata=json.loads(descriptors[0].read_text())
+    if descriptors[0].name=='desync.json' and metadata.get('clocking')!='self-timed':
+        raise ValueError('DESYNC_INCOMPLETE_GENERATOR')
     if sha(descriptors[0])!=receipt['sha256'][str(descriptors[0])]:raise ValueError('DESYNC_CONFIGURATION_CHANGED')
     script=(folder/'synth.ys').read_text().replace(str(folder.resolve()).replace('\\','/'),'@mapping')
     from physical_tools import tool

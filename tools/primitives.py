@@ -20,10 +20,10 @@ class Primitive:
 
 REGISTRY = {
     'RiscayDesyncController': Primitive('controller',
-        ('reset', 'run', 'delayed', 'clock', 'request'), ('relative', 'absolute'),
-        'POR clears clock; stop must complete the active pulse', None),
-    'RiscayDesyncDelay': Primitive('delay_line', ('in', 'out'), ('relative', 'absolute'),
-        'No state or reset; controller owns initialization', 'STA-selected mixed cells'),
+        ('reset', 'run', 'delayed', 'cycleGrant', 'pauseGrant', 'clockOut', 'cycleRequest', 'pauseRequest'), ('relative', 'absolute'),
+        'POR clears clock/pause state and both requests; release enables cycling; stop completes the pulse and pending pause waits for grant', None, 2),
+    'RiscayDesyncDelay': Primitive('delay_line', ('reset', 'in', 'out'), ('relative', 'absolute'),
+        'POR clears feedback; physical discharge/release implementation unqualified', None),
     'RiscayDesyncMutex': Primitive('mutex',
         ('reset', 'request0', 'request1', 'grant0', 'grant1'), ('absolute',),
         'POR aborts grants; operational stop must not reset an active grant', None, 1),

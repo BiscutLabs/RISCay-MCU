@@ -18,7 +18,7 @@ class SleepSpec extends AnyFunSuite with SocImplementationSuite {
     adc=Some(AdcParameters(halfPeriodCycles=2)), lowPower=Some(LowPowerParameters(maximumSleepMs=1000)))
   private def top(click: Boolean, params: SocParameters = p,
       board: SocParameters => BoardProfile = x => new GenericBoard(x)): chisel3.RawModule =
-    if(synchronous) new riscay.clocked.ClockedSoc(params) else if(click) new ClickSoc(params,board) else new FourPhaseSoc(params,board)
+    if(synchronous) synchronousSoc(params) else if(click) new ClickSoc(params,board) else new FourPhaseSoc(params,board)
   private def upload(program: Seq[Long]): String = {
     val crc = new CRC32
     program.foreach(w => (0 until 4).foreach(b => crc.update(((w >>> (8*b)) & 255).toInt)))
@@ -138,7 +138,7 @@ always @(posedge serviceClock) if(!systemReset && commit_valid) commits=commits+
 reg [31:0] savedResponse, beforeTime;
 integer beforeCommits;
 """
-    run(if(synchronous) new ClockedFabricFixture(params) else if(click) new ClickFabricFixture(params) else new FabricFixture(params),"sleep-races","""
+    run(if(desynchronized) new DesyncFabricFixture(params) else if(synchronous) new ClockedFabricFixture(params) else if(click) new ClickFabricFixture(params) else new FabricFixture(params),"sleep-races","""
       transaction(2,32'h30000038,4); // GPIO wake only; millisecond ticks masked.
       transaction(2,32'h3000003c,1000);
       transaction(2,32'h3000000c,32'hffffffff);

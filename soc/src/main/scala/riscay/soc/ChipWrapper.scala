@@ -9,7 +9,9 @@ import java.nio.file.{Files, Path}
   */
 object ChipWrapper {
   def write(base: Path, lp: LowPowerParameters): Path = {
-    val core = if(Files.exists(base.resolve("clocked.json")))
+    val core = if(Files.exists(base.resolve("desync.json")))
+      ujson.read(Files.readString(base.resolve("desync.json")))("top").str
+    else if(Files.exists(base.resolve("clocked.json")))
       ujson.read(Files.readString(base.resolve("clocked.json")))("top").str
     else ujson.read(Files.readString(base.resolve("contract.json")))("manifest")("top").str
     val top = s"${core}Chip"

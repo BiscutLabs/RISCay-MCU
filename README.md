@@ -5,10 +5,11 @@ RISCay-MCU is an asynchronous RV32E microcontroller built in Chisel with
 process. It combines a small RISC-V CPU, on-chip SRAM, firmware loading, GPIO,
 measurement interfaces and event-driven sleep.
 
-The project has three independent implementations: **four-phase bundled data
-(BD)**, **native two-phase Click**, and a [fully clocked comparison MCU](designs/clocked/README.md).
-BD is the primary implementation for physical development; Click remains a native
-functional reference. All three use the same ISA and software interfaces.
+The active rebuild is a [desynchronized MCU](designs/desync/README.md): the
+[clocked MCU](designs/clocked/README.md) with a stoppable, self-timed fast clock.
+It is currently a digital prototype; its physical clock generator is unqualified.
+The earlier **four-phase bundled-data (BD)** and **native two-phase Click** designs
+are frozen behavioral references. All variants use the same ISA and software interfaces.
 
 ## Features
 
@@ -43,13 +44,13 @@ Choose a fresh output directory for each run. This runs the Python tests and fas
 RTL simulation suites; CI uses the same command on pushes to `main` and pull
 requests. The build fetches chisel-async at a pinned Git revision automatically.
 
-To generate the BD SoC RTL and its interface/timing contracts:
+To export the desync digital prototype:
 
 ```sh
-python tools/sbt.py --bootstrap "fourPhaseBd/runMain riscay.bd.EmitFourPhaseSoc build/export/bd"
+python tools/sbt.py --bootstrap "desync/runMain riscay.desync.EmitDesyncSoc build/export/desync"
 ```
 
-The [build guide](docs/build-and-test.md) also covers Click exports, extended
+The [build guide](docs/build-and-test.md) also covers reference exports, extended
 simulation suites and the physical toolchain. Run only one sbt process at a time.
 
 ## Firmware and integration
@@ -76,6 +77,8 @@ retention available as a generic build option.
 
 | Directory | Contents |
 | --- | --- |
+| [`designs/desync/`](designs/desync/README.md) | Desynchronized digital prototype |
+| [`designs/clocked/`](designs/clocked/README.md) | Independent synchronous reference |
 | [`designs/four-phase-bd/`](designs/four-phase-bd/README.md) | BD CPU and SoC implementation |
 | [`designs/two-phase-click/`](designs/two-phase-click/README.md) | Native Click CPU and SoC implementation |
 | [`shared/`](shared/README.md), [`soc/`](soc/README.md) | ISA, interface definitions, parameters and fixed SRAM models |
@@ -89,7 +92,7 @@ retention available as a generic build option.
 
 ![BD routed digital layout on a 2.35 × 2.53 mm die](docs/images/bd-layout.png)
 
-This completed BD routing study uses a **2.35 × 2.53 mm** outline. Cell
+This earlier BD routing study uses a **2.35 × 2.53 mm** outline. Cell
 footprints total **3.493 mm²**, including the three SRAM macros across the top.
 Pads and analog blocks are not included. The selected run (`d6e5d91`) includes
 the native receiver-isolation fixes and predates the expanded A/B boot ROM

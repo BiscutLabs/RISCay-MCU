@@ -25,11 +25,11 @@ retained register-view, event-oracle, sleep, I2C wire/earliest-loader-status and
 boot-ingress suites, the generic SPI boot cases and physical export/core
 policy suites. It checks fresh, nonempty JUnit results for every requested suite.
 SRAM is part of this gate, and the unchanged earliest-status test body also runs
-on the clocked implementation at 400 kHz SCL with 3.2/20 MHz service clocks.
-The gate exports the clocked chip and exercises the ideal-clock equivalence
-harness. Until desync exists this is explicitly a reference self-check; adding
-`designs/desync` makes CI require its candidate export rather than silently
-continuing the self-comparison. Solver tests also reject changed next-state
+on clocked and desync implementations at 400 kHz SCL with 3.2/20 MHz test
+clock settings. Desync also runs the same core, fabric, SoC, sleep, reset and
+boot bodies using its digital generator model, plus source and exported-shell
+tests. The gate exports both chips and proves their ideal-clock regions
+equivalent; analog arbitration and physical generator timing remain unqualified. Solver tests also reject changed next-state
 logic and changed fixed-memory inputs. Yosys and sv2v are required even for the
 Python gate; CI installs Yosys 0.33 and checksum-pinned sv2v 0.0.13.
 Missing suites, failed cases and unexpected skips fail the run. Linux may skip
@@ -75,7 +75,7 @@ distinct from a simulated deadline and must be reported if changed.
 
 The fast gate also runs the clocked core, SoC, fabric, reset-boundary and sleep
 cases, plus the same generic SPI-boot cases. Event history is compared across all
-three implementations. The extended clocked suites reuse the existing test bodies:
+four implementations. The extended clocked suites reuse the existing test bodies:
 
 ```text
 python tools/sbt.py "verification/testOnly riscay.ClockedDeepSleepSpec riscay.ClockedGenericBootSpec riscay.ClockedFirmwareSpec riscay.ClockedPhysicalEstimateSpec"
@@ -91,9 +91,10 @@ run the native export checker on a synchronous design. See the
 
 ## Desynchronization Phase 0
 
-The user has requested stopping at tooling and the fair clocked reference.
+Phase 0 established the tooling and fair clocked reference.
 The [design contract](desync-contract.md) and [ledger](desync-ledger.md) state
-the boundary. No physical mutex recipe or generator RTL is supplied here.
+the boundary. The subsequent digital prototype supplies generator interfaces
+and simulation models; physical generator recipes remain unavailable.
 
 ```text
 python tools/clocked_physical.py build/map-clocked build/clocked-physical
@@ -226,3 +227,19 @@ obligations. The tool samples both min/max at each source-slew scenario and
 encloses their combinational arc costs before searching all paths, preserving
 NLDM nonmonotonicity without an endpoint tolerance. Exact cone/profile coverage
 is mandatory. This bounds the sampled mode graphs, not continuous slew or routing.
+
+## Desync digital prototype
+
+```text
+python tools/sbt.py "desync/runMain riscay.desync.EmitDesyncSoc build/export/desync"
+python tools/sbt.py "verification/testOnly riscay.DesyncClockSpec riscay.DesyncChipSpec riscay.DesyncDeepSleepSpec riscay.DesyncGenericBootSpec riscay.DesyncFirmwareSpec"
+```
+
+The export's `filelist-simulation.f` explicitly selects the digital source models.
+Set positive `MIN_NS`/`MAX_NS` on `fastRegion.delay` and `fastRegion.mutex`.
+POR cancels pending digital events; physical reset limits remain unqualified.
+Models are excluded under `SYNTHESIS`. Shared tests use their original half-period as
+the minimum, randomize to 1.1×, and assume 0.01–0.1 ns arbitration resolution.
+These are **digital stress assumptions**, not measured fast/slow PVT bounds or
+physical sizing inputs. The existing chip oracles and deadlines are unchanged.
+See [desync contract](desync-contract.md) for the unfinished physical gates.

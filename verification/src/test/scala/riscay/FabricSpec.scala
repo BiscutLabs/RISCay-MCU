@@ -118,10 +118,10 @@ begin issue(2,address,value,15); answer(0,0,3); end endtask
 reg [31:0] timeValue;
 """
   for(click <- variants) {
-    def fixture(p: SocParameters): RawModule = if(synchronous) new ClockedFabricFixture(p) else if(click) new ClickFabricFixture(p) else new FabricFixture(p)
-    def waitFixture(p: SocParameters): RawModule = if(synchronous) new ClockedWaitValidationFixture(p) else if(click) new ClickWaitValidationFixture(p) else new WaitValidationFixture(p)
-    def resetFixture(p: SocParameters): RawModule = if(synchronous) new ClockedResetCrossingFixture(p) else if(click) new ClickResetCrossingFixture(p) else new ResetCrossingFixture(p)
-    def kickFixture(p: SocParameters): RawModule = if(synchronous) new ClockedKickFixture(p) else if(click) new ClickKickFixture(p) else new KickFixture(p)
+    def fixture(p: SocParameters): RawModule = if(desynchronized) new DesyncFabricFixture(p) else if(synchronous) new ClockedFabricFixture(p) else if(click) new ClickFabricFixture(p) else new FabricFixture(p)
+    def waitFixture(p: SocParameters): RawModule = if(desynchronized) new DesyncWaitValidationFixture(p) else if(synchronous) new ClockedWaitValidationFixture(p) else if(click) new ClickWaitValidationFixture(p) else new WaitValidationFixture(p)
+    def resetFixture(p: SocParameters): RawModule = if(desynchronized) new DesyncResetCrossingFixture(p) else if(synchronous) new ClockedResetCrossingFixture(p) else if(click) new ClickResetCrossingFixture(p) else new ResetCrossingFixture(p)
+    def kickFixture(p: SocParameters): RawModule = if(desynchronized) new DesyncKickFixture(p) else if(synchronous) new ClockedKickFixture(p) else if(click) new ClickKickFixture(p) else new KickFixture(p)
     val variant = if(synchronous) "clocked" else if(click) "click" else "bd"
     test(s"$variant: malformed MMIO stores cannot alias an accepted commit descriptor") {
       run(fixture(SocParameters(config,watchdogCycles=1000000)),

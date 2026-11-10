@@ -68,6 +68,57 @@ old OpenROAD repair-progress hang → pinned fixed build; blanket 2 ns data slew
 and incorrect work-clock traversal (0.878861 mm²) → per-corner ordinary limits
 and an explicit combinational generated-clock path. None qualifies the reference.
 
-Stop after Phase 0. The GF180 mutex still lacks layout, LEF and Liberty; its
-registry recipe is unavailable. Physical-cell development and `designs/desync`
-implementation require the next authorized batch.
+Phase 0 ended at the requested boundary. The GF180 mutex still lacks layout,
+LEF and Liberty; its registry recipe is unavailable.
+
+## Digital prototype verified — physical Phase 1 acceptance remains open
+
+| Batch | Mapped logic | Ratio to clocked | Storage bits | Controller/delay/mutex area | Status |
+|---|---:|---:|---:|---:|---|
+| Copied ideal-clock region | 0.5318332992 mm² | 1.000× (region only) | 2,977 → 2,977 | Excluded; not measured | Digital tests pass; no physical Phase 1 acceptance |
+
+The region map has 21,696 cells, three fixed SRAM macros and zero protected
+ordinary cells. Its clock inventory remains 539 service + 2,362 work + 78 LF
+sinks, plus one SDA-event sink. Service/work are external ideal clocks in this
+measurement; no reduction in periodic sinks is claimed. Mapped whole-chip
+headroom is 0.079775 mm², before the unmeasured generator. Repaired desync area
+and timing remain unmeasured. Evidence: `build/desync-prototype/map-region-r1`
+and its `region-comparison.json`; the whole-chip gate correctly rejects it with
+`DESYNC_INCOMPLETE_GENERATOR`.
+
+The user limited this batch to a digital prototype. Nine functional files are
+still identical to clocked after package normalization. The shell retains the
+work gate, LF clock, wake logic and POR hold state. Separate simulation-only
+controller/delay/mutex bodies now execute the pausible clock; no physical cell
+recipe or measured chain has been added. Physical area acceptance stays open.
+
+Scala diff against `designs/clocked`: **159 added / 27 removed lines**, including
+package/export names and shell/interface files; the separate digital models are
+79 lines. No clocked architectural storage is added or removed. The model's
+event-cancellation counters are simulator bookkeeping, excluded from synthesis.
+
+Final CI (`build/desync-prototype/ci-final-r2`) passes **428 Python tests and
+306 Scala tests across 37 suites**, with no skips or changed inputs. It proves
+all **6,976 equivalence points** against a freshly exported clocked chip
+(Yosys 0.33). Shared test bodies select desync without changing their oracles
+or deadlines: core, SoC, fabric, reset, sleep/deep-sleep, four-variant event
+history and both 400 kHz earliest I2C status test points. The extended A/B
+boot/update and firmware rerun against the final model passes **37 tests across
+two suites** (`digital-r6.log`, separate `extended-target/test-reports`).
+
+The 2 KiB primary boot takes **94.287 ms / 897,968 work edges**; full-capacity
+golden fallback takes **267.655 ms / 2,549,072 work edges** (`digital-r6` artifacts).
+Both pass the original deadlines with randomized 50–55 ns loop delays. These
+are digital workload measurements, not corner-qualified timing bounds.
+
+Independent review requested actual exported-shell coverage and explicit POR
+behavior. Both are covered; re-review has no remaining functional findings.
+The final gate compares a real desync candidate against the clocked reference.
+Digital event cancellation preserves the reset ABI; physical delay discharge,
+reset qualification, generator area, timing and routed checks remain open.
+
+Failed experiments retained:
+
+- Fixed `clocked.json` descriptor name rejected desync; the shared writer now accepts an optional filename without changing its default or macro models.
+- Pre-time-zero testbench power-good initialization left the existing reset-hold model unknown; matching the supply monitor's time-zero assertion fixes the fixture (`digital-r3`, `shell-debug-r1`).
+- Minimum-reset assumption rejected the existing 1 ns brownout test; cancel pending simulator events on POR instead (`ci-final`, stopped after the failure).

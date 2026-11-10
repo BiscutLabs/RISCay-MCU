@@ -15,8 +15,10 @@
   or STA-derived delay entries fail closed. Ratios against the same clocked
   reference govern every measured batch; never loosen a budget without approval.
   Phase 1 exploration uses area maps only, without per-change proof/review docs.
-  Current authorized boundary: finish Phase 0, then stop before generator RTL
-  or physical mutex development. I2C remains 400 kHz SCL; the 3.2 MHz test point
+  Phase 0 is complete and the user authorized proceeding with desync, limited to a digital
+  prototype: simulation models and functional checks are authorized; physical
+  mutex development is out of scope. Do not turn an ideal-clock region map into a complete desync
+  area claim. I2C remains 400 kHz SCL; the 3.2 MHz test point
   is the service clock, not an increased bus-rate requirement.
 - RISCay is a generic MCU. Neither RTL nor mask ROM contains application policy.
   ROM implements generic external SPI image boot and I2C-loader fallback.

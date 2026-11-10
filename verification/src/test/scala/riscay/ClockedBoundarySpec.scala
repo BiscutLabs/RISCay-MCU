@@ -15,7 +15,8 @@ class ClockedRecoveryFixture(p: SocParameters) extends ClockedFabricFixture(p) {
   val sampleAge=IO(Output(UInt(32.W)));sampleAge:=BoringUtils.bore(fabric.hostSamples(0).age)
 }
 
-class ClockedBoundarySpec extends AnyFunSuite {
+class ClockedBoundarySpec extends AnyFunSuite with SocImplementationSuite {
+  override protected def synchronous: Boolean = true
   val config=McuConfiguration(256,256,7,Vector(MeasurementChannel(0,"sample",2,0)),
     ApplicationProfile(1,1,"clocked-boundary",Vector(HostRegister(0,"WORD")),Vector.empty))
   val tasks="""
@@ -40,7 +41,7 @@ integer phase;
 """
   for(retain <- Seq(false,true)) test(s"clocked recovery retains committed RAM, cancels replies and preserves only configured GPIO ($retain)") {
     val p=SocParameters(config,watchdogCycles=1000000,spiBoot=true,retainGpioOnWatchdog=retain)
-    ClockedSimulation.run(new ClockedRecoveryFixture(p),"clocked-reset-commit",s"""
+    run(if(desynchronized) new DesyncRecoveryFixture(p) else new ClockedRecoveryFixture(p),"clocked-reset-commit",s"""
       wait(resetSettled);
       for(phase=0;phase<8;phase=phase+1) begin
         write_bus(32'h30000034,32'h12345678);
@@ -61,18 +62,18 @@ integer phase;
       reset=1;#2000;reset=0;#3000;
       if(gpioOe || gpioOut) $$fatal(1,"CLOCKED_POR_GPIO");
       read_bus(32'h30000034,0);
-    """,tasks,synchronous=true)
+    """,tasks)
   }
   test("clocked ADC age begins at acquisition admission across a stopped service clock") {
     val p=SocParameters(config,staleMs=3000,watchdogCycles=1000000,
       adc=Some(AdcParameters(halfPeriodCycles=100)),lowPower=Some(LowPowerParameters(stopServiceClock=false)))
-    ClockedSimulation.run(new ClockedRecoveryFixture(p),"clocked-adc-age","""
+    run(if(desynchronized) new DesyncRecoveryFixture(p) else new ClockedRecoveryFixture(p),"clocked-adc-age","""
       // Discarded first conversion, then a real acquisition. Preserve LF time
       // while the conversion is suspended; completion must not make it fresh.
       @(negedge adcCsN);@(posedge adcCsN);@(negedge adcCsN);
       #1000;clockEnabled=0;#40000000;clockEnabled=1;
       wait(samplePublished);@(posedge serviceClock);#1;
       if(sampleAge<4000) $fatal(1,"CLOCKED_ADC_AGE_RESTARTED_AT_COMPLETION age=%d",sampleAge);
-    """,tasks,referenceHalfPeriodNs=1250,synchronous=true)
+    """,tasks,referenceHalfPeriodNs=1250)
   }
 }

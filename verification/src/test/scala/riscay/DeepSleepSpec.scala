@@ -18,7 +18,7 @@ class DeepSleepSpec extends AnyFunSuite with SocImplementationSuite {
     adc=Some(AdcParameters(halfPeriodCycles=2,intervalCycles=10000000)),lowPower=Some(lp))
   private def top(click: Boolean, params: SocParameters = p,
       board: SocParameters => BoardProfile = x => new GenericBoard(x)): chisel3.RawModule =
-    if(synchronous) new riscay.clocked.ClockedSoc(params) else if(click) new ClickSoc(params,board) else new FourPhaseSoc(params,board)
+    if(synchronous) synchronousSoc(params) else if(click) new ClickSoc(params,board) else new FourPhaseSoc(params,board)
   private def upload(program: Seq[Long]): String = {
     val crc = new CRC32
     program.foreach(w => (0 until 4).foreach(b => crc.update(((w >>> (8*b)) & 255).toInt)))
@@ -189,7 +189,7 @@ end endtask
   }
   test("slow elapsed time carries fractional milliseconds and bounds sample age across service outages") {
     val params=p.copy(adc=None,watchdogCycles=1000,lowPower=Some(lp.copy(stopServiceClock=false)))
-    run(if(synchronous) new ClockedFabricFixture(params) else new FabricFixture(params),"slow-elapsed","""
+    run(if(desynchronized) new DesyncFabricFixture(params) else if(synchronous) new ClockedFabricFixture(params) else new FabricFixture(params),"slow-elapsed","""
       #1000000; referenceEnabled=0; #1000;
       bus(1,32'h30000004,0);
       expected=((lfEdges-2)*129354)/1000;
