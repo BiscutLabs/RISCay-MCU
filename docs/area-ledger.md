@@ -1,5 +1,11 @@
 # Area ledger
 
+The active rebuild now uses the clocked chip as its reference. Its fresh pinned
+remap is **0.5318332992 mm²**, and the matched repair/placement/CTS denominator is
+**0.5915383488 mm²**. See the [desynchronization ledger](desync-ledger.md).
+Old BD/Click area work below is frozen historical evidence; no desync area is
+claimed before that variant exists.
+
 This is the running item/batch ledger from the 11b1 baseline. Use the same
 reference capacities and low-power configuration, three GF180 SRAM macros, pinned standard-cell
 libraries, mapper and accepted repair flow for matched production comparisons.

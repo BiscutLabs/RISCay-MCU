@@ -24,6 +24,14 @@ for timestamp arithmetic and the selected core, fabric, Control, CRC, housekeepi
 retained register-view, event-oracle, sleep, I2C wire/earliest-loader-status and
 boot-ingress suites, the generic SPI boot cases and physical export/core
 policy suites. It checks fresh, nonempty JUnit results for every requested suite.
+SRAM is part of this gate, and the unchanged earliest-status test body also runs
+on the clocked implementation at 400 kHz SCL with 3.2/20 MHz service clocks.
+The gate exports the clocked chip and exercises the ideal-clock equivalence
+harness. Until desync exists this is explicitly a reference self-check; adding
+`designs/desync` makes CI require its candidate export rather than silently
+continuing the self-comparison. Solver tests also reject changed next-state
+logic and changed fixed-memory inputs. Yosys and sv2v are required even for the
+Python gate; CI installs Yosys 0.33 and checksum-pinned sv2v 0.0.13.
 Missing suites, failed cases and unexpected skips fail the run. Linux may skip
 only the Windows mounted-drive translation test. CI runs the same entry point on
 every push to main and on pull requests, bootstraps the exact library source and
@@ -80,6 +88,44 @@ It measures flattened mapped area before repair/CTS/routing and emits one run
 receipt. `clocked.json` deliberately replaces the async timing contract; do not
 run the native export checker on a synchronous design. See the
 [clocked contract](clocked-design.md) for its separate clock/reset obligations.
+
+## Desynchronization Phase 0
+
+The user has requested stopping at tooling and the fair clocked reference.
+The [design contract](desync-contract.md) and [ledger](desync-ledger.md) state
+the boundary. No physical mutex recipe or generator RTL is supplied here.
+
+```text
+python tools/clocked_physical.py build/map-clocked build/clocked-physical
+python tools/size_desync_delays.py build/clocked-physical build/region-requirements
+python tools/equiv_desync.py build/export/clocked build/export/clocked build/equiv-reference
+```
+
+Use the configured, progress-fixed OpenROAD build recorded in the ledger. The
+physical command repairs, places and builds clock trees, proving graph and sink
+coverage and requiring clean electrical reports at all five corners. It is not
+a routing/signoff flow. The region command measures full- and half-cycle STA
+requirements on that netlist; it does not invent a delay count. The recipe
+loader rejects missing, stale, nonphysical or under-sized measurements. A future
+loaded mixed-cell chain must pass at every corner before publishing a policy.
+
+`tools/primitives.py` is the single registry for the new controller, delay and
+mutex identities. Unavailable recipes fail closed. The area reporter reads
+storage from Liberty and rejects protected ordinary state/data. It emits one
+JSON line per comparison and checks matched configuration/tool inputs.
+
+Run the fast gate with both measured comparisons for each physical batch:
+
+```text
+python tools/ci.py --output build/ci-measured --area-mapping build/map-clocked/netlist.json --area-reference build/map-clocked/netlist.json --physical-mapping build/clocked-physical/cts.json --physical-reference build/clocked-physical/cts.json
+```
+
+These are reference self-comparisons in Phase 0; Phase 1 supplies desync as the
+candidate. Default portable CI has no PDK, so it runs the budget/protection/sizing
+properties, solver controls and simulation gate; measured area comparisons need
+the explicit arguments above. Budget increases fail both against the specified
+ceilings and the prior commit. Keep two Git revisions available for that check.
+Never interpret a reference ratio of 1.00 as a measured desync result.
 
 ## Exports and structural rules
 

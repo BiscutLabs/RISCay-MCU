@@ -1,0 +1,9 @@
+{
+  "schema": 1,
+  "mapped_ratio": 1.15,
+  "repaired_tree_ratio": 1.20,
+  "storage_ratio": 1.05,
+  "control_area_fraction": 0.05,
+  "source": "User desynchronization acceptance criteria, 2026-11-09",
+  "policy": "May only tighten without explicit user approval"
+}

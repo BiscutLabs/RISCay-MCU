@@ -1,0 +1,7 @@
+{
+  "schema": 1,
+  "derate": 1.2,
+  "derate_source": "User-specified engineering allowance, not measured GF180 mismatch",
+  "lines": {},
+  "status": "No generator mapped. Missing entries must fail; no model-delay fallback."
+}

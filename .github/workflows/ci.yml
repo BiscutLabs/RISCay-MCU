@@ -15,6 +15,8 @@ jobs:
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 2
       - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version: '3.12.13'
@@ -29,7 +31,19 @@ jobs:
       - name: Bootstrap pinned compiler and simulator
         run: |
           sudo apt-get update
-          sudo apt-get install -y gcc libmpc3 autoconf gperf bison flex g++ make python3-tk
+          sudo apt-get install -y gcc libmpc3 autoconf gperf bison flex g++ make python3-tk yosys=0.33-5build2
+          python - <<'PY'
+          import hashlib, json, pathlib, urllib.request, zipfile
+          destination=pathlib.Path('.tools/formal'); destination.mkdir(parents=True,exist_ok=True)
+          archive=destination/'sv2v.zip'
+          urllib.request.urlretrieve('https://github.com/zachjs/sv2v/releases/download/v0.0.13/sv2v-Linux.zip',archive)
+          with zipfile.ZipFile(archive) as z:
+              data=z.read('sv2v-Linux/sv2v')
+          expected=json.load(open('tools/gf180-estimate-inputs.json'))['tools']['sv2v']['sha256']
+          assert hashlib.sha256(data).hexdigest()==expected, 'SV2V_CHECKSUM'
+          binary=destination/'sv2v'; binary.write_bytes(data); binary.chmod(0o755)
+          PY
+          echo "$GITHUB_WORKSPACE/.tools/formal" >> "$GITHUB_PATH"
           python .tools/chisel-async/tools/bootstrap_jdk.py
           python .tools/chisel-async/tools/bootstrap.py
           python .tools/chisel-async/tools/setup_simulator.py --output build/simulator-setup

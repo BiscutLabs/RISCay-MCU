@@ -4,6 +4,20 @@
   Use `.agents/skills/async-circuit-design/SKILL.md` for native architecture,
   timing, area and physical-flow work. Its examples are guidance, not measured
   margins for this design.
+- The active rebuild is `designs/desync`: copy the clocked MCU's state and
+  flip-flops, then replace its fast source with one self-timed region. Follow
+  `docs/desync-contract.md` and the user's phased acceptance gates. Phase 0
+  tooling/reference comes before RTL. Old BD and Click are frozen behavioral
+  oracles; do not continue their area or physical-flow campaigns. The new user
+  architecture overrides the historical BD migration rules below.
+  No new payload storage, bridges or native transaction owners. All generator
+  primitives are catalogued in `tools/primitives.py`; missing physical recipes
+  or STA-derived delay entries fail closed. Ratios against the same clocked
+  reference govern every measured batch; never loosen a budget without approval.
+  Phase 1 exploration uses area maps only, without per-change proof/review docs.
+  Current authorized boundary: finish Phase 0, then stop before generator RTL
+  or physical mutex development. I2C remains 400 kHz SCL; the 3.2 MHz test point
+  is the service clock, not an increased bus-rate requirement.
 - RISCay is a generic MCU. Neither RTL nor mask ROM contains application policy.
   ROM implements generic external SPI image boot and I2C-loader fallback.
   Profiles supply pin names, measurement metadata and capacities, never behavior.
