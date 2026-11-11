@@ -21,13 +21,18 @@ semantics. Synchronous resets remain synchronous next-state logic; they must not
 silently become asynchronous latch resets. Architectural bits count pairs once.
 The existing combinational logic stays untouched and optimizable. No new payload,
 bridge, retained copy, per-bit delay or native transaction owner is permitted.
+The storage generator runs ordinary width, constant and duplicate-register
+optimization before conversion. Non-protecting Q aliases preserve bank assignment;
+an optimization merging registers from different banks fails assignment.
 
 Literal substitution on the pinned reference costs 1.300158x storage, above the
 1.25x cap. The user chose investigation of a flop-plus-bubble exception instead
-of raising the cap. Retaining the CPU's 591 mapped FFs gives a **calculated**
-1.230263x storage ratio and a 1.088401x logic floor, before controllers/joins,
-loaded delays, enable trees and hold fixes. It is a candidate, not an adopted
-conversion or mapped desync result. No extra architectural state is proposed.
+of raising the cap. The generated storage experiment retains the CPU's 591 FFs:
+2,977 architectural bits, 0.2511923456 mm² storage (1.230263x) and 0.5849922624 mm²
+logic (1.099954x the pinned reference). This excludes controllers/joins, loaded
+delays, stop/wake, enable trees and hold fixes. It is not a mapped desync chip.
+The paired normalized clocked map is 0.5369678720 mm²; the smaller pinned reference
+still sets the unchanged budget. No extra architectural state is proposed.
 
 ## Controller graph and initial marking
 
@@ -66,6 +71,11 @@ acknowledge joins consumer closure with master.A. CPU FFs capture on master.A
 rising. Self-dependencies become the FF aperture, not inputs to external joins.
 The independent gate-return edge `cpu.fall -> falling.M+` must still be connected.
 This candidate has no payload copies; gate-level correspondence is not yet proved.
+Expanded event-equation exploration now rejects symmetric joins alone for the
+work-gate/same-phase relations: they can deadlock. One-sided closure qualification
+and a CPU capture rearm condition are proposed changes to the existing controller
+equations, pending user approval. They add no payload or keeper state. Their
+sampled equation traces are not a gate-level or physical qualification.
 
 The review identified obligations still outside that template:
 
@@ -77,6 +87,13 @@ The review identified obligations still outside that template:
   need defined masters or another proved release order; do not overwrite their
   reset values with undefined data. Additional master reset needs are permitted
   by the reset analysis and must be included in area.
+- The independent application-release and wake-hold resets define both master
+  and slave. Otherwise a closed stale master can erase a freshly reset slave
+  when reset falls. Explicit aliases bind these resets and fail if absent.
+  Qualified POR remains open: most masters receive their reset value while POR
+  holds slaves, but GPIO/SCL/SDA first samples do not. Before release, the actual
+  controller graph must prove initialization traversal after reset propagation;
+  the POR counter alone is not yet that proof.
 - Work gating applies per register, including work-owned `coreReset` in the
   otherwise service-owned power bank. Controllers continue handshaking; only
   architectural slave enables are suppressed; masters keep tracking. The condition
@@ -155,3 +172,7 @@ CI and graph unit tests are distinct from desync acceptance. Transformation,
 flow equivalence, folded next-state equivalence, full-chip area, all-corner
 phase/reset timing and routed checks remain open. Do not turn a reference
 self-comparison or the CPU substitution estimate into an implementation pass.
+`desync_transform.py --storage-scaffold` and `map_desync.py` measure generated
+storage and ordinary logic with external bank-enable placeholders. They refuse
+production export and exclude controllers, joins, matched delays and stop/wake.
+This is an area experiment, not an executable desynchronized MCU.

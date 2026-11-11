@@ -327,3 +327,81 @@ model and the worst admitted arbitration rate are still needed. No chip-level
 area, enable-tree, controller-share or slow-cycle result is claimed. Ten banks,
 the CPU storage exception, architectural RTL and behavioral oracles are unchanged;
 RTL diff remains zero.
+
+## Generated storage and work-gate feasibility
+
+| Batch | Whole-chip mapped/repaired ratio | Architectural bits / storage area ratio | Control share | Banks / cycle time | Result |
+|---|---|---|---|---|---|
+| Generated storage with CPU FF exception | Unavailable → unavailable; storage scaffold 0.5849922624 mm², 1.099954x pinned mapped reference | 2,977 → 2,977 / 1.230263x | Not measured as a chip | 10 / unmeasured | Storage-only map passes; complete controller adoption and POR initialization remain open |
+
+`desync_transform.py` now generates storage from the clocked generic netlist.
+Only architectural slaves are work-gated; falling captures use the existing
+previous-enable state. Synchronous-reset/enable priority is preserved, with
+ordinary datapath logic free to optimize. Explicit aliases define masters for
+independent application-release and wake-hold resets. Review caught the stale
+master overwriting a wake flag at reset release; the fixed waveform passes and
+the old plain-master version fails `WAKE_LOST_AT_RELEASE`.
+
+The first conversion retained 35 redundant architectural bits. Running ordinary
+constant, width and duplicate-register optimization before conversion removes
+them without changing RTL. Non-protecting Q aliases retain bank ownership through
+renaming; cross-bank merges fail. On the same Yosys 0.62/ABC and TT Liberty:
+
+| Measurement | Before normalization (`storage-r5`) | After (`storage-r7`) | Paired clocked (`reference-r3`) |
+|---|---:|---:|---:|
+| Mapped logic, mm² | 0.5864630464 | 0.5849922624 | 0.5369678720 |
+| Storage area, mm² | 0.2543007488 | 0.2511923456 | 0.2041777472 |
+| Architectural bits | 3,012 | 2,977 | 2,977 |
+| Physical storage bits | 5,353 | 5,283 | 2,977 |
+
+The matched normalized ratio is 1.089436x. The pinned 0.5318332992 mm² reference
+still sets the unchanged ceiling; its ratio is 1.099954x. Under the normalized
+input/naming path the paired reference is 0.0051345728 mm² higher than that pin;
+the individual causes have not been isolated. Neither reference is replaced
+silently. The scaffold has 0.0266160317 mm²
+logic and 0.0040298384 mm² storage headroom, before omitted control, timing and
+qualified-POR work. No repaired ratio is available for this candidate.
+
+| Bank | Architectural bits, unchanged | Clocked storage, mm² | Candidate storage, mm² |
+|---|---:|---:|---:|
+| CPU | 591 | 0.03762353 | 0.03762353 |
+| Fabric | 707 | 0.04890686 | 0.06362787 |
+| Control | 247 | 0.01857578 | 0.02270276 |
+| Program | 78 | 0.00500945 | 0.00686659 |
+| RAM | 81 | 0.00520043 | 0.00713001 |
+| I2C | 347 | 0.02276861 | 0.03071304 |
+| ADC | 83 | 0.00554727 | 0.00739343 |
+| Time | 530 | 0.03735133 | 0.04788390 |
+| Power | 192 | 0.01444442 | 0.01763185 |
+| Falling edge | 42 | 0.00284498 | 0.00371428 |
+| LF, retained | 78 | 0.00583045 | 0.00583045 |
+| SDA event, retained | 1 | 0.00007464 | 0.00007464 |
+
+The expanded controller exploration found that symmetric joins alone deadlock
+the work-gate/same-phase relations. A one-sided closure qualifier and CPU rearm
+condition are proposed, not adopted pending the user's decision. The full
+inventory estimates 0.0108311168 mm² for controllers, joins, stop and the
+experimental mutex, excluding delays/drivers/trees. The initial 15-gate estimate
+covered only gate closure; including same-phase and macro/CPU relations gives
+34 added AND2 gates (0.0005970944 mm²) and 154 external binary joins. Sampled
+event equations survive 1,000,000 transitions and 100 stop/wake trials; this
+is not a physical controller or flow-equivalence result.
+
+Qualified POR still needs a release proof. Under asserted reset, conservative
+constant folding gives the required master value for 1,160 of 1,169 unreset
+positive-master bits; nine first-stage GPIO/SCL/SDA sample bits remain unknown.
+This can avoid blanket master resets only after the implemented controller graph
+proves initialization traversal and reset/data-settle timing. No such adoption
+or acceptance is claimed here.
+
+Evidence: `build/desync-transform/{storage-r5,storage-r7,reference-r3}`,
+`storage-by-bank-r7.json` and `review/{review-results,control-area-inventory,por-fold-results}.json`.
+Both final mapping receipts pass with unchanged inputs. Independent source review
+found no further defect in this storage-only scope. `ci-r2` passes 459 Python
+tests, 268 Scala tests across 29 suites and all 6,976 reference-equivalence points,
+with no changed inputs, missing outputs or skips. This includes eight storage
+transformation tests, not whole-chip desync flow equivalence. The earlier `ci-r1`
+was deliberately interrupted after the reset finding.
+Production clocked/BD/Click RTL, assertions, deadlines and ABI are unchanged;
+RTL diff is zero. Whole-chip transformation, delay sizing, flow equivalence,
+controller qualification and physical acceptance remain open.

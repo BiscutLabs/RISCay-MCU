@@ -54,6 +54,21 @@ The cleanup inventory and deliberately retired coverage are documented in
 [test-suite cleanup](test-suite-cleanup.md). Historical counts are evidence, not
 assertions that future designs must match.
 
+## Desync storage-area experiment
+
+For the desync storage-area experiment, select the same physical-tool
+configuration used for the clocked reference (currently Yosys 0.62/ABC), then run:
+
+```text
+python tools/map_desync.py build/desync-multibank/generic/netlist.json physical/desync/bank-map.json build/storage-reference --reference
+python tools/map_desync.py build/desync-multibank/generic/netlist.json physical/desync/bank-map.json build/storage-candidate
+```
+
+Both directories must be new. These runs share generic input, ordinary
+optimization, tools and Liberty. The candidate has external bank-enable
+placeholders; its report is explicitly storage-only and cannot satisfy the
+whole-chip budget or timing gate. No production desync export is emitted.
+
 ## Extended chip verification
 
 ```text

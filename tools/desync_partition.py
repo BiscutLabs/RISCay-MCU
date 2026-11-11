@@ -15,7 +15,7 @@ FF = re.compile(r'\$(?:dff|dffe|adff|adffe|sdff|sdffe|sdffce)$')
 # Only pure combinational proc/opt cells. Unknown generic cells fail instead of
 # silently treating stateful $sr/$fsm (or formal $anyseq) as a logic gate.
 COMBINATIONAL = frozenset('$' + name for name in (
-    'add and eq ge gt le logic_and logic_not logic_or lt mux ne not or pmux '
+    'add and eq ge gt le logic_and logic_not logic_or lt mux ne neg not or pmux '
     'reduce_and reduce_bool reduce_or reduce_xor reduce_xnor shift shiftx shl shr sshr sub xor xnor'
 ).split())
 
@@ -65,6 +65,11 @@ def flatten(modules, top):
 
 
 def assign(path, names, policy):
+    marked = {n.split('/')[1] for n in names if n.startswith('desync_owner/')}
+    if marked:
+        if len(marked) != 1 or not marked <= set(policy['banks']):
+            raise ValueError('DESYNC_OPTIMIZED_BANK_AMBIGUITY:' + path)
+        return next(iter(marked))
     for rule in policy['rules']:
         if rule.get('alias') in names or ('prefix' in rule and path.startswith(rule['prefix'])):
             if rule['bank'] not in policy['banks']:
@@ -117,7 +122,9 @@ def partition(netlist, policy):
             if len(clock) != 1 or clock[0] not in clocks:
                 raise ValueError('DESYNC_UNCLASSIFIED_CLOCK:' + path)
             domain, inversion = clocks[clock[0]]
-            names = {n for bit in ports['Q'] for n in reverse[bit] if n.rpartition('/')[0] == path.rpartition('/')[0]}
+            all_names = {n for bit in ports['Q'] for n in reverse[bit]}
+            names = (all_names if any(n.startswith('desync_owner/') for n in all_names) else
+                     {n for n in all_names if n.rpartition('/')[0] == path.rpartition('/')[0]})
             bank = assign(path, names, policy)
             active = domain not in policy['retained_domains']
             falling = not (bool(int(cell['parameters']['CLK_POLARITY'], 2)) ^ inversion)
