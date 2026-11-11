@@ -90,7 +90,13 @@ ACK low before publication, so this rising ACK belongs to the current cycle.
 I2C M-to-S passes this sampled conditional STA check with a 1.2 late derate.
 Fixed keeper-feedback inputs do not establish a minimum reopening bound:
 real feedback can reinforce the transition. Physical hold qualification needs
-a full-feedback minimum-transition envelope; finite SPICE samples do not close it.
+a full-feedback minimum-transition envelope. The direct-handoff schematic check
+retains the actual controller, enable/ACK trees and every paired latch; source D
+is the timing frontier, with its removed load restored. Both data polarities must
+reuse the source while every receiver retains the old value. All enable and
+A/B/N return edges are checked across the complete retention window. External
+omitted sinks remain lumped pin capacitances. Finite PVT/slew samples and injected
+capture-skew failures do not establish continuous, mismatch or routed bounds.
 Initialization, minimum pulses, reverse handoffs and routed RC remain separate.
 Lengthening a primary request delay does not repair this immediate return path.
 

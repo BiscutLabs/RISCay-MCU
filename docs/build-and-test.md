@@ -316,3 +316,27 @@ slew or routed qualification. Keeper feedback is held at its prior logic value;
 real feedback reinforcement can make reopening faster. A full-feedback minimum
 transition bound is required before calling this a physical hold margin.
 The tool rejects gated, macro and non-paired storage.
+
+Check the direct handoff with feedback intact and the complete paired latch bank:
+
+```text
+python tools/measure_desync_feedback.py <connected-map> <repaired-directory> <bank-segments> build/feedback --bank i2c
+```
+
+This uses the configured `ngspice` and the pinned GF180 transistor models. The
+default campaign covers five corners, physical 30–70% input slews of 0.02 and
+2 ns, and both data polarities. It preserves actual controller and distribution
+cells and every paired latch. Source D is a timing frontier; its removed load is
+restored on any live net. External omitted sinks use inventoried Liberty pin
+capacitances. This avoids treating cut keeper arcs as minimum-delay bounds or
+confusing physical slew with a Liberty table index.
+
+Every source must retain old data before reopening and then change; every
+receiver must retain old data throughout. The complete return window rejects
+early edges and threshold recrossings. `--late-capture 10` changes only the
+analysis fixture's receiver-inverter input and must fail data retention. Use
+`--corner ff_n40C_3v60 --slew .02 --max-step .02` to compare both polarities with
+the default 0.2 ns maximum timestep. Compare every enable/controller edge and
+source-data crossing, not just the reported minimum. Raw data-to-close separation
+is not a Liberty hold margin. These finite schematic samples do not qualify
+mismatch, actual source waveform admission, pulses, reset or routed RC.

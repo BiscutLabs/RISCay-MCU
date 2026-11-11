@@ -10,6 +10,7 @@ targets, govern adoption. Old BD/Click physical results do not qualify desync.
 | Loaded control/distribution and area trial | 0.5958650880 → 0.5998603520 mm² before lines; cell-exact ten-line trial **0.6186512640 mm² / 1.163243x (FAIL)** | Unchanged: 2,977 architectural; 5,283 FF/latch + 198 keeper bits | Trial 0.0337468096 mm² / **5.4549% (FAIL)** | Zero-wire preparation 0.6562813824 mm², excluding lines; not the matched physical result | 0 | Electrical preparation and ideal-cycle proof; production sizing remains unavailable; budget decision required |
 | Approved mapped ceiling and pure data-path measurements | Unchanged **0.6186512640 mm² / 1.163243x**; mapped ceiling now **1.20x** | Unchanged: 2,977 architectural; 5,283 FF/latch + 198 keeper bits | Unchanged 0.0337468096 mm² / **5.4549%**; separate 5% ceiling unchanged | Unchanged preparation; complete physical ratio unavailable | 0 | Mapped area fits; data segments measured; control share and composed timing remain open |
 | Direct I2C latch handoff | **1.163243x → 1.163243x**, 0.6186512640 mm² unchanged provisional trial | 2,977 architectural; 5,283 FF/latch + 198 keepers, unchanged | 0.0337468096 mm² / **5.4549%**, unchanged | Preparation remains 0.6562813824 mm² without lines/wires | 0 | Sampled M-to-S steady-cycle hold measured; no added hold cells or adopted delay counts |
+| Full-feedback I2C retention | **1.163243x → 1.163243x**, 0.6186512640 mm² unchanged provisional trial | 2,977 architectural; 5,283 FF/latch + 198 keepers, unchanged | 0.0337468096 mm² / **5.4549%**, unchanged | Unchanged preparation; complete physical ratio unavailable | 0 | All paired latches retain data in the sampled full-feedback circuit; no production timing adoption |
 
 The mapped reference is the original clocked export, remapped with the pinned
 Yosys 0.62/ABC and GF180 7-track libraries. Pre-placement repair is
@@ -638,3 +639,43 @@ Failed experiments retained: independent extrema produced a pessimistic I2C
 hold alarm; the first mutation used an unsupported command, then unescaped
 dots/slashes caused ignored SDF annotations. The corrected control fails for
 the intended timing reason. No failed or ignored mutation qualifies the design.
+
+## Full-feedback I2C retention
+
+The keeper-cut STA result is now supplemented by transistor-level runs retaining
+the actual controller, ACK/enable trees and all 347 latch pairs: 756 cells.
+Source D is an explicit timing frontier; cuts restore the original pin load on
+any live net. The independent graph review accounts for all 2,301 live input
+loads, including 1,195 omitted/cut pins represented by Liberty capacitance.
+Both keepers remain connected. A legal preceding handshake establishes the
+retained state before every source D changes while its master is closed.
+
+All **20 corner/slew/polarity cases pass**, or 6,940 paired retention checks.
+Every master reuses its data and every slave retains the old value. The complete
+return window also rejects early or repeated threshold crossings at every
+enable leaf and controller A/B/N. The minimum raw Q50-to-closing-E50 separation
+is **0.393105 ns**, at FF/cold with a 2 ns physical 30–70% input slew. This is
+**not a qualified hold margin** and is not comparable to the prior conditional
+STA slack: it contains neither Liberty aperture subtraction nor mismatch derating.
+Actual receiver-A waveform admission, continuous envelopes, external dynamic
+loads, pulses, reset and routed RC remain open. Production sizing stays empty.
+
+Reducing the maximum timestep from 0.2 to 0.02 ns at FF/cold, fast input slew,
+for both polarities changes all 141 controller/enable threshold crossings and
+347 source-data crossings by at most **1 ps**, at reported measurement precision.
+Delaying only the receiver inverter's analysis input by 10 ns corrupts all
+347 receivers and fails `FEEDBACK_DATA_RETENTION`, while every source reuses.
+Independent review fixed an incomplete observation window and an insufficient
+ACK-frontier check; the final code, inventories and evidence have no blocking
+review findings. No circuit, area, storage, delay count, oracle or deadline changed.
+
+Evidence is `build/desync-feedback/{final,fine-final,convergence-final,late-final,
+area-recheck,ci-final}`. Successful measurement receipts have unchanged inputs and
+complete outputs; `late-final` deliberately retains fail status. Exploratory
+full-bank prehistory initially left synchronizer-chain inputs connected; explicit
+source-D frontiers corrected that fixture limitation. The first campaign was
+stopped and its failed receipt retained while review findings were fixed.
+Full CI passes **492 Python properties and 268 Scala tests across 29 suites**,
+including unchanged boot, earliest I2C status, SRAM, sleep/wake and reset checks.
+The 6,976-point reference self-comparison passes. These regression results do
+not establish generated-chip flow equivalence; that acceptance remains open.
