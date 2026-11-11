@@ -141,8 +141,12 @@ def compare(candidate, reference, budget, *, physical=False):
                 variant=candidate, reference=reference, scope='repaired+trees' if physical else 'flat-mapped')
 
 
-CEILING = dict(mapped_ratio=1.15, repaired_tree_ratio=1.20,
+CEILING = dict(mapped_ratio=1.20, repaired_tree_ratio=1.20,
                architectural_bits_ratio=1.00, storage_area_ratio=1.25, control_area_fraction=.05)
+
+# User approved only the mapped ceiling after this checkpoint. The exception
+# cannot be reused after a later tightening or for any other budget field.
+MAPPED_APPROVAL_PARENT = '291d73138fdd397ea2de270a202c7c026c46263a'
 
 
 def approved_schema(budget):
@@ -174,9 +178,21 @@ def check_budget_history(path, root=ROOT):
     for ref in ('HEAD','HEAD^'):
         value=subprocess.run(['git','show',ref+':physical/gf180/desync-budget.json'],cwd=root,capture_output=True,text=True)
         revisions.append(json.loads(value.stdout) if value.returncode==0 else ceiling)
-    check_budget(current,revisions[0])
-    check_budget(revisions[0],revisions[1])
+    for newer,older,ref in ((current,revisions[0],'HEAD'),(revisions[0],revisions[1],'HEAD^')):
+        # Resolve the commit only for an increase; ordinary tightening keeps the
+        # existing history check and does not need an approval record.
+        if newer['mapped_ratio'] > older['mapped_ratio']:
+            identity=subprocess.run(['git','rev-parse',ref],cwd=root,capture_output=True,text=True)
+            check_approved_transition(newer,older,identity.stdout.strip() if identity.returncode==0 else '')
+        else:check_budget(newer,older)
     return current
+
+
+def check_approved_transition(current, previous, parent):
+    allowed = dict(previous)
+    if parent == MAPPED_APPROVAL_PARENT and previous['mapped_ratio'] == 1.15:
+        allowed['mapped_ratio'] = 1.20
+    check_budget(current, allowed)
 
 
 if __name__ == '__main__':

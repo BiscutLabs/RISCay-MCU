@@ -74,12 +74,14 @@ excluding only LF and SDA must leave exactly the reported native inventory.
 Keeper feedback stays intact. Routed min/max RC, coupling and reset distribution
 remain mandatory; zero-wire margins below 100 ps are untrusted.
 
-Conditional primitive queries retain removed feedback capacitance. Bank analysis
-likewise restores every removed native input load. A worst-slack path is **not**
-a pure Q-to-D minimum or maximum. Latch max-delay exceptions use the opening
-edge and omit closing setup. Compose closing-edge/setup corrections explicitly,
-and propagate transparent D-to-Q slew through downstream logic. Current bank
-path samples do not establish setup or hold closure.
+Conditional primitive queries retain removed feedback capacitance. The data-only
+bank view cuts every storage Q/D frontier and restores all removed input loads.
+Equal zero arrival and required times give pure combinational extrema at each
+sampled Q slew, independent of clock-tree skew and analysis period. The ordinary
+graph and every frontier/load are audited. These finite samples are not a
+continuous slew envelope. Compose closing-edge/setup corrections explicitly and
+propagate transparent D-to-Q slew through downstream logic. The original
+worst-slack bank samples remain diagnostic; neither view alone closes setup/hold.
 
 Required checks: generated-chip per-register flow equivalence; folded
 next-state/SRAM-effect proof; unchanged boot, I2C earliest status, SRAM, ADC,
@@ -92,14 +94,16 @@ service points. No desync throughput margin is yet claimed.
 
 The pinned reference is **0.5318332992 mm² mapped**, **0.5915383488 mm² after
 repair/placement/CTS**, 2,977 architectural bits and 0.2041777472 mm² storage.
-Limits remain mapped **1.15x**, repaired plus trees **1.20x**, architectural bits
+The user raised mapped area to **1.20x** after checkpoint `291d731`.
+Limits are mapped **1.20x**, repaired plus trees **1.20x**, architectural bits
 **1.00x**, storage area **1.25x**, and control/join/delay/mutex share **5%**.
 
 Connected preparation is 0.5998603520 mm² before matched lines. A cell-exact
 **area-only** ten-line trial is 0.6186512640 mm² (**1.163243x**), with **5.4549%**
-control share: both limits fail. Its provisional component-based counts are not
-accepted bank timing, and production policy remains empty. Stop for the user's
-budget/architecture decision; do not adopt or trim this trial silently.
+control share. Mapped area now fits the approved ceiling, but the separate 5%
+control-share limit still fails. Its provisional component-based counts are not
+accepted bank timing, and production policy remains empty. Timing investigation
+continues; neither budget approval nor diagnostic measurements qualify adoption.
 
 Preparation with enable trees is 0.6562813824 mm², excluding matched lines and
 wire RC. Storage remains 0.2512318592 mm²: 2,977 architectural bits, 5,283 physical

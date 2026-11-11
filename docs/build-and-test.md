@@ -281,3 +281,18 @@ and exposes exactly one unmatched delay aperture per bank. Its exact-leaf audit
 and retired-service-clock check do not qualify timing. Neither command produces
 a whole-chip budget pass. Delay sizing, physical enable/return composition and
 flow equivalence are required before chip-level desync tests can pass.
+
+After electrical preparation, measure pure Q-to-D data segments separately from
+controller/storage timing:
+
+```text
+python tools/measure_desync_banks.py <connected-map> <repaired-directory> build/data-fast --mutex-libs <mutex-liberty-directory> --data-only --input-slew .02
+python tools/measure_desync_banks.py <connected-map> <repaired-directory> build/data-slow --mutex-libs <mutex-liberty-directory> --data-only --input-slew 2
+```
+
+The cut view preserves ordinary logic and all removed pin loads. It independently
+checks actual endpoint and min/max path coverage. `--period 333` provides the
+analysis-period control; every result must match the default 1,000 ns run.
+These are fixed-slew combinational extrema, not continuous-slew bounds or complete
+setup/hold checks. Without `--data-only`, the original worst-slack samples remain
+diagnostic and must not be used as pure segment extrema.

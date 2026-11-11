@@ -8,6 +8,7 @@ targets, govern adoption. Old BD/Click physical results do not qualify desync.
 | Phase 0 tools/reference | 0.5318332992 mm² / 1.000× → 1.000× | 2,977 → 2,977 | 0 mm² / 0% | 0.5915383488 mm² / 1.000× | 0; no desync RTL | Verified and independently reviewed; stop after Phase 0 |
 | Connected controller preparation | Storage-only 0.5849922624 → connected 0.5958650880 mm²; 1.099954× → 1.120398× pinned reference; **whole-chip ratio unavailable** | 2,977 architectural; 5,283 FF/latch bits + 198 control keepers | Controllers/joins/mutex 0.0109606336 mm², 1.83945%; delays unmeasured | Not measured | 0 | Ten banks connected; external delay apertures; no chip acceptance |
 | Loaded control/distribution and area trial | 0.5958650880 → 0.5998603520 mm² before lines; cell-exact ten-line trial **0.6186512640 mm² / 1.163243x (FAIL)** | Unchanged: 2,977 architectural; 5,283 FF/latch + 198 keeper bits | Trial 0.0337468096 mm² / **5.4549% (FAIL)** | Zero-wire preparation 0.6562813824 mm², excluding lines; not the matched physical result | 0 | Electrical preparation and ideal-cycle proof; production sizing remains unavailable; budget decision required |
+| Approved mapped ceiling and pure data-path measurements | Unchanged **0.6186512640 mm² / 1.163243x**; mapped ceiling now **1.20x** | Unchanged: 2,977 architectural; 5,283 FF/latch + 198 keeper bits | Unchanged 0.0337468096 mm² / **5.4549%**; separate 5% ceiling unchanged | Unchanged preparation; complete physical ratio unavailable | 0 | Mapped area fits; data segments measured; control share and composed timing remain open |
 
 The mapped reference is the original clocked export, remapped with the pinned
 Yosys 0.62/ABC and GF180 7-track libraries. Pre-placement repair is
@@ -25,7 +26,8 @@ binary has SHA-256
 `20abaf17173bc8be06b658179920f739103279e54105b3c165dceab4c8ba00a1`;
 the run receipt pins all other tool/library inputs. Reuse the same flow for the
 eventual desync denominator comparison.
-The current budgets therefore permit at most 0.6116082941 mm² mapped,
+The current budgets therefore permit at most 0.6381999590 mm² mapped
+(user-approved 1.20x after `291d731`),
 0.7098460186 mm² repaired plus trees. Revised storage limits are exactly
 2,977 architectural bits and 0.2552221840 mm² storage cell area. These are limits,
 not achieved desync measurements.
@@ -544,3 +546,54 @@ return and incomplete waveform-window checks; bank-load fixtures needed complete
 Liberty syntax/thresholds. A fast-slew exploratory receipt rejects a concurrent
 registry edit. The final diagnostic bank runs have unchanged inputs and complete
 outputs. None of these failed runs supplies production sizing.
+
+## Approved 1.20x mapped budget and data-path extrema
+
+The user explicitly raised the mapped ceiling after `291d731`. The maximum is
+now 0.6381999590 mm², leaving 0.0195486950 mm² above the unchanged ten-line trial.
+The history guard permits only this mapped-budget transition from the approved
+parent; later loosening or a change to another limit still fails. The separate
+5% control-share ceiling remains unchanged and the trial still exceeds it.
+`area-recheck/area.json` recomputes the same netlist and records that single
+remaining area-gate failure. No circuit, stored bit, delay count or oracle changed.
+
+The previous worst-slack query could miss the fastest Q-to-D path because clock
+arrival and latch aperture affected ranking. The new optional data-only view
+replaces actual Q pins with equal-arrival ports and actual D/control pins with
+equal-required-time ports. Zero required time avoids float cancellation from a
+large artificial budget. This is an analysis transform, not added hardware.
+
+Independent inventory and graph checks cover 5,307 Q and 5,367 D/control pins,
+including SRAM A/D/CEN/GWEN/WEN, with 20,237 surviving ordinary cells unchanged.
+All 13,158 removed input loads are restored across 6,359 live nets. Registry and
+Liberty inventories define permitted removals; caller-supplied lists cannot
+authorize deleting ordinary logic. STA reachability is checked separately for
+min and max, against the actual net graph. Missing endpoints, loads, paths or
+storage counts fail.
+
+Both 0.02 ns and 2 ns Q-slew samples pass at all five corners: 1,760 nonempty
+min/max results and 7,060 explicitly empty pairs. The longest sampled data cones
+are power.S to Fabric.M (116.167641 ns), power.S to time.M (115.186310 ns), and
+Fabric.S to CPU.M (70.450470 ns), all at SS/hot. These are zero-wire combinational
+segments, not cycle times, continuous slew envelopes or composed timing margins.
+Transparent-latch slew, closing setup, source retention/hold, pulse widths and
+reset distribution remain mandatory before sizing adoption.
+
+The actual-chip delayed-arc control moves a TT CPU-to-Fabric path from 36.372131
+to 56.054977 ns. Endpoint/load/ordinary-cell deletion controls reject their
+mutations. Changing the analysis period from 1,000 to 333 ns leaves every result
+and disconnected-pair inventory unchanged at all five corners. Full CI passes
+479 Python properties and 268 Scala tests across 29 suites, including boot,
+earliest I2C status, SRAM, sleep and reset. The reference self-comparison proves
+6,976 points; this does not establish generated-chip flow equivalence. Final
+measurement, control and CI receipts have no changed inputs or missing outputs.
+Fresh independent review findings were fixed; source review has no blocking
+findings for this diagnostic scope. Evidence: `build/desync-budget120/`, including
+`data-segments-fast-final`, `data-segments-slow-final`, `controls-final-r3`,
+`area-recheck` and `ci-final`.
+
+Failed experiments retained: the initial uncached Liberty scan was stopped for
+runtime; the first data run retained a large artificial timing budget, replaced
+after review identified float quantization; the first delay-control attempts
+used an unsupported annotation command and unescaped SDF names. Final controls
+use OpenSTA's SDF input with escaped mapped instance names.

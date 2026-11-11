@@ -7,7 +7,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from types import SimpleNamespace
 from unittest.mock import patch
-from area_ratio import storage_width, compare, check_budget, check_budget_history, context, CEILING, mutex_allowance
+from area_ratio import storage_width, compare, check_budget, check_budget_history, context, CEILING, mutex_allowance, check_approved_transition, MAPPED_APPROVAL_PARENT
 from audit_desync_protection import audit
 from primitives import require_recipe, classified_cells, REGISTRY, Primitive
 from size_desync_delays import select_count, load_recipe, publish_policy
@@ -55,7 +55,7 @@ class DesyncToolsTest(unittest.TestCase):
             path=Path(temporary)/'budget.json'
             parent=dict(mapped_ratio=1.10,repaired_tree_ratio=1.2,storage_ratio=1.05,control_area_fraction=.05)
             current=dict(CEILING,schema=2,mapped_ratio=1.12);path.write_text(json.dumps(current))
-            with patch('area_ratio.subprocess.run',side_effect=[SimpleNamespace(returncode=0,stdout=json.dumps(current)),SimpleNamespace(returncode=0,stdout=json.dumps(parent))]):
+            with patch('area_ratio.subprocess.run',side_effect=[SimpleNamespace(returncode=0,stdout=json.dumps(current)),SimpleNamespace(returncode=0,stdout=json.dumps(parent)),SimpleNamespace(returncode=0,stdout='unapproved')]):
                 with self.assertRaisesRegex(ValueError,'BUDGET_LOOSENED'):check_budget_history(path)
 
     def test_loaded_chain_policy_requires_current_netlist_and_all_final_corners(self):
@@ -144,11 +144,11 @@ class DesyncToolsTest(unittest.TestCase):
     def test_budget_may_only_tighten_and_must_be_finite(self):
         original=dict(CEILING)
         check_budget(original,original)
-        for value in (1.16,math.inf,math.nan,0):
+        for value in (original['mapped_ratio']+.01,math.inf,math.nan,0):
             candidate=dict(original,mapped_ratio=value)
             with self.assertRaisesRegex(ValueError,'BUDGET_LOOSENED'):check_budget(candidate,original)
         check_budget(dict(original,mapped_ratio=1.05),original)
-        check_budget(original,dict(mapped_ratio=1.15,repaired_tree_ratio=1.2,storage_ratio=1.05,control_area_fraction=.05))
+        check_budget(dict(original,mapped_ratio=1.15),dict(mapped_ratio=1.15,repaired_tree_ratio=1.2,storage_ratio=1.05,control_area_fraction=.05))
         for value in (.99,1.01):
             with self.assertRaisesRegex(ValueError,'BITS_MUST_MATCH'):
                 check_budget(dict(original,architectural_bits_ratio=value),original)
@@ -158,12 +158,32 @@ class DesyncToolsTest(unittest.TestCase):
                        liberty_sha256={'lib':'x'},sram_macros=3,special_area_mm2={})
         budget=dict(CEILING)
         self.assertEqual(compare(reference,reference,budget)['status'],'pass')
-        self.assertEqual(compare(dict(reference,logic_mm2=.6),reference,budget)['exceeded'],['area'])
+        self.assertEqual(compare(dict(reference,logic_mm2=.5*budget['mapped_ratio']+.001),reference,budget)['exceeded'],['area'])
         self.assertEqual(compare(dict(reference,storage_area_mm2=.251),reference,budget)['exceeded'],['storage_area'])
         for count in (99,101):
             self.assertEqual(compare(dict(reference,architectural_bits=count),reference,budget)['exceeded'],['architectural_bits'])
         for candidate in (dict(reference,liberty_sha256={'lib':'y'}),dict(reference,sram_macros=2),dict(reference,logic_mm2=math.nan)):
             with self.assertRaises(ValueError):compare(candidate,reference,budget)
+
+    def test_mapped_approval_is_one_transition_and_not_another_budget(self):
+        previous=dict(CEILING,mapped_ratio=1.15)
+        check_approved_transition(CEILING,previous,MAPPED_APPROVAL_PARENT)
+        for newer,older,parent in ((CEILING,previous,'another-commit'),
+                (dict(CEILING,mapped_ratio=1.21),previous,MAPPED_APPROVAL_PARENT),
+                (dict(CEILING,control_area_fraction=.055),previous,MAPPED_APPROVAL_PARENT),
+                (CEILING,dict(previous,mapped_ratio=1.10),MAPPED_APPROVAL_PARENT)):
+            with self.subTest(newer=newer,older=older,parent=parent),self.assertRaisesRegex(ValueError,'BUDGET_LOOSENED'):
+                check_approved_transition(newer,older,parent)
+
+    def test_approved_history_before_and_after_commit(self):
+        with TemporaryDirectory() as temporary:
+            path=Path(temporary)/'budget.json';current=dict(CEILING,schema=2)
+            previous=dict(current,mapped_ratio=1.15);path.write_text(json.dumps(current))
+            for head,parent in ((previous,previous),(current,previous)):
+                outputs=[SimpleNamespace(returncode=0,stdout=json.dumps(b)) for b in (head,parent)]
+                outputs.append(SimpleNamespace(returncode=0,stdout=MAPPED_APPROVAL_PARENT))
+                with patch('area_ratio.subprocess.run',side_effect=outputs):
+                    self.assertEqual(check_budget_history(path),current)
 
 
 if __name__=='__main__':unittest.main()

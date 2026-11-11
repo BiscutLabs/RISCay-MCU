@@ -27,7 +27,8 @@
   with a 0.001 mm² exploration allowance; do not pass estimates as qualification.
   Its stop/wake reliability target is at most 1 FIT per MCU, as selected by the
   user. Finite SPICE campaigns alone cannot establish that target.
-  Ratios against the matched clocked reference govern adoption: mapped 1.15x,
+  Ratios against the matched clocked reference govern adoption: mapped 1.20x
+  (user-approved after 291d731),
   repaired plus trees 1.20x, architectural bits exactly 1.00x, storage area 1.25x,
   control share 5%. No budget loosening without approval. Explore with area maps
   first; qualify only surviving choices. I2C remains 400 kHz SCL; 3.2 MHz is the
