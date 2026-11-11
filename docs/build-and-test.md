@@ -266,6 +266,18 @@ registry candidates at five PVT corners, two slews and two loads using the pinne
 GF180 models and configured `ngspice`. Its negative control must exit nonzero with
 `DESYNC_PRIMITIVE_STATE`. These samples do not accept a physical binding or a
 minimum pulse width. Generated artifacts and failed experiments stay in `build/`.
-There is no desync sbt project or generated-chip export command yet. Clocked RTL
-is the sole source; the new transform and physical primitive characterization
-must be implemented before chip-level desync tests are meaningful.
+Clocked RTL is the sole source. The storage transformer and experimental
+controller assembler are available, but there is no executable generated-chip
+export or desync sbt project yet. Area preparation is explicit:
+
+```text
+python tools/map_desync.py build/generic/netlist.json physical/desync/bank-map.json build/desync-storage
+python tools/map_desync.py build/generic/netlist.json physical/desync/bank-map.json build/desync-controls --controller-preparation --mutex-liberty <measured-experimental-mutex.lib>
+```
+
+Use the same configured Yosys/ABC as the paired clocked reference. The first
+command exposes bank enables; the second connects controllers/joins/stop/mutex
+and exposes exactly one unmatched delay aperture per bank. Its exact-leaf audit
+and retired-service-clock check do not qualify timing. Neither command produces
+a whole-chip budget pass. Delay sizing, physical enable/return composition and
+flow equivalence are required before chip-level desync tests can pass.

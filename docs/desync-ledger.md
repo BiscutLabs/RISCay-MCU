@@ -6,6 +6,7 @@ targets, govern adoption. Old BD/Click physical results do not qualify desync.
 | Batch | Flat mapped logic / clocked | Storage bits | Delay/controller/mutex | Repaired + CTS | RTL diff vs clocked | Status |
 |---|---|---|---|---|---|---|
 | Phase 0 tools/reference | 0.5318332992 mm² / 1.000× → 1.000× | 2,977 → 2,977 | 0 mm² / 0% | 0.5915383488 mm² / 1.000× | 0; no desync RTL | Verified and independently reviewed; stop after Phase 0 |
+| Connected controller preparation | Storage-only 0.5849922624 → connected 0.5958650880 mm²; 1.099954× → 1.120398× pinned reference; **whole-chip ratio unavailable** | 2,977 architectural; 5,283 FF/latch bits + 198 control keepers | Controllers/joins/mutex 0.0109606336 mm², 1.83945%; delays unmeasured | Not measured | 0 | Ten banks connected; external delay apertures; no chip acceptance |
 
 The mapped reference is the original clocked export, remapped with the pinned
 Yosys 0.62/ABC and GF180 7-track libraries. Pre-placement repair is
@@ -405,3 +406,47 @@ was deliberately interrupted after the reset finding.
 Production clocked/BD/Click RTL, assertions, deadlines and ABI are unchanged;
 RTL diff is zero. Whole-chip transformation, delay sizing, flow equivalence,
 controller qualification and physical acceptance remain open.
+
+
+## Connected controller preparation (2026-11-10)
+
+The approved closure/same-phase qualification and CPU rearm condition now connect
+all ten generated banks. Controllers/joins/stop occupy 0.0099727936 mm²; the
+experimental mutex contributes its measured 0.0009878400 mm² footprint. All 546
+registered leaves survive the exact connectivity/protection audit; ordinary
+storage and data remain unprotected. Nine first-sample masters gain the original
+POR value, adding 0.0000395136 mm² and no bits. Storage cell area is
+0.2512318592 mm², or 1.230457×. The retired service-clock input has no leaf
+consumers: periodic inventory is LF 78, with one separate SDA event FF. The
+5,207 native storage/macro enable pins still need physical tree qualification.
+
+Independent replay of actual assembled ports and binary joins passed 20
+running/stop/wake seeds; primitive characterization passed 180 loaded schematic
+cases. Review fixes preserve the actual N-to-request dependency, report CPU
+capture on A separately, and bind recipe constants as literal bits. These are
+ordering/sample checks, not flow equivalence, minimum-pulse or metastability
+qualification. Final `connected-map-r4` reproduces the stated area and passes
+the protection/clock audit. `ci-r1` passes 466 Python tests, 268 Scala tests
+across 29 suites, and all 6,976 reference-equivalence points. Both receipts
+have no changed inputs or missing outputs. The reference self-comparison is
+not generated-chip flow equivalence. The broken primitive control fails with
+`DESYNC_PRIMITIVE_STATE` as required; its failure evidence is retained.
+
+A data-only preparation establishes a graph-preserving repaired starting point
+(229 added buffers, two ties, 30 equivalent resizes), with zero reported
+slew/capacitance violations at all five corners and zero wire RC. Preliminary
+Q-to-D maxima span 5.676–117.861 ns at SS/hot, before launch, setup, controller,
+join and tree costs. They are **not bank delay bounds or cycle times**. No physical
+delay count is published from them. Loaded delay sizing, actual enable/ACK and
+POR release, slow-corner throughput, flow equivalence, full-chip area, repaired
+ratio and routed qualification remain open. The mapped headroom is 0.0157432061
+mm²; it is a limit, not a forecast of the finished result.
+
+Failed experiments retained: `connected-map-r1` exposed a cell/net namespace
+collision (fixed centrally); data-repair r1/r2 left the POR fanout unrepaired;
+r3 used a mismatched escaped macro name; r4 cleared electrical checks but lost
+constant-net assignments in the writer. The final data-only r5 uses the existing
+tie-cell preparation and passes exact graph comparison. It does not establish
+controller-connected electrical closure. Evidence is under
+`build/desync-network/` (maps, primitive samples, independent replay, and
+`data-repair-r5`/`data-proof-r5`).

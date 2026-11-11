@@ -11,9 +11,9 @@ def enabled(attributes):
     return any(str(attributes.get(k, '0')).strip('0') for k in ('keep', 'dont_touch'))
 
 
-def audit(netlist, bindings=(), clock_aliases=()):
+def audit(netlist, bindings=(), clock_aliases=(), *, experimental=False):
     cells, _ = graph(netlist['modules'])
-    registered = classified_cells(bindings)
+    registered = classified_cells(bindings,experimental=experimental)
     permitted = {b['instance']: primitive(b['primitive']).protect for b in bindings}
     cell_owners = {b['instance'] + '/' + c['name']: b['instance'] for b in bindings for c in b['cells']}
     allowed_cells = {p for p, owner in cell_owners.items() if 'cells' in permitted[owner]}
@@ -61,7 +61,8 @@ def audit(netlist, bindings=(), clock_aliases=()):
                         for pin, net in cell['pins'].items()}
             if actual != expected:
                 raise ValueError('DESYNC_PRIMITIVE_CONNECTIVITY')
-    return dict(status='pass', registered_cells=len(registered), protected_cells=len(protected))
+    return dict(status='pass', registered_cells=len(registered), protected_cells=len(protected),
+                physical_recipes_qualified=not experimental)
 
 
 if __name__ == '__main__':

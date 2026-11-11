@@ -2,7 +2,7 @@
 from itertools import product
 import unittest
 from characterize_desync_primitives import measurements
-from primitives import candidate_recipe, emit_candidate, require_recipe
+from primitives import candidate_recipe, emit_candidate, require_recipe, qualified_controller, capture_join_candidate
 
 
 def outputs(recipe, state, inputs):
@@ -21,6 +21,7 @@ def outputs(recipe, state, inputs):
             if kind == 'inv': v = not a['I']
             elif kind == 'buf': v = a['I']
             elif kind == 'and2': v = a['A1'] and a['A2']
+            elif kind == 'or2': v = a['A1'] or a['A2']
             elif kind == 'nand2': v = not (a['A1'] and a['A2'])
             elif kind == 'nand3': v = not (a['A1'] and a['A2'] and a['A3'])
             elif kind == 'nor2': v = not (a['A1'] or a['A2'])
@@ -40,6 +41,29 @@ def outputs(recipe, state, inputs):
 
 
 class PrimitiveTests(unittest.TestCase):
+    def test_qualification_preserves_keeper_state_and_one_sided_closure(self):
+        for opened in (False, True):
+            r = qualified_controller(initial_open=opened, same_count=2, closed_count=2, rise_qualified=True)
+            for bits in product((0,1), repeat=10):
+                reset,rq,ao,a,b,s0,s1,c0,c1,rise = bits
+                got=outputs(r,dict(acknowledgeOut=a,requestOut=b),dict(reset=reset,
+                    requestIn=rq,acknowledgeIn=ao,same0=s0,same1=s1,closed0=c0,closed1=c1,riseAllowed=rise))
+                expected=(not opened if reset else
+                    (rq and not b and s0 and s1 and rise) or
+                    (a and (rq or not b or not ao or s0 or s1 or not(c0 and c1))))
+                self.assertEqual(got['acknowledgeOut'],expected)
+            self.assertEqual(r['keeper_bits'],2)
+        # Closure is allowed to hold A high; it must not inhibit A rising.
+        r=qualified_controller(initial_open=True,closed_count=1)
+        got=outputs(r,dict(acknowledgeOut=0,requestOut=0),dict(reset=0,requestIn=1,acknowledgeIn=0,closed0=0))
+        self.assertEqual(got['acknowledgeOut'],1)
+
+    def test_capture_join_waits_for_current_rearm_and_releases_on_request_return(self):
+        r=capture_join_candidate()
+        for reset,request,downstream,rearmed,q in product((0,1),repeat=5):
+            got=outputs(r,dict(out=q),dict(reset=reset,request=request,downstream=downstream,rearmed=rearmed))
+            self.assertEqual(got['out'],not reset and request and (q or (downstream and rearmed)))
+
     def test_mutation_constants_remain_valid_verilog(self):
         r = candidate_recipe('RiscayDesyncController')
         next(c for c in r['cells'] if c['name'] == 'request_hold')['pins']['A1'] = '0'

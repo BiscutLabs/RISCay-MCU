@@ -18,6 +18,9 @@
   The current ten-bank candidate isolates the 42 falling-edge bits. Controller
   candidates restore request-return causality; do not replace that dependency
   with an unmeasured wait or treat sampled schematic pulses as qualification.
+  One-sided closure/same-phase qualification and CPU rearm are user-approved;
+  their connected experimental map still has explicit unmeasured delay apertures.
+  Keep CPU capture on master.A distinct from latch enable N in inventories.
   A positive-edge projected graph is not a whole-chip liveness or timing proof.
   Registry recipes live only in `tools/primitives.py`; missing physical recipes
   and STA-sized delay entries fail. Custom GF180 mutex development is authorized,

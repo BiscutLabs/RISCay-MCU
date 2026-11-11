@@ -35,8 +35,17 @@ REGISTRY = {
         initial_markings=(False, True)),
     'RiscayDesyncEnableGate': Primitive('controller', ('enable', 'condition', 'out'), ('relative', 'absolute'),
         'Combinational AND; gate condition stable throughout the enabled phase', None, protect=(), candidate='gf180-enable-and'),
+    'RiscayDesyncQualifiedController': Primitive('controller',
+        ('reset', 'requestIn', 'acknowledgeIn', 'same', 'closed', 'riseAllowed',
+         'requestOut', 'acknowledgeOut', 'enable'), ('relative', 'absolute'),
+        'Existing A/B keepers with one-sided closure and same-phase qualification; no added state',
+        None, 2, candidate='gf180-qualified-controller', initial_markings=(False, True)),
+    'RiscayDesyncCaptureJoin': Primitive('join',
+        ('reset', 'request', 'downstream', 'rearmed', 'out'), ('relative', 'absolute'),
+        'CPU readiness clears on request return; set requires current slave rearm',
+        None, 1, candidate='gf180-capture-join'),
     'RiscayDesyncStop': Primitive('controller',
-        ('reset', 'run', 'wake', 'requestIn', 'requestOut', 'pauseRequest', 'pauseGrant'), ('relative', 'absolute'),
+        ('reset', 'run', 'pauseRequest', 'pauseGrant'), ('relative', 'absolute'),
         'Persistent stop request; one external filtered mutex arbitrates wake; operational stop does not reset grants', None, 1),
     'RiscayDesyncDelay': Primitive('delay_line', ('reset', 'in', 'out'), ('relative', 'absolute'),
         'POR clears feedback; physical discharge/release implementation unqualified', None),
@@ -45,6 +54,97 @@ REGISTRY = {
         'POR aborts grants; operational stop must not reset an active grant', None, 1,
         estimated_area_bound_mm2=.001),
 }
+
+
+def qualified_controller(*, initial_open, same_count=0, closed_count=0, rise_qualified=False):
+    """Approved closure qualification, folded into the existing A keeper.
+
+    A+ requires all same-phase predecessors and optional CPU gate closure.
+    A- requires all same-phase returns and one-sided receiver closure. A
+    symmetric join on the latter would also constrain A+ and can deadlock.
+    All reduction gates belong to this registered controller, not data logic.
+    Gate-level hazards/isochronic forks still require physical qualification.
+    """
+    if type(same_count) is not int or type(closed_count) is not int or min(same_count, closed_count) < 0:
+        raise ValueError('DESYNC_QUALIFIER_WIDTH')
+    result = candidate_recipe('RiscayDesyncController', initial_open=initial_open)
+    result['primitive'] = 'RiscayDesyncQualifiedController'
+    result.pop('stimulus'); result.pop('samples'); result.pop('transitions')
+    ports, cells = result['ports'], result['cells']
+    def add(label, kind, **pins):
+        cells.append(dict(name=label, cell='gf180mcu_fd_sc_mcu7t5v0__'+kind, pins=pins))
+    set_net, hold_net = 'set', 'hold'
+    for index in range(same_count):
+        pin = 'same'+str(index); ports[pin] = 'input'
+        next_set, next_hold = pin+'_set', pin+'_hold'
+        add(next_set, 'and2_1', A1=set_net, A2=pin, Z=next_set)
+        add(next_hold, 'or2_1', A1=hold_net, A2=pin, Z=next_hold)
+        set_net, hold_net = next_set, next_hold
+    for index in range(closed_count):
+        pin = 'closed'+str(index); ports[pin] = 'input'
+        low, next_hold = pin+'_low', pin+'_hold'
+        add(low, 'inv_1', I=pin, ZN=low)
+        add(next_hold, 'or2_1', A1=hold_net, A2=low, Z=next_hold)
+        hold_net = next_hold
+    if rise_qualified:
+        ports['riseAllowed'] = 'input'
+        add('qualified_set', 'and2_1', A1=set_net, A2='riseAllowed', Z='qualifiedSet')
+        set_net = 'qualifiedSet'
+    keeper = next(c for c in cells if c['name']=='ack_keeper')
+    keeper['pins'].update(A2=hold_net, B=set_net)
+    result['qualification'] = dict(same_count=same_count, closed_count=closed_count, rise_qualified=rise_qualified)
+    return result
+
+
+def capture_join_candidate():
+    """Same one-bit storage as the old readiness join; explicit rearm cause."""
+    return dict(primitive='RiscayDesyncCaptureJoin', initial_open=False,
+        status='unqualified-candidate', keeper_bits=1,
+        ports=dict(reset='input', request='input', downstream='input', rearmed='input', out='output'),
+        cells=[dict(name=n, cell='gf180mcu_fd_sc_mcu7t5v0__'+k, pins=p) for n,k,p in (
+            ('ready', 'and2_1', dict(A1='downstream', A2='rearmed', Z='ready')),
+            ('hold', 'or2_1', dict(A1='ready', A2='out', Z='hold')),
+            ('set', 'nand2_1', dict(A1='request', A2='hold', ZN='stateLow')),
+            ('reset_state', 'nor2_1', dict(A1='stateLow', A2='reset', ZN='out')))],
+        local_keeper_arcs=[('hold','A2','Z')])
+
+
+def resolve_candidate(name, parameters=None):
+    result=_resolve_candidate(name,parameters)
+    # Yosys JSON has one namespace for cells and wires. Keep recipe labels
+    # distinct from internal nets without teaching each consumer a renamer.
+    for cell in result['cells']:cell['name']+='__cell'
+    result['local_keeper_arcs']=[(n+'__cell',a,b) for n,a,b in result['local_keeper_arcs']]
+    return result
+
+
+def _resolve_candidate(name, parameters=None):
+    """Registry-owned parameter and port expansion for experimental bindings.
+
+    It never makes require_recipe succeed: candidate connectivity/area and
+    qualified physical acceptance are different operations.
+    """
+    parameters=parameters or {}
+    if name=='RiscayDesyncQualifiedController':return qualified_controller(**parameters)
+    if name=='RiscayDesyncCaptureJoin':
+        if parameters:raise ValueError('DESYNC_CANDIDATE_PARAMETERS')
+        return capture_join_candidate()
+    if name=='RiscayDesyncStop':
+        if parameters:raise ValueError('DESYNC_CANDIDATE_PARAMETERS')
+        r=candidate_recipe('RiscayDesyncJoin')
+        rename=dict(input0='runLow',input1='grantLow',out='pauseRequest')
+        for c in r['cells']:c['pins']={p:rename.get(n,n) for p,n in c['pins'].items()}
+        r['cells'] += [dict(name='run_invert',cell='gf180mcu_fd_sc_mcu7t5v0__inv_1',pins=dict(I='run',ZN='runLow')),
+                       dict(name='grant_invert',cell='gf180mcu_fd_sc_mcu7t5v0__inv_1',pins=dict(I='pauseGrant',ZN='grantLow'))]
+        r.update(primitive=name,ports=dict(reset='input',run='input',pauseGrant='input',pauseRequest='output'))
+        return r
+    if name=='RiscayDesyncMutex':
+        if parameters:raise ValueError('DESYNC_CANDIDATE_PARAMETERS')
+        return dict(primitive=name,status='experimental-layout-only',keeper_bits=1,
+            ports={p:('output' if p.startswith('grant') else 'input') for p in REGISTRY[name].pins},
+            cells=[dict(name='mutex',cell='ca_mutex_gf180_candidate',
+                pins=dict(RESET='reset',R0='request0',R1='request1',G0='grant0',G1='grant1'))],local_keeper_arcs=[])
+    return candidate_recipe(name,**parameters)
 
 
 def candidate_recipe(name, *, initial_open=False):
@@ -64,6 +164,23 @@ def candidate_recipe(name, *, initial_open=False):
         raise ValueError('DESYNC_CANDIDATE_RESET_MARKING:' + name)
     if entry.candidate == 'gf180-flop-pair':
         return flop_bank_candidate()
+    if entry.candidate == 'gf180-qualified-controller':
+        r=qualified_controller(initial_open=initial_open,same_count=1,closed_count=1)
+        base=candidate_recipe('RiscayDesyncController',initial_open=initial_open)
+        r.update({k:base[k] for k in ('stimulus','samples','transitions')})
+        r['stimulus']['same0']=([(0,0),(35,1),(150,0)] if initial_open else
+                               [(0,1),(35,0),(75,1),(190,0)])
+        r['stimulus']['closed0']=[(0,1)]
+        return r
+    if entry.candidate == 'gf180-capture-join':
+        r=capture_join_candidate()
+        r['stimulus']=dict(reset=[(0,1),(10,0)],request=[(0,0),(40,1),(160,0),(200,1),(320,0)],
+            downstream=[(0,0),(80,1),(280,0)],rearmed=[(0,0),(120,1),(190,0),(240,1)])
+        r['samples']=[dict(at_ns=t,values={'out':v}) for t,v in
+            [(5,0),(25,0),(65,0),(105,0),(145,1),(185,0),(225,0),(265,1),(305,1),(345,0)]]
+        r['transitions']=[('rearmed',120,1,'out',1),('request',160,0,'out',0),
+                          ('rearmed',240,1,'out',1),('request',320,0,'out',0)]
+        return r
     cells, cuts = [], []
     def cell(instance, kind, **pins):
         cells.append(dict(name=instance, cell='gf180mcu_fd_sc_mcu7t5v0__' + kind, pins=pins))
@@ -211,13 +328,18 @@ def require_recipe(name):
     return entry.recipe
 
 
-def classified_cells(bindings):
+def classified_cells(bindings, *, experimental=False):
     """Return exact leaf membership; never classify by name substring."""
     result = {}
     for binding in bindings:
         entry = primitive(binding['primitive'])
-        require_recipe(binding['primitive'])
-        if set(binding['ports']) != set(entry.pins) or not binding['cells']:
+        if experimental:
+            expected=resolve_candidate(binding['primitive'],binding.get('parameters'))
+            pins=expected['ports']
+            if binding['cells']!=expected['cells']:raise ValueError('DESYNC_CANDIDATE_RECIPE_CHANGED')
+        else:
+            require_recipe(binding['primitive']);pins=entry.pins
+        if set(binding['ports']) != set(pins) or not binding['cells']:
             raise ValueError('DESYNC_PRIMITIVE_SHAPE')
         for cell in binding['cells']:
             path = binding['instance'] + '/' + cell['name']

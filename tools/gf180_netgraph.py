@@ -26,7 +26,8 @@ def graph(modules):
         for name,c in mod.get('cells',{}).items():
             p={k:[net(b) for b in bs] for k,bs in c['connections'].items()}
             instance=path+name
-            if c['type'].startswith(SC) or c['type']==SRAM:cells[instance]=dict(c,connections=p)
+            blackbox=modules.get(c['type'],{}).get('attributes',{}).get('blackbox','0')
+            if c['type'].startswith(SC) or c['type']==SRAM or int(blackbox,2):cells[instance]=dict(c,connections=p)
             else:walk(c['type'],instance+'/',p)
     walk('RiscayMcuDigital','',{})
     for c in cells.values():c['connections']={p:[find(b) for b in bs] for p,bs in c['connections'].items()}

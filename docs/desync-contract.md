@@ -28,9 +28,11 @@ an optimization merging registers from different banks fails assignment.
 Literal substitution on the pinned reference costs 1.300158x storage, above the
 1.25x cap. The user chose investigation of a flop-plus-bubble exception instead
 of raising the cap. The generated storage experiment retains the CPU's 591 FFs:
-2,977 architectural bits, 0.2511923456 mm² storage (1.230263x) and 0.5849922624 mm²
-logic (1.099954x the pinned reference). This excludes controllers/joins, loaded
-delays, stop/wake, enable trees and hold fixes. It is not a mapped desync chip.
+2,977 architectural bits. After defining nine POR sample masters, storage is
+0.2512318592 mm² (1.230457x). Connecting the candidate controllers/joins and
+experimental stop/mutex gives 0.5958650880 mm² logic (1.120398x the pinned reference).
+This excludes measured delays, enable trees and hold fixes. Ten explicit delay
+apertures remain external; it is not a complete mapped desync chip.
 The paired normalized clocked map is 0.5369678720 mm²; the smaller pinned reference
 still sets the unchanged budget. No extra architectural state is proposed.
 
@@ -65,17 +67,17 @@ in the falling bank. The CPU's two added joins reset to zero with both inputs
 zero; other joins follow their graph marking. Primitive samples retain every feedback path;
 listed local keeper arcs are **not** a complete STA cut set.
 
-The CPU candidate uses that controller pair plus two ordinary C-element joins:
-its master request joins upstream requests with consumer closure; its slave
-acknowledge joins consumer closure with master.A. CPU FFs capture on master.A
-rising. Self-dependencies become the FF aperture, not inputs to external joins.
-The independent gate-return edge `cpu.fall -> falling.M+` must still be connected.
-This candidate has no payload copies; gate-level correspondence is not yet proved.
-Expanded event-equation exploration now rejects symmetric joins alone for the
-work-gate/same-phase relations: they can deadlock. One-sided closure qualification
-and a CPU capture rearm condition are proposed changes to the existing controller
-equations, pending user approval. They add no payload or keeper state. Their
-sampled equation traces are not a gate-level or physical qualification.
+The CPU candidate uses that controller pair, one rearm-qualified readiness
+keeper and one publication C-element. Readiness sets only when the joined request,
+consumer closure and current slave rearm agree; it clears on request return.
+Publication joins consumer closure with master.A. CPU FFs capture on master.A
+rising. Self-dependencies become the FF aperture, not external join inputs.
+The independent CPU/gate return edge is connected. The user approved one-sided
+closure and same-phase qualification after symmetric joins deadlocked; these
+modify the existing A equation without adding keeper or payload state. B reads
+the actual enable N, not A ahead of its inverter. Every binary join is assembled
+from the registry. Independent event-equation replay checks the actual bindings
+against the phase graph; it does not prove physical enable-leaf correspondence.
 
 The review identified obligations still outside that template:
 
@@ -90,10 +92,12 @@ The review identified obligations still outside that template:
 - The independent application-release and wake-hold resets define both master
   and slave. Otherwise a closed stale master can erase a freshly reset slave
   when reset falls. Explicit aliases bind these resets and fail if absent.
-  Qualified POR remains open: most masters receive their reset value while POR
-  holds slaves, but GPIO/SCL/SDA first samples do not. Before release, the actual
-  controller graph must prove initialization traversal after reset propagation;
-  the POR counter alone is not yet that proof.
+  GPIO/SCL/SDA first-sample masters also receive their original POR value (nine
+  additional resettable masters, no additional bits). Other masters whose slaves
+  reset under qualified POR receive defined data while those slaves are held.
+  Before release, prove
+  initialization traversal after physical reset propagation; the POR counter
+  alone is not that proof.
 - Work gating applies per register, including work-owned `coreReset` in the
   otherwise service-owned power bank. Controllers continue handshaking; only
   architectural slave enables are suppressed; masters keep tracking. The condition
@@ -167,12 +171,16 @@ qualification; see the ledger. The user-set stop/wake reliability target is
 must combine a justified failure model with the worst admitted arbitration rate;
 finite SPICE samples do not establish it. Scenario `when` conditions
 cannot prove prior quiescence or bound contention.
-Registry recipes and delay policy remain unavailable until measured. Reference
+Production recipes and delay policy remain unavailable until qualified/measured.
+Experimental recipe resolution permits connectivity auditing and area mapping
+without enabling production acceptance. Reference
 CI and graph unit tests are distinct from desync acceptance. Transformation,
 flow equivalence, folded next-state equivalence, full-chip area, all-corner
 phase/reset timing and routed checks remain open. Do not turn a reference
 self-comparison or the CPU substitution estimate into an implementation pass.
-`desync_transform.py --storage-scaffold` and `map_desync.py` measure generated
-storage and ordinary logic with external bank-enable placeholders. They refuse
-production export and exclude controllers, joins, matched delays and stop/wake.
-This is an area experiment, not an executable desynchronized MCU.
+`desync_transform.py --storage-scaffold` measures storage with external enables.
+`map_desync.py --controller-preparation` connects the candidate controller graph,
+including stop/wake, while retaining explicit unmeasured delay apertures. Its
+audit rejects damaged protected recipes and any remaining service-clock load.
+Both modes refuse production acceptance. No executable-chip, throughput or
+repaired-plus-tree result is claimed from either mode.
