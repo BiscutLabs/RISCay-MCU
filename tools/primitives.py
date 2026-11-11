@@ -48,7 +48,7 @@ REGISTRY = {
         ('reset', 'run', 'pauseRequest', 'pauseGrant'), ('relative', 'absolute'),
         'Persistent stop request; one external filtered mutex arbitrates wake; operational stop does not reset grants', None, 1),
     'RiscayDesyncDelay': Primitive('delay_line', ('reset', 'in', 'out'), ('relative', 'absolute'),
-        'POR clears feedback; physical discharge/release implementation unqualified', None),
+        'Parallel reset of each mixed-cell unit; reset distribution and minimum assertion remain unqualified', None),
     'RiscayDesyncMutex': Primitive('mutex',
         ('reset', 'request0', 'request1', 'grant0', 'grant1'), ('absolute',),
         'POR aborts grants; operational stop must not reset an active grant', None, 1,
@@ -125,6 +125,7 @@ def _resolve_candidate(name, parameters=None):
     qualified physical acceptance are different operations.
     """
     parameters=parameters or {}
+    if name=='RiscayDesyncDelay':return delay_candidate(**parameters)
     if name=='RiscayDesyncQualifiedController':return qualified_controller(**parameters)
     if name=='RiscayDesyncCaptureJoin':
         if parameters:raise ValueError('DESYNC_CANDIDATE_PARAMETERS')
@@ -145,6 +146,29 @@ def _resolve_candidate(name, parameters=None):
             cells=[dict(name='mutex',cell='ca_mutex_gf180_candidate',
                 pins=dict(RESET='reset',R0='request0',R1='request1',G0='grant0',G1='grant1'))],local_keeper_arcs=[])
     return candidate_recipe(name,**parameters)
+
+
+def delay_candidate(*, units=None):
+    """Counted area experiment, not a qualified delay policy or default count.
+
+    Each NAND4/MUX pair is noninverting. Its NAND reset input clears every
+    unit in parallel, rather than waiting for a stale pulse to traverse the
+    line. Count selection and final loaded STA belong to the sizing tool;
+    production require_recipe remains unavailable.
+    """
+    if type(units) is not int or units<1:raise ValueError('DESYNC_DELAY_COUNT_REQUIRED')
+    prefix='gf180mcu_fd_sc_mcu7t5v0__'
+    cells=[dict(name='reset_invert',cell=prefix+'inv_20',pins=dict(I='reset',ZN='resetLow'))]
+    for i in range(units):
+        source='in' if i==0 else 'unit'+str(i-1)
+        target='out' if i==units-1 else 'unit'+str(i)
+        middle='inverted'+str(i)
+        cells += [dict(name='nand'+str(i),cell=prefix+'nand4_1',
+                       pins=dict(A1=source,A2='resetLow',A3='1',A4='1',ZN=middle)),
+                  dict(name='mux'+str(i),cell=prefix+'mux2_1',
+                       pins=dict(I0='1',I1='0',S=middle,Z=target))]
+    return dict(primitive='RiscayDesyncDelay',status='counted-area-candidate',keeper_bits=0,
+                ports=dict(reset='input',**{'in':'input','out':'output'}),cells=cells,local_keeper_arcs=[])
 
 
 def candidate_recipe(name, *, initial_open=False):
@@ -199,17 +223,23 @@ def candidate_recipe(name, *, initial_open=False):
         if initial_open:
             cell('request_keeper', 'aoi21_1', A1='acknowledgeIn', A2='requestFeedback', B='enable', ZN='requestOut')
         else:
-            cell('request_keeper', 'aoi211_1', A1='acknowledgeIn', A2='requestFeedback', B='enable', C='reset', ZN='requestOut')
+            # The all-arc loaded electrical envelope exceeds 2 ns at SS with
+            # _1/_2. Same-function drive repair, not an added wait.
+            cell('request_keeper', 'aoi211_4', A1='acknowledgeIn', A2='requestFeedback', B='enable', C='reset', ZN='requestOut')
         # Internal keeper cuts only. The A->enable->request path remains intact.
         cuts = [('ack_keeper', 'A1', 'ZN'), ('request_feedback', 'I', 'ZN')]
     elif entry.candidate == 'gf180-c-element':
-        cell('majority', 'aoi222_1', A1='input0', A2='input1', B1='input0', B2='out', C1='input1', C2='out', ZN='stateLow')
+        # Q' = ab + Q(a+b). One feedback input avoids loading Q with two
+        # AOI222 pins. This is Boolean factoring, not a delay or extra state.
+        cell('both', 'and2_1', A1='input0', A2='input1', Z='both')
+        cell('either', 'or2_1', A1='input0', A2='input1', Z='either')
+        cell('keeper', 'aoi21_1', A1='out', A2='either', B='both', ZN='stateLow')
         if initial_open:
             cell('reset_invert', 'inv_1', I='reset', ZN='resetLow')
             cell('reset_state', 'nand2_1', A1='stateLow', A2='resetLow', ZN='out')
         else:
             cell('reset_state', 'nor2_1', A1='stateLow', A2='reset', ZN='out')
-        cuts = [('majority', 'B2', 'ZN'), ('majority', 'C2', 'ZN')]
+        cuts = [('keeper', 'A1', 'ZN')]
     elif entry.candidate == 'gf180-enable-and':
         cell('gate', 'and2_1', A1='enable', A2='condition', Z='out')
     else:
@@ -305,7 +335,7 @@ def emit_candidate(recipe, module='PrimitiveFixture'):
     ports = recipe['ports']
     nets = {n for c in recipe['cells'] for n in c['pins'].values()} - ports.keys() - {'0', '1'}
     lines = ['module ' + module + '(' + ', '.join(ports) + ');']
-    lines += [direction + ' wire ' + name + ';' for name, direction in ports.items()]
+    lines += [direction + ' ' + name + ';' for name, direction in ports.items()]
     if nets:
         lines.append('wire ' + ', '.join(sorted(nets)) + ';')
     def literal(net):
@@ -313,6 +343,71 @@ def emit_candidate(recipe, module='PrimitiveFixture'):
     lines += [c['cell'] + ' ' + c['name'] + '(' + ', '.join('.' + p + '(' + literal(n) + ')' for p, n in c['pins'].items()) + ');'
               for c in recipe['cells']]
     return '\n'.join([*lines, 'endmodule', ''])
+
+
+def transition_contexts(name, parameters=None):
+    """Acyclic analysis frontiers, never a replacement physical recipe.
+
+    Split feedback branch pins retain their original capacitance in the driver
+    measurement. Real-feedback keeper acquisition/retention is checked separately.
+    Internal B-return is explicitly a possible last event; freezing it globally
+    would erase the controller's causal return condition.
+    """
+    recipe=resolve_candidate(name,parameters);rows=[]
+    def add(label,source,rise,fixed,targets,frontiers):
+        rows.append(dict(label=label,source=source,rise=rise,fixed=fixed,targets=targets,frontiers=frontiers))
+    if name=='RiscayDesyncQualifiedController':
+        same=[p for p in recipe['ports'] if p.startswith('same')]
+        closed=[p for p in recipe['ports'] if p.startswith('closed')]
+        rise_ports=['riseAllowed'] if 'riseAllowed' in recipe['ports'] else []
+        front=dict(state_A=['ack_keeper__cell/A1'],state_B=['request_feedback__cell/I','request_hold__cell/A2'])
+        for up in (True,False):
+            fixed=dict(reset=0,state_A=int(not up),state_B=int(not up),requestIn=int(up),acknowledgeIn=int(not up))
+            fixed.update({p:int(up) for p in same});fixed.update({p:1 for p in closed+rise_ports})
+            sources=[('requestIn',up),('state_B',not up)]+[(p,up) for p in same]
+            sources += [(p,True) for p in (rise_ports if up else ['acknowledgeIn']+closed)]
+            for source,direction in sources:
+                targets=dict(acknowledgeOut=up,enable=not up,requestOut=up)
+                # B+ can be the last local branch that releases A. B then
+                # rises and falls, so the acyclic slice is not a monotonic
+                # B- experiment. Compose A->N here with N_to_B_10/11 instead.
+                if not up and source=='state_B':targets.pop('requestOut')
+                add(('Aplus_' if up else 'Aminus_')+source,source,direction,
+                    {p:v for p,v in fixed.items() if p!=source},
+                    targets,front)
+        # N-frontier measurements close the recurrence after actual A->N.
+        for b,o,nrise in ((0,0,False),(1,0,True),(1,1,True)):
+            f=dict(reset=0,state_A=0,state_B=b,requestIn=0,acknowledgeIn=o)
+            f.update({p:0 for p in same});f.update({p:1 for p in closed+rise_ports})
+            add('N_to_B_'+str(b)+str(o),'event_N',nrise,f,dict(requestOut=not nrise),
+                dict(front,event_N=['request_keeper__cell/B']))
+        f=dict(reset=0,state_A=1,state_B=0,requestIn=1)
+        f.update({p:1 for p in same+closed+rise_ports})
+        add('O_to_Bplus','acknowledgeIn',False,f,dict(requestOut=True),front)
+    elif name in ('RiscayDesyncJoin','RiscayDesyncStop'):
+        ports=['input0','input1'] if name=='RiscayDesyncJoin' else ['run','pauseGrant']
+        out='out' if name=='RiscayDesyncJoin' else 'pauseRequest'
+        inverted=name=='RiscayDesyncStop'
+        for up in (False,True):
+            for source in ports:
+                f=dict(reset=0,state_Q=int(not up));f.update({p:int(up!=inverted) for p in ports if p!=source})
+                add(('rise_' if up else 'fall_')+source,source,up!=inverted,f,{out:up},
+                    dict(state_Q=['keeper__cell/A1']))
+    elif name=='RiscayDesyncCaptureJoin':
+        ports=['request','downstream','rearmed']
+        for source in ports:
+            add('rise_'+source,source,True,dict(reset=0,state_Q=0,**{p:1 for p in ports if p!=source}),
+                dict(out=True),dict(state_Q=['hold__cell/A2']))
+        for ready in (0,1):
+            add('fall_request_'+str(ready),'request',False,dict(reset=0,state_Q=1,downstream=ready,rearmed=ready),
+                dict(out=False),dict(state_Q=['hold__cell/A2']))
+    else:
+        raise ValueError('DESYNC_TRANSITION_CONTEXT_UNAVAILABLE:'+name)
+    for row in rows:
+        inputs={p for p,d in recipe['ports'].items() if d=='input'}|row['frontiers'].keys()
+        if set(row['fixed'])|{row['source']}!=inputs or row['source'] in row['fixed']:
+            raise ValueError('DESYNC_TRANSITION_CONTEXT_INPUTS')
+    return rows
 
 
 def primitive(name):

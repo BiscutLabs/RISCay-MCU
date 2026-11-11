@@ -66,7 +66,7 @@ def flat(netlist, top):
             used_ports[path+pin]=any(bit in module_usage[kind] for bit in p['bits'])
         for name,c in body.get('cells',{}).items():
             name=path+ident(name);child=c['type'];conn={p:[net(b) for b in bs] for p,bs in c['connections'].items()}
-            if child.startswith(SC) or child==SRAM:
+            if child.startswith(SC) or child==SRAM or int(netlist['modules'].get(child,{}).get('attributes',{}).get('blackbox','0'),2):
                 require(name not in cells,'REPAIR_DUPLICATE_CELL')
                 cells[name]=dict(type=child,connections=conn,directions=c['port_directions'])
             else:walk(child,name+'/',conn,stack+(kind,))

@@ -7,6 +7,7 @@ targets, govern adoption. Old BD/Click physical results do not qualify desync.
 |---|---|---|---|---|---|---|
 | Phase 0 tools/reference | 0.5318332992 mm² / 1.000× → 1.000× | 2,977 → 2,977 | 0 mm² / 0% | 0.5915383488 mm² / 1.000× | 0; no desync RTL | Verified and independently reviewed; stop after Phase 0 |
 | Connected controller preparation | Storage-only 0.5849922624 → connected 0.5958650880 mm²; 1.099954× → 1.120398× pinned reference; **whole-chip ratio unavailable** | 2,977 architectural; 5,283 FF/latch bits + 198 control keepers | Controllers/joins/mutex 0.0109606336 mm², 1.83945%; delays unmeasured | Not measured | 0 | Ten banks connected; external delay apertures; no chip acceptance |
+| Loaded control/distribution and area trial | 0.5958650880 → 0.5998603520 mm² before lines; cell-exact ten-line trial **0.6186512640 mm² / 1.163243x (FAIL)** | Unchanged: 2,977 architectural; 5,283 FF/latch + 198 keeper bits | Trial 0.0337468096 mm² / **5.4549% (FAIL)** | Zero-wire preparation 0.6562813824 mm², excluding lines; not the matched physical result | 0 | Electrical preparation and ideal-cycle proof; production sizing remains unavailable; budget decision required |
 
 The mapped reference is the original clocked export, remapped with the pinned
 Yosys 0.62/ABC and GF180 7-track libraries. Pre-placement repair is
@@ -432,9 +433,11 @@ have no changed inputs or missing outputs. The reference self-comparison is
 not generated-chip flow equivalence. The broken primitive control fails with
 `DESYNC_PRIMITIVE_STATE` as required; its failure evidence is retained.
 
-A data-only preparation establishes a graph-preserving repaired starting point
-(229 added buffers, two ties, 30 equivalent resizes), with zero reported
-slew/capacitance violations at all five corners and zero wire RC. Preliminary
+A data-only preparation preserves the graph (229 added buffers, two ties,
+30 equivalent resizes), but its final SS/hot report contains **104 slew
+violations**. The earlier zero-violation statement read the wrong preparation
+result; r5 and its timing scans are diagnostic, not accepted timing evidence.
+Preliminary
 Q-to-D maxima span 5.676–117.861 ns at SS/hot, before launch, setup, controller,
 join and tree costs. They are **not bank delay bounds or cycle times**. No physical
 delay count is published from them. Loaded delay sizing, actual enable/ACK and
@@ -446,7 +449,98 @@ Failed experiments retained: `connected-map-r1` exposed a cell/net namespace
 collision (fixed centrally); data-repair r1/r2 left the POR fanout unrepaired;
 r3 used a mismatched escaped macro name; r4 cleared electrical checks but lost
 constant-net assignments in the writer. The final data-only r5 uses the existing
-tie-cell preparation and passes exact graph comparison. It does not establish
-controller-connected electrical closure. Evidence is under
+tie-cell preparation and passes exact graph comparison, but does not clear
+electrical checks. It does not establish controller-connected electrical closure. Evidence is under
 `build/desync-network/` (maps, primitive samples, independent replay, and
 `data-repair-r5`/`data-proof-r5`).
+
+## Loaded preparation and budget stop (2026-11-10)
+
+C-element Boolean factoring removes one heavily loaded feedback input; stronger
+same-function S-controller request drivers clear the sampled electrical envelope.
+The fresh ordinary Yosys/ABC map reproduces the factoring experiment; a subsequent
+exact `_2` to `_4` native-driver resize gives 0.5998603520 mm². The preserved
+native graph has 858 protected cells. Datapath/storage protection is forbidden.
+
+Parent/reset drivers and balanced enable trees give 0.6562813824 mm² before
+matched lines and wire RC. All five global electrical reports have zero rows;
+the separate conservative envelope covers all 857 combinational native leaves
+at actual complete loads and every library slew knot in the admitted 0.02–2 ns
+range. The mutex is separate. This is preparation, not routed electrical closure
+or transparent-storage slew qualification. Exact graph preservation passes.
+Independent sink enumeration covers 5,207 native pins and 79 excluded pins
+(LF 78, SDA 1), including exclusive SRAM final drivers. Removing an entire tree
+is detected; the former report-only inventory incorrectly accepted that mutation.
+
+The conditional native campaign resolves 21,820 local min/max samples. Real
+feedback SPICE passes 180 ordinary primitive cases and 480 earliest-return cases
+plus 240 crossing probes. The return tests reverse an input mid-ramp at first
+30/70% acknowledgement recognition; direct waveforms verify the complete hold
+window at <=20 ps steps. A broken keeper fails as required. These are finite,
+zero-wire samples, not mismatch, noise, timestep-convergence or 1-FIT evidence.
+
+The folded next-state proof covers all 2,994 actual generic Q bits and 87 SRAM
+input observations, proving 3,013 simplified equivalence points. Five actual-chip
+controls detect a changed data bit, reset, work gate, controller ACK/alias and SRAM
+input. This is ideal-cycle equivalence, not asynchronous per-register flow
+equivalence. No clocked/BD/Click RTL, oracle or deadline changed.
+
+Bank analysis restores removed native input capacitance and reports actual
+storage/tree arcs and worst-constraint-slack paths at both input-slew endpoints.
+Independent review found a real distinction: a selected TT CPU-to-Fabric
+0.909628 ns Q-D span misses a 0.866028 ns alternative. Those samples must never
+be used as pure segment extrema. OpenSTA's latch max-delay exception references
+opening, not closing/setup. Closing-edge corrections, transparent D-Q slew,
+the falling enable qualifier, all hold/pulse paths and the absolute 5 ms POR
+recurrence remain open. The ten-delay topology supplies the needed causal
+frontiers; this is not a request for another controller.
+
+### Area-only trial: not adopted
+
+An exact hard-cell insertion into the matched mapped netlist adds ten loaded
+NAND4/MUX lines: 370 units plus ten reset drivers, with every old data/storage
+cell unchanged. Counts are ADC 25, Control 34, CPU 45, Fabric 67, falling 6,
+I2C 22, power 37, program 37, RAM 30 and time 67. All five-corner loaded line
+measurements meet the **provisional component-based envelope** used by this
+experiment; they do not establish complete bank timing or necessary minimum
+counts. Reset flush/release remains unqualified. Production `desync-delays.json`
+is still empty and production recipe resolution still fails.
+
+| Cell class, mm² | Pinned clocked | Ten-line trial |
+|---|---:|---:|
+| Storage | 0.2041777472 | 0.2512318592 |
+| Ordinary buffers/inverters | 0.0078675968 | 0.0094481408 |
+| Other ordinary logic | 0.3197879552 | 0.3242244544 |
+| Controllers and joins | 0 | 0.0139680576 |
+| Experimental mutex | 0 | 0.0009878400 |
+| Matched-line trial | 0 | 0.0187909120 |
+| Total | 0.5318332992 | **0.6186512640** |
+
+The trial exceeds the 0.6116082941 mm² mapped limit by **0.0070429699 mm²**.
+Its control share is **5.4549%**, above 5%. This deliberately failed area run is
+retained. No accepted repaired-plus-tree or slow-corner throughput ratio exists.
+Per the user's stop rule, further architecture/size changes wait for a decision:
+keep the limits and test consolidating Fabric/time/power (estimated saving
+0.007–0.010 mm², unmeasured), or explicitly allow prototype ceilings of 1.17x and
+5.5%. The latter would not qualify the outstanding timing or reliability work.
+
+Fresh independent review found no remaining blocking defect in this diagnostic
+checkpoint after the sink and timing-scope fixes. Full CI passes 474 Python
+properties and 268 Scala tests across 29 suites, including boot, earliest I2C
+status, SRAM, sleep and reset. The reference self-comparison proves 6,976 points;
+it is not generated-chip flow equivalence. A final Python-only gate passes all
+474 properties after a whitespace-only Tcl cleanup. Both CI receipts have no
+changed inputs or missing outputs. Evidence is under `build/desync-complete/`: `connected-map-r2`,
+`connected-rebind-r4`, `electrical-r12`, `leaf-envelope-r3`, `transitions-r9`,
+`primitives-r4`, `early-return-r7`, `early-return-validation-r1`,
+`early-return-broken-r2`, `fold-r7`, `fold-controls-r1`, `tree-audit-r3`,
+`bank-segments-r12/r13`, `line-area-trial-r3`, `review/`, `ci-r1`, and
+`ci-python-final`.
+
+Failed experiments retained: initial repair passes exposed missing reset drivers,
+writer aliases and overloaded keeper outputs; folded-proof preparation exposed
+helper-name and Q-alias coverage errors; early-return probes exposed a clamped
+return and incomplete waveform-window checks; bank-load fixtures needed complete
+Liberty syntax/thresholds. A fast-slew exploratory receipt rejects a concurrent
+registry edit. The final diagnostic bank runs have unchanged inputs and complete
+outputs. None of these failed runs supplies production sizing.

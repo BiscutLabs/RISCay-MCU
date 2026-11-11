@@ -171,7 +171,8 @@ def compose_reports(ordinary,native,inventory):
     strict=set(inventory['native_pins']); normal=set(inventory['ordinary_pins'])
     require(strict and not strict&normal,'SLEW_PIN_CLASS_OVERLAP')
     a,b=report_rows(ordinary),report_rows(native)
-    for row in a+b:require(row['pin'] in strict|normal,'SLEW_REPORT_UNCLASSIFIED_PIN')
+    known=strict|normal
+    for row in a+b:require(row['pin'] in known,'SLEW_REPORT_UNCLASSIFIED_PIN')
     # Capacitance has the same constraint and graph in both contexts.
     caps=lambda rows:sorted((r for r in rows if r['kind']=='max capacitance'),key=lambda r:r['pin'])
     require(caps(a)==caps(b),'SLEW_CAPACITANCE_CONTEXT_CHANGED')

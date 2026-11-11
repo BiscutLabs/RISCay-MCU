@@ -36,9 +36,11 @@ def deck(recipe, pdk, headers, corner, slew, load, runtime):
              '.param sw_stat_global=0 sw_stat_mismatch=0', f'.temp {temperature}',
              '.options method=gear reltol=1e-5 abstol=1e-13 vntol=1e-7', f'VDD vdd 0 {voltage}']
     for name, points in recipe['stimulus'].items():
+        edge_slew = slew[name] if isinstance(slew, dict) else slew
         pwl = [(0, points[0][1])]
         for (at, value), (_, old) in zip(points[1:], points):
-            pwl.extend([(at, old), (at + slew, value)])
+            pwl.extend([(at, old), (at + edge_slew, value)])
+        pwl=recipe.get('pwl_override',{}).get(name,pwl)
         lines.append(f'V_{name} {name} 0 PWL(' + ' '.join(f'{t}n {v*voltage}' for t, v in pwl) + ')')
     for cell in recipe['cells']:
         pins = cell['pins'] | dict(VDD='vdd', VNW='vdd', VPW='0', VSS='0')
@@ -89,15 +91,107 @@ def measurements(text, recipe, voltage):
     return times
 
 
+def retained_wave(points, initial, voltage):
+    """Check both ACK thresholds on the sampled piecewise-linear waveform."""
+    trace=[(t*1e9,(1-v/voltage) if initial else v/voltage) for t,v in points]
+    if any(not math.isfinite(x) for row in trace for x in row) or any(a[0]>=b[0] for a,b in zip(trace,trace[1:])):
+        raise ValueError('DESYNC_C_WAVEFORM_INVALID')
+    if not trace or trace[0][0]>30 or trace[-1][0]<115:
+        raise ValueError('DESYNC_C_WAVEFORM_COVERAGE')
+    if any(b[0]-a[0]>.020000001 for a,b in zip(trace,trace[1:]) if a[0]<115 and b[0]>30):
+        raise ValueError('DESYNC_C_WAVEFORM_STEP')
+    def crossing(level,start):
+        for i in range(max(1,start),len(trace)):
+            t,v=trace[i];pt,pv=trace[i-1]
+            if t>=30 and pv<level<=v:return i,pt+(t-pt)*(level-pv)/(v-pv)
+        raise ValueError('DESYNC_C_ACK_MISSING')
+    first,accepted=crossing(.3,1);full,full_time=crossing(.7,first)
+    if full_time>115:raise ValueError('DESYNC_C_ACK_MISSING')
+    end=next(a[1]+(b[1]-a[1])*(115-a[0])/(b[0]-a[0])
+             for a,b in zip(trace,trace[1:]) if a[0]<=115<=b[0])
+    recognition=min(v for _,v in trace[first:full+1])
+    retained=min([end,*[v for t,v in trace[full:] if t<=115]])
+    if recognition<.3:raise ValueError('DESYNC_C_ACK_WITHDRAWN')
+    if retained<.7:raise ValueError('DESYNC_C_KEEPER_LOST')
+    return dict(accepted_ns=accepted,full_ack_ns=full_time,recognition_progress=recognition,retained_progress=retained)
+
+
+def earliest_return(output, pdk, runtime, *, negative=False):
+    """Return either C input at the first admitted ACK threshold, without a wait.
+
+    A first pass measures the undisturbed output crossing; the second returns
+    one input at that time, reversing even an unfinished input ramp. The
+    other input stays asserted. Check the entire retention window, not just
+    isolated samples. Both initial markings, arrival orders and asymmetric
+    slews are included. This is schematic evidence, not variation qualification.
+    """
+    sources=[pdk/n for n in ('design.ngspice','sm141064.ngspice','gf180mcu_fd_sc_mcu7t5v0.spice')]
+    receipt=RunReceipt(output/'receipt.json',inputs=sources,
+        tools=[Path(__file__),ROOT/'tools/primitives.py',*runtime.input_files()])
+    headers=subcircuits(sources[2].read_text(encoding='utf-8')); rows=[]; files=[]
+    def simulate(recipe,corner,slews,load,label):
+        source,log,wave=output/(label+'.spice'),output/(label+'.log'),output/(label+'.dat')
+        text=deck(recipe,pdk,headers,corner,slews,load,runtime)
+        extra=f'.control\nset numdgt=15\nset wr_singlescale\nrun\nwrdata {runtime.path(wave)} v(out)\nquit\n.endc'
+        source.write_text(text.replace('.end\n',extra+'\n.end\n'),encoding='utf-8');files.extend((source,log))
+        if receipt.command(runtime.command(['-b',runtime.path(source)],timeout=60),cwd=ROOT,log=log):
+            raise ValueError('DESYNC_EARLY_RETURN_SPICE')
+        data=log.read_text(encoding='utf-8')
+        if re.search(r'\b(error|failed)\b',data,re.I):raise ValueError('DESYNC_EARLY_RETURN_MEASUREMENT')
+        files.append(wave)
+        return retained_wave([tuple(map(float,line.split())) for line in wave.read_text().splitlines()],recipe['initial_open'],corner[3])
+    try:
+        for corner in CORNERS:
+            voltage=corner[3]
+            for initial in (False,True):
+                for skew in (-20,0,20):
+                    for s0,s1 in ((.02,.02),(.02,2.),(2.,.02),(2.,2.)):
+                        for load in (.003,.05):
+                            recipe=candidate_recipe('RiscayDesyncJoin',initial_open=initial)
+                            start=int(initial);new=1-start;t0=40+max(0,-skew);t1=40+max(0,skew)
+                            recipe['stimulus']=dict(reset=[(0,1),(10,0)],input0=[(0,start),(t0,new)],input1=[(0,start),(t1,new)])
+                            recipe['samples']=[dict(at_ns=25,values=dict(out=start)),dict(at_ns=115,values=dict(out=new))]
+                            recipe['transitions']=[];slews=dict(reset=.02,input0=s0,input1=s1)
+                            label=f'{corner[0]}-i{start}-k{skew}-s{s0}-{s1}-c{load}'
+                            edge='FALL' if initial else 'RISE';threshold=.7 if initial else .3
+                            measured=simulate(recipe,corner,slews,load,label+'-probe')
+                            accepted=measured['accepted_ns']
+                            if not 30<accepted<100:raise ValueError('DESYNC_EARLY_RETURN_ACK')
+                            for returned,at,sl in (('input0',t0,s0),('input1',t1,s1)):
+                                actual=accepted
+                                fraction=min(1.,max(0.,(actual-at)/sl))
+                                level=start+(new-start)*fraction
+                                ramp=[(0,start),(at,start)]
+                                if actual>at+sl:ramp.append((at+sl,new))
+                                ramp += [(actual,level),(actual+.02,start)]
+                                recipe['pwl_override']={returned:ramp}
+                                if negative:
+                                    next(c for c in recipe['cells'] if c['name']=='keeper')['pins']['A1']='0'
+                                got=simulate(recipe,corner,slews,load,label+'-'+returned)
+                                rows.append(dict(corner=corner[0],initial=start,skew_ns=skew,input_slews_ns=[s0,s1],
+                                    load_pf=load,returned=returned,return_ns=actual,return_level=level,
+                                    **got))
+                                recipe.pop('pwl_override')
+        write=(output/'early-return.json');write.write_text(json.dumps(dict(scope='Schematic earliest-return samples; no mismatch/wire qualification',rows=rows),indent=2)+'\n',encoding='utf-8');files.append(write)
+        receipt.finish(outputs=files)
+    except BaseException:
+        if not receipt.finished:receipt.finish(outputs=[p for p in files if p.is_file()],status='fail')
+        raise
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('output', type=Path)
     parser.add_argument('--pdk', type=Path, default=ROOT/'.tools/physical/pdk')
     parser.add_argument('--negative-control', action='store_true', help='Break the controller request keeper; the state check must fail')
+    parser.add_argument('--earliest-return', action='store_true', help='Return either C input immediately after its loaded ACK threshold')
     args = parser.parse_args()
     output, pdk = args.output.resolve(), args.pdk.resolve()
     output.mkdir(parents=True, exist_ok=False)
     runtime = tool('ngspice')
+    if args.earliest_return:
+        earliest_return(output,pdk,runtime,negative=args.negative_control)
+        return
     sources = [pdk/name for name in ('design.ngspice', 'sm141064.ngspice', 'gf180mcu_fd_sc_mcu7t5v0.spice',
                                      'gf180mcu_fd_sc_mcu7t5v0__tt_025C_3v30.lib')]
     run = RunReceipt(output/'receipt.json', inputs=sources,

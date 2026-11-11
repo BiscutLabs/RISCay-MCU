@@ -1,15 +1,16 @@
 # SPDX-License-Identifier: Apache-2.0
 from itertools import product
 import unittest
-from characterize_desync_primitives import measurements
-from primitives import candidate_recipe, emit_candidate, require_recipe, qualified_controller, capture_join_candidate
+from characterize_desync_primitives import measurements, retained_wave
+from primitives import candidate_recipe, emit_candidate, require_recipe, qualified_controller, capture_join_candidate, resolve_candidate, transition_contexts
+from measure_desync_transitions import fixture, arc_polarities
 
 
 def outputs(recipe, state, inputs):
     """Evaluate standard-cell functions with keeper outputs cut only in this
     next-state truth-table test. Physical characterization keeps every loop.
     """
-    values = dict(state, **inputs)
+    values = {'0':0,'1':1} | state | inputs
     remaining, next_state = list(recipe['cells']), {}
     while remaining:
         for c in remaining[:]:
@@ -24,6 +25,8 @@ def outputs(recipe, state, inputs):
             elif kind == 'or2': v = a['A1'] or a['A2']
             elif kind == 'nand2': v = not (a['A1'] and a['A2'])
             elif kind == 'nand3': v = not (a['A1'] and a['A2'] and a['A3'])
+            elif kind == 'nand4': v = not (a['A1'] and a['A2'] and a['A3'] and a['A4'])
+            elif kind == 'mux2': v = a['I1'] if a['S'] else a['I0']
             elif kind == 'nor2': v = not (a['A1'] or a['A2'])
             elif kind == 'aoi22': v = not (a['A1'] and a['A2'] or a['B1'] and a['B2'])
             elif kind == 'aoi21': v = not (a['A1'] and a['A2'] or a['B'])
@@ -41,6 +44,65 @@ def outputs(recipe, state, inputs):
 
 
 class PrimitiveTests(unittest.TestCase):
+    def test_counted_delay_is_noninverting_and_resets_every_unit(self):
+        for units in (1,7,69):
+            r=resolve_candidate('RiscayDesyncDelay',dict(units=units))
+            self.assertEqual(r['keeper_bits'],0)
+            for reset,value in product((0,1),repeat=2):
+                got=outputs(r,{},dict(reset=reset,**{'in':value}))
+                self.assertEqual(got['out'],value and not reset)
+                if reset:
+                    self.assertTrue(all(got['unit'+str(i)]==0 for i in range(units-1)))
+            with self.assertRaisesRegex(ValueError,'PHYSICAL_RECIPE_UNAVAILABLE'):
+                require_recipe('RiscayDesyncDelay')
+        for units in (None,False,0,-1,1.5):
+            with self.assertRaisesRegex(ValueError,'COUNT_REQUIRED'):
+                resolve_candidate('RiscayDesyncDelay',dict(units=units))
+
+    def test_earliest_return_checks_both_thresholds_and_the_whole_window(self):
+        times=[i*.01 for i in range(12001)]
+        progress=[max(0,min(1,t-40)) for t in times]
+        for initial in (False,True):
+            def points(values):return [(t*1e-9,3.3*(1-v if initial else v)) for t,v in zip(times,values)]
+            good=points(progress);self.assertAlmostEqual(retained_wave(good,initial,3.3)['accepted_ns'],40.3)
+            with self.assertRaisesRegex(ValueError,'COVERAGE'):retained_wave(good[:5001],initial,3.3)
+            with self.assertRaisesRegex(ValueError,'STEP'):retained_wave(good[::4],initial,3.3)
+            for when,value,message in ((40.5,.2,'ACK_WITHDRAWN'),(90,.6,'KEEPER_LOST')):
+                bad=list(progress);bad[round(when*100)]=value
+                with self.assertRaisesRegex(ValueError,message):retained_wave(points(bad),initial,3.3)
+            bad=list(progress);bad[11499]=.8;bad[11501]=.4
+            wave=points(bad);wave.pop(11500) # 20 ps interval crosses the end of the window.
+            with self.assertRaisesRegex(ValueError,'KEEPER_LOST'):retained_wave(wave,initial,3.3)
+
+    def test_sta_polarity_fails_closed_when_a_library_arc_is_missing(self):
+        recipe=dict(cells=[dict(name='g',cell='inv',pins=dict(I='in',ZN='out'))])
+        body='pin(ZN) { timing() { related_pin : "I"; timing_sense : negative_unate; } }'
+        self.assertEqual(arc_polarities(recipe,dict(inv=body)),{('g/I','g/ZN'):True})
+        for broken in (body.replace('negative_unate','non_unate'),body.replace('"I"','"J"')):
+            with self.assertRaisesRegex(ValueError,'POLARITY_MISSING'):arc_polarities(recipe,dict(inv=broken))
+
+    def test_each_conditional_sta_target_is_a_real_monotonic_transition(self):
+        cases=[('RiscayDesyncJoin',dict(initial_open=opened)) for opened in (False,True)]
+        cases += [('RiscayDesyncStop',{}),('RiscayDesyncCaptureJoin',{})]
+        cases += [('RiscayDesyncQualifiedController',dict(initial_open=opened,same_count=same,
+                  closed_count=closed,rise_qualified=rise))
+                  for opened,same,closed,rise in product((False,True),(0,3),(0,2),(False,True))]
+        for name,parameters in cases:
+            recipe=resolve_candidate(name,parameters)
+            for context in transition_contexts(name,parameters):
+                view,cuts=fixture(recipe,context['frontiers'])
+                self.assertEqual(len(cuts),len({(c['cell'],c['pin']) for c in cuts}))
+                before=outputs(view,{},context['fixed']|{context['source']:not context['rise']})
+                after=outputs(view,{},context['fixed']|{context['source']:context['rise']})
+                for target,direction in context['targets'].items():
+                    self.assertEqual((before[target],after[target]),(not direction,direction),
+                                     (name,parameters,context['label'],target))
+        # The B-last return context is a pulse at B; only A/N are monotonic.
+        rows=transition_contexts('RiscayDesyncQualifiedController',dict(initial_open=True))
+        row=next(r for r in rows if r['label']=='Aminus_state_B')
+        self.assertNotIn('requestOut',row['targets'])
+        self.assertTrue(any(r['label']=='N_to_B_10' for r in rows))
+
     def test_qualification_preserves_keeper_state_and_one_sided_closure(self):
         for opened in (False, True):
             r = qualified_controller(initial_open=opened, same_count=2, closed_count=2, rise_qualified=True)
