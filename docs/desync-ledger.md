@@ -9,6 +9,7 @@ targets, govern adoption. Old BD/Click physical results do not qualify desync.
 | Connected controller preparation | Storage-only 0.5849922624 → connected 0.5958650880 mm²; 1.099954× → 1.120398× pinned reference; **whole-chip ratio unavailable** | 2,977 architectural; 5,283 FF/latch bits + 198 control keepers | Controllers/joins/mutex 0.0109606336 mm², 1.83945%; delays unmeasured | Not measured | 0 | Ten banks connected; external delay apertures; no chip acceptance |
 | Loaded control/distribution and area trial | 0.5958650880 → 0.5998603520 mm² before lines; cell-exact ten-line trial **0.6186512640 mm² / 1.163243x (FAIL)** | Unchanged: 2,977 architectural; 5,283 FF/latch + 198 keeper bits | Trial 0.0337468096 mm² / **5.4549% (FAIL)** | Zero-wire preparation 0.6562813824 mm², excluding lines; not the matched physical result | 0 | Electrical preparation and ideal-cycle proof; production sizing remains unavailable; budget decision required |
 | Approved mapped ceiling and pure data-path measurements | Unchanged **0.6186512640 mm² / 1.163243x**; mapped ceiling now **1.20x** | Unchanged: 2,977 architectural; 5,283 FF/latch + 198 keeper bits | Unchanged 0.0337468096 mm² / **5.4549%**; separate 5% ceiling unchanged | Unchanged preparation; complete physical ratio unavailable | 0 | Mapped area fits; data segments measured; control share and composed timing remain open |
+| Direct I2C latch handoff | **1.163243x → 1.163243x**, 0.6186512640 mm² unchanged provisional trial | 2,977 architectural; 5,283 FF/latch + 198 keepers, unchanged | 0.0337468096 mm² / **5.4549%**, unchanged | Preparation remains 0.6562813824 mm² without lines/wires | 0 | Sampled M-to-S steady-cycle hold measured; no added hold cells or adopted delay counts |
 
 The mapped reference is the original clocked export, remapped with the pinned
 Yosys 0.62/ABC and GF180 7-track libraries. Pre-placement repair is
@@ -597,3 +598,43 @@ runtime; the first data run retained a large artificial timing budget, replaced
 after review identified float quantization; the first delay-control attempts
 used an unsupported annotation command and unescaped SDF names. Final controls
 use OpenSTA's SDF input with escaped mapped instance names.
+
+## Direct I2C handoff: compose before adding hold cells
+
+`measure_desync_handoff.py` starts both hold arms at the receiver's actual A
+output: its closing tree, and the sender's ACK/reopening tree. It preserves
+the repaired graph and complete pin loads, independently enumerates actual
+latch sinks, and compares physically paired Q/D bits. This avoids combining
+unrelated extrema from isolated controller and tree measurements. The existing
+B equation requires ACK low before publication; the measured ACK rise therefore
+belongs to the current steady cycle, not retained initialization state.
+
+All 347 direct I2C M-to-S pairs pass at five corners, six root slews and both
+data polarities: **20,820 cases, minimum +0.793638 ns** with a 1.2 late derate.
+Maximum scoped pin slew is 1.595057 ns. Changing the analysis period from 1,000
+to 333 ns leaves every row identical. Annotating the actual closing inverter
+with 10 ns makes every case fail: **−11.046344 to −7.279423 ns**. The expanded
+report shows the intended 12 ns derated arc. The independent-extrema alarm does
+not by itself justify an added hold cell or delay count. **The +0.794 ns margin
+is conditional STA evidence; physical hold qualification requires a full-feedback
+minimum-transition bound.** Keeper feedback can reinforce reopening faster than
+the static-feedback model; retained finite SPICE samples do not close that bound.
+
+Area, storage and RTL are unchanged. A fresh inventory of the provisional line
+trial still gives **1.163243x mapped**, **1.230457x storage area** and **5.4549%**
+control share; only the control-share budget fails. This is not an adopted map.
+Production delay policy stays empty. Setup, reverse/same-phase handoffs, gated
+qualifiers, CPU and SRAM edge classes, pulses, initialization/reset, continuous
+slew bounds and routed RC remain open. Independent review found and fixed a
+route-list omission that could hide paired sinks, and timing annotations now
+fail closed on warnings. Final evidence is `build/desync-handoff/{final,
+period-final,late-final,area-recheck,ci-final}`. Full CI passes **486 Python
+properties and 268 Scala tests across 29 suites**, including boot, earliest I2C
+status, SRAM, sleep and reset. The reference self-comparison proves 6,976 points;
+it is not generated-chip flow equivalence. Final run receipts have unchanged
+inputs and complete outputs; the deliberate late-capture run retains fail status.
+
+Failed experiments retained: independent extrema produced a pessimistic I2C
+hold alarm; the first mutation used an unsupported command, then unescaped
+dots/slashes caused ignored SDF annotations. The corrected control fails for
+the intended timing reason. No failed or ignored mutation qualifies the design.

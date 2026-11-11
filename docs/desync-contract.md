@@ -83,6 +83,17 @@ continuous slew envelope. Compose closing-edge/setup corrections explicitly and
 propagate transparent D-to-Q slew through downstream logic. The original
 worst-slack bank samples remain diagnostic; neither view alone closes setup/hold.
 
+Direct latch handoff hold starts at the receiver's actual A rise. Propagate that
+same event through its closing tree and the sender's ACK/reopening tree, comparing
+each physical Q-to-D pair with its loaded E-to-Q and hold arcs. Source B required
+ACK low before publication, so this rising ACK belongs to the current cycle.
+I2C M-to-S passes this sampled conditional STA check with a 1.2 late derate.
+Fixed keeper-feedback inputs do not establish a minimum reopening bound:
+real feedback can reinforce the transition. Physical hold qualification needs
+a full-feedback minimum-transition envelope; finite SPICE samples do not close it.
+Initialization, minimum pulses, reverse handoffs and routed RC remain separate.
+Lengthening a primary request delay does not repair this immediate return path.
+
 Required checks: generated-chip per-register flow equivalence; folded
 next-state/SRAM-effect proof; unchanged boot, I2C earliest status, SRAM, ADC,
 reset, firmware and sleep/wake suites; stop/wake races and POR in flight.
@@ -98,17 +109,11 @@ The user raised mapped area to **1.20x** after checkpoint `291d731`.
 Limits are mapped **1.20x**, repaired plus trees **1.20x**, architectural bits
 **1.00x**, storage area **1.25x**, and control/join/delay/mutex share **5%**.
 
-Connected preparation is 0.5998603520 mm² before matched lines. A cell-exact
-**area-only** ten-line trial is 0.6186512640 mm² (**1.163243x**), with **5.4549%**
-control share. Mapped area now fits the approved ceiling, but the separate 5%
-control-share limit still fails. Its provisional component-based counts are not
-accepted bank timing, and production policy remains empty. Timing investigation
-continues; neither budget approval nor diagnostic measurements qualify adoption.
+Current inventories and area-only trials are in the ledger. The trial fits
+mapped area but still exceeds 5% control share. Provisional counts are not
+accepted timing; production delay policy remains empty. Neither budget approval
+nor diagnostic measurements qualify adoption.
 
-Preparation with enable trees is 0.6562813824 mm², excluding matched lines and
-wire RC. Storage remains 0.2512318592 mm²: 2,977 architectural bits, 5,283 physical
-FF/latch bits plus 198 control keepers. Periodic sinks are LF 78; SDA adds one
-event-clocked FF. The 5,207 native storage/macro pins are independently covered.
 The experimental mutex footprint is 0.00098784 mm². Its **1 FIT per MCU** target
 still needs a justified reliability model, arbitration rate, variation/noise and
 extracted evidence; finite SPICE samples do not qualify it. No whole-chip timing,

@@ -296,3 +296,23 @@ analysis-period control; every result must match the default 1,000 ns run.
 These are fixed-slew combinational extrema, not continuous-slew bounds or complete
 setup/hold checks. Without `--data-only`, the original worst-slack samples remain
 diagnostic and must not be used as pure segment extrema.
+
+For a direct, ungated M-to-S latch handoff, use a non-data-only bank-segment
+directory as the analysis foundation:
+
+```text
+python tools/measure_desync_handoff.py <connected-map> <repaired-directory> <bank-segments> build/handoff --mutex-libs <mutex-liberty-directory> --bank i2c
+```
+
+The receiver's actual A output is the common timing frontier for its close tree
+and the sender's reopening tree. The tool independently discovers every physical
+pair, preserves the ordinary graph and removed pin loads, and checks both data
+polarities at six root slews and five corners with a 1.2 late derate. Missing
+paths, omitted sinks, excessive path slew and unresolved annotations fail.
+Repeat with `--period 333`: every row must be identical. `--late-capture 10`
+must fail hold after annotating the real capture inverter; retain that failure.
+This is sampled steady-cycle hold evidence, not setup, pulse, reset, continuous
+slew or routed qualification. Keeper feedback is held at its prior logic value;
+real feedback reinforcement can make reopening faster. A full-feedback minimum
+transition bound is required before calling this a physical hold margin.
+The tool rejects gated, macro and non-paired storage.
