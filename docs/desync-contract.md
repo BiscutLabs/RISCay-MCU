@@ -108,6 +108,13 @@ Gate clock must fall before its retained qualifier changes, without a new output
 pulse. Independently enumerate every storage clock; only traced LF/SDA roots are
 excluded. This return check does not establish qualifier setup before opening,
 clock pulse widths, reset behavior or a continuous/mismatch/routed timing bound.
+Conditional opening checks retain the target's feedback and use the qualifier
+owner's actual A transition as the common frontier. D arrives near the Liberty
+setup aperture; final D/E waveforms must satisfy it before checking qualifier
+settling against gate opening. Vary D and frontier slew independently. This
+measures a tested arrival requirement, not the latest safe arrival. The upstream
+`enabled`/`previous` latch links, demand logic and data retention still need
+composition; an unrelated whole-bank maximum cannot replace those exact paths.
 
 Required checks: generated-chip per-register flow equivalence; folded
 next-state/SRAM-effect proof; unchanged boot, I2C earliest status, SRAM, ADC,

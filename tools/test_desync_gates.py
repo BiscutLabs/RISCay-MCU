@@ -1,13 +1,15 @@
 # SPDX-License-Identifier: Apache-2.0
 from copy import deepcopy
+from pathlib import Path
+from types import SimpleNamespace
 import unittest
-from measure_desync_gates import inventory, prepare, check
+from measure_desync_gates import inventory, prepare, deck, check, setup_table, setup_value, opening_check, opening_verdict, qualifier_chains
 from primitives import resolve_candidate
 from test_desync_handoff import cell
 
 
 class GateTests(unittest.TestCase):
-    def fixture(self, cpu=False, previous=False):
+    def fixture(self, cpu=False, previous=False, opening=False):
         nets={};cells={};bindings=[]
         def bit(n):return nets.setdefault(n,len(nets)+10)
         def add(name,primitive,parameters,connections):
@@ -21,9 +23,16 @@ class GateTests(unittest.TestCase):
         add('source','RiscayDesyncQualifiedController',params,
             dict(acknowledgeIn='join/out',closed0='target/enable' if cpu else 'target/acknowledgeOut',closed1='other/acknowledgeOut'))
         for name in ('target','other'):
-            add(name,'RiscayDesyncQualifiedController',dict(params,initial_open=previous,closed_count=0),{})
+            active=opening and name=='target'
+            target_params=dict(params,initial_open=cpu or previous if active else previous,
+                               closed_count=int(active and not cpu),rise_qualified=active and cpu)
+            connections=(dict(acknowledgeIn='other/acknowledgeOut',riseAllowed='source/acknowledgeOut') if cpu else
+                         dict(acknowledgeIn='opening_join/out',closed0='source/acknowledgeOut')) if active else {}
+            add(name,'RiscayDesyncQualifiedController',target_params,connections)
         add('join','RiscayDesyncJoin',dict(initial_open=False),
             dict(input0='other/acknowledgeOut' if cpu else 'target/acknowledgeOut',input1='other/acknowledgeOut'))
+        if opening and not cpu:add('opening_join','RiscayDesyncJoin',dict(initial_open=False),
+            dict(input0='source/acknowledgeOut',input1='other/acknowledgeOut'))
         cells['clock_buffer']=cell('buf_2',{'I':bit('target/acknowledgeOut' if cpu else 'target/enable')},{'Z':bit('clock')})
         cells['qualifier']=cell('latq_1',{'D':bit('sink/Q'),'E':bit('source/enable')},{'Q':bit('qualifier/Q')})
         cells['gate']=cell('and2_1',{'A1':bit('clock'),'A2':bit('qualifier/Q')},{'Z':bit('gated')})
@@ -48,6 +57,28 @@ class GateTests(unittest.TestCase):
             self.assertEqual(f['initial'][f['root']],int(not previous))
             q=body['cells']['qualifier']['connections']['Q'][0]
             self.assertIn(dict(cell='extra',type=body['cells']['extra']['type'],pin='I'),f['loads'][q])
+
+    def test_opening_preserves_target_keeper_and_common_source_closure(self):
+        for cpu,previous in ((False,False),(True,False),(False,True)):
+            body,bindings=self.fixture(cpu=cpu,previous=previous,opening=True)
+            rows,*metadata=inventory(body,bindings);f=prepare(body,bindings,rows[0],*metadata,opening=True)
+            self.assertIn('target/ack_keeper__cell',f['cells'])
+            self.assertNotIn('source/ack_keeper__cell',f['cells'])
+            self.assertEqual(f['root'],body['cells']['source/enable_invert__cell']['connections']['I'][0])
+            self.assertTrue(f['root_rise'])
+            for n,c in f['cells'].items():
+                if n!='qualifier':self.assertEqual(c,body['cells'][n])
+            self.assertIn('target/qualified_set__cell' if cpu else 'opening_join/reset_state__cell',f['cells'])
+
+    def test_qualifier_chain_uses_real_direct_links_not_domain_maxima(self):
+        body,bindings=self.fixture();cells=body['cells'];cells['qualifier']['connections']['D']=[8888]
+        cells['prior']=cell('latq_1',dict(D=9999,E=cells['qualifier']['connections']['E'][0]),dict(Q=8888))
+        rows,ports,owners,native,drivers=inventory(body,bindings)
+        chains=qualifier_chains(body,rows,native,drivers)
+        self.assertEqual([x['cell'] for x in chains['qualifier']['links']],['qualifier','prior'])
+        self.assertEqual(chains['qualifier']['data_pin'],'prior/D')
+        cells['prior']['connections']['D']=cells['qualifier']['connections']['Q']
+        with self.assertRaisesRegex(ValueError,'DATA_LOOP'):qualifier_chains(body,rows,native,drivers)
 
     def test_unknown_gate_or_storage_clock_cannot_hide_sinks(self):
         for kind in ('and3','unknown','unlisted_port'):
@@ -104,6 +135,77 @@ class GateTests(unittest.TestCase):
                 else:
                     for row in rows[2000:2060]:row[observed['clock']+1]=1
                 with self.assertRaises(ValueError):check(*args)
+
+    def library(self):
+        return '''library(test) { slew_derate_from_library : 0.5;
+          lu_table_template(cnst) { variable_1 : constrained_pin_transition; variable_2 : related_pin_transition; }
+          cell(latch) { pin(D) { timing() { related_pin : "E"; timing_type : setup_falling;
+            rise_constraint(cnst) { index_1("0.02, 2"); index_2("0.02, 2"); values("0.22,20.02", "2.2,22"); }
+            fall_constraint(cnst) { index_1("0.02, 2"); index_2("0.02, 2"); values("0.22,20.02", "2.2,22"); }
+          } } } }'''
+
+    def test_setup_axes_physical_slew_and_range_admission(self):
+        for rise in (True,False):
+            table=setup_table(self.library(),'latch',rise)
+            self.assertAlmostEqual(setup_value(table,.1,.2),4.2)
+            for data,clock in ((.001,.2),(.1,2),(float('nan'),.2)):
+                with self.assertRaisesRegex(ValueError,'OUTSIDE_TABLE'):setup_value(table,data,clock)
+        with self.assertRaisesRegex(ValueError,'SETUP_AXES'):
+            setup_table(self.library().replace('constrained_pin_transition','related_pin_transition'),'latch',True)
+
+    def test_opening_data_and_root_slews_are_independent(self):
+        body,bindings=self.fixture(opening=True);gates,*metadata=inventory(body,bindings)
+        f=prepare(body,bindings,gates[0],*metadata,True);library={};headers={}
+        for c in body['cells'].values():
+            headers[c['type']]=list(c['connections'])+['VDD','VNW','VPW','VSS']
+            library[c['type']]=''.join('pin('+p+') { capacitance : 0.001; }' for p in c['connections'])
+        def stimulus(root,data):
+            text,*_=deck(f,library,headers,Path('pdk'),SimpleNamespace(path=str),
+                         ('test','typical',25,3.3),root,0,.1,0,Path('wave'),200,data)
+            return {line.split()[0]:line for line in text.splitlines() if line.startswith('V')}
+        fast=stimulus(.02,.02);slow_data=stimulus(.02,2);slow_root=stimulus(2,.02)
+        self.assertEqual(fast['Vroot'],slow_data['Vroot'])
+        self.assertEqual(fast['Vdata'],slow_root['Vdata'])
+        self.assertNotEqual(fast['Vdata'],slow_data['Vdata'])
+        self.assertNotEqual(fast['Vroot'],slow_root['Vroot'])
+
+    def opening_wave(self,old,cpu):
+        names=['root','a','b','n','e','clock','data','q','condition','out','request','ack'];observed=dict(zip(names,range(len(names))))
+        rows=[]
+        def ramp(t,center,width=1):return max(0,min(1,(t-center)/width+.5))
+        for i in range(2501):
+            t=i/10;event=ramp(t,203);root=ramp(t,200.5);q=(1-ramp(t,199)) if old else ramp(t,199)
+            data=(1-ramp(t,198.5)) if old else ramp(t,198.5)
+            clock=event if t>=180 else int(cpu)
+            rows.append([t*1e-9,root,event if cpu else 1-event,0 if cpu else 1-event,
+                         1-event if cpu else event,1-ramp(t,201),clock,data,q,q,clock*q,int(cpu),1])
+        table=('index_1("0.02,2");index_2("0.02,2");values("0.1,0.1","0.1,0.1");',.5)
+        return rows,observed,list(observed.values()),1,old,.1,cpu,table
+
+    def test_opening_premise_and_order_are_distinct_failure_kinds(self):
+        for old in (0,1):
+            for cpu in (False,True):
+                args=self.opening_wave(old,cpu);r=opening_check(*args);opening_verdict(r)
+                bad=dict(r,setup_headroom_ns=-.1)
+                with self.assertRaisesRegex(ValueError,'INVALID_APERTURE_PREMISE'):opening_verdict(bad)
+                # A late qualifier with valid D/setup must trip the ordering check.
+                rows,obs,*_=args
+                for row in rows:
+                    t=row[0]*1e9;q=max(0,min(1,t-204+.5));q=1-q if old else q
+                    row[obs['q']+1]=q;row[obs['condition']+1]=q
+                    row[obs['out']+1]=0 if old else max(0,min(1,t-205+.5))
+                    if cpu and t<180:row[obs['out']+1]=old
+                r=opening_check(*args);self.assertGreater(r['setup_headroom_ns'],.1)
+                with self.assertRaisesRegex(ValueError,'QUALIFIER_ORDER'):opening_verdict(r)
+
+    def test_opening_cannot_time_request_instead_or_hide_feedback_pulses(self):
+        for old in (0,1):
+            for fault in ('request','ack','b','clock','previous_pulse','missing'):
+                args=deepcopy(self.opening_wave(old,True));rows,observed,*_=args
+                if fault=='missing':del rows[2000]
+                elif fault=='previous_pulse':rows[1750][observed['out']+1]=1-old
+                else:rows[1980 if fault in ('request','ack') else 2100][observed[fault]+1]=0 if fault in ('request','ack','clock') else 1
+                with self.assertRaises(ValueError):opening_check(*args)
 
 
 if __name__=='__main__':unittest.main()

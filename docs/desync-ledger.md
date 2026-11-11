@@ -12,6 +12,7 @@ targets, govern adoption. Old BD/Click physical results do not qualify desync.
 | Direct I2C latch handoff | **1.163243x → 1.163243x**, 0.6186512640 mm² unchanged provisional trial | 2,977 architectural; 5,283 FF/latch + 198 keepers, unchanged | 0.0337468096 mm² / **5.4549%**, unchanged | Preparation remains 0.6562813824 mm² without lines/wires | 0 | Sampled M-to-S steady-cycle hold measured; no added hold cells or adopted delay counts |
 | Full-feedback I2C retention | **1.163243x → 1.163243x**, 0.6186512640 mm² unchanged provisional trial | 2,977 architectural; 5,283 FF/latch + 198 keepers, unchanged | 0.0337468096 mm² / **5.4549%**, unchanged | Unchanged preparation; complete physical ratio unavailable | 0 | All paired latches retain data in the sampled full-feedback circuit; no production timing adoption |
 | Work-gate return ordering | **1.163243x → 1.163243x**, 0.6186512640 mm² unchanged provisional trial | 2,977 architectural; 5,283 FF/latch + 198 keepers, unchanged | 0.0337468096 mm² / **5.4549%**, unchanged | Unchanged preparation; complete physical ratio unavailable | 0 | Actual retained qualifiers and return paths checked; opening/setup and production timing adoption remain open |
+| Conditional work-gate opening | **1.163243x → 1.163243x**, 0.6186512640 mm² unchanged provisional trial | 2,977 architectural; 5,283 FF/latch + 198 keepers, unchanged | 0.0337468096 mm² / **5.4549%**, unchanged | Unchanged preparation; complete physical ratio unavailable | 0 | Actual gate paths measured at the qualifier setup aperture; upstream arrival/retention and production timing adoption remain open |
 
 The mapped reference is the original clocked export, remapped with the pinned
 Yosys 0.62/ABC and GF180 7-track libraries. Pre-placement repair is
@@ -730,3 +731,54 @@ reference self-comparison passes; generated-chip flow equivalence remains open.
 Opening/setup must next compose the two actual qualifier paths (`enabled` and
 `previous`) with their shared controller frontiers, rather than substituting an
 unrelated whole-bank maximum.
+
+## Conditional work-gate opening
+
+The existing gate tool now checks opening from the qualifier owner's A
+transition, preserving the target's feedback, ACK/closed-input or CPU
+`riseAllowed` path, qualifier latch and actual trees. Its upstream inventory
+finds two chains: demand logic → falling.S → falling.M `enabled`, and that
+`enabled` value → power.M → power.S `previous`. The three intervening data
+links are direct Q-to-D wires; ordinary demand logic is a separate frontier.
+
+All **360 opening cases pass**: nine actual gates, five corners, two data
+polarities and independently varied 0.02/2 ns physical data and frontier slews.
+D is admitted near its Liberty setup aperture, then the final actual D/E
+waveforms are checked. Minimum fixture setup headroom is **0.198727 ns**;
+this is a chosen stimulus condition, not a measured upstream timing margin.
+The smallest sampled settled-qualifier to opening-clock separation is
+**0.626009 ns**, at CPU, FF/cold, 2 ns frontier slew, 0.02 ns D slew, rising D.
+All other gates exceed **2.152316 ns**. The reported D arrival is a tested
+condition, not a latest-safe-arrival limit or a continuous envelope.
+
+At a 0.01 ns maximum timestep, the limiting case gives **0.626309 ns**.
+Across all eight CPU FF/cold cases, every reported threshold crossing changes
+by less than **1.726 ps**, and the separation by less than **1.493 ps**.
+A 5 ns late-D control misses capture and fails; a separate checker mutation
+keeps setup valid but delays the qualifier, independently failing ordering.
+Review found a gap in observation of the preceding CPU pulse. The final
+checker covers the entire prior return, requires qualifier reuse after clock
+closure and rejects injected pulses in both data polarities. An early pilot
+changed D before that prior return completed; its failed evidence is retained,
+and its corrected prelude is not a circuit change.
+
+Evidence is in `build/desync-opening/{final-<corner>,fine-final,late-data-final,
+area-recheck}`. Fresh area accounting remains **1.163243x mapped**,
+**1.230457x storage area** and **5.4549% control share**. The separate 5%
+control ceiling still fails. No RTL, storage, guards or physical counts changed.
+Production delay sizing remains empty. The next obligation is to compose
+actual upstream arrival and retention with these measured apertures; minimum
+pulses, reset, continuous slew, mismatch, routed RC and whole-chip flow remain
+unqualified.
+
+The **180 return-ordering cases** also pass with every result unchanged from
+the previous batch (minimum **1.943307 ns**). Independent review reproduced
+the opening coverage/minima and timestep comparison, checked the receipts and
+confirmed the prior-pulse fault is rejected in both polarities. Return evidence
+is retained in `build/desync-opening/return-final`.
+
+The final full CI gate passes **504 Python properties and 268 Scala tests across
+29 suites**, including unchanged boot, earliest I2C status, SRAM, reset and
+sleep/wake. `build/desync-opening/ci-final` records unchanged inputs and complete
+outputs. The reference self-equivalence harness passes; generated-chip flow
+equivalence is still open.

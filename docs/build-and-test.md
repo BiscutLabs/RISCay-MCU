@@ -363,3 +363,31 @@ timestep comparison. Compare all reported threshold crossings. The reported
 input-order measurement, not a hold margin. Opening/setup, minimum pulses,
 reset, external dynamic loads, continuous slew, mismatch and routed RC remain
 separate obligations. No physical delay count is chosen by this campaign.
+
+Use the same inventory for conditional gate opening:
+
+```text
+python tools/measure_desync_gates.py <connected-map> <repaired-directory> build/gate-opening --opening
+```
+
+This retains the target controller's feedback, ACK/closed-input or CPU
+`riseAllowed` path, qualifier latch and distribution. The qualifier owner's A
+transition is the common frontier. `qualifier-chains.json` records the actual
+upstream latch links, stopping at ordinary logic rather than substituting bank
+maxima. Every gate is checked at five corners, both data polarities and independent
+0.02/2 ns physical 30–70% data and frontier slews. `--data-slew` and `--slew`
+select these axes separately; `--corner` permits separate bounded runs.
+
+A pilot places D early, then the final fixture places it near the latch's actual
+Liberty setup aperture. Setup uses the final measured D/E slews, the library's
+slew conversion and in-range table indices. The final setup headroom and the
+70%-settled qualifier to 30%-opening-clock separation must each exceed 100 ps.
+Invalid setup premises are distinguished from ordering failures. The reported
+tested D arrival is not a latest-safe-arrival bound. The source-latch-closed to
+clock separation is diagnostic; earlier data can settle before closure.
+
+`--late-data 5` is an invalid-arrival control; the checker tests also inject a late
+qualifier with valid setup to ensure the ordering verdict can fail independently.
+Repeat the limiting case with `--max-step .01` and compare every crossing.
+Upstream D arrival and retention, actual waveforms, minimum pulses, reset,
+continuous slew, mismatch and routed RC remain open. No sizing is adopted here.
