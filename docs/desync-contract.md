@@ -100,6 +100,15 @@ capture-skew failures do not establish continuous, mismatch or routed bounds.
 Initialization, minimum pulses, reverse handoffs and routed RC remain separate.
 Lengthening a primary request delay does not repair this immediate return path.
 
+Work-gate return checks start at the actual target A transition, preserving the
+qualifier owner's complete ACK join and closed-input paths, feedback, latch and
+trees. Normal S gates and falling.M close from A rising; CPU capture closes from
+master.A falling, including the real A-to-N inverter in its closure dependency.
+Gate clock must fall before its retained qualifier changes, without a new output
+pulse. Independently enumerate every storage clock; only traced LF/SDA roots are
+excluded. This return check does not establish qualifier setup before opening,
+clock pulse widths, reset behavior or a continuous/mismatch/routed timing bound.
+
 Required checks: generated-chip per-register flow equivalence; folded
 next-state/SRAM-effect proof; unchanged boot, I2C earliest status, SRAM, ADC,
 reset, firmware and sleep/wake suites; stop/wake races and POR in flight.

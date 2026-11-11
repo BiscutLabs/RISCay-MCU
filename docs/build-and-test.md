@@ -340,3 +340,26 @@ the default 0.2 ns maximum timestep. Compare every enable/controller edge and
 source-data crossing, not just the reported minimum. Raw data-to-close separation
 is not a Liberty hold margin. These finite schematic samples do not qualify
 mismatch, actual source waveform admission, pulses, reset or routed RC.
+
+Check retained work-enable qualifiers on every actual gated storage path:
+
+```text
+python tools/measure_desync_gates.py <connected-map> <repaired-directory> build/gate-return
+```
+
+The independent storage-clock walk fails on unknown logic; only the traced LF
+and SDA roots are excluded. Each fixture retains the qualifier owner's full
+feedback and ACK/closed-input paths, its latch and actual distribution cells.
+Other native outputs are timing frontiers with their real reset markings;
+omitted loads remain explicit Liberty pin capacitances. The default campaign
+covers every discovered gate, five corners, both physical input slews (0.02 and
+2 ns) and both qualifier polarities. It checks legal preceding states, actual
+qualifier reuse, clean gate closure and no extra pulse over the full return.
+
+`--late-clock 10` delays only the actual gate-clock branch in the fixture and must
+fail. `--gate cpu.m --corner ff_n40C_3v60 --slew .02 --max-step .01` provides a
+timestep comparison. Compare all reported threshold crossings. The reported
+30%-progress qualifier to 70%-progress falling-clock separation is a sampled
+input-order measurement, not a hold margin. Opening/setup, minimum pulses,
+reset, external dynamic loads, continuous slew, mismatch and routed RC remain
+separate obligations. No physical delay count is chosen by this campaign.
