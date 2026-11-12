@@ -141,12 +141,15 @@ def compare(candidate, reference, budget, *, physical=False):
                 variant=candidate, reference=reference, scope='repaired+trees' if physical else 'flat-mapped')
 
 
-CEILING = dict(mapped_ratio=1.20, repaired_tree_ratio=1.20,
-               architectural_bits_ratio=1.00, storage_area_ratio=1.25, control_area_fraction=.05)
+CEILING = dict(mapped_ratio=1.17, repaired_tree_ratio=1.20,
+               architectural_bits_ratio=1.00, storage_area_ratio=1.25, control_area_fraction=.055)
 
 # User approved only the mapped ceiling after this checkpoint. The exception
 # cannot be reused after a later tightening or for any other budget field.
 MAPPED_APPROVAL_PARENT = '291d73138fdd397ea2de270a202c7c026c46263a'
+# The later explicit prototype approval tightens mapped area while increasing
+# control share. It cannot reopen either limit after a subsequent tightening.
+PROTOTYPE_APPROVAL_PARENT = 'b2cac0fe28ab85cb33cdcc57a7457b400f391fe8'
 
 
 def approved_schema(budget):
@@ -181,7 +184,7 @@ def check_budget_history(path, root=ROOT):
     for newer,older,ref in ((current,revisions[0],'HEAD'),(revisions[0],revisions[1],'HEAD^')):
         # Resolve the commit only for an increase; ordinary tightening keeps the
         # existing history check and does not need an approval record.
-        if newer['mapped_ratio'] > older['mapped_ratio']:
+        if any(approved_schema(newer)[key] > approved_schema(older)[key] for key in CEILING):
             identity=subprocess.run(['git','rev-parse',ref],cwd=root,capture_output=True,text=True)
             check_approved_transition(newer,older,identity.stdout.strip() if identity.returncode==0 else '')
         else:check_budget(newer,older)
@@ -192,6 +195,9 @@ def check_approved_transition(current, previous, parent):
     allowed = dict(previous)
     if parent == MAPPED_APPROVAL_PARENT and previous['mapped_ratio'] == 1.15:
         allowed['mapped_ratio'] = 1.20
+    if (parent == PROTOTYPE_APPROVAL_PARENT and previous['mapped_ratio'] == 1.20
+            and previous['control_area_fraction'] == .05):
+        allowed.update(mapped_ratio=1.17, control_area_fraction=.055)
     check_budget(current, allowed)
 
 

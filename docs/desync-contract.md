@@ -127,12 +127,14 @@ service points. No desync throughput margin is yet claimed.
 
 The pinned reference is **0.5318332992 mm² mapped**, **0.5915383488 mm² after
 repair/placement/CTS**, 2,977 architectural bits and 0.2041777472 mm² storage.
-The user raised mapped area to **1.20x** after checkpoint `291d731`.
-Limits are mapped **1.20x**, repaired plus trees **1.20x**, architectural bits
-**1.00x**, storage area **1.25x**, and control/join/delay/mutex share **5%**.
+After `b2cac0f`, the user approved prototype ceilings of **1.17x mapped** and
+**5.5% control/join/delay/mutex share**, superseding 1.20x and 5% respectively.
+Unchanged limits are repaired plus trees **1.20x**, architectural bits **1.00x**
+and storage area **1.25x**. This approval does not qualify production adoption.
 
 Current inventories and area-only trials are in the ledger. The trial fits
-mapped area but still exceeds 5% control share. Provisional counts are not
+the mapped/storage/control budgets; the repaired-plus-trees comparison remains
+unavailable. Provisional counts are not
 accepted timing; production delay policy remains empty. Neither budget approval
 nor diagnostic measurements qualify adoption.
 

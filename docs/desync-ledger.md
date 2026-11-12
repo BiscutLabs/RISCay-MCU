@@ -13,6 +13,7 @@ targets, govern adoption. Old BD/Click physical results do not qualify desync.
 | Full-feedback I2C retention | **1.163243x → 1.163243x**, 0.6186512640 mm² unchanged provisional trial | 2,977 architectural; 5,283 FF/latch + 198 keepers, unchanged | 0.0337468096 mm² / **5.4549%**, unchanged | Unchanged preparation; complete physical ratio unavailable | 0 | All paired latches retain data in the sampled full-feedback circuit; no production timing adoption |
 | Work-gate return ordering | **1.163243x → 1.163243x**, 0.6186512640 mm² unchanged provisional trial | 2,977 architectural; 5,283 FF/latch + 198 keepers, unchanged | 0.0337468096 mm² / **5.4549%**, unchanged | Unchanged preparation; complete physical ratio unavailable | 0 | Actual retained qualifiers and return paths checked; opening/setup and production timing adoption remain open |
 | Conditional work-gate opening | **1.163243x → 1.163243x**, 0.6186512640 mm² unchanged provisional trial | 2,977 architectural; 5,283 FF/latch + 198 keepers, unchanged | 0.0337468096 mm² / **5.4549%**, unchanged | Unchanged preparation; complete physical ratio unavailable | 0 | Actual gate paths measured at the qualifier setup aperture; upstream arrival/retention and production timing adoption remain open |
+| Explicit prototype budget approval | **1.163243x → 1.163243x**, unchanged; ceiling **1.17x** | 2,977 architectural; 5,283 FF/latch + 198 keepers, unchanged | 0.0337468096 mm² / **5.4549%**; ceiling **5.5%** | Unchanged preparation; 1.20x repaired/tree limit retained | 0 | User-approved prototype budgets now fit; timing and production adoption remain open |
 
 The mapped reference is the original clocked export, remapped with the pinned
 Yosys 0.62/ABC and GF180 7-track libraries. Pre-placement repair is
@@ -30,8 +31,8 @@ binary has SHA-256
 `20abaf17173bc8be06b658179920f739103279e54105b3c165dceab4c8ba00a1`;
 the run receipt pins all other tool/library inputs. Reuse the same flow for the
 eventual desync denominator comparison.
-The current budgets therefore permit at most 0.6381999590 mm² mapped
-(user-approved 1.20x after `291d731`),
+The current prototype budgets permit at most 0.6222449601 mm² mapped
+(user-approved 1.17x after `b2cac0f`),
 0.7098460186 mm² repaired plus trees. Revised storage limits are exactly
 2,977 architectural bits and 0.2552221840 mm² storage cell area. These are limits,
 not achieved desync measurements.
@@ -782,3 +783,33 @@ The final full CI gate passes **504 Python properties and 268 Scala tests across
 sleep/wake. `build/desync-opening/ci-final` records unchanged inputs and complete
 outputs. The reference self-equivalence harness passes; generated-chip flow
 equivalence is still open.
+
+## Explicit prototype budget approval
+
+After `b2cac0f`, the user approved **1.17x mapped area** and **5.5% combined
+control/join/delay/mutex share**, retaining every other limit. This latest
+decision tightens the preceding 1.20x mapped ceiling and raises the preceding
+5% control ceiling. Repaired plus trees remains 1.20x, architectural bits
+exactly 1.00x and storage area 1.25x. The approval permits prototype continuation;
+it does not establish timing, reliability or production qualification.
+
+Reassessment of the unchanged ten-line trial now **passes the mapped,
+architectural-bit, storage-area and control-share checks**:
+**0.6186512640 mm² / 1.163243x**, storage area **1.230457x**, and combined
+control share **5.4549003%**. Mapped headroom is **0.0035936961 mm²**. Evidence
+is in `build/desync-prototype-budget/area-recheck`; earlier failed receipts
+remain valid records of the former limits. No RTL, cell count, storage, delay
+recipe or physical measurement changed. Production delay policy remains empty.
+The complete repaired-plus-trees comparison remains unavailable.
+
+The history check binds this approval to parent `b2cac0f` and the prior
+1.20x/5% values, including before and after commit. A control-only increase
+must resolve its approval even when mapped area decreases. The exception
+cannot increase another limit or be replayed after a later tightening; the
+earlier mapped-only approval is tested separately.
+
+Full CI passes **505 Python properties and 268 Scala tests across 29 suites**,
+including unchanged boot, earliest I2C status, SRAM, reset and sleep/wake;
+the reference self-equivalence harness also passes. Evidence is retained in
+`build/desync-prototype-budget/ci-final` with unchanged inputs and complete
+outputs. Independent review checked the approval scope and area evidence.

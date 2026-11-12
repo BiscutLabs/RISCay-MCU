@@ -1,10 +1,10 @@
 {
   "schema": 2,
-  "mapped_ratio": 1.20,
+  "mapped_ratio": 1.17,
   "repaired_tree_ratio": 1.20,
   "architectural_bits_ratio": 1.00,
   "storage_area_ratio": 1.25,
-  "control_area_fraction": 0.05,
-  "source": "User multi-bank specification and approved storage metric. After checkpoint 291d731, user explicitly raised mapped area to 1.20x and requested continuation. Other limits unchanged.",
+  "control_area_fraction": 0.055,
+  "source": "User explicitly approved prototype limits of 1.17x mapped area and 5.5% control/delay share after b2cac0f, retaining all other limits. This replaces the earlier 1.20x mapped and 5% control ceilings; it does not qualify timing or production adoption.",
   "policy": "May only tighten without explicit user approval"
 }
