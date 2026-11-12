@@ -23,6 +23,7 @@ FAST_SUITES = (
     'AsyncCrcSpec', 'AsyncHousekeepingSpec', 'AsyncFrameStoreSpec',
     'BootIngressSpec', 'I2cSpec', 'SramSpec', 'QuiescingReceiptSpec', 'QuiescingBridgeSpec', 'SleepSpec',
 )
+GENERATED_SUITES = ('DesyncI2cSpec', 'DesyncSocSpec', 'DesyncSleepSpec', 'DesyncStopSpec')
 
 
 def reports(directory, required, started, *, contains=None):
@@ -54,11 +55,15 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--output', type=Path, required=True)
     parser.add_argument('--python-only', action='store_true')
+    parser.add_argument('--desync-samples', type=Path,
+                        help='opt in to generated-chip functional gate using retained trial STA samples')
     parser.add_argument('--area-mapping', type=Path, help='mapped candidate netlist JSON; paired with --area-reference')
     parser.add_argument('--area-reference', type=Path)
     parser.add_argument('--physical-mapping', type=Path, help='CTS candidate JSON; paired with --physical-reference')
     parser.add_argument('--physical-reference', type=Path)
     args = parser.parse_args()
+    if args.desync_samples and args.python_only:
+        parser.error('--desync-samples requires Scala simulation')
     comparisons=[]
     for candidate,reference,physical in ((args.area_mapping,args.area_reference,False),
                                        (args.physical_mapping,args.physical_reference,True)):
@@ -71,6 +76,10 @@ def main():
     inputs = [ROOT/p for p in tracked if p and (ROOT/p).is_file() and
               Path(p).suffix.lower() in {'.scala','.sbt','.json','.py','.tcl','.v','.sv','.hex','.c','.h','.s','.ld','.properties','.yml'}]
     inputs += [path for candidate,reference,_ in comparisons for path in (candidate,reference)]
+    if args.desync_samples:
+        samples=args.desync_samples.resolve()
+        inputs += [samples/'line-area-trial-r3/chain-samples.json',samples/'transitions-r9/summary.json']
+        os.environ['RISCAY_DESYNC_SAMPLES']=str(samples)
     tools = [Path(sys.executable), *ROOT.glob('tools/*.py')]
     simulator_dirs = []
     for variable in ('CA_IVERILOG', 'CA_VVP'):
@@ -119,13 +128,18 @@ def main():
     fast_suites = ['riscay.'+s for s in FAST_SUITES]
     boot_suites = ['riscay.GenericBootSpec','riscay.ClockedGenericBootSpec']
     physical_suites = ['riscay.physical.PhysicalExportSpec','riscay.physical.PhysicalTimingSpec']
-    requested = [] if args.python_only else fast_suites + boot_suites + physical_suites
+    generated_suites = ['riscay.'+s for s in GENERATED_SUITES] if args.desync_samples else []
+    generated_boot = ['riscay.DesyncGenericBootSpec'] if args.desync_samples else []
+    requested = [] if args.python_only else fast_suites + boot_suites + physical_suites + generated_suites + generated_boot
     executed = {}; diagnostic = None
     if status == 'pass' and not args.python_only:
         reference_export=args.output.resolve()/'clocked-export'
         commands = ['libraryRuntime', 'verification/testOnly '+ ' '.join('riscay.'+s for s in FAST_SUITES),
                     'verification/testOnly '+ ' '.join(boot_suites)+' -- -z "generic SPI boot"', 'physical/test']
         commands.append('clocked/runMain riscay.clocked.EmitClockedSoc '+reference_export.as_posix())
+        if generated_suites:
+            commands.append('verification/testOnly '+' '.join(generated_suites))
+            commands.append('verification/testOnly '+' '.join(generated_boot)+' -- -z "generic SPI boot"')
         started = time.time()
         code = run.command([sys.executable, str(ROOT/'tools/sbt.py'), '--bootstrap', *commands],
                            cwd=ROOT, log=args.output/'scala.log')
@@ -153,6 +167,8 @@ def main():
             executed.update(reports(ROOT/'verification/target/test-reports', boot_suites,
                                     started, contains='generic SPI boot'))
             executed.update(reports(ROOT/'physical/target/test-reports', physical_suites, started))
+            executed.update(reports(ROOT/'verification/target/test-reports', generated_suites, started))
+            executed.update(reports(ROOT/'verification/target/test-reports', generated_boot, started, contains='generic SPI boot'))
             outputs += [ROOT/('physical' if '.physical.' in name else 'verification')/
                         'target/test-reports'/('TEST-'+name+'.xml') for name in executed]
         except (ValueError, ET.ParseError) as error:
@@ -160,7 +176,10 @@ def main():
     coverage = dict(python_tests=result.testsRun, failures=len(result.failures),
                     errors=len(result.errors), skipped=[dict(test=t.id(), reason=r) for t,r in result.skipped],
                     requested_scala_suites=requested, executed_scala_tests=executed, diagnostic=diagnostic,
-                    desync_acceptance='unavailable: generated multi-bank implementation required')
+                    desync_acceptance=('functional model gate requested; physical qualification excluded' if generated_suites else
+                        'not run: reference suites are not generated-chip acceptance'),
+                    desync_model=dict(corner=os.environ.get('RISCAY_DESYNC_CORNER','tt_025C_3v30'),
+                        selection=os.environ.get('RISCAY_DESYNC_SELECTION','random'),seed=os.environ.get('RISCAY_DESYNC_SEED','1')) if generated_suites else None)
     run.finish(outputs=outputs, status=status, coverage=coverage)
     print(f'{status.upper()}: {result.testsRun} Python tests; receipt: {args.output / "receipt.json"}')
     return 0 if status == 'pass' else 1

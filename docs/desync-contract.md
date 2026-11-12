@@ -1,144 +1,101 @@
 # Generated bundled-data MCU contract
 
-The clocked RTL is the sole source. Generate ten four-phase banks from its
-normalized netlist; no copied RTL, shared fast oscillator, payload copies,
-transaction owners or ABI changes. Old BD and Click remain behavioral oracles.
-The bank map and primitive registry are authoritative; history and measurements
-are in [the ledger](desync-ledger.md).
+Generate the MCU from the unchanged clocked netlist: no copied RTL, shared fast
+oscillator, payload mirrors, transaction owners or ABI changes. Old BD and Click
+remain behavioral oracles. The bank map and primitive registry are authoritative;
+[the ledger](desync-ledger.md) records measurements and links to historical detail.
 
-## Storage and ownership
+## Architecture and reset
 
-Banks are CPU, Fabric, Control, program, RAM, I2C, ADC, time, power and falling.
-Ordinary rising-edge registers become M/S latch pairs. The 42 falling-edge bits
-use S/M pairs. The approved CPU exception retains 591 FFs, captured on master.A;
-latch enables use N. Work gating remains per register, including mixed-lifetime
-power state. Falling captures use the existing `previous` qualifier.
-
-Preserve every architectural bit, reset value and lifetime. Slaves retain the
-original reset; masters remain plain except where reset analysis requires a
-defined value. Both halves retain independent application/wake resets. Nine
-first-sample GPIO/SCL/SDA masters keep POR values. No extra data state is allowed.
-Actual generic Q pins and SRAM inputs define ideal-cycle equivalence coverage;
-ownership aliases alone are insufficient.
-
-## Controllers, boundaries and reset
+The current ten banks are CPU, Fabric, Control, program, RAM, I2C, ADC, time,
+power and falling. Rising-edge registers become M/S latch pairs; 42 falling-edge
+bits use S/M pairs. The approved CPU exception keeps 591 FFs, captured on master.A;
+latch enables use N. Preserve every architectural bit, reset value and lifetime,
+including per-register work gating and falling capture's `previous` qualifier.
+Slaves keep the original reset. Masters are plain unless reset analysis requires
+a defined value; no additional architectural storage is allowed.
 
 Each bank has two semi-decoupled controllers, witnessed predecessor joins and
-one matched delay. Existing A/B keepers implement request-return causality,
-one-sided receiver closure and same-phase qualification. B responds to the
-actual enable N. The approved CPU readiness/publication joins enforce rearm.
-The C-element candidate is `Q_next = ab + Q(a+b)`, with one feedback input.
-Protection covers native control cells, never ordinary data or storage.
+one matched delay. A/B keepers enforce request-return causality, receiver closure
+and same-phase qualification. B responds to actual enable N. CPU joins enforce
+rearm. Protect only registered native control, not ordinary logic or storage.
 
-The marked graph and assembled event replay screen ordering and stop drainage.
-They do not prove physical leaf timing, pulse widths or whole-chip flow
-equivalence. Mixed-edge transparent paths must include both falling latches,
-their data/enable arrivals and the `previous` input of the enable AND.
-For the affected M banks, the joined power/program/RAM S requests supply a
-common launch frontier for the existing delay; no additional controller is
-needed. This causal argument still needs numerical timing closure.
+Deep sleep stops power.M through one persistent stop request and a filtered
+mutex; stopping never resets a live grant. Controls reset from raw
+`resetHold/unsafe_supply`, while architectural POR remains qualified. The
+100,000-count qualifier must guarantee at least 5 ms at the fastest recurrence.
+Parallel-reset delay units still require reset flushing, distribution, assertion
+and release checks. The mutex's 1 FIT/MCU target remains unqualified and its
+production binding stays disabled.
 
-Deep sleep stops the graph at power.M through one persistent stop request and
-one filtered mutex. Operational stop never resets a live grant. Controls reset
-from raw `resetHold/unsafe_supply`; using qualified POR would deadlock the
-power bank that advances the qualifier. Architectural POR remains qualified.
-The 100,000-count qualifier must provide at least **5 ms** at the fastest
-measured recurrence, including initialization and reset distribution.
-
-The experimental mixed NAND4/MUX delay resets every unit in parallel. Prove
-complete flushing before controller release, distributed reset skew, minimum
-assertion, and the earliest subsequent request. Its counted recipe remains
-unavailable as a production binding.
-
-| Remaining clock/input | Obligation |
+| Remaining clock/input | Required obligation |
 |---|---|
-| LF watchdog/timebase | Independent time/recovery; preserve Gray crossing and skew limits |
-| SDA event FF | Preserve START frontier and SCL aperture; synchronize through existing stages |
-| SRAM CLK | Local port control; preserve launch/access order, setup/hold, access and pulse limits |
-| GPIO/I2C synchronizers | Original stages as latch pairs; bound sampling interval and MTBF; active bus keeps sampling live |
-| SPI MISO | Preserve source-synchronous sampling and the external ADC aperture |
+| LF watchdog/timebase | Independent recovery/time; preserve Gray crossing and skew limits |
+| SDA event FF | START frontier and SCL aperture, followed by existing synchronization |
+| SRAM CLK | Local port capture; setup/hold, access, high/low pulse limits |
+| GPIO/I2C synchronizers | Existing stages as latch pairs; sampling/MTBF; bus activity keeps them live |
+| SPI MISO | Source-synchronous sampling and external ADC aperture |
 
-## Timing and verification
+## Work order and digital evidence
 
-Size relative bank delays from same-corner STA with actual loads/slews and
-**1.2**, the user-specified engineering allowance, not measured mismatch.
-No RTL delay constant or fallback formula supplies a count. Absolute obligations
-are SRAM and controller/latch pulse/aperture limits, POR hold and mutex filtering.
-Simulation bounds must come from measured bank envelopes. Production sizing
-fails closed while those envelopes are incomplete.
+1. Generated-chip boot, earliest I2C status, SRAM, sleep/wake, reset and register
+   transfers. Reference-suite passes do not count as generated-chip passes.
+2. Timed graph recurrence and external deadlines; area-only Fabric/time/power merge.
+3. Per-bank STA sizing only after these gates pass. Local SPICE is paused.
 
-Repair electrical violations before accepting timing. Native outputs have
-parent drivers; enable trees have at most 16 loads per branch, equal depth and
-exclusive final SRAM drivers. Independently enumerate every actual sink;
-excluding only LF and SDA must leave exactly the reported native inventory.
-Keeper feedback stays intact. Routed min/max RC, coupling and reset distribution
-remain mandatory; zero-wire margins below 100 ps are untrusted.
+The simulation backend transforms each actual ClockedSoc test fixture with the
+production generator and preserves its wire-level assertions/deadlines. Registered
+control recipes and delay apertures receive behavioral models; ordinary logic is
+zero-delay and storage/SRAM uses the real generated implementation. Each run
+records bounds, corner, selection and seed. Fixture configurations borrow the
+production trial's STA ranges: this is functional stress, not fixture-specific
+physical qualification. Random selection is per instance, fixed for that run.
+The atomic mutex model makes no metastability claim. Raw reset clamps modeled
+lines immediately; physical reset flushing/minimum POR remain open.
 
-Conditional primitive queries retain removed feedback capacitance. The data-only
-bank view cuts every storage Q/D frontier and restores all removed input loads.
-Equal zero arrival and required times give pure combinational extrema at each
-sampled Q slew, independent of clock-tree skew and analysis period. The ordinary
-graph and every frontier/load are audited. These finite samples are not a
-continuous slew envelope. Compose closing-edge/setup corrections explicitly and
-propagate transparent D-to-Q slew through downstream logic. The original
-worst-slack bank samples remain diagnostic; neither view alone closes setup/hold.
+Transfer checks compare original D/enable/reset semantics with actual generated
+captures, check defined bits even in partly unknown words, and report unexercised
+state. Actual N transitions must follow the marked graph; gate qualifiers must
+change while their capture root is closed. These checks complement folded
+next-state/SRAM equivalence; they are not a complete sequential flow proof.
+The testbench's fast-clock-failure switch freezes native progress explicitly,
+without stopping LF/POR. Legacy serviceClock activity counters are wall-time
+observers; `DESYNC_EVENT_ACTIVITY` counts actual native events.
 
-Direct latch handoff hold starts at the receiver's actual A rise. Propagate that
-same event through its closing tree and the sender's ACK/reopening tree, comparing
-each physical Q-to-D pair with its loaded E-to-Q and hold arcs. Source B required
-ACK low before publication, so this rising ACK belongs to the current cycle.
-I2C M-to-S passes this sampled conditional STA check with a 1.2 late derate.
-Fixed keeper-feedback inputs do not establish a minimum reopening bound:
-real feedback can reinforce the transition. Physical hold qualification needs
-a full-feedback minimum-transition envelope. The direct-handoff schematic check
-retains the actual controller, enable/ACK trees and every paired latch; source D
-is the timing frontier, with its removed load restored. Both data polarities must
-reuse the source while every receiver retains the old value. All enable and
-A/B/N return edges are checked across the complete retention window. External
-omitted sinks remain lumped pin capacitances. Finite PVT/slew samples and injected
-capture-skew failures do not establish continuous, mismatch or routed bounds.
-Initialization, minimum pulses, reverse handoffs and routed RC remain separate.
-Lengthening a primary request delay does not repair this immediate return path.
+The five-corner trial graph's slowest modeled recurrence is **358.900 ns** at
+SS/125 C/3.0 V (no wires/data delays). Required throughput is
+`events/window × cycles/event × worst cycle < window`:
 
-Work-gate return checks start at the actual target A transition, preserving the
-qualifier owner's complete ACK join and closed-input paths, feedback, latch and
-trees. Normal S gates and falling.M close from A rising; CPU capture closes from
-master.A falling, including the real A-to-N inverter in its closure dependency.
-Gate clock must fall before its retained qualifier changes, without a new output
-pulse. Independently enumerate every storage clock; only traced LF/SDA roots are
-excluded. This return check does not establish qualifier setup before opening,
-clock pulse widths, reset behavior or a continuous/mismatch/routed timing bound.
-Conditional opening checks retain the target's feedback and use the qualifier
-owner's actual A transition as the common frontier. D arrives near the Liberty
-setup aperture; final D/E waveforms must satisfy it before checking qualifier
-settling against gate opening. Vary D and frontier slew independently. This
-measures a tested arrival requirement, not the latest safe arrival. The upstream
-`enabled`/`previous` latch links, demand logic and data retention still need
-composition; an unrelated whole-bank maximum cannot replace those exact paths.
+| Stream | Current check and result |
+|---|---|
+| I2C, 400 kHz | Eight samples/bit require <=312.5 ns; trial demand 2.8712 us exceeds the 2.5 us bit window, despite sampled earliest-status cases passing |
+| SPI/ADC | Default pin/scaler work is 173 cycles, about 62.1 us at the trial period, before final drainage; no complete timing bound yet. The accelerated sleep test gets 4 conversions but fails sleep residency |
+| LF ticks | Independent time is preserved; finite-lease and stop/wake cases execute. The accelerated test spends 2,939 observer edges awake versus 64 asleep: `BOOT_NOT_SLEEPING` remains a failure |
+| Boot | Small valid flash image executes in generated simulation; full-capacity generated boot and worst-case bound remain open |
 
-Required checks: generated-chip per-register flow equivalence; folded
-next-state/SRAM-effect proof; unchanged boot, I2C earliest status, SRAM, ADC,
-reset, firmware and sleep/wake suites; stop/wake races and POR in flight.
-Throughput uses `events/window * worst firings/event * slowest cycle < window`.
-I2C remains **400 kHz SCL**, tested against the existing 3.2/20 MHz reference
-service points. No desync throughput margin is yet claimed.
+The slow-model watchdog/loader case also fails `LOADER_COMPLETION_DEADLINE`.
+Keep failures; neither assertions nor deadlines may be weakened. See
+[build and test](build-and-test.md) for the explicit generated gate.
 
-## Acceptance boundary
+## Timing and acceptance
 
-The pinned reference is **0.5318332992 mm² mapped**, **0.5915383488 mm² after
-repair/placement/CTS**, 2,977 architectural bits and 0.2041777472 mm² storage.
-After `b2cac0f`, the user approved prototype ceilings of **1.17x mapped** and
-**5.5% control/join/delay/mutex share**, superseding 1.20x and 5% respectively.
-Unchanged limits are repaired plus trees **1.20x**, architectural bits **1.00x**
-and storage area **1.25x**. This approval does not qualify production adoption.
+Every delay is relative (bank matching), absolute (SRAM/controller aperture,
+POR, mutex filtering) or simulation-only. Relative sizing uses same-corner STA,
+actual load/slew and 1.2 engineering allowance, not measured mismatch. No RTL
+model number or fallback formula may produce a physical count. Trial counts
+remain provisional; the production delay policy is empty.
 
-Current inventories and area-only trials are in the ledger. The trial fits
-the mapped/storage/control budgets; the repaired-plus-trees comparison remains
-unavailable. Provisional counts are not
-accepted timing; production delay policy remains empty. Neither budget approval
-nor diagnostic measurements qualify adoption.
+Repair before accepted timing. Use bounded enable trees (<=16 loads/branch,
+equal depth), exclusive SRAM drivers and independent sink enumeration. Compose
+actual launch/capture, ACK/reopening, falling-latch and work-gate paths. Preserve
+keeper feedback; include removed loads in conditional queries. Routed min/max RC,
+coupling, reset distribution and mutex qualification remain mandatory. Zero-wire
+margins below 100 ps are untrusted.
 
-The experimental mutex footprint is 0.00098784 mm². Its **1 FIT per MCU** target
-still needs a justified reliability model, arbitration rate, variation/noise and
-extracted evidence; finite SPICE samples do not qualify it. No whole-chip timing,
-flow, throughput or tape-out acceptance is claimed.
+Reference: **0.5318332992 mm² mapped**, **0.5915383488 mm² repaired + CTS**,
+2,977 architectural bits and 0.2041777472 mm² storage. Approved prototype ceilings:
+**1.17x mapped**, **5.5% control/join/delay/mutex**, **1.20x repaired + trees**,
+**1.00x architectural bits**, **1.25x storage area**. No loosening without approval.
+The current trial fits mapped/storage/control limits; repaired comparison and
+whole-chip timing acceptance remain open. The eight-bank merge is an area
+experiment only. No production or tape-out qualification is claimed.

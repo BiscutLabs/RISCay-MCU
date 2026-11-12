@@ -194,7 +194,7 @@ end
     assert(GenericBootRom.words.last==0xc0dec0deL)
   }
   for(click <- variants; scenario <- Seq("newest","newer-corrupt","newer-header-corrupt","both-corrupt","blank-fields","incompatible-newer","bad-directory","all-corrupt")) {
-    test(s"${if(synchronous) "Clocked" else if(click) "Click" else "BD"} A/B external boot $scenario") {
+    test(s"${if(generated) "Desync" else if(synchronous) "Clocked" else if(click) "Click" else "BD"} A/B external boot $scenario") {
       val aa=slot(resultProgram(0x111),1)
       val bb=slot(resultProgram(0x222),2,if(scenario=="incompatible-newer") 257 else 256)
       val gg=slot(resultProgram(0x333),0)
@@ -216,7 +216,7 @@ end
     }
   }
   for(click <- variants; cut <- Seq("commit","erase-por","header-watchdog","incompatible-erase-por","oversized-erase-por","newer-b-erase-por")) {
-    test(s"${if(synchronous) "Clocked" else if(click) "Click" else "BD"} A/B persistence $cut preserves the previous bootable image") {
+    test(s"${if(generated) "Desync" else if(synchronous) "Clocked" else if(click) "Click" else "BD"} A/B persistence $cut preserves the previous bootable image") {
       val previous=slot(resultProgram(0x111),1)
       val invalidNewer=if(cut=="incompatible-erase-por") slot(resultProgram(0x555),9,257)
         else if(cut=="oversized-erase-por") slot(resultProgram(0x555)++Seq.fill(124)(i(0x13,0,0,0,0)),9) else Vector.empty
@@ -251,7 +251,7 @@ end
     }
   }
   for(click <- variants; invalidDirectory <- Seq(false,true)) {
-    test(s"${if(synchronous) "Clocked" else if(click) "Click" else "BD"} A/B refuses persistence with ${if(invalidDirectory) "invalid directory" else "exhausted generation"}") {
+    test(s"${if(generated) "Desync" else if(synchronous) "Clocked" else if(click) "Click" else "BD"} A/B refuses persistence with ${if(invalidDirectory) "invalid directory" else "exhausted generation"}") {
       val original=factory(slot(resultProgram(0x111),0xffffffffL),Vector.empty,slot(resultProgram(0x333),0))
       val data=if(invalidDirectory) original.updated(28,original(28)^1) else original
       run(fixture(click,p.copy(watchdogCycles=100000)),"generic-ab-refuse-"+invalidDirectory,s"""
@@ -271,7 +271,7 @@ end
     }
   }
   for(click <- variants; fallback <- Seq(false,true)) {
-    test(s"${if(synchronous) "Clocked" else if(click) "Click" else "BD"} production full-capacity A/B boot ${if(fallback) "golden fallback" else "primary"}") {
+    test(s"${if(generated) "Desync" else if(synchronous) "Clocked" else if(click) "Click" else "BD"} production full-capacity A/B boot ${if(fallback) "golden fallback" else "primary"}") {
       val full=p.copy(config=config.copy(programBytes=2048,workingRamBytes=1024))
       def padded(value: Int)=resultProgram(value)++Seq.fill(508)(i(0x13,0,0,0,0))
       val a=slot(padded(0x111),1);val b=slot(padded(0x222),2);val g=slot(padded(0x333),0)
@@ -285,7 +285,7 @@ end
     }
   }
   for(click <- variants; scenario <- Seq("valid","corrupt","incompatible","blank")) {
-    test(s"${if(synchronous) "Clocked" else if(click) "Click" else "BD"} generic SPI boot $scenario") {
+    test(s"${if(generated) "Desync" else if(synchronous) "Clocked" else if(click) "Click" else "BD"} generic SPI boot $scenario") {
       val bytes=if(scenario=="blank") Vector.empty
         else if(scenario=="incompatible") image(false).updated(20,1) else image(scenario=="corrupt")
       val valid=scenario=="valid"
@@ -305,7 +305,7 @@ end
     }
   }
   for(click <- variants) {
-    test(s"${if(synchronous) "Clocked" else if(click) "Click" else "BD"} rejected host mutation cannot corrupt the ROM owner's progress result") {
+    test(s"${if(generated) "Desync" else if(synchronous) "Clocked" else if(click) "Click" else "BD"} rejected host mutation cannot corrupt the ROM owner's progress result") {
       run(fixture(click),"generic-transport-isolation","""
         pauseBootStatus=1;wait(statusWaiting);
         command(4);expect_error(3);
@@ -316,7 +316,7 @@ end
           $fatal(1,"HOST_ERROR_ABORTED_VALID_FLASH_BOOT");
         """,model(image(false),click),deadlineNs=100000000L,processTimeoutSeconds=240)
     }
-    test(s"${if(synchronous) "Clocked" else if(click) "Click" else "BD"} full-capacity persistence crosses the 256-byte page boundary") {
+    test(s"${if(generated) "Desync" else if(synchronous) "Clocked" else if(click) "Click" else "BD"} full-capacity persistence crosses the 256-byte page boundary") {
       val padded=program++Seq.fill(60)(i(0x13,0,0,0,0))
       run(fixture(click),"generic-persist-page",s"""
         wait(readReturns>0);#100000;
@@ -329,7 +329,7 @@ end
         if(appInstructions!=4 || !programmed) $$fatal(1,"FULL_CAPACITY_PERSIST_BOOT");
         """,model(Vector.empty,click),deadlineNs=1000000000L,processTimeoutSeconds=480)
     }
-    test(s"${if(synchronous) "Clocked" else if(click) "Click" else "BD"} ENTER_LOADER uses the independent watchdog despite application kicks") {
+    test(s"${if(generated) "Desync" else if(synchronous) "Clocked" else if(click) "Click" else "BD"} ENTER_LOADER uses the independent watchdog despite application kicks") {
       val kicking=Seq(0x300000b7L,0x57445137L,i(0x13,2,0,2,-185),store(1,2,32,2),jal(0,-4))
       run(fixture(click,p.copy(watchdogCycles=100000)),"generic-enter-loader",s"""
         wait(readReturns>0);#100000;
@@ -346,7 +346,7 @@ end
         read_words(1,0,8);if(snapshot[0]) $$fatal(1,"LOCKED_ENTER_LOADER_EFFECT");
         """,model(Vector.empty,click)+"\ninteger savedInstructions;\n",deadlineNs=150000000L,processTimeoutSeconds=240)
     }
-    test(s"${if(synchronous) "Clocked" else if(click) "Click" else "BD"} explicit write-through, POR boot and lock") {
+    test(s"${if(generated) "Desync" else if(synchronous) "Clocked" else if(click) "Click" else "BD"} explicit write-through, POR boot and lock") {
       run(if(synchronous) new riscay.clocked.ClockedSoc(p) else if(click) new riscay.click.ClickSoc(p) else new riscay.bd.FourPhaseSoc(p),
         "generic-persist",s"""
         wait(readReturns>0);#100000;
@@ -368,7 +368,7 @@ end
         if(eraseCount!=1 || commitRecords!=1) $$fatal(1,"LOCKED_FLASH_WRITE");
         """,model(Vector.empty,click),deadlineNs=200000000L,processTimeoutSeconds=240)
     }
-    test(s"${if(synchronous) "Clocked" else if(click) "Click" else "BD"} flash read-back failure never commits") {
+    test(s"${if(generated) "Desync" else if(synchronous) "Clocked" else if(click) "Click" else "BD"} flash read-back failure never commits") {
       run(fixture(click),"generic-persist-failure",s"""
         wait(readReturns>0);#100000;
         ${upload(program,start=false)}
@@ -382,7 +382,7 @@ end
         """,model(Vector.empty,click),deadlineNs=200000000L,processTimeoutSeconds=240)
     }
     for(point <- Seq("boot-por","boot-watchdog","persist-por","persist-watchdog","persist-header-watchdog","persist-magic-watchdog")) {
-      test(s"${if(synchronous) "Clocked" else if(click) "Click" else "BD"} recovery at $point") {
+      test(s"${if(generated) "Desync" else if(synchronous) "Clocked" else if(click) "Click" else "BD"} recovery at $point") {
         val updating=point.startsWith("persist")
         val por=point.endsWith("por")
         run(fixture(click),"generic-"+point,s"""
@@ -406,7 +406,7 @@ end
           """,model(if(updating) Vector.empty else image(false),click),deadlineNs=250000000L,processTimeoutSeconds=240)
       }
     }
-    test(s"${if(synchronous) "Clocked" else if(click) "Click" else "BD"} shared ADC bus drains, resumes and never raises a GPIO event") {
+    test(s"${if(generated) "Desync" else if(synchronous) "Clocked" else if(click) "Click" else "BD"} shared ADC bus drains, resumes and never raises a GPIO event") {
       val shared=p.copy(config=config.copy(measurements=Vector(MeasurementChannel(0,"sample",1,0))),
         adc=Some(AdcParameters(2,100000)),lowPower=Some(LowPowerParameters()))
       run(fixture(click,shared),"generic-shared-spi","""
@@ -446,4 +446,10 @@ always @(negedge adcSclk) if(!adcCsN) begin adcShift=adcShift<<1;adcMiso=adcShif
 
 class ClockedGenericBootSpec extends GenericBootSpec {
   override protected def synchronous: Boolean = true
+}
+
+/** Same pin programs, image model and assertions; a generated storage/control netlist. */
+class DesyncGenericBootSpec extends GenericBootSpec {
+  override protected def synchronous: Boolean = true
+  override protected def generated: Boolean = true
 }

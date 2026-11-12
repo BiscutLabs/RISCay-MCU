@@ -3,7 +3,7 @@
 from gf180_physical import SC, SRAM
 
 
-def graph(modules):
+def graph(modules, *, generic=False):
     parent={}; aliases={}; cells={}
     def find(n):
         p=parent.setdefault(n,n)
@@ -27,7 +27,7 @@ def graph(modules):
             p={k:[net(b) for b in bs] for k,bs in c['connections'].items()}
             instance=path+name
             blackbox=modules.get(c['type'],{}).get('attributes',{}).get('blackbox','0')
-            if c['type'].startswith(SC) or c['type']==SRAM or int(blackbox,2):cells[instance]=dict(c,connections=p)
+            if c['type'].startswith(SC) or c['type']==SRAM or int(blackbox,2) or (generic and c['type'].startswith('$')):cells[instance]=dict(c,connections=p)
             else:walk(c['type'],instance+'/',p)
     walk('RiscayMcuDigital','',{})
     for c in cells.values():c['connections']={p:[find(b) for b in bs] for p,bs in c['connections'].items()}

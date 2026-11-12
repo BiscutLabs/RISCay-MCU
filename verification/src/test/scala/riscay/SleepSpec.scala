@@ -34,7 +34,6 @@ real previousStart=0, measuredPeriod=0;
 always @(posedge serviceClock) if(!systemReset) begin
   if(sleeping) asleepCycles=asleepCycles+1; else awakeCycles=awakeCycles+1;
 end
-always @(sleeping) if(!systemReset && serviceClock !== 0) $fatal(1,"CLOCK_GATE_CHANGED_HIGH");
 always @(negedge adcCsN) begin
   adcShift={4'b0,adcCode}; adcMiso=adcShift[15]; conversions=conversions+1;
   measuredPeriod=$realtime-previousStart; previousStart=$realtime;
@@ -45,9 +44,10 @@ always @(posedge sleeping) if(!adcCsN) $fatal(1,"SLEEP_INTERRUPTED_ADC");
 task set_period(input [31:0] ms); begin
   start_bus(); write_byte(8'h6a); write_byte(7); write_word(ms); stop_bus();
 end endtask
-"""
+""" + (if(generated) "// DesyncFlowChecks checks every actual latch/FF/SRAM gate against its native capture root.\n"
+        else "always @(sleeping) if(!systemReset && serviceClock !== 0) $fatal(1,\"CLOCK_GATE_CHANGED_HIGH\");\n")
   for(click <- variants) {
-    val name = if(synchronous) "clocked" else if(click) "click" else "four-phase"
+    val name = if(generated) "desync" else if(synchronous) "clocked" else if(click) "click" else "four-phase"
     test(s"$name retained sleep: masked tick, deadline, memory/lock retention and live host/ADC") {
       val program = Seq(0x200000b7L,0x30000137L,
         i(0x13,3,0,0,0x123),store(1,3,0,2),
@@ -88,7 +88,7 @@ end endtask
         reset=1; #2000;
         if(locked || programmed || sleeping) $$fatal(1,"CLOSED_GATE_RESET_STATE");
         reset=0; #100000; wait(sleeping);
-      """,monitor,referenceHalfPeriodNs=1250,onChipOscillator=true)
+      """,monitor,referenceHalfPeriodNs=1250,onChipOscillator= !generated)
     }
     test(s"$name retained sleep: host wake, finite lease and stopped service clock watchdog") {
       val program = Seq(0x300000b7L,
@@ -121,7 +121,7 @@ end endtask
     intercept[IllegalArgumentException](p.copy(staleMs=10))
     intercept[IllegalArgumentException](p.copy(adc=Some(AdcParameters(intervalCycles=1000))))
   }
-  for(click <- variants) test(s"${if(synchronous) "clocked" else if(click) "click" else "bd"}: sleep entry/GPIO race, response stalls, and elapsed time after a short service interruption") {
+  for(click <- variants if !generated) test(s"${if(synchronous) "clocked" else if(click) "click" else "bd"}: sleep entry/GPIO race, response stalls, and elapsed time after a short service interruption") {
     val params = p.copy(adc=None,watchdogCycles=10000)
     val tasks = """
 task transaction(input [1:0] op, input [31:0] addr, input [31:0] data);
@@ -177,4 +177,9 @@ integer beforeCommits;
 
 class ClockedSleepSpec extends SleepSpec {
   override protected def synchronous: Boolean = true
+}
+
+class DesyncSleepSpec extends SleepSpec {
+  override protected def synchronous: Boolean = true
+  override protected def generated: Boolean = true
 }

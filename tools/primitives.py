@@ -56,6 +56,52 @@ REGISTRY = {
 }
 
 
+def simulation_equations(name, parameters, delays, *, freeze=None):
+    """Behavioral equations of the registered candidates, not silicon recipes.
+
+    Positive inertial delays come only from the caller's retained STA samples.
+    The mutex deliberately abstracts metastability; simulation cannot qualify it.
+    Ordinary data/storage is never replaced by these models.
+    """
+    initial = int(not parameters.get('initial_open', False))
+    def drive(pin, expression):
+        value = delays[pin]
+        if not value > 0: raise ValueError('DESYNC_SIM_NONPOSITIVE_DELAY')
+        if freeze:expression=f'(!reset && ({freeze})) ? {pin} : ({expression})'
+        return f'assign #({value:.9f}) {pin} = {expression};'
+    if name in ('RiscayDesyncController', 'RiscayDesyncQualifiedController'):
+        same = [f'same{i}' for i in range(parameters.get('same_count',0))]
+        closed = [f'closed{i}' for i in range(parameters.get('closed_count',0))]
+        set_terms = ['requestIn', '!requestOut', *same]
+        if parameters.get('rise_qualified'):set_terms.append('riseAllowed')
+        hold = ' | '.join(['requestIn','!requestOut','!acknowledgeIn',*same,*['!'+p for p in closed]])
+        b='(!enable & (requestOut | !acknowledgeIn))'
+        if not parameters.get('initial_open',False):b="reset ? 1'b0 : "+b
+        return '\n'.join([drive('acknowledgeOut',f'reset ? 1\'b{initial} : (({" & ".join(set_terms)}) | (acknowledgeOut & ({hold})))'),
+                          drive('enable','!acknowledgeOut'),drive('requestOut',b)])
+    if name == 'RiscayDesyncJoin':
+        return drive('out',f"reset ? 1'b{1-initial} : ((input0 & input1) | (out & (input0 | input1)))")
+    if name == 'RiscayDesyncCaptureJoin':
+        return drive('out',"reset ? 1'b0 : (request & (out | (downstream & rearmed)))")
+    if name == 'RiscayDesyncStop':
+        return drive('pauseRequest',"reset ? 1'b0 : ((!run & !pauseGrant) | (pauseRequest & (!run | !pauseGrant)))")
+    if name == 'RiscayDesyncMutex':
+        return """reg [1:0] grant;
+assign {grant1,grant0}=grant;
+always @(reset or request0 or request1) begin
+  if(reset) grant=0;
+  else begin
+    if(grant[0] && !request0) grant=0;
+    if(grant[1] && !request1) grant=0;
+    if(grant==0) begin
+      if(request0) grant=1;
+      else if(request1) grant=2;
+    end
+  end
+end"""
+    raise ValueError('DESYNC_SIM_UNSUPPORTED_PRIMITIVE:'+name)
+
+
 def qualified_controller(*, initial_open, same_count=0, closed_count=0, rise_qualified=False):
     """Approved closure qualification, folded into the existing A keeper.
 

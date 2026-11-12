@@ -54,6 +54,63 @@ The cleanup inventory and deliberately retired coverage are documented in
 [test-suite cleanup](test-suite-cleanup.md). Historical counts are evidence, not
 assertions that future designs must match.
 
+## Generated desync chip simulation
+
+The generated backend transforms each actual `ClockedSoc` fixture, then runs its
+existing pin testbench against that netlist. It does not simulate the clocked
+reference as a substitute. Set `RISCAY_PHYSICAL_TOOLS` to the same configured
+Yosys/sv2v tools as the mapping run and `RISCAY_DESYNC_SAMPLES` to the retained
+trial directory containing `transitions-r9/summary.json` and
+`line-area-trial-r3/chain-samples.json`.
+
+```powershell
+$env:RISCAY_DESYNC_SAMPLES='P:\Personal\RISCay-MCU\build\desync-complete'
+$env:RISCAY_DESYNC_CORNER='ss_125C_3v00'
+$env:RISCAY_DESYNC_SELECTION='max'
+python tools/sbt.py 'verification/testOnly riscay.DesyncGenericBootSpec -- -z "generic SPI boot"'
+python tools/sbt.py 'verification/testOnly riscay.DesyncI2cSpec riscay.DesyncSocSpec riscay.DesyncSleepSpec riscay.DesyncStopSpec'
+```
+
+Use `random` plus `RISCAY_DESYNC_SEED` for reproducible per-instance delays within
+that corner's recorded STA ranges; `min`/`max` select endpoints. No setting sizes
+physical cells. Models omit ordinary logic/wire delay and mutex metastability.
+Fixture configurations borrow production trial bounds; they are not newly
+characterized physical implementations. Tests preserve original simulated and
+host-process deadlines. Missing bounds or registered graph mismatches fail.
+
+To request this generated functional gate in addition to reference CI:
+
+```text
+python tools/ci.py --output build/ci-generated --desync-samples build/desync-complete
+```
+
+Default portable CI has no retained STA artifacts and reports generated-chip
+coverage as **not run**. The explicit generated gate currently fails the unchanged
+slow-model `BOOT_NOT_SLEEPING` and `LOADER_COMPLETION_DEADLINE` cases. It must not
+be advertised as passing. Full-capacity generated boot, the complete DeepSleep,
+ADC and firmware suites, shared event histories and full sequential flow
+equivalence remain open. Generated `SleepSpec` currently reuses the two whole-SoC
+cases; its clocked-bus-fixture case remains reference-only.
+
+Each replay has one receipt and retains failures. `DESYNC_FLOW_COVERAGE` and
+`DESYNC_FLOW_TOTAL` distinguish defined-bit comparisons from uninitialized state;
+`DESYNC_EVENT_ACTIVITY` measures actual native transitions. Existing boot/ADC
+testbench counters on `serviceClock` observe wall time, not native work activity.
+The optional `clockEnabled=0` fault explicitly freezes native controller progress
+while leaving LF recovery active; it is not a physical clock gate.
+
+Analyze the complete connected control graph's recurrence (not physical timing):
+
+```text
+python tools/desync_graph.py timed build/desync-complete/connected-rebind-r4 build/desync-complete build/desync-cycle
+```
+
+This reuses the registered behavioral models at all five corners and reports the
+stationary period of every graph transition. It does not include ordinary data
+paths, wires or aperture constraints. The 358.9 ns slow result misses the 312.5 ns
+eight-samples-per-bit budget for 400 kHz I2C. Resolve integration and throughput
+before resuming per-bank STA sizing or local SPICE.
+
 ## Desync storage-area experiment
 
 For the desync storage-area experiment, select the same physical-tool
@@ -112,7 +169,8 @@ run the native export checker on a synchronous design. See the
 Phase 0 established the tooling and fair clocked reference.
 The [design contract](desync-contract.md) and [ledger](desync-ledger.md) state
 the boundary. The rebuild now generates banks from the clocked netlist; the
-single-oscillator prototype is retired. Physical primitive recipes remain unavailable.
+single-oscillator prototype is retired. Experimental recipes exist; production
+bindings remain unavailable until their timing and reliability obligations pass.
 
 ```text
 python tools/clocked_physical.py build/map-clocked build/clocked-physical

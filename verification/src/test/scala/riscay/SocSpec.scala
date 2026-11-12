@@ -31,7 +31,9 @@ class SocSpec extends AnyFunSuite with SocImplementationSuite {
   """
 
   for(click <- variants) {
-    val name = if(synchronous) "clocked" else if(click) "click" else "four-phase"
+    val name = if(generated) "desync" else if(synchronous) "clocked" else if(click) "click" else "four-phase"
+    val programMacro=if(generated) "dut.\\soc/fabric/programSram/macros_0 "
+      else if(synchronous) "dut.fabric.programSram.macros_0" else "dut.fabric_program_macros_0"
     test(s"$name SoC: I2C loader validation, RAM lanes, telemetry, lock, CPU protection and full reset") {
       val program = Seq(
         0x200000b7L, // x1 = working RAM
@@ -89,8 +91,7 @@ end
         ${upload(program)}
         wait(protectedTrap); wait(mode == 4); checkProtection=0;
         if(protectionRetired !== ${program.size}) $$fatal(1,"PROTECTION_RETIREMENT_COUNT");
-        if({${if(synchronous) "dut.fabric.programSram.macros_0" else "dut.fabric_program_macros_0"}.mem[3],${if(synchronous) "dut.fabric.programSram.macros_0" else "dut.fabric_program_macros_0"}.mem[2],
-            ${if(synchronous) "dut.fabric.programSram.macros_0" else "dut.fabric_program_macros_0"}.mem[1],${if(synchronous) "dut.fabric.programSram.macros_0" else "dut.fabric_program_macros_0"}.mem[0]} !== ${hex(program.head)})
+        if({$programMacro.mem[3],$programMacro.mem[2],$programMacro.mem[1],$programMacro.mem[0]} !== ${hex(program.head)})
           $$fatal(1,"PROTECTED_STORE_MODIFIED_CODE");
         if(!locked || !programmed || mode != 4) $$fatal(1,"PROTECTED_STORE_DID_NOT_TRAP mode=%d",mode);
         read_words(128,0,0);
@@ -174,4 +175,9 @@ end
 
 class ClockedSocSpec extends SocSpec {
   override protected def synchronous: Boolean = true
+}
+
+class DesyncSocSpec extends SocSpec {
+  override protected def synchronous: Boolean = true
+  override protected def generated: Boolean = true
 }

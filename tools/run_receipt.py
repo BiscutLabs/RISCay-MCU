@@ -4,7 +4,9 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
 from pathlib import Path
+import signal
 import subprocess
 import time
 
@@ -39,11 +41,35 @@ class RunReceipt:
             result.append(key)
         return sorted(set(result))
 
-    def command(self, argv, *, cwd, log):
+    def command(self, argv, *, cwd, log, timeout=None):
+        if timeout is not None and timeout <= 0:raise ValueError('RUN_TIMEOUT')
         start = time.time()
         with Path(log).open('w', encoding='utf-8') as stream:
             try:
-                code = subprocess.run(argv, cwd=cwd, stdout=stream, stderr=subprocess.STDOUT).returncode
+                child = subprocess.Popen(argv, cwd=cwd, stdout=stream, stderr=subprocess.STDOUT,
+                    start_new_session=os.name != 'nt')
+                try:
+                    code = child.wait(timeout=timeout)
+                except BaseException as error:
+                    # Drivers spawn workers. Terminate the owned tree before
+                    # reaping its parent, on timeout AND caller cancellation.
+                    try:
+                        if os.name == 'nt':
+                            cleanup = subprocess.run(['taskkill','/PID',str(child.pid),'/T','/F'],
+                                stdout=stream,stderr=subprocess.STDOUT,check=False,timeout=10).returncode
+                            if cleanup:stream.write('RUN_TREE_CLEANUP_FAILED:'+str(cleanup)+'\n')
+                        else:
+                            try:os.killpg(child.pid,signal.SIGKILL)
+                            except ProcessLookupError:pass
+                    except (OSError,subprocess.TimeoutExpired) as cleanup_error:
+                        stream.write('RUN_TREE_CLEANUP_FAILED:'+str(cleanup_error)+'\n')
+                    try:
+                        if child.poll() is None:child.kill()
+                        child.wait(timeout=5)
+                    except (OSError,subprocess.TimeoutExpired) as cleanup_error:
+                        stream.write('RUN_PARENT_CLEANUP_FAILED:'+str(cleanup_error)+'\n')
+                    if not isinstance(error,subprocess.TimeoutExpired):raise
+                    stream.write('RUN_WALL_TIMEOUT:'+str(timeout)+'\n'); code=124
             except OSError as error:
                 stream.write(str(error)+'\n'); code = 127
         self.commands.append(dict(argv=list(argv), cwd=str(Path(cwd).resolve()),

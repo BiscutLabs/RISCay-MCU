@@ -11,8 +11,8 @@ def enabled(attributes):
     return any(str(attributes.get(k, '0')).strip('0') for k in ('keep', 'dont_touch'))
 
 
-def audit(netlist, bindings=(), clock_aliases=(), *, experimental=False):
-    cells, _ = graph(netlist['modules'])
+def audit(netlist, bindings=(), clock_aliases=(), *, experimental=False, generic=False):
+    cells, _ = graph(netlist['modules'],generic=generic)
     registered = classified_cells(bindings,experimental=experimental)
     permitted = {b['instance']: primitive(b['primitive']).protect for b in bindings}
     cell_owners = {b['instance'] + '/' + c['name']: b['instance'] for b in bindings for c in b['cells']}
@@ -48,7 +48,7 @@ def audit(netlist, bindings=(), clock_aliases=(), *, experimental=False):
             raise ValueError('DESYNC_PRIMITIVE_UNPROTECTED:' + path)
     # Exact graph equality inside each primitive: no omitted, added, or rewired
     # leaf is allowed. Local port-net aliases supply the recipe's named nets.
-    _, aliases = graph(netlist['modules'])
+    _, aliases = graph(netlist['modules'],generic=generic)
     for binding in bindings:
         prefix = binding['instance'] + '/'
         actual_paths = {p for p in cells if p.startswith(prefix)}

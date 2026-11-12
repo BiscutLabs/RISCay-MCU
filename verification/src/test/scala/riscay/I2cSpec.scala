@@ -33,6 +33,7 @@ class ClickI2cFixture(p: SocParameters) extends ClickFabricFixture(p) {
 }
 
 class I2cSpec extends AnyFunSuite {
+  protected def generated: Boolean = false
   private val config=McuConfiguration(16,32,0,Vector.empty,ApplicationProfile(1,1,"i2c",Vector.empty,Vector.empty))
   private def top(click: Boolean,hz: Int): SocTop = {
     val p=SocParameters(config,serviceHz=hz,watchdogCycles=100000,i2cIdleCycles=256)
@@ -77,9 +78,9 @@ task fast_word(input [31:0] word); integer b; begin
 end endtask
 integer i,saved; reg [7:0] value; reg [31:0] expected;
 """
-  for(click <- Seq(false,true)) {
+  for(click <- (if(generated) Seq(false) else Seq(false,true))) {
     val name=if(click) "click" else "bd"
-    for(hz <- Seq(3200000,20000000)) test(s"$name I2C wire: 400kHz at $hz service Hz with maximum native delays") {
+    for(hz <- Seq(3200000,20000000) if !generated) test(s"$name I2C wire: 400kHz at $hz service Hz with maximum native delays") {
       ClockedSimulation.run(top(click,hz),name+"-i2c-wire", """
         frameRun=1; #5000;
         fast_start(); fast_byte(8'h6a,1); fast_byte(8'h55,1); fast_stop(); #5000;
@@ -104,10 +105,11 @@ integer i,saved; reg [7:0] value; reg [31:0] expected;
         fast_stop(); #5000; if(frames != 3 || !lastOverflow) $fatal(1,"I2C_PARTIAL");
       """,tasks,serviceHalfPeriodNs=5.0e8/hz,maximumDelaySubtree=Some("i2c"))
     }
-    for((variant,synchronous) <- (if(click) Seq((name,false)) else Seq((name,false),("clocked",true)));
+    for((variant,synchronous) <- (if(generated) Seq(("desync",true)) else if(click) Seq((name,false)) else Seq((name,false),("clocked",true)));
         hz <- Seq(3200000,20000000)) test(s"$variant I2C loader: earliest 400kHz status reads after VERIFY, BEGIN, WRITE and LOCK at $hz Hz") {
       val p=SocParameters(config,serviceHz=hz,watchdogCycles=100000)
-      def fixture: RawModule=if(synchronous) new ClockedFabricFixture(p)
+      def fixture: RawModule=if(generated) new riscay.clocked.ClockedSoc(p)
+        else if(synchronous) new ClockedFabricFixture(p)
         else if(click) new ClickFabricFixture(p) else new FabricFixture(p)
       val crc=new java.util.zip.CRC32; Seq(0x73,0,0,0).foreach(x => crc.update(x))
       val wireTasks=tasks.substring(tasks.indexOf("// 400 kHz"))
@@ -167,9 +169,9 @@ integer i,saved; reg [7:0] value; reg [31:0] expected;
            snapshot[160+:32] !== 2 || snapshot[192+:32] !== 32'h12345678 || snapshot[224+:32] !== 4)
           $$fatal(1,"I2C_EARLIEST_LOCK_REJECTION");
       """,wireTasks,serviceHalfPeriodNs=5.0e8/hz,
-        maximumDelaySubtree=if(synchronous) None else Some("i2c"),synchronous=synchronous)
+        maximumDelaySubtree=if(synchronous) None else Some("i2c"),synchronous=synchronous,generated=generated)
     }
-    test(s"$name I2C occupied edge ring retains slots through publication backpressure and recovers in order") {
+    if(!generated) test(s"$name I2C occupied edge ring retains slots through publication backpressure and recovers in order") {
       val fields=Seq("rise","fall","start","stop","timeout","sda","readWord","resetActive","programBusy","resetEpoch")
       val slotBus=(0 until 8).flatMap(i => fields.map(f => s"dut.ca_child_i2c.slots_${i}_$f")).mkString("{",",","}")
       ClockedSimulation.run(top(click,10000000),name+"-i2c-ring",s"""
@@ -195,7 +197,7 @@ integer i,saved; reg [7:0] value; reg [31:0] expected;
         if(frames!=3 || frameOrder!==24'h090a0b || lastOverflow) $$fatal(1,"I2C_RING_RECOVERY");
       """,tasks+"\nreg [831:0] heldSlots; reg [3:0] heldHead; integer occupied;\n")
     }
-    test(s"$name I2C rejects overflowing a deliberately blocked edge ring") {
+    if(!generated) test(s"$name I2C rejects overflowing a deliberately blocked edge ring") {
       val error=intercept[IllegalArgumentException] {
         ClockedSimulation.run(top(click,10000000),name+"-i2c-ring-overflow", """
           frameRun=1; #5000; frameRun=0;
@@ -206,7 +208,7 @@ integer i,saved; reg [7:0] value; reg [31:0] expected;
       }
       assert(error.getMessage.contains("I2C_EDGE_RING_OVERFLOW"),error.getMessage)
     }
-    test(s"$name I2C POR cancels a held read snapshot and permits a fresh read") {
+    if(!generated) test(s"$name I2C POR cancels a held read snapshot and permits a fresh read") {
       ClockedSimulation.run(top(click,10000000),name+"-i2c-snapshot-reset", """
         frameRun=1; #5000;
         force dut.ca_child_i2c.ca_child_snapshot_bridge.state=2'b0;
@@ -220,7 +222,7 @@ integer i,saved; reg [7:0] value; reg [31:0] expected;
         if(snapshots != 1 || value !== 8'hef || busBusy || sdaLow) $fatal(1,"I2C_SNAPSHOT_POR_RECOVERY");
       """,tasks)
     }
-    test(s"$name I2C frame crossing retains complete reset episodes and POR cancels held effects") {
+    if(!generated) test(s"$name I2C frame crossing retains complete reset episodes and POR cancels held effects") {
       ClockedSimulation.run(top(click,10000000),name+"-i2c-reset", """
         frameRun=1; #5000; frameRun=0;
         fast_start(); fast_byte(8'h6a,1); fast_byte(6,1); fast_stop(); #5000;
@@ -237,4 +239,8 @@ integer i,saved; reg [7:0] value; reg [31:0] expected;
       """,tasks)
     }
   }
+}
+
+class DesyncI2cSpec extends I2cSpec {
+  override protected def generated: Boolean = true
 }

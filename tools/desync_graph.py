@@ -11,6 +11,78 @@ from collections import defaultdict, deque
 import heapq
 import json
 from pathlib import Path
+import re
+
+
+def timed(source, samples, output):
+    """Replay the assembled control graph using the trial STA bounds.
+
+    This measures the digital graph's recurrence, not a physical cycle bound:
+    wire RC, data propagation, metastability and aperture checks are absent.
+    Data/storage is removed only in this analysis fixture, never in the chip.
+    """
+    from desync_simulation import prepare
+    from characterize_gf180_liberty import CORNERS
+    from primitives import classified_cells
+    from run_receipt import RunReceipt
+    from gf180_physical import ROOT
+    from physical_tools import tool
+    import shutil
+    import sys
+    output.mkdir(parents=True,exist_ok=False)
+    inputs=[source/n for n in ('input.json','control.json','transform.json')]
+    chains=samples/'line-area-trial-r3/chain-samples.json';transitions=samples/'transitions-r9/summary.json'
+    receipt=RunReceipt(output/'receipt.json',inputs=[*inputs,chains,transitions],
+        tools=[Path(__file__),*[ROOT/'tools'/p for p in ('desync_simulation.py','primitives.py',
+            'audit_desync_protection.py','gf180_netgraph.py','physical_tools.py','run_receipt.py')],
+            Path(sys.executable),Path(shutil.which('iverilog') or 'iverilog'),Path(shutil.which('vvp') or 'vvp'),
+            *tool('yosys').input_files()])
+    try:
+        net=json.loads(inputs[0].read_text());control=json.loads(inputs[1].read_text())
+        body=net['modules']['RiscayMcuDigital'];names=set(classified_cells(control['bindings'],experimental=True))
+        body['cells']={n:c for n,c in body['cells'].items() if n in names}
+        body['ports']={n:p for n,p in body['ports'].items() if n.startswith('desync_delay_')}
+        body['ports'].update(reset=dict(direction='input',bits=body['netnames']['resetHold/unsafe_supply']['bits']),
+            serviceClockEnable=dict(direction='input',bits=net['modules']['RiscayMcuDigital']['netnames']['serviceClockEnable']['bits']))
+        for n,p in body['ports'].items():body['netnames'][n]=dict(hide_name=0,bits=p['bits'],attributes={})
+        prepared=output/'graph.json';prepared.write_text(json.dumps(net)+'\n')
+        transform=json.loads(inputs[2].read_text());transform['scope']='timed-control-graph-only'
+        (output/'transform.json').write_text(json.dumps(transform)+'\n')
+        tb=output/'testbench.sv'
+        tb.write_text('''module Testbench; timeunit 1ns; timeprecision 1ps;
+reg reset=1,clockEnabled=1;
+RiscayMcuDigital dut(.reset(reset),.serviceClockEnable(1'b1));
+initial begin #2000;reset=0;#200000;$display("DESYNC_TIMED_GRAPH_PASS");$finish;end
+endmodule\n''')
+        result=[]
+        for corner in CORNERS:
+            model=prepare(prepared,inputs[1],chains,transitions,output/corner,corner=corner,selection='max')
+            if receipt.command(['iverilog','-g2012','-s','Testbench','-o',str(model/'sim'),str(model/'generated.v'),str(model/'models.sv'),str(tb)],
+                               cwd=ROOT,log=model/'compile.log',timeout=60):raise ValueError('DESYNC_TIMED_GRAPH_COMPILE')
+            if receipt.command(['vvp',str(model/'sim')],cwd=ROOT,log=model/'simulation.log',timeout=60):raise ValueError('DESYNC_TIMED_GRAPH_RUN')
+            text=(model/'simulation.log').read_text()
+            rows=[dict(event=e,count=int(n),minimum_ns=float(lo),maximum_ns=float(hi)) for e,n,lo,hi in
+                  re.findall(r'^DESYNC_EVENT_ACTIVITY,([^,]+),(\d+),([\d.]+),([\d.]+)$',text,re.M)]
+            expected={r['source'] for r in compose(transform['partition'],('cpu',),phase_aware=True)['arcs']}
+            if set(r['event'] for r in rows)!=expected or any(r['count']<=100 or r['minimum_ns']<=0 for r in rows) or 'DESYNC_TIMED_GRAPH_PASS' not in text:
+                raise ValueError('DESYNC_TIMED_GRAPH_COVERAGE')
+            # All graph transitions must reach the same stationary recurrence;
+            # reject a nonstationary run rather than call its fastest interval a bound.
+            if max(r['maximum_ns'] for r in rows)-min(r['minimum_ns'] for r in rows)>.002:
+                raise ValueError('DESYNC_TIMED_GRAPH_NOT_STATIONARY')
+            result.append(dict(corner=corner,model_cycle_ns=max(r['maximum_ns'] for r in rows),events=rows))
+        worst=max(result,key=lambda r:r['model_cycle_ns'])
+        report=dict(scope='Timed control-graph model only; not physical timing/throughput acceptance',corners=result,
+            slowest=worst['corner'],model_cycle_ns=worst['model_cycle_ns'],
+            i2c_400khz_8_samples_budget_ns=2500,model_sampling_demand_ns=8*worst['model_cycle_ns'])
+        (output/'summary.json').write_text(json.dumps(report,indent=2)+'\n')
+        receipt.finish(outputs=[p for p in output.rglob('*') if p.is_file() and p.name!='receipt.json'])
+        return report
+    except BaseException:
+        if not receipt.finished:
+            try:receipt.finish(outputs=[p for p in output.rglob('*') if p.is_file() and p.name!='receipt.json'],status='fail')
+            except ValueError:pass
+        raise
 
 
 def compose(partition, flop_banks=(), *, phase_aware=False):
@@ -239,6 +311,12 @@ def screen(partition, flop_banks=(), *, phase_aware=False, exhaustive=False):
 
 
 if __name__ == '__main__':
+    import sys
+    if len(sys.argv)>1 and sys.argv[1]=='timed':
+        p=argparse.ArgumentParser(description=timed.__doc__)
+        for n in ('source','samples','output'):p.add_argument(n,type=Path)
+        a=p.parse_args(sys.argv[2:]);r=timed(a.source,a.samples,a.output)
+        print(json.dumps({k:v for k,v in r.items() if k!='corners'}));sys.exit(0)
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('partition', type=Path)
     parser.add_argument('output', type=Path)

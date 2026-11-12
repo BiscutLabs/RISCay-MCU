@@ -20,7 +20,8 @@ object ClockedSimulation {
       serviceModelHz: Double = 10000000, processTimeoutSeconds: Int = 90,
       serviceHalfPeriodNs: Double = 50, maximumDelaySubtree: Option[String] = None,
       primitiveDelayOverrides: Map[(String,String),Long] = Map.empty,
-      powerOnResetNs: Long = 2000, synchronous: Boolean = false): Path = {
+      powerOnResetNs: Long = 2000, synchronous: Boolean = false, generated: Boolean = false): Path = {
+    require(!generated || (synchronous && !onChipOscillator), "DESYNC_REQUIRES_CLOCKED_SOC_FIXTURE")
     require(!synchronous || (maximumDelaySubtree.isEmpty && primitiveDelayOverrides.isEmpty))
     require(serviceHalfPeriodNs > 0)
     require(powerOnResetNs > 0)
@@ -81,6 +82,8 @@ object ClockedSimulation {
       s"defparam $root.${path.split('.').drop(1).mkString(".")}.DELAY_FS=$delay;"
     }.mkString("\n")
     val ports = ujson.read(Files.readString(base.resolve("ports.json")))("nodes")(0)("ports").arr.toSeq
+    val needsWakeProbe=if(generated) design.asInstanceOf[riscay.clocked.ClockedSoc].p.lowPower.exists(_.stopServiceClock)
+      else onChipOscillator && chipParameters.stopServiceClock
     val chipSources = if(onChipOscillator) {
       Seq(riscay.soc.ChipWrapper.write(base,chipParameters).toString,
         base.resolve("chip/riscay_lf_osc_model.sv").toString,
@@ -105,7 +108,7 @@ reg referenceEnabled=1;
 ${if(onChipOscillator) "" else s"initial begin serviceClock=0; forever begin #$serviceHalfPeriodNs; if(clockEnabled) serviceClock=~serviceClock; end end\ninitial begin watchdogClock=0; forever begin #$referenceHalfPeriodNs; if(referenceEnabled) watchdogClock=~watchdogClock; end end"}
 initial begin #$deadlineNs; $$fatal(1,"SOC_DEADLINE"); end
 $extra
-${if(onChipOscillator && chipParameters.stopServiceClock) wakeProbe + hostTasks.replace("task start_bus; begin", "reg transactionActive=0;\ntask start_bus; begin\n  if(!transactionActive) wake_probe(); transactionActive=1;").replace("scl=0; hostLow=1; #1200; scl=1; #1200; hostLow=0; #1200;", "scl=0; hostLow=1; #1200; scl=1; #1200; hostLow=0; #1200; transactionActive=0;") else hostTasks}
+${if(needsWakeProbe) wakeProbe + hostTasks.replace("task start_bus; begin", "reg transactionActive=0;\ntask start_bus; begin\n  if(!transactionActive) wake_probe(); transactionActive=1;").replace("scl=0; hostLow=1; #1200; scl=1; #1200; hostLow=0; #1200;", "scl=0; hostLow=1; #1200; scl=1; #1200; hostLow=0; #1200; transactionActive=0;") else hostTasks}
 initial begin
 ${ports.filter(p => p("direction").str == "input" && !Set("serviceClock", "watchdogClock", "sda").contains(flat(p))).map(p => s"${flat(p)}=0;").mkString("\n")}
 reset=1; scl=1; gpioIn=4; adcMiso=0;
@@ -116,13 +119,25 @@ end
 endmodule
 """
     Files.writeString(base.resolve("testbench.sv"), tb)
-    def command(args: Seq[String], log: String): Unit = {
+    def command(args: Seq[String], log: String, timeout: Int = processTimeoutSeconds): Unit = {
       val file = base.resolve(log).toFile
       val process = new ProcessBuilder(args: _*).directory(base.toFile).redirectErrorStream(true).redirectOutput(file).start()
-      if(!process.waitFor(processTimeoutSeconds, TimeUnit.SECONDS)) { process.destroyForcibly(); sys.error(s"Timeout: $base/$log") }
+      if(!process.waitFor(timeout, TimeUnit.SECONDS)) { process.destroyForcibly(); sys.error(s"Timeout: $base/$log") }
       require(process.exitValue() == 0, s"Simulation failure: $base/$log\n${Files.readString(file.toPath).takeRight(5000)}")
     }
     val sources = Files.readAllLines(base.resolve("filelist.f")).asScala.filter(_.trim.nonEmpty).map(s => base.resolve(s.trim).normalize().toString)
+    if(generated) {
+      require(design.isInstanceOf[riscay.clocked.ClockedSoc], "DESYNC_REQUIRES_WHOLE_SOC_NOT_CLOCKED_BUS_FIXTURE")
+      val samples=sys.env.getOrElse("RISCAY_DESYNC_SAMPLES",sys.error("RISCAY_DESYNC_SAMPLES is required; reference tests are not generated-chip evidence"))
+      val tool=Paths.get("tools/desync_simulation.py").toAbsolutePath.toString
+      val result=base.resolve("desync")
+      command(Seq("python",tool,"replay",base.toString,Paths.get(samples).toAbsolutePath.toString,result.toString,
+        "--corner",sys.env.getOrElse("RISCAY_DESYNC_CORNER","tt_025C_3v30"),
+        "--selection",sys.env.getOrElse("RISCAY_DESYNC_SELECTION","random"),
+        "--seed",sys.env.getOrElse("RISCAY_DESYNC_SEED","1"),"--wall-timeout",processTimeoutSeconds.toString),
+        "generated.log",processTimeoutSeconds+300)
+      return result
+    }
     command(Seq("iverilog", "-g2012", "-s", "Testbench", "-o", "sim.vvp") ++ (sources ++ models ++ chipSources).distinct ++ Seq("testbench.sv"), "compile.log")
     command(Seq("vvp", "sim.vvp"), "simulation.log")
     require(Files.readString(base.resolve("simulation.log")).linesIterator.count(_ == "RISCAY_SOC_PASS") == 1, "MISSING_SOC_COMPLETION")

@@ -34,6 +34,11 @@
   without approval. Explore with area maps
   first; qualify only surviving choices. I2C remains 400 kHz SCL; 3.2 MHz is the
   existing service-clock test point, not a bus-rate increase.
+- Work order for desync: generated-chip boot/I2C/SRAM/sleep/reset and register
+  flow first; trial slow-corner recurrence/deadlines and the Fabric/time/power
+  area experiment next; per-bank STA sizing only after those pass. Pause local
+  SPICE qualification. Distinguish reference-suite passes from generated-chip
+  passes. Keep `docs/desync-ledger.md` to one short row per commit; archive detail.
 - RISCay is a generic MCU. Neither RTL nor mask ROM contains application policy.
   ROM implements generic external SPI image boot and I2C-loader fallback.
   Profiles supply pin names, measurement metadata and capacities, never behavior.
