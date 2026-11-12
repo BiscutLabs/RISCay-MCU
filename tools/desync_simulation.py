@@ -212,7 +212,8 @@ def prepare(source, controls, chains, transitions, output, *, corner, seed=1, to
     net = deepcopy(json.loads(source.read_text()))
     control = json.loads(controls.read_text())
     samples = json.loads(chains.read_text())
-    rows = json.loads(transitions.read_text())['rows']
+    transition_data = json.loads(transitions.read_text())
+    rows = transition_data['rows']
     top = net['modules']['RiscayMcuDigital']
     audit(net,control['bindings'],experimental=True,generic=True)
     rng = random.Random(seed)
@@ -277,7 +278,8 @@ def prepare(source, controls, chains, transitions, output, *, corner, seed=1, to
         corner=corner,seed=seed,selection=selection,delays=evidence,
         input_sha256={str(p.resolve()):hashlib.sha256(p.read_bytes()).hexdigest() for p in (source,controls,chains,transitions)},
         reset='Behavioral immediate output clamp; release flushing/minimum POR are not qualified',
-        bounds_scope='Retained production trial STA samples; fixture configurations borrow these simulation bounds, not physical timing qualification',
+        bounds_scope='Borrowed STA sample ranges; see transition_scope and input hashes for provenance. Neither fixture nor changed-bank timing is qualified',
+        transition_scope=transition_data.get('scope','unspecified'),
         mutex='Simulation-only atomic exclusion; no resolution/reliability claim'),indent=2)+'\n')
     prepared=output/'input.json';prepared.write_text(json.dumps(net)+'\n')
     y=tool('yosys'); script=output/'emit.ys'
@@ -314,7 +316,7 @@ def flow_coverage(text, transform):
         scope='Tested transfers, not complete sequential flow equivalence')
 
 
-def replay(export, samples, output, *, corner, seed, selection='random', execute=True, wall_timeout=180):
+def replay(export, samples, output, *, corner, seed, selection='random', execute=True, wall_timeout=180, bank_map=None):
     """Reuse an existing pin testbench unchanged against its generated fixture."""
     from run_receipt import RunReceipt
     from gf180_physical import ROOT
@@ -322,7 +324,7 @@ def replay(export, samples, output, *, corner, seed, selection='random', execute
     sources=[export/s.strip() for s in (export/'filelist.f').read_text().splitlines() if s.strip()]
     metadata=json.loads((export/'clocked.json').read_text())
     chains=samples/'line-area-trial-r3/chain-samples.json'; transitions=samples/'transitions-r9/summary.json'
-    policy=ROOT/'physical/desync/bank-map.json'
+    policy=(bank_map or ROOT/'physical/desync/bank-map.json').resolve()
     receipt=RunReceipt(output/'receipt.json',inputs=[export/'clocked.json',export/'testbench.sv',*sources,chains,transitions,policy],
         tools=[Path(__file__),Path(sys.executable),Path(shutil.which('iverilog') or 'iverilog'),Path(shutil.which('vvp') or 'vvp'),
                *[ROOT/'tools'/p for p in ('primitives.py','desync_transform.py','desync_partition.py','desync_assemble.py','desync_network.py','desync_graph.py','run_receipt.py','audit_desync_protection.py','gf180_netgraph.py','physical_tools.py')],
@@ -358,7 +360,8 @@ if __name__ == '__main__':
         p.add_argument('--corner',default='tt_025C_3v30');p.add_argument('--seed',type=int,default=1)
         p.add_argument('--selection',choices=('min','max','random'),default='random')
         p.add_argument('--wall-timeout',type=int,default=180)
-        a=p.parse_args(sys.argv[2:]);replay(a.export,a.samples,a.output,corner=a.corner,seed=a.seed,selection=a.selection,wall_timeout=a.wall_timeout)
+        p.add_argument('--bank-map',type=Path,help='experimental bank ownership; original clocked fixture and assertions stay unchanged')
+        a=p.parse_args(sys.argv[2:]);replay(a.export,a.samples,a.output,corner=a.corner,seed=a.seed,selection=a.selection,wall_timeout=a.wall_timeout,bank_map=a.bank_map)
         sys.exit(0)
     p=argparse.ArgumentParser(description=__doc__)
     p.add_argument('source',type=Path);p.add_argument('controls',type=Path)

@@ -1,6 +1,9 @@
 # SPDX-License-Identifier: Apache-2.0
 from collections import Counter
 from copy import deepcopy
+import json
+from pathlib import Path
+from tempfile import TemporaryDirectory
 import unittest
 from desync_distribution import prepare, validate_trees
 from desync_assemble import assemble
@@ -8,9 +11,30 @@ from audit_desync_protection import audit
 from repair_gf180_design import graph_proof
 from gf180_physical import SC, SRAM
 from test_desync_network import fixture
+from repair_desync import repair_targets
 
 
 class DistributionTests(unittest.TestCase):
+    def test_repair_passes_retain_prior_sources_without_touching_keepers(self):
+        cells={name:dict(type=SC+'inv_1',port_directions=dict(I='input',ZN='output'),
+                        connections=dict(I=['0'],ZN=[bit]))
+               for name,bit in (('first',2),('second',3),('native/keeper',4))}
+        cells['buffer']=dict(type=SC+'buf_2',port_directions=dict(I='input',Z='output'),
+                             connections=dict(I=[2],Z=[5]))
+        net=dict(modules={'RiscayMcuDigital':dict(cells=cells)})
+        with TemporaryDirectory() as directory:
+            paths=[]
+            for i,pins in enumerate((('buffer/Z','native/keeper/ZN'),('second/ZN',))):
+                path=Path(directory)/str(i);path.mkdir();paths.append(path)
+                (path/'repaired.json').write_text(json.dumps(net))
+                (path/'violations.json').write_text(json.dumps(dict(slow=[
+                    dict(kind='max slew',pin=p) for p in pins])))
+            bindings=[dict(instance='native')]
+            self.assertEqual(repair_targets(paths[:1],bindings),[('first','ZN')])
+            expected=[('first','ZN'),('second','ZN')]
+            self.assertEqual(repair_targets(paths,bindings),expected)
+            self.assertEqual(repair_targets(paths[::-1]+paths,bindings),expected)
+
     def fixture(self):
         part=fixture();top=dict(ports={},netnames={},cells={})
         for i,n in enumerate(('serviceClock','serviceClockEnable','resetHold/unsafe_supply','watchdogClock','sda',

@@ -99,6 +99,21 @@ testbench counters on `serviceClock` observe wall time, not native work activity
 The optional `clockEnabled=0` fault explicitly freezes native controller progress
 while leaving LF recovery active; it is not a physical clock gate.
 
+For an area-experiment bank map, use `tools/desync_simulation.py replay` with
+`--bank-map <policy.json>`. The receipt records that policy and the unchanged
+fixture/testbench; `model/simulation.json` preserves the transition sample's
+scope and hashes. Borrowing a parent's STA samples after re-banking is an
+explicit simulation proxy, not characterization of the new loads or topology.
+The eight-bank trial still fails the same two slow-model tests. Diagnostic
+clocked replays at the native recurrence reproduce both failures; their altered
+testbench clock is not a passing reference result. Evidence is retained under
+`build/desync-followup/`.
+
+For repeated electrical preparation, pass `tools/repair_desync.py --failures`
+once per retained failed run. It unions their measured ordinary driver targets;
+using only the latest report can discard an earlier fix. Protected keeper cells
+remain excluded, and every resulting graph and enable tree is still checked.
+
 Analyze the complete connected control graph's recurrence (not physical timing):
 
 ```text

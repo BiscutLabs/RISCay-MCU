@@ -27,7 +27,8 @@ archived in [the migration log](history/desync-log.md); they are not current qua
 | `47c05d3` | Work-gate return | Unchanged | Unchanged | Local SPICE only |
 | `b2cac0f` | Work-gate opening | Unchanged | Unchanged | Local SPICE only |
 | `7b55fd6` | User-approved prototype ceilings | 1.163243× under 1.17× | 5.4549% under 5.5% | Approval does not qualify timing |
-| Integration checkpoint | Generated boot/transfer/stop tests; Fabric/time/power area trial | Main 1.163243× unchanged; trial **1.143261×** | Main 5,283 FF/latch +198 keepers unchanged; trial +124 keepers, 3.8548% control share | 4 boot cases +5 randomized replays pass; selected slow suites 7/9 pass, two unchanged failures; graph 358.9 ns misses I2C sampling budget; reviewed; merge not adopted |
+| `b31ffa6` | Generated boot/transfer/stop tests; Fabric/time/power area trial | Main 1.163243× unchanged; trial **1.143261×** | Main 5,283 FF/latch +198 keepers unchanged; trial +124 keepers, 3.8548% control share | 4 boot cases +5 randomized replays pass; selected slow suites 7/9 pass, two unchanged failures; graph 358.9 ns misses I2C sampling budget; reviewed; merge not adopted |
+| Throughput diagnosis | Explicit-policy replays, cumulative repairs, direct tick-comparison trial | Main **1.163243× unchanged**; combined eight-bank trial **1.152111×**, not adopted | Main unchanged; trial 5,283 FF/latch +124 keepers, 3.8252% control share; RTL diff **0** | Both slow failures retained; trial data path **119.897 → 79.632 ns**, 1,531-point two-state proof; 513 Python/268 reference Scala pass; eight-bank SoC/stop replays pass; evidence `build/desync-followup/` |
 
 The eight-bank experiment maps ordinary logic/storage/controllers to
 0.5944404032 mm². Inserting the existing provisional chain recipes (merged
@@ -36,6 +37,13 @@ bank uses the largest of the three prior counts) adds 0.0135838976 mm², giving
 Storage area stays 0.2512318592 mm² (1.230457×). No repaired or routed ratio
 exists for this experiment. Evidence: `build/desync-integration/merged-map` and
 `build/desync-integration/merge-area.json`.
+
+The direct tick-comparison experiment adds 0.0047065088 mm² to that merge
+(total **0.6127308096 mm²**). Repaired logic with delay apertures still open is
+**0.6435470272 → 0.648308416 mm²**; these are not completed repaired-chip ratios.
+All five corners × two sampled Q slews improve after zero-wire electrical
+preparation. Neither bank policy nor delay counts are adopted. Detailed numbers:
+`build/desync-followup/direct-tick-compare/comparison.json`.
 
 Work order: generated-chip behavior and register flow; trial-cycle/deadline
 checks; bank-merge evaluation; then per-bank STA sizing. Local SPICE is paused.

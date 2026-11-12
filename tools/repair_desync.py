@@ -18,7 +18,15 @@ from gf180_slew_policy import write_views, report_rows, classify, compose_report
 from run_receipt import RunReceipt
 
 
+def repair_targets(failures, bindings):
+    """Retain earlier measured fixes when a later pass exposes another driver."""
+    return sorted({target for path in failures for target in failed_drivers(
+        json.loads((path/'repaired.json').read_text(encoding='utf-8')),
+        json.loads((path/'violations.json').read_text(encoding='utf-8')), bindings)})
+
+
 def run(mapping, out, mutex_libs, mutex_lef, failures=None):
+    failures = [] if failures is None else [failures] if isinstance(failures, Path) else list(failures)
     out.mkdir(parents=True,exist_ok=False)
     pdk=ROOT/'.tools/physical/pdk'; sr=ROOT/'.tools/gf180-sram'; routing=ROOT/'.tools/physical/routing'
     source=json.loads((mapping/'netlist.json').read_text(encoding='utf-8'))
@@ -32,14 +40,13 @@ def run(mapping, out, mutex_libs, mutex_lef, failures=None):
             *[pdk/(SC+c+'.lib') for c in CORNERS],*[sr/(SRAM+'__'+c+'.lib') for c in CORNERS],
             *[mutex_libs/('ca_mutex_gf180_candidate__'+c+'__scenarios.lib') for c in CORNERS],
             routing/'technology.tlef',pdk/'gf180mcu_fd_sc_mcu7t5v0.lef',sr/(SRAM+'.lef')]
-    if failures:inputs += [failures/'repaired.json',failures/'violations.json']
+    inputs += [path/name for path in failures for name in ('repaired.json','violations.json')]
     receipt=RunReceipt(out/'receipt.json',inputs=inputs,tools=[Path(__file__),ROOT/'tools/desync_distribution.py',
         ROOT/'tools/primitives.py',ROOT/'tools/repair_gf180_design.py',ROOT/'tools/gf180_slew_policy.py',
         *yosys.input_files(),*road.input_files()])
     try:
         write_views(pdk,out/'liberty',CORNERS)
-        targets=failed_drivers(json.loads((failures/'repaired.json').read_text(encoding='utf-8')),
-            json.loads((failures/'violations.json').read_text(encoding='utf-8')),bindings) if failures else []
+        targets=repair_targets(failures,bindings)
         prepared,distribution=prepare(source,bindings,all_libs,repair_drivers=targets)
         write_json(out/'distribution.json',distribution);write_json(out/'prepared.json',prepared)
         write_json(out/'distribution-proof.json',graph_proof(source,prepared,'RiscayMcuDigital',protected,libs))
@@ -131,5 +138,5 @@ if __name__=='__main__':
     p=argparse.ArgumentParser(description=__doc__)
     p.add_argument('mapping',type=Path);p.add_argument('output',type=Path)
     p.add_argument('--mutex-libs',type=Path,required=True);p.add_argument('--mutex-lef',type=Path,required=True)
-    p.add_argument('--failures',type=Path,help='Previous measured electrical failures, never guessed repairs')
-    a=p.parse_args();run(a.mapping.resolve(),a.output.resolve(),a.mutex_libs.resolve(),a.mutex_lef.resolve(),a.failures.resolve() if a.failures else None)
+    p.add_argument('--failures',type=Path,action='append',help='Previous measured failures; repeat to retain fixes from earlier passes')
+    a=p.parse_args();run(a.mapping.resolve(),a.output.resolve(),a.mutex_libs.resolve(),a.mutex_lef.resolve(),[p.resolve() for p in a.failures] if a.failures else None)

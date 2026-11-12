@@ -77,6 +77,40 @@ The slow-model watchdog/loader case also fails `LOADER_COMPLETION_DEADLINE`.
 Keep failures; neither assertions nor deadlines may be weakened. See
 [build and test](build-and-test.md) for the explicit generated gate.
 
+Speed-matched clocked diagnostics reproduce both failures. In the watchdog
+fixture (`lowPower=None`), 10,000 fast cycles produce a millisecond/tick kick:
+351.229 ns/cycle means 3.512 ms, against a 1.630 ms independent watchdog.
+Reset during an upload correctly invalidates its frame. This fixture needs
+less than about 163 ns/cycle, with synchronization margin; it is not a universal
+production limit. A variable native recurrence also cannot define accurate
+milliseconds through a fixed cycle divider. Production already uses LF time.
+The fixture omits production's limiting LF/elapsed cone; its borrowed production
+delays do not establish its own physical speed limit. Measure its exact generated
+configuration before changing counts or behavior.
+The sleep fixture's accelerated tick is 10 us; the 16-cycle wake hold is followed
+by drain synchronization and seven grace cycles, leaving too little sleep at
+358.9 ns/cycle. These are throughput/real-time obligations, not reasons to
+weaken tests. Changing the shared timebase or wake behavior requires approval.
+
+The eight-bank Fabric/time/power merge reduces the modeled worst recurrence to
+345.347 ns (3.8%), still misses I2C's sampling budget, and retains both failures.
+This is a proxy experiment using parent STA ranges: changed fanout and the
+falling master's 8-to-6-input closure join are uncharacterized. The merged
+67-unit line uses the parent's identical Fabric/time recipe. No shorter delay,
+new bank policy or physical acceptance follows from this result.
+The fast-corner watchdog replay passes. The fast-corner sleep image also completes
+unchanged assertions in an extended 197-second host-runtime diagnostic; its
+original 90-second timeout remains recorded, and the slow-model failures remain.
+
+A state-preserving experiment replaces `delta != 0` with `target != consumed`
+and `delta == 1` with `target == consumed + 1` modulo 32 bits; subtraction still
+supplies missed ticks. Its full elapsed-block two-state equivalence passes.
+On the eight-bank trial, worst sampled Q-to-D delay falls 119.897 to 79.632 ns
+across five corners/two slews, for 0.004707 mm² added logic and no storage change.
+This is a conditional data-path result, not a cycle/hold claim. Adoption still
+requires shared-source regeneration, reset/X checks, measured delay settings
+for each actual test configuration and the unchanged generated suites.
+
 ## Timing and acceptance
 
 Every delay is relative (bank matching), absolute (SRAM/controller aperture,
